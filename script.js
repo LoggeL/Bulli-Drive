@@ -75,26 +75,6 @@ function init() {
     // Init WebSocket
     initWebSocket();
 
-    // Powerups
-    const powerupTypes = [
-        { type: 'speed', color: 0xFFD700, label: 'Turbo' },
-        { type: 'size', color: 0xFF1493, label: 'Mega' },
-        { type: 'jump', color: 0x00FF7F, label: 'Super Jump' }
-    ];
-
-    for (let i = 0; i < 15; i++) {
-        const type = powerupTypes[Math.floor(Math.random() * powerupTypes.length)];
-        projects.push({
-            position: new THREE.Vector3(
-                (Math.random() - 0.5) * 400,
-                0,
-                (Math.random() - 0.5) * 400
-            ),
-            ...type
-        });
-    }
-    projects.forEach(p => createPowerupMarker(p));
-
     // Event Listeners
     window.addEventListener('resize', onWindowResize, false);
     document.addEventListener('keydown', onKeyDown, false);
@@ -166,6 +146,18 @@ function handleServerMessage(data) {
                 addRemotePlayer(data.players[pid]);
             }
         }
+
+        // Init server-side powerups
+        if (data.powerups) {
+            projects = data.powerups;
+            projects.forEach(p => {
+                createPowerupMarker(p);
+                if (p.collected) {
+                    p.mesh.visible = false;
+                }
+            });
+        }
+
         updatePlayerListUI();
     } else if (data.type === 'newPlayer') {
         if (data.player.id !== myId) {
@@ -177,6 +169,23 @@ function handleServerMessage(data) {
         updatePlayerListUI();
     } else if (data.type === 'update') {
         updateRemotePlayer(data);
+    } else if (data.type === 'powerupCollected') {
+        const p = projects.find(item => item.id === data.powerupId);
+        if (p) {
+            p.collected = true;
+            if (p.mesh) p.mesh.visible = false;
+            
+            // If I collected it, apply effect (already done in collectPowerup for local, but good for sync)
+            if (data.playerId === myId) {
+                applyPowerupEffect(p);
+            }
+        }
+    } else if (data.type === 'powerupReset') {
+        const p = projects.find(item => item.id === data.powerupId);
+        if (p) {
+            p.collected = false;
+            if (p.mesh) p.mesh.visible = true;
+        }
     } else if (data.type === 'honk') {
         const p = remotePlayers[data.id];
         if (p) {
@@ -359,8 +368,7 @@ function createPowerupMarker(p) {
         opacity: 0.9
     });
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.copy(p.position);
-    mesh.position.y = 2;
+    mesh.position.set(p.x, 2, p.z);
     mesh.castShadow = true;
 
     mesh.userData = {
@@ -378,7 +386,9 @@ function checkPowerupCollection() {
 
     projects.forEach((p, index) => {
         if (!p.collected) {
-            const dist = bulli.group.position.distanceTo(p.position);
+            const dx = bulli.group.position.x - p.x;
+            const dz = bulli.group.position.z - p.z;
+            const dist = Math.sqrt(dx * dx + dz * dz);
             
             // Floating animation
             if (p.mesh) {
@@ -388,18 +398,24 @@ function checkPowerupCollection() {
             }
 
             if (dist < 4) {
-                collectPowerup(p);
+                requestPowerupCollection(p);
             }
         }
     });
 }
 
-function collectPowerup(p) {
-    p.collected = true;
-    if (p.mesh) {
-        scene.remove(p.mesh);
+function requestPowerupCollection(p) {
+    // Optimistically hide locally if we want, but server should confirm
+    // Let's just send request
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+            type: 'collectPowerup',
+            powerupId: p.id
+        }));
     }
+}
 
+function applyPowerupEffect(p) {
     // Apply effect
     bulli.powerups[p.type].active = true;
     bulli.powerups[p.type].timer = 10; // 10 seconds
@@ -414,12 +430,6 @@ function collectPowerup(p) {
 
     // Audio feedback (honk slightly different)
     bulli.honk();
-
-    // Respawn after 20s
-    setTimeout(() => {
-        p.collected = false;
-        scene.add(p.mesh);
-    }, 20000);
 }
 class Bulli {
     constructor(colorCode = 0xD32F2F, isLocal = false) {

@@ -14,6 +14,30 @@ const PORT = 8000;
 app.use(express.static(__dirname));
 
 const players = {};
+const powerups = [];
+
+// Powerup Configuration
+const POWERUP_TYPES = [
+    { type: 'speed', color: 0xFFD700, label: 'Turbo' },
+    { type: 'size', color: 0xFF1493, label: 'Mega' },
+    { type: 'jump', color: 0x00FF7F, label: 'Super Jump' }
+];
+
+function initPowerups() {
+    for (let i = 0; i < 15; i++) {
+        const type = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
+        powerups.push({
+            id: i,
+            x: (Math.random() - 0.5) * 400,
+            z: (Math.random() - 0.5) * 400,
+            type: type.type,
+            color: type.color,
+            label: type.label,
+            collected: false
+        });
+    }
+}
+initPowerups();
 
 console.log(`Server started on http://localhost:${PORT}`);
 
@@ -43,7 +67,8 @@ wss.on('connection', (ws) => {
         id,
         color,
         name,
-        players: getPublicPlayers()
+        players: getPublicPlayers(),
+        powerups: powerups
     }));
 
     // Broadcast new player to others
@@ -73,6 +98,28 @@ wss.on('connection', (ws) => {
                         flipAngle: data.flipAngle,
                         isFlipping: data.isFlipping
                     }, id);
+                }
+            } else if (data.type === 'collectPowerup') {
+                const powerup = powerups.find(p => p.id === data.powerupId);
+                if (powerup && !powerup.collected) {
+                    powerup.collected = true;
+                    console.log(`Player ${players[id]?.name} collected powerup ${powerup.id} (${powerup.type})`);
+
+                    // Broadcast collection to all
+                    broadcast({
+                        type: 'powerupCollected',
+                        powerupId: powerup.id,
+                        playerId: id
+                    });
+
+                    // Respawn after 20 seconds
+                    setTimeout(() => {
+                        powerup.collected = false;
+                        broadcast({
+                            type: 'powerupReset',
+                            powerupId: powerup.id
+                        });
+                    }, 20000);
                 }
             } else if (data.type === 'honk') {
                 // Broadcast honk event to all other clients
