@@ -829,6 +829,8 @@ function onWindowResize() {
 }
 
 function onKeyDown(e) {
+    if (document.activeElement.tagName === 'INPUT') return;
+
     const key = e.key.toLowerCase();
     if (key === ' ') inputs.space = true;
     if (key === 'arrowleft') inputs.arrowleft = true;
@@ -840,6 +842,8 @@ function onKeyDown(e) {
 }
 
 function onKeyUp(e) {
+    if (document.activeElement.tagName === 'INPUT') return;
+
     const key = e.key.toLowerCase();
     if (key === ' ') inputs.space = false;
     if (key === 'f') inputs.f = true;

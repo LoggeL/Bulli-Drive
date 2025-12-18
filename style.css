@@ -243,6 +243,7 @@ canvas {
     border-radius: 12px;
     z-index: 10;
     min-width: 200px;
+    pointer-events: auto; /* Enable interaction */
 }
 
 #player-list h3 {
@@ -289,6 +290,7 @@ canvas {
     font-size: 0.8rem;
     width: 100%;
     outline: none;
+    user-select: auto; /* Allow text cursor and selection */
 }
 
 #name-input:focus {
