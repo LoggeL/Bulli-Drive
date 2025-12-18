@@ -80,6 +80,18 @@ wss.on('connection', (ws) => {
                     type: 'honk',
                     id
                 }, id);
+            } else if (data.type === 'rename') {
+                if (players[id] && data.name) {
+                    const oldName = players[id].name;
+                    players[id].name = data.name.substring(0, 20); // Limit name length
+                    console.log(`Player ${oldName} renamed to ${players[id].name}`);
+
+                    broadcast({
+                        type: 'playerRenamed',
+                        id,
+                        name: players[id].name
+                    });
+                }
             }
         } catch (e) {
             console.error('Error parsing message', e);

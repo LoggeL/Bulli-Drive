@@ -22,6 +22,7 @@ let activeProject = null;
 let isModalOpen = false;
 let audioCtx;
 let ws;
+let obstacles = [];
 let myId = null;
 let myColor = null;
 let myName = "Player";
@@ -99,6 +100,25 @@ function init() {
     document.addEventListener('keydown', onKeyDown, false);
     document.addEventListener('keyup', onKeyUp, false);
 
+    // Rename UI
+    const nameSubmit = document.getElementById('name-submit');
+    const nameInput = document.getElementById('name-input');
+    if (nameSubmit && nameInput) {
+        nameSubmit.addEventListener('click', () => {
+            const newName = nameInput.value.trim();
+            if (newName && ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'rename',
+                    name: newName
+                }));
+                nameInput.value = '';
+            }
+        });
+        nameInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') nameSubmit.click();
+        });
+    }
+
     // Start Loop
     animate();
 }
@@ -166,6 +186,21 @@ function handleServerMessage(data) {
             // So remotePlayers[id] IS a Bulli instance.
             p.honk();
         }
+    } else if (data.type === 'playerRenamed') {
+        if (data.id === myId) {
+            myName = data.name;
+            if (bulli) {
+                bulli.name = data.name;
+                if (bulli.nametag) bulli.nametag.innerText = data.name;
+            }
+        } else {
+            const remote = remotePlayers[data.id];
+            if (remote) {
+                remote.name = data.name;
+                if (remote.nametag) remote.nametag.innerText = data.name;
+            }
+        }
+        updatePlayerListUI();
     }
 }
 
@@ -261,17 +296,32 @@ function addPlayerToList(list, name, color, isMe) {
 
 // --- Environment ---
 function createEnvironment() {
-    // Ground
-    const groundGeo = new THREE.PlaneGeometry(1000, 1000);
-    const groundMat = new THREE.MeshStandardMaterial({ color: 0x90EE90 });
+    // Ground - Hilly
+    const size = 1000;
+    const segments = 64;
+    const groundGeo = new THREE.PlaneGeometry(size, size, segments, segments);
+    
+    // Displace vertices for hills
+    const posAttr = groundGeo.attributes.position;
+    for (let i = 0; i < posAttr.count; i++) {
+        const x = posAttr.getX(i);
+        const y = posAttr.getY(i);
+        // Simple hilly pattern
+        const z = Math.sin(x * 0.02) * 2 + Math.cos(y * 0.02) * 2 + Math.sin(x * 0.05 + y * 0.05) * 1;
+        posAttr.setZ(i, z);
+    }
+    groundGeo.computeVertexNormals();
+
+    const groundMat = new THREE.MeshStandardMaterial({ color: 0x90EE90, roughness: 0.8 });
     const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     scene.add(ground);
 
-    // Trees
-    for (let i = 0; i < 80; i++) {
-        const h = 3 + Math.random() * 4;
+    // Trees & Obstacles
+    obstacles = [];
+    for (let i = 0; i < 120; i++) {
+        const h = 4 + Math.random() * 5;
         const treeGeo = new THREE.ConeGeometry(1.5, h, 8);
         const treeMat = new THREE.MeshStandardMaterial({ color: 0x228B22 });
         const tree = new THREE.Mesh(treeGeo, treeMat);
@@ -279,12 +329,23 @@ function createEnvironment() {
         const x = (Math.random() - 0.5) * 600;
         const z = (Math.random() - 0.5) * 600;
 
-        if (Math.abs(x) < 30 && Math.abs(z) < 30) continue;
+        // Skip center
+        if (Math.abs(x) < 40 && Math.abs(z) < 40) continue;
 
-        tree.position.set(x, h / 2, z);
+        // Get height at this position for the terrain
+        const terrainY = Math.sin(x * 0.02) * 2 + Math.cos(z * 0.02) * 2 + Math.sin(x * 0.05 + z * 0.05) * 1;
+
+        tree.position.set(x, terrainY + h / 2 - 0.5, z);
         tree.castShadow = true;
         tree.receiveShadow = true;
         scene.add(tree);
+
+        // Add to obstacles for collision (approximate with radius 2)
+        obstacles.push({
+            x: x,
+            z: z,
+            radius: 2.5
+        });
     }
 }
 
@@ -383,6 +444,7 @@ class Bulli {
 
         this.isFlipping = false;
         this.flipVelocity = 0;
+        this.lastHonkTime = 0;
 
         // Powerup states
         this.powerups = {
@@ -640,15 +702,19 @@ class Bulli {
 
         // Honk Logic (F)
         if (inputs.f) {
-            this.honk();
-            inputs.f = false;
+            const now = Date.now();
+            if (now - this.lastHonkTime > 500) {
+                this.honk();
+                this.lastHonkTime = now;
 
-            // Send honk to server
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({
-                    type: 'honk'
-                }));
+                // Send honk to server
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'honk'
+                    }));
+                }
             }
+            inputs.f = false;
         }
 
         if (this.isFlipping) {
@@ -673,8 +739,33 @@ class Bulli {
         }
 
         // Apply movement (to the main group)
-        this.group.position.x += Math.sin(this.angle) * this.speed * frame;
-        this.group.position.z += Math.cos(this.angle) * this.speed * frame;
+        const nextX = this.group.position.x + Math.sin(this.angle) * this.speed * frame;
+        const nextZ = this.group.position.z + Math.cos(this.angle) * this.speed * frame;
+
+        // Collision detection
+        let collision = false;
+        for (const obs of obstacles) {
+            const dx = nextX - obs.x;
+            const dz = nextZ - obs.z;
+            const dist = Math.sqrt(dx * dx + dz * dz);
+            if (dist < obs.radius * (this.group.scale.x || 1)) {
+                collision = true;
+                this.speed *= -0.5; // Bounce back
+                break;
+            }
+        }
+
+        if (!collision) {
+            this.group.position.x = nextX;
+            this.group.position.z = nextZ;
+        }
+
+        // Adjust Y to terrain height
+        const tx = this.group.position.x;
+        const tz = this.group.position.z;
+        const terrainY = Math.sin(tx * 0.02) * 2 + Math.cos(tz * 0.02) * 2 + Math.sin(tx * 0.05 + tz * 0.05) * 1;
+        this.group.position.y = terrainY;
+
         this.group.rotation.y = this.angle;
 
         // Wheel animation
