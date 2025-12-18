@@ -117,6 +117,17 @@ function initWebSocket() {
         console.warn('WebSocket error, offline mode?', e);
         // If offline, create local player anyway
         if (!bulli) {
+            // Fallback terrain for offline mode
+            terrainConfig = {
+                size: 1000,
+                segments: 64,
+                frequency1: 0.02,
+                amplitude1: 2,
+                frequency2: 0.05,
+                amplitude2: 1
+            };
+            createEnvironment(); 
+            
             createLocalPlayer(0xD32F2F, "Offline");
             const loader = document.getElementById('loading-screen');
             if (loader) loader.style.opacity = 0;
