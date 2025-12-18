@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VW Bulli Globe Drive</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+
+<body>
+    <div id="loading-screen">
+        <div class="loader">
+            <div class="spinner"></div>
+            <p>Assembling Bulli...</p>
+        </div>
+    </div>
+
+    <div id="ui-overlay">
+        <div class="controls-hint">
+            <div class="key">W</div>
+            <div class="row">
+                <div class="key">A</div>
+                <div class="key">S</div>
+                <div class="key">D</div>
+            </div>
+            <div class="key" style="width: 140px; margin-top: 0.5rem;">SPACE</div>
+            <span>to flip</span>
+
+            <div class="row" style="margin-top: 1rem;">
+                <div class="key">F</div>
+            </div>
+            <span>to honk</span>
+
+            <div class="row" style="margin-top: 1rem;">
+                <div class="key">&larr;</div>
+                <div class="key">&rarr;</div>
+            </div>
+            <span>rotate camera</span>
+        </div>
+
+        <div id="interaction-prompt" class="hidden">
+            Press <span class="key-small">E</span> to view project
+        </div>
+    </div>
+
+    <div id="modal-container" class="hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content">
+            <button class="close-btn">&times;</button>
+            <h2 id="modal-title">Project Title</h2>
+            <div id="modal-body">
+                <p>Project description goes here.</p>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="script.js"></script>
+</body>
+
+</html>
