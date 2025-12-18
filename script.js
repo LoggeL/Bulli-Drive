@@ -74,29 +74,30 @@ function init() {
     // Init WebSocket
     initWebSocket();
 
-    // Projects
-    projects.push({
-        position: new THREE.Vector3(25, 0, -25),
-        title: "Project Alpha",
-        description: "A revolutionary app that changed the way we think about toast.",
-        color: 0xFF5757
-    });
-    projects.push({
-        position: new THREE.Vector3(-35, 0, 15),
-        title: "Blue Sky Initiative",
-        description: "Leveraging cloud computing to actually make the sky bluer.",
-        color: 0x4488FF
-    });
-    projects.forEach(p => createProjectMarker(p));
+    // Powerups
+    const powerupTypes = [
+        { type: 'speed', color: 0xFFD700, label: 'Turbo' },
+        { type: 'size', color: 0xFF1493, label: 'Mega' },
+        { type: 'jump', color: 0x00FF7F, label: 'Super Jump' }
+    ];
+
+    for (let i = 0; i < 15; i++) {
+        const type = powerupTypes[Math.floor(Math.random() * powerupTypes.length)];
+        projects.push({
+            position: new THREE.Vector3(
+                (Math.random() - 0.5) * 400,
+                0,
+                (Math.random() - 0.5) * 400
+            ),
+            ...type
+        });
+    }
+    projects.forEach(p => createPowerupMarker(p));
 
     // Event Listeners
     window.addEventListener('resize', onWindowResize, false);
     document.addEventListener('keydown', onKeyDown, false);
     document.addEventListener('keyup', onKeyUp, false);
-
-    // UI Helpers
-    document.querySelector('.close-btn').addEventListener('click', closeModal);
-    document.querySelector('.modal-backdrop').addEventListener('click', closeModal);
 
     // Start Loop
     animate();
@@ -204,6 +205,7 @@ function updateRemotePlayer(data) {
         remote.group.position.set(data.x, 0, data.z);
         remote.group.rotation.y = data.angle;
         remote.flipGroup.rotation.x = data.flipAngle;
+        if (data.scale) remote.group.scale.set(data.scale, data.scale, data.scale);
 
         // Handle flip Y interaction simply
         if (data.isFlipping) {
@@ -286,21 +288,23 @@ function createEnvironment() {
     }
 }
 
-function createProjectMarker(p) {
-    const geo = new THREE.OctahedronGeometry(1.5);
+function createPowerupMarker(p) {
+    const geo = new THREE.BoxGeometry(2, 2, 2);
     const mat = new THREE.MeshStandardMaterial({
         color: p.color,
         emissive: p.color,
-        emissiveIntensity: 0.6
+        emissiveIntensity: 0.8,
+        transparent: true,
+        opacity: 0.9
     });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.copy(p.position);
-    mesh.position.y = 3;
+    mesh.position.y = 2;
     mesh.castShadow = true;
 
     mesh.userData = {
-        project: p,
-        initialY: 3,
+        powerup: p,
+        initialY: 2,
         timeOffset: Math.random() * 100
     };
 
@@ -308,8 +312,54 @@ function createProjectMarker(p) {
     p.mesh = mesh;
 }
 
+function checkPowerupCollection() {
+    if (!bulli) return;
 
-// --- Class: Bulli ---
+    projects.forEach((p, index) => {
+        if (!p.collected) {
+            const dist = bulli.group.position.distanceTo(p.position);
+            
+            // Floating animation
+            if (p.mesh) {
+                p.mesh.rotation.y += 0.05;
+                p.mesh.rotation.z += 0.02;
+                p.mesh.position.y = p.mesh.userData.initialY + Math.sin(Date.now() * 0.005 + p.mesh.userData.timeOffset) * 0.5;
+            }
+
+            if (dist < 4) {
+                collectPowerup(p);
+            }
+        }
+    });
+}
+
+function collectPowerup(p) {
+    p.collected = true;
+    if (p.mesh) {
+        scene.remove(p.mesh);
+    }
+
+    // Apply effect
+    bulli.powerups[p.type].active = true;
+    bulli.powerups[p.type].timer = 10; // 10 seconds
+
+    // Show feedback
+    const prompt = document.getElementById('interaction-prompt');
+    prompt.innerHTML = `POWERUP: ${p.label.toUpperCase()}!`;
+    prompt.classList.remove('hidden');
+    setTimeout(() => {
+        prompt.classList.add('hidden');
+    }, 2000);
+
+    // Audio feedback (honk slightly different)
+    bulli.honk();
+
+    // Respawn after 20s
+    setTimeout(() => {
+        p.collected = false;
+        scene.add(p.mesh);
+    }, 20000);
+}
 class Bulli {
     constructor(colorCode = 0xD32F2F, isLocal = false) {
         this.group = new THREE.Group();
@@ -333,6 +383,13 @@ class Bulli {
 
         this.isFlipping = false;
         this.flipVelocity = 0;
+
+        // Powerup states
+        this.powerups = {
+            speed: { active: false, timer: 0 },
+            size: { active: false, timer: 0 },
+            jump: { active: false, timer: 0 }
+        };
 
         this.buildCar();
     }
@@ -534,18 +591,43 @@ class Bulli {
 
     update(dt) {
         this.updateNametag();
-        if (!this.isLocal) return; // Remote players updated via server msg, NOT physics here (or minimal interplation)
+
+        // Update powerup timers
+        Object.keys(this.powerups).forEach(key => {
+            if (this.powerups[key].active) {
+                this.powerups[key].timer -= dt;
+                if (this.powerups[key].timer <= 0) {
+                    this.powerups[key].active = false;
+                    if (key === 'size') this.group.scale.set(1, 1, 1);
+                }
+            }
+        });
+
+        if (!this.isLocal) return; 
 
         if (isModalOpen) return;
 
-        // Convert to a 60fps-equivalent frame scalar so existing tuning values keep their feel.
         const frame = dt * 60;
+
+        // Apply Powerup Effects
+        let currentAccel = this.acceleration;
+        let currentMaxSpeed = this.maxSpeed;
+        if (this.powerups.speed.active) {
+            currentAccel *= 2;
+            currentMaxSpeed *= 1.8;
+        }
+
+        if (this.powerups.size.active) {
+            this.group.scale.lerp(new THREE.Vector3(2.5, 2.5, 2.5), 0.1);
+        } else {
+            this.group.scale.lerp(new THREE.Vector3(1, 1, 1), 0.1);
+        }
 
         // Input Handling
         if (inputs.w) {
-            this.speed += this.acceleration * frame;
+            this.speed += currentAccel * frame;
         } else if (inputs.s) {
-            this.speed -= this.acceleration * frame;
+            this.speed -= currentAccel * frame;
         } else {
             this.speed *= Math.pow(this.friction, frame);
         }
@@ -553,8 +635,7 @@ class Bulli {
         // Frontflip Logic
         if (inputs.space && !this.isFlipping) {
             this.isFlipping = true;
-            this.flipVelocity = 0.25;
-            // Removed honk from space
+            this.flipVelocity = this.powerups.jump.active ? 0.4 : 0.25;
         }
 
         // Honk Logic (F)
@@ -624,7 +705,8 @@ class Bulli {
                 z: this.group.position.z,
                 angle: this.angle,
                 flipAngle: this.flipGroup.rotation.x,
-                isFlipping: this.isFlipping
+                isFlipping: this.isFlipping,
+                scale: this.group.scale.x // Sync scale
             }));
         }
     }
@@ -643,9 +725,6 @@ function onKeyDown(e) {
     if (key === 'arrowleft') inputs.arrowleft = true;
     if (key === 'arrowright') inputs.arrowright = true;
     if (inputs.hasOwnProperty(key)) inputs[key] = true;
-    if (key === 'e' && activeProject && !isModalOpen) {
-        openModal(activeProject);
-    }
     if (audioCtx && audioCtx.state === 'suspended') {
         audioCtx.resume();
     }
@@ -660,52 +739,6 @@ function onKeyUp(e) {
     if (inputs.hasOwnProperty(key)) inputs[key] = false;
 }
 
-function checkProjectDistance() {
-    if (!bulli) return;
-
-    let closest = null;
-    let minDist = 6;
-
-    projects.forEach(p => {
-        const dist = bulli.group.position.distanceTo(p.position);
-        if (dist < minDist) {
-            closest = p;
-        }
-
-        if (p.mesh) {
-            p.mesh.rotation.y += 0.02;
-            p.mesh.rotation.z += 0.01;
-            p.mesh.position.y = p.mesh.userData.initialY + Math.sin(Date.now() * 0.002 + p.mesh.userData.timeOffset) * 0.5;
-        }
-    });
-
-    activeProject = closest;
-    const prompt = document.getElementById('interaction-prompt');
-
-    if (activeProject && !isModalOpen) {
-        prompt.classList.remove('hidden');
-    } else {
-        prompt.classList.add('hidden');
-    }
-}
-
-function openModal(project) {
-    isModalOpen = true;
-    const container = document.getElementById('modal-container');
-    const title = document.getElementById('modal-title');
-    const body = document.getElementById('modal-body');
-
-    title.innerText = project.title;
-    body.innerHTML = `<p>${project.description}</p>`;
-
-    container.classList.remove('hidden');
-}
-
-function closeModal() {
-    isModalOpen = false;
-    document.getElementById('modal-container').classList.add('hidden');
-}
-
 // --- Animation Loop ---
 function animate() {
     requestAnimationFrame(animate);
@@ -714,7 +747,7 @@ function animate() {
 
     if (bulli) {
         bulli.update(dt);
-        checkProjectDistance();
+        checkPowerupCollection();
 
         // Camera Follow
         const relativeCameraOffset = new THREE.Vector3(0, CONFIG.cameraHeight, -CONFIG.cameraDistance);
