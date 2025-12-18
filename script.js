@@ -16,7 +16,7 @@ const CONFIG = {
 let scene, camera, renderer;
 let bulli; // Local car
 let remotePlayers = {}; // id -> { group, targetX, targetZ, targetAngle... }
-let inputs = { w: false, a: false, s: false, d: false, space: false, arrowleft: false, arrowright: false, f: false };
+let inputs = { w: false, a: false, s: false, d: false, space: false, arrowleft: false, arrowright: false };
 let projects = [];
 let activeProject = null;
 let isModalOpen = false;
@@ -640,7 +640,6 @@ function onWindowResize() {
 function onKeyDown(e) {
     const key = e.key.toLowerCase();
     if (key === ' ') inputs.space = true;
-    if (key === 'f') inputs.f = true;
     if (key === 'arrowleft') inputs.arrowleft = true;
     if (key === 'arrowright') inputs.arrowright = true;
     if (inputs.hasOwnProperty(key)) inputs[key] = true;
@@ -655,6 +654,7 @@ function onKeyDown(e) {
 function onKeyUp(e) {
     const key = e.key.toLowerCase();
     if (key === ' ') inputs.space = false;
+    if (key === 'f') inputs.f = true;
     if (key === 'arrowleft') inputs.arrowleft = false;
     if (key === 'arrowright') inputs.arrowright = false;
     if (inputs.hasOwnProperty(key)) inputs[key] = false;
