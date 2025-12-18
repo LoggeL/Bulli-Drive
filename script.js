@@ -128,7 +128,8 @@ function initWebSocket() {
             };
             createEnvironment(); 
             
-            createLocalPlayer(0xD32F2F, "Offline");
+            const savedName = localStorage.getItem('bulli-player-name');
+            createLocalPlayer(0xD32F2F, savedName || "Offline");
             const loader = document.getElementById('loading-screen');
             if (loader) loader.style.opacity = 0;
             setTimeout(() => { if (loader) loader.remove(); }, 500);
@@ -140,7 +141,18 @@ function handleServerMessage(data) {
     if (data.type === 'init') {
         myId = data.id;
         myColor = data.color;
-        myName = data.name;
+        
+        // Use stored name if available
+        const savedName = localStorage.getItem('bulli-player-name');
+        if (savedName) {
+            myName = savedName;
+            ws.send(JSON.stringify({
+                type: 'rename',
+                name: myName
+            }));
+        } else {
+            myName = data.name;
+        }
 
         // Init server-side terrain
         if (data.terrain) {
@@ -213,6 +225,7 @@ function handleServerMessage(data) {
     } else if (data.type === 'playerRenamed') {
         if (data.id === myId) {
             myName = data.name;
+            localStorage.setItem('bulli-player-name', data.name);
             if (bulli) {
                 bulli.name = data.name;
                 if (bulli.nametag) bulli.nametag.innerText = data.name;
