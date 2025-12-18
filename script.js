@@ -23,6 +23,7 @@ let isModalOpen = false;
 let audioCtx;
 let ws;
 let obstacles = [];
+let terrainConfig = null;
 let myId = null;
 let myColor = null;
 let myName = "Player";
@@ -68,9 +69,6 @@ function init() {
     dirLight.shadow.camera.top = 100;
     dirLight.shadow.camera.bottom = -100;
     scene.add(dirLight);
-
-    // Environment
-    createEnvironment();
 
     // Init WebSocket
     initWebSocket();
@@ -132,6 +130,12 @@ function handleServerMessage(data) {
         myId = data.id;
         myColor = data.color;
         myName = data.name;
+
+        // Init server-side terrain
+        if (data.terrain) {
+            terrainConfig = data.terrain;
+            createEnvironment(data.trees);
+        }
 
         createLocalPlayer(myColor, myName);
 
@@ -303,11 +307,21 @@ function addPlayerToList(list, name, color, isMe) {
     list.appendChild(li);
 }
 
+function getTerrainHeight(x, z) {
+    if (!terrainConfig) return 0;
+    const { frequency1, amplitude1, frequency2, amplitude2 } = terrainConfig;
+    return Math.sin(x * frequency1) * amplitude1 + 
+           Math.cos(z * frequency1) * amplitude1 + 
+           Math.sin(x * frequency2 + z * frequency2) * amplitude2;
+}
+
 // --- Environment ---
-function createEnvironment() {
+function createEnvironment(treeData) {
+    if (!terrainConfig) return;
+
     // Ground - Hilly
-    const size = 1000;
-    const segments = 64;
+    const size = terrainConfig.size || 1000;
+    const segments = terrainConfig.segments || 64;
     const groundGeo = new THREE.PlaneGeometry(size, size, segments, segments);
     
     // Displace vertices for hills
@@ -315,9 +329,8 @@ function createEnvironment() {
     for (let i = 0; i < posAttr.count; i++) {
         const x = posAttr.getX(i);
         const y = posAttr.getY(i);
-        // Simple hilly pattern
-        const z = Math.sin(x * 0.02) * 2 + Math.cos(y * 0.02) * 2 + Math.sin(x * 0.05 + y * 0.05) * 1;
-        posAttr.setZ(i, z);
+        const height = getTerrainHeight(x, y);
+        posAttr.setZ(i, height);
     }
     groundGeo.computeVertexNormals();
 
@@ -329,31 +342,26 @@ function createEnvironment() {
 
     // Trees & Obstacles
     obstacles = [];
-    for (let i = 0; i < 120; i++) {
-        const h = 4 + Math.random() * 5;
-        const treeGeo = new THREE.ConeGeometry(1.5, h, 8);
-        const treeMat = new THREE.MeshStandardMaterial({ color: 0x228B22 });
-        const tree = new THREE.Mesh(treeGeo, treeMat);
+    if (treeData) {
+        treeData.forEach(t => {
+            const h = t.height || 5;
+            const treeGeo = new THREE.ConeGeometry(1.5, h, 8);
+            const treeMat = new THREE.MeshStandardMaterial({ color: 0x228B22 });
+            const tree = new THREE.Mesh(treeGeo, treeMat);
 
-        const x = (Math.random() - 0.5) * 600;
-        const z = (Math.random() - 0.5) * 600;
+            const terrainY = getTerrainHeight(t.x, t.z);
 
-        // Skip center
-        if (Math.abs(x) < 40 && Math.abs(z) < 40) continue;
+            tree.position.set(t.x, terrainY + h / 2 - 0.5, t.z);
+            tree.castShadow = true;
+            tree.receiveShadow = true;
+            scene.add(tree);
 
-        // Get height at this position for the terrain
-        const terrainY = Math.sin(x * 0.02) * 2 + Math.cos(z * 0.02) * 2 + Math.sin(x * 0.05 + z * 0.05) * 1;
-
-        tree.position.set(x, terrainY + h / 2 - 0.5, z);
-        tree.castShadow = true;
-        tree.receiveShadow = true;
-        scene.add(tree);
-
-        // Add to obstacles for collision (approximate with radius 2)
-        obstacles.push({
-            x: x,
-            z: z,
-            radius: 2.5
+            // Add to obstacles for collision
+            obstacles.push({
+                x: t.x,
+                z: t.z,
+                radius: 2.5
+            });
         });
     }
 }
@@ -773,7 +781,7 @@ class Bulli {
         // Adjust Y to terrain height
         const tx = this.group.position.x;
         const tz = this.group.position.z;
-        const terrainY = Math.sin(tx * 0.02) * 2 + Math.cos(tz * 0.02) * 2 + Math.sin(tx * 0.05 + tz * 0.05) * 1;
+        const terrainY = getTerrainHeight(tx, tz);
         this.group.position.y = terrainY;
 
         this.group.rotation.y = this.angle;

@@ -15,6 +15,17 @@ app.use(express.static(__dirname));
 
 const players = {};
 const powerups = [];
+const trees = [];
+
+// Terrain Configuration
+const TERRAIN_CONFIG = {
+    size: 1000,
+    segments: 64,
+    frequency1: 0.02,
+    amplitude1: 2,
+    frequency2: 0.05,
+    amplitude2: 1
+};
 
 // Powerup Configuration
 const POWERUP_TYPES = [
@@ -23,7 +34,8 @@ const POWERUP_TYPES = [
     { type: 'jump', color: 0x00FF7F, label: 'Super Jump' }
 ];
 
-function initPowerups() {
+function initWorld() {
+    // Init Powerups
     for (let i = 0; i < 15; i++) {
         const type = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
         powerups.push({
@@ -36,8 +48,21 @@ function initPowerups() {
             collected: false
         });
     }
+
+    // Init Trees
+    for (let i = 0; i < 120; i++) {
+        const x = (Math.random() - 0.5) * 600;
+        const z = (Math.random() - 0.5) * 600;
+        if (Math.abs(x) < 40 && Math.abs(z) < 40) continue;
+        trees.push({
+            id: i,
+            x: x,
+            z: z,
+            height: 4 + Math.random() * 5
+        });
+    }
 }
-initPowerups();
+initWorld();
 
 console.log(`Server started on http://localhost:${PORT}`);
 
@@ -68,7 +93,9 @@ wss.on('connection', (ws) => {
         color,
         name,
         players: getPublicPlayers(),
-        powerups: powerups
+        powerups: powerups,
+        terrain: TERRAIN_CONFIG,
+        trees: trees
     }));
 
     // Broadcast new player to others
