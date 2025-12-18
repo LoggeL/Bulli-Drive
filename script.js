@@ -169,9 +169,12 @@ function handleServerMessage(data) {
 }
 
 function createLocalPlayer(color, name) {
+    myColor = color;
+    myName = name;
     bulli = new Bulli(color, true);
     bulli.createNametag(name, true);
     scene.add(bulli.group);
+    updatePlayerListUI();
 }
 
 function addRemotePlayer(p) {
