@@ -122,9 +122,9 @@ function initWebSocket() {
                 size: 1000,
                 segments: 64,
                 frequency1: 0.02,
-                amplitude1: 2,
+                amplitude1: 0,
                 frequency2: 0.05,
-                amplitude2: 1
+                amplitude2: 0
             };
             createEnvironment(); 
             
