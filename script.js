@@ -553,25 +553,9 @@ class Bulli {
         upperBody.castShadow = true;
         this.flipGroup.add(upperBody);
 
-        // --- The "V" Shape Front ---
-        const vShapeWidth = width - 0.2;
-        const vShapeHeight = heightLower * 0.9;
-        const vShapeGeo = new THREE.ConeGeometry(vShapeWidth / 2, vShapeHeight, 32, 1, true, 0, Math.PI);
-        const vMesh = new THREE.Mesh(vShapeGeo, whiteMat);
-        vMesh.rotation.z = Math.PI;
-        vMesh.position.set(0, chassisY + heightLower - vShapeHeight / 2, length / 2 + 0.01);
-        vMesh.scale.z = 0.5;
-        this.flipGroup.add(vMesh);
 
-        const vPlaneShape = new THREE.Shape();
-        vPlaneShape.moveTo(-width / 2 + 0.1, 0);
-        vPlaneShape.lineTo(width / 2 - 0.1, 0);
-        vPlaneShape.lineTo(0, -heightLower + 0.2);
-        vPlaneShape.lineTo(-width / 2 + 0.1, 0);
-        const vPlaneGeo = new THREE.ShapeGeometry(vPlaneShape);
-        const vPlane = new THREE.Mesh(vPlaneGeo, whiteMat);
-        vPlane.position.set(0, chassisY + heightLower, length / 2 + 0.01);
-        this.flipGroup.add(vPlane);
+
+
 
         // --- Windows ---
         const winW = (width / 2) - 0.3;
