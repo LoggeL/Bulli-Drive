@@ -290,24 +290,26 @@ export class Bulli {
         const nextZ = this.group.position.z + Math.cos(this.angle) * this.speed * frame;
 
         let collision = false;
-        for (const obs of state.obstacles as any[]) {
-            const dx = nextX - obs.x;
-            const dz = nextZ - obs.z;
-            const dist = Math.sqrt(dx * dx + dz * dz);
-            if (dist < obs.radius * (this.group.scale.x || 1)) {
-                collision = true;
-                this.speed *= -0.5;
-                
-                if (Math.abs(this.speed) > 0.125) { // Original was 0.25 but impactSpeed was abs(this.speed) before bounce
-                    playCollisionSound(Math.abs(this.speed) * 2);
-                    const treeHeight = getTerrainHeight(obs.x, obs.z) + 4;
-                    const particleCount = Math.min(16, Math.floor(Math.abs(this.speed) * 30));
-                    spawnParticles(obs.x, treeHeight, obs.z, 0x228B22, particleCount, 0.5, 2.5, 0.4);
-                    if (Math.abs(this.speed) > 0.2) {
-                        spawnParticles(obs.x, treeHeight - 2, obs.z, 0x8B4513, 4, 0.3, 1.5, 0.3);
+        if (!this.isFlipping) {
+            for (const obs of state.obstacles as any[]) {
+                const dx = nextX - obs.x;
+                const dz = nextZ - obs.z;
+                const dist = Math.sqrt(dx * dx + dz * dz);
+                if (dist < obs.radius * (this.group.scale.x || 1)) {
+                    collision = true;
+                    this.speed *= -0.5;
+                    
+                    if (Math.abs(this.speed) > 0.125) { // Original was 0.25 but impactSpeed was abs(this.speed) before bounce
+                        playCollisionSound(Math.abs(this.speed) * 2);
+                        const treeHeight = getTerrainHeight(obs.x, obs.z) + 4;
+                        const particleCount = Math.min(16, Math.floor(Math.abs(this.speed) * 30));
+                        spawnParticles(obs.x, treeHeight, obs.z, 0x228B22, particleCount, 0.5, 2.5, 0.4);
+                        if (Math.abs(this.speed) > 0.2) {
+                            spawnParticles(obs.x, treeHeight - 2, obs.z, 0x8B4513, 4, 0.3, 1.5, 0.3);
+                        }
                     }
+                    break;
                 }
-                break;
             }
         }
 
@@ -330,7 +332,8 @@ export class Bulli {
         } else {
             const normRot = this.flipGroup.rotation.x;
             const lift = Math.sin(normRot / 2);
-            this.flipGroup.position.y = lift * 8;
+            const jumpHeightFactor = this.powerups.jump.active ? 24 : 8;
+            this.flipGroup.position.y = lift * jumpHeightFactor;
         }
 
         if (state.inputs.arrowleft) this.cameraOrbit += 0.03 * frame;
@@ -341,6 +344,7 @@ export class Bulli {
                 type: 'update',
                 x: this.group.position.x,
                 z: this.group.position.z,
+                y: this.flipGroup.position.y,
                 angle: this.angle,
                 flipAngle: this.flipGroup.rotation.x,
                 isFlipping: this.isFlipping,

@@ -79,6 +79,7 @@ wss.on('connection', (ws: WebSocket) => {
                         id,
                         x: data.x,
                         z: data.z,
+                        y: data.y,
                         angle: data.angle,
                         flipAngle: data.flipAngle,
                         isFlipping: data.isFlipping,

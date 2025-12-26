@@ -172,7 +172,9 @@ function updateRemotePlayer(data: any) {
         remote.flipGroup.rotation.x = data.flipAngle;
         if (data.scale) remote.group.scale.set(data.scale, data.scale, data.scale);
 
-        if (data.isFlipping) {
+        if (data.y !== undefined) {
+            remote.flipGroup.position.y = data.y;
+        } else if (data.isFlipping) {
             const normRot = data.flipAngle;
             const lift = Math.sin(normRot / 2);
             remote.flipGroup.position.y = lift * 8;
