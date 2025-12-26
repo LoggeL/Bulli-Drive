@@ -88,14 +88,26 @@ function init() {
     const nameSubmit = document.getElementById('name-submit');
     const nameInput = document.getElementById('name-input');
     if (nameSubmit && nameInput) {
+        // Prefill with saved name
+        const savedName = localStorage.getItem('bulli-player-name');
+        if (savedName) {
+            nameInput.placeholder = savedName;
+        }
+        
         nameSubmit.addEventListener('click', () => {
             const newName = nameInput.value.trim();
-            if (newName && ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({
-                    type: 'rename',
-                    name: newName
-                }));
+            if (newName) {
+                // Save to localStorage immediately
+                localStorage.setItem('bulli-player-name', newName);
+                
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'rename',
+                        name: newName
+                    }));
+                }
                 nameInput.value = '';
+                nameInput.placeholder = newName;
             }
         });
         nameInput.addEventListener('keypress', (e) => {
