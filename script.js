@@ -864,16 +864,16 @@ function onKeyUp(e) {
 }
 
 function setupMobileControls() {
+    // Setup action buttons (honk, flip)
     const buttons = document.querySelectorAll('.control-btn');
-
     buttons.forEach(btn => {
         const key = btn.getAttribute('data-key');
         if (!key) return;
 
         const handleStart = (e) => {
-            e.preventDefault(); // Prevent scrolling/zooming
+            e.preventDefault();
             if (key === 'space') inputs.space = true;
-            else if (key === 'f') inputs.f = true; // Honk logic handles the trigger
+            else if (key === 'f') inputs.f = true;
             else if (inputs.hasOwnProperty(key)) inputs[key] = true;
 
             btn.classList.add('active');
@@ -886,26 +886,133 @@ function setupMobileControls() {
         const handleEnd = (e) => {
             e.preventDefault();
             if (key === 'space') inputs.space = false;
-
-            // For 'f', we rely on the update loop or just let it reset if needed,
-            // but usually standard behavior is to stop pressing.
-            // However, existing logic in update() sets inputs.f = false after processing.
-            // If we want to allow holding it (which the update loop prevents anyway), we can leave it.
-            // But to be safe and consistent with "stop pressing":
             if (key === 'f') inputs.f = false;
-
             if (key !== 'f' && key !== 'space' && inputs.hasOwnProperty(key)) {
                 inputs[key] = false;
             }
-
             btn.classList.remove('active');
         };
 
         btn.addEventListener('touchstart', handleStart, { passive: false });
         btn.addEventListener('touchend', handleEnd, { passive: false });
+        btn.addEventListener('touchcancel', handleEnd, { passive: false });
         btn.addEventListener('mousedown', handleStart);
         btn.addEventListener('mouseup', handleEnd);
         btn.addEventListener('mouseleave', handleEnd);
+    });
+
+    // Setup virtual joysticks
+    setupJoystick('joystick-move', (x, y) => {
+        // x: -1 (left) to 1 (right) -> steering
+        // y: -1 (up/forward) to 1 (down/back) -> acceleration
+        inputs.a = x < -0.3;
+        inputs.d = x > 0.3;
+        inputs.w = y < -0.3;
+        inputs.s = y > 0.3;
+    });
+
+    setupJoystick('joystick-camera', (x, y) => {
+        // x: camera orbit
+        inputs.arrowleft = x < -0.3;
+        inputs.arrowright = x > 0.3;
+    });
+}
+
+function setupJoystick(containerId, onMove) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const base = container.querySelector('.joystick-base');
+    const stick = container.querySelector('.joystick-stick');
+    if (!base || !stick) return;
+
+    const isSmall = base.classList.contains('small');
+    const maxDistance = isSmall ? 25 : 40;
+    
+    let active = false;
+    let startX = 0, startY = 0;
+    let currentX = 0, currentY = 0;
+
+    const getCenter = () => {
+        const rect = base.getBoundingClientRect();
+        return {
+            x: rect.left + rect.width / 2,
+            y: rect.top + rect.height / 2
+        };
+    };
+
+    const updateStick = (clientX, clientY) => {
+        const center = getCenter();
+        let dx = clientX - center.x;
+        let dy = clientY - center.y;
+        
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance > maxDistance) {
+            dx = (dx / distance) * maxDistance;
+            dy = (dy / distance) * maxDistance;
+        }
+
+        stick.style.transform = `translate(${dx}px, ${dy}px)`;
+        
+        // Normalize to -1 to 1
+        const normX = dx / maxDistance;
+        const normY = dy / maxDistance;
+        onMove(normX, normY);
+    };
+
+    const resetStick = () => {
+        stick.style.transform = 'translate(0, 0)';
+        onMove(0, 0);
+    };
+
+    // Touch events
+    base.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        active = true;
+        const touch = e.touches[0];
+        updateStick(touch.clientX, touch.clientY);
+        
+        if (audioCtx && audioCtx.state === 'suspended') {
+            audioCtx.resume();
+        }
+    }, { passive: false });
+
+    base.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        if (!active) return;
+        const touch = e.touches[0];
+        updateStick(touch.clientX, touch.clientY);
+    }, { passive: false });
+
+    base.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        active = false;
+        resetStick();
+    }, { passive: false });
+
+    base.addEventListener('touchcancel', (e) => {
+        e.preventDefault();
+        active = false;
+        resetStick();
+    }, { passive: false });
+
+    // Mouse events (for testing on desktop)
+    base.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        active = true;
+        updateStick(e.clientX, e.clientY);
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!active) return;
+        updateStick(e.clientX, e.clientY);
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (active) {
+            active = false;
+            resetStick();
+        }
     });
 }
 

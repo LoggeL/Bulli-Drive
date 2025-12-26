@@ -313,117 +313,193 @@ canvas {
 }
 /* Mobile Controls */
 #mobile-controls {
-    display: none; /* Hidden by default, shown via media query or JS detection */
+    display: none; /* Hidden by default, shown via media query */
     position: fixed;
-    bottom: 2rem;
+    top: 0;
     left: 0;
     width: 100%;
     height: 100%;
     pointer-events: none;
     z-index: 50;
-    padding: 1rem;
 }
 
-.control-group {
+/* Joystick Zones */
+.joystick-zone {
     position: absolute;
+    bottom: 20px;
     pointer-events: auto;
     display: flex;
-    gap: 1rem;
-}
-
-.control-group.left {
-    bottom: 1rem;
-    left: 1rem;
     flex-direction: column;
     align-items: center;
+    gap: 8px;
 }
 
-.control-group.right {
-    bottom: 1rem;
-    right: 1rem;
-    flex-direction: column;
-    align-items: center;
+.joystick-zone.left {
+    left: 20px;
 }
 
-.control-group.center {
-    bottom: 30%; /* Moved up to avoid overlap */
-    right: 2rem; /* Moved to right side */
-    left: auto;
-    transform: none;
-    flex-direction: column; /* Stacked vertically */
-    gap: 1rem;
+.joystick-zone.right {
+    right: 20px;
 }
 
-.steering-row, .camera-row {
+.joystick-container {
     display: flex;
-    gap: 1rem;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
 }
 
-.camera-row {
-    margin-bottom: 0.5rem;
+.joystick-base {
+    width: 140px;
+    height: 140px;
+    background: rgba(0, 0, 0, 0.3);
+    border: 3px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    backdrop-filter: blur(5px);
+    position: relative;
+}
+
+.joystick-base.small {
+    width: 90px;
+    height: 90px;
+}
+
+.joystick-stick {
+    width: 60px;
+    height: 60px;
+    background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.4), rgba(255, 87, 87, 0.8));
+    border: 2px solid rgba(255, 255, 255, 0.5);
+    border-radius: 50%;
+    position: absolute;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    transition: transform 0.05s ease-out;
+}
+
+.joystick-stick.small {
+    width: 40px;
+    height: 40px;
+}
+
+.joystick-label {
+    font-size: 0.7rem;
+    color: rgba(255, 255, 255, 0.6);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* Action Buttons */
+.action-buttons {
+    position: absolute;
+    right: 20px;
+    bottom: 180px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    pointer-events: auto;
 }
 
 .control-btn {
     background: rgba(0, 0, 0, 0.4);
-    border: 2px solid rgba(255, 255, 255, 0.3);
+    border: 3px solid rgba(255, 255, 255, 0.3);
     border-radius: 50%;
     color: white;
-    font-size: 1.5rem;
     display: flex;
     justify-content: center;
     align-items: center;
     backdrop-filter: blur(5px);
     cursor: pointer;
     touch-action: manipulation;
-    transition: background 0.1s, transform 0.1s;
+    transition: all 0.1s ease;
     user-select: none;
     -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
 }
 
 .control-btn:active, .control-btn.active {
-    background: rgba(255, 87, 87, 0.6);
-    transform: scale(0.95);
-    border-color: rgba(255, 255, 255, 0.6);
-}
-
-.control-btn.big {
-    width: 70px;
-    height: 70px;
-    font-size: 2rem;
-}
-
-.control-btn.small {
-    width: 40px;
-    height: 40px;
-    font-size: 1rem;
+    background: rgba(255, 87, 87, 0.7);
+    transform: scale(0.92);
+    border-color: rgba(255, 255, 255, 0.8);
+    box-shadow: 0 0 20px rgba(255, 87, 87, 0.5);
 }
 
 .control-btn.action {
-    width: 60px;
-    height: 60px;
-    border-radius: 20px;
-    font-size: 1rem;
-    font-weight: bold;
+    width: 70px;
+    height: 70px;
+    font-size: 1.8rem;
+}
+
+.control-btn.action.honk {
+    background: rgba(255, 200, 0, 0.3);
+    border-color: rgba(255, 200, 0, 0.5);
+}
+
+.control-btn.action.honk:active, .control-btn.action.honk.active {
+    background: rgba(255, 200, 0, 0.7);
+    box-shadow: 0 0 25px rgba(255, 200, 0, 0.6);
+}
+
+.control-btn.action.flip {
+    background: rgba(0, 150, 255, 0.3);
+    border-color: rgba(0, 150, 255, 0.5);
+}
+
+.control-btn.action.flip:active, .control-btn.action.flip.active {
+    background: rgba(0, 150, 255, 0.7);
+    box-shadow: 0 0 25px rgba(0, 150, 255, 0.6);
 }
 
 /* Landscape Mode Tweaks */
 @media (max-width: 900px) and (orientation: landscape) {
-    .control-group.center {
-        bottom: auto;
-        top: 1rem;
-        right: 1rem;
-        flex-direction: row;
+    .joystick-base {
+        width: 110px;
+        height: 110px;
     }
-
-    .control-btn.big {
+    
+    .joystick-stick {
+        width: 50px;
+        height: 50px;
+    }
+    
+    .joystick-base.small {
+        width: 70px;
+        height: 70px;
+    }
+    
+    .joystick-stick.small {
+        width: 32px;
+        height: 32px;
+    }
+    
+    .control-btn.action {
         width: 60px;
         height: 60px;
         font-size: 1.5rem;
     }
+    
+    .action-buttons {
+        bottom: 140px;
+        gap: 10px;
+    }
+    
+    .joystick-zone {
+        bottom: 10px;
+    }
+    
+    .joystick-zone.left {
+        left: 10px;
+    }
+    
+    .joystick-zone.right {
+        right: 10px;
+    }
 }
 
-/* Hide desktop hints on mobile */
-@media (max-width: 768px) {
+/* Show mobile controls on touch devices */
+@media (max-width: 768px), (pointer: coarse) {
     #mobile-controls {
         display: block;
     }
@@ -435,7 +511,13 @@ canvas {
     #player-list {
         top: 0.5rem;
         right: 0.5rem;
-        transform: scale(0.8);
+        transform: scale(0.75);
         transform-origin: top right;
+        padding: 0.6rem;
+        min-width: 150px;
+    }
+    
+    #player-list h3 {
+        font-size: 0.9rem;
     }
 }

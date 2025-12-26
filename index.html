@@ -28,25 +28,26 @@
     </div>
 
     <div id="mobile-controls">
-        <div class="control-group left">
-            <div class="steering-row">
-                <button id="btn-left" class="control-btn big" data-key="a">⬅️</button>
-                <button id="btn-right" class="control-btn big" data-key="d">➡️</button>
-            </div>
-            <div class="camera-row">
-                <button id="btn-cam-left" class="control-btn small" data-key="arrowleft">↺</button>
-                <button id="btn-cam-right" class="control-btn small" data-key="arrowright">↻</button>
+        <div class="joystick-zone left">
+            <div class="joystick-container" id="joystick-move">
+                <div class="joystick-base">
+                    <div class="joystick-stick"></div>
+                </div>
             </div>
         </div>
 
-        <div class="control-group center">
-            <button id="btn-honk" class="control-btn action" data-key="f" aria-label="Honk">H</button>
-            <button id="btn-flip" class="control-btn action" data-key="space" aria-label="Flip">Flip</button>
+        <div class="action-buttons">
+            <button id="btn-honk" class="control-btn action honk" data-key="f" aria-label="Honk">📯</button>
+            <button id="btn-flip" class="control-btn action flip" data-key="space" aria-label="Flip">🔄</button>
         </div>
 
-        <div class="control-group right">
-            <button id="btn-up" class="control-btn big" data-key="w">⬆️</button>
-            <button id="btn-down" class="control-btn big" data-key="s">⬇️</button>
+        <div class="joystick-zone right">
+            <div class="joystick-container" id="joystick-camera">
+                <div class="joystick-base small">
+                    <div class="joystick-stick small"></div>
+                </div>
+                <span class="joystick-label">CAM</span>
+            </div>
         </div>
     </div>
 
