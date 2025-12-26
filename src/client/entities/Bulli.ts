@@ -226,8 +226,11 @@ export class Bulli {
         let currentAccel = this.acceleration;
         let currentMaxSpeed = this.maxSpeed;
         if (this.powerups.speed.active) {
-            currentAccel *= 2;
-            currentMaxSpeed *= 1.8;
+            // Super fast (3x) decaying to 1x over 5s
+            const t = Math.max(0, this.powerups.speed.timer);
+            const factor = 1 + (t / 5) * 2; 
+            currentAccel *= factor;
+            currentMaxSpeed *= factor;
         }
 
         if (this.powerups.size.active) {
@@ -252,8 +255,7 @@ export class Bulli {
 
         // Honk logic handled in main loop or input handler generally, 
         // but keeping it here for consistency with original script.
-        // Wait, the original script has a check for inputs.f here.
-        if ((state.inputs as any).f) {
+        if (state.inputs.f) {
             const now = Date.now();
             if (now - this.lastHonkTime > 500) {
                 this.honk();
@@ -265,7 +267,7 @@ export class Bulli {
                     }));
                 }
             }
-            (state.inputs as any).f = false;
+            state.inputs.f = false;
         }
 
         if (this.isFlipping) {

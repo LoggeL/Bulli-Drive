@@ -8,7 +8,7 @@ export const state = {
     bulli: null as any, // Local car instance
     remotePlayers: {} as Record<string, RemotePlayer>,
     inputs: { 
-        w: false, a: false, s: false, d: false, 
+        w: false, a: false, s: false, d: false, f: false,
         space: false, arrowleft: false, arrowright: false 
     } as Inputs,
     projects: [] as PowerupData[], // Using the same name as in original script for powerups

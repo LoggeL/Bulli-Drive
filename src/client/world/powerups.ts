@@ -51,7 +51,7 @@ export function requestPowerupCollection(p: PowerupData) {
 export function applyPowerupEffect(p: PowerupData) {
     if (!state.bulli) return;
     state.bulli.powerups[p.type as keyof typeof state.bulli.powerups].active = true;
-    state.bulli.powerups[p.type as keyof typeof state.bulli.powerups].timer = 10; // 10 seconds
+    state.bulli.powerups[p.type as keyof typeof state.bulli.powerups].timer = 5; // 5 seconds
     
     showInteractionPrompt(`${p.label.toUpperCase()} ACTIVATED!`);
 }

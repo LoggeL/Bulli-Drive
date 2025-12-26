@@ -54,6 +54,7 @@ export interface Inputs {
     a: boolean;
     s: boolean;
     d: boolean;
+    f: boolean;
     space: boolean;
     arrowleft: boolean;
     arrowright: boolean;

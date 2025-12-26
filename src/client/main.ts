@@ -116,8 +116,8 @@ function animate() {
         state.camera.fov = 60 + (speed * 15) + fovBoost;
         state.camera.updateProjectionMatrix();
 
-        const zoomOut = 1 + (speed * 0.2) + (state.bulli.powerups.speed.active ? 0.6 : 0);
-        const heightBoost = state.bulli.powerups.speed.active ? 1.3 : 1.0;
+        const zoomOut = 1 + (speed * 0.15) + (state.bulli.powerups.speed.active ? 0.25 : 0);
+        const heightBoost = state.bulli.powerups.speed.active ? 1.1 : 1.0;
 
         const camX = carPos.x - Math.sin(carAngle + orbitAngle) * CONFIG.cameraDistance * zoomOut;
         const camZ = carPos.z - Math.cos(carAngle + orbitAngle) * CONFIG.cameraDistance * zoomOut;

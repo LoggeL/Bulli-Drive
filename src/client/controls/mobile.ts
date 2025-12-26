@@ -19,7 +19,7 @@ export function setupMobileControls() {
     if (honkBtn) {
         honkBtn.addEventListener('touchstart', (e) => {
             e.preventDefault();
-            (state.inputs as any).f = true;
+            state.inputs.f = true;
         });
     }
 
