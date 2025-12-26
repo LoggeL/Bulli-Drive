@@ -1356,40 +1356,7 @@ function setupJoystick(containerId, onMove) {
 }
 
 // --- Animation Loop ---
-let speedLinesCreated = false;
-
-function createSpeedLines() {
-    const container = document.getElementById('speed-lines');
-    if (!container || speedLinesCreated) return;
-    
-    // Create radial speed line elements around the center
-    const lineCount = 24;
-    for (let i = 0; i < lineCount; i++) {
-        const angle = (i / lineCount) * 360;
-        const line = document.createElement('div');
-        line.className = 'line';
-        line.style.setProperty('--angle', `${angle}deg`);
-        line.style.animationDelay = `${Math.random() * 0.5}s`;
-        container.appendChild(line);
-    }
-    speedLinesCreated = true;
-}
-
-function updateSpeedLines(speed, isBoosting) {
-    const container = document.getElementById('speed-lines');
-    if (!container) return;
-    
-    // Boost always shows strong effect
-    if (isBoosting) {
-        container.classList.add('active', 'boost');
-    } else if (speed > 0.75) {
-        // Subtle effect only at very high speeds
-        container.classList.add('active');
-        container.classList.remove('boost');
-    } else {
-        container.classList.remove('active', 'boost');
-    }
-}
+let currentFOV = 60;
 
 function animate() {
     requestAnimationFrame(animate);
@@ -1406,16 +1373,21 @@ function animate() {
         if (Math.random() < 0.3) {
             spawnDriftParticle();
         }
-        
-        // Update speed lines
-        createSpeedLines();
-        updateSpeedLines(Math.abs(bulli.speed), bulli.powerups.speed.active);
+
+        // Camera FOV for fisheye effect on boost/speed
+        const speed = Math.abs(bulli.speed);
+        const targetFOV = bulli.powerups.speed.active 
+            ? 85  // Strong fisheye on boost
+            : 60 + speed * 15;  // Slight fisheye based on speed
+        currentFOV += (targetFOV - currentFOV) * 0.05;
+        camera.fov = currentFOV;
+        camera.updateProjectionMatrix();
 
         // Camera Follow with dynamic distance based on boost
-        const boostZoom = bulli.powerups.speed.active ? 1.4 : 1.0;
-        const speedZoom = 1 + Math.abs(bulli.speed) * 0.15; // Slight zoom based on speed
+        const boostZoom = bulli.powerups.speed.active ? 1.6 : 1.0;
+        const speedZoom = 1 + speed * 0.2;
         const targetDistance = CONFIG.cameraDistance * boostZoom * speedZoom;
-        const targetHeight = CONFIG.cameraHeight * (bulli.powerups.speed.active ? 1.2 : 1.0);
+        const targetHeight = CONFIG.cameraHeight * (bulli.powerups.speed.active ? 1.3 : 1.0);
         
         const relativeCameraOffset = new THREE.Vector3(0, targetHeight, -targetDistance);
 
