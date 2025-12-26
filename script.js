@@ -468,7 +468,8 @@ function collectCoin(coin) {
     updateScoreUI();
     
     // Spawn particles
-    spawnParticles(coin.position.x, coin.position.y, coin.position.z, 0xFFD700, 8);
+    // Spawn particles - larger gold burst
+    spawnParticles(coin.position.x, coin.position.y, coin.position.z, 0xFFD700, 12, 0.35, 1.5, 0.6);
     
     // Play collect sound
     playCollectSound();
@@ -509,20 +510,29 @@ function playCollectSound() {
 }
 
 // --- Particle System ---
-function spawnParticles(x, y, z, color, count) {
+function spawnParticles(x, y, z, color, count, size = 0.4, spread = 1.0, speed = 0.5) {
     for (let i = 0; i < count; i++) {
-        const geo = new THREE.SphereGeometry(0.15, 8, 8);
-        const mat = new THREE.MeshBasicMaterial({ color: color });
+        const geo = new THREE.SphereGeometry(size + Math.random() * size * 0.5, 8, 8);
+        const mat = new THREE.MeshBasicMaterial({ 
+            color: color,
+            transparent: true,
+            opacity: 0.9
+        });
         const particle = new THREE.Mesh(geo, mat);
         
-        particle.position.set(x, y, z);
+        // Offset spawn position randomly
+        particle.position.set(
+            x + (Math.random() - 0.5) * spread,
+            y + Math.random() * spread,
+            z + (Math.random() - 0.5) * spread
+        );
         particle.userData = {
             velocity: new THREE.Vector3(
-                (Math.random() - 0.5) * 0.3,
-                Math.random() * 0.3 + 0.1,
-                (Math.random() - 0.5) * 0.3
+                (Math.random() - 0.5) * speed,
+                Math.random() * speed + 0.2,
+                (Math.random() - 0.5) * speed
             ),
-            life: 1.0
+            life: 1.5 + Math.random() * 0.5
         };
         
         scene.add(particle);
@@ -1005,9 +1015,14 @@ class Bulli {
             const dist = Math.sqrt(dx * dx + dz * dz);
             if (dist < obs.radius * (this.group.scale.x || 1)) {
                 collision = true;
+                const impactSpeed = Math.abs(this.speed);
                 this.speed *= -0.5; // Bounce back
-                playCollisionSound(Math.abs(this.speed));
-                spawnParticles(obs.x, getTerrainHeight(obs.x, obs.z) + 2, obs.z, 0x228B22, 5);
+                playCollisionSound(impactSpeed);
+                // Spawn leaves at tree top, with larger size and spread
+                const treeHeight = getTerrainHeight(obs.x, obs.z) + 4;
+                spawnParticles(obs.x, treeHeight, obs.z, 0x228B22, 12, 0.5, 2.5, 0.4);
+                // Also spawn some brown bark particles lower
+                spawnParticles(obs.x, treeHeight - 2, obs.z, 0x8B4513, 4, 0.3, 1.5, 0.3);
                 break;
             }
         }
