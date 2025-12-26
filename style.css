@@ -311,3 +311,131 @@ canvas {
 #name-submit:hover {
     filter: brightness(1.1);
 }
+/* Mobile Controls */
+#mobile-controls {
+    display: none; /* Hidden by default, shown via media query or JS detection */
+    position: fixed;
+    bottom: 2rem;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 50;
+    padding: 1rem;
+}
+
+.control-group {
+    position: absolute;
+    pointer-events: auto;
+    display: flex;
+    gap: 1rem;
+}
+
+.control-group.left {
+    bottom: 1rem;
+    left: 1rem;
+    flex-direction: column;
+    align-items: center;
+}
+
+.control-group.right {
+    bottom: 1rem;
+    right: 1rem;
+    flex-direction: column;
+    align-items: center;
+}
+
+.control-group.center {
+    bottom: 30%; /* Moved up to avoid overlap */
+    right: 2rem; /* Moved to right side */
+    left: auto;
+    transform: none;
+    flex-direction: column; /* Stacked vertically */
+    gap: 1rem;
+}
+
+.steering-row, .camera-row {
+    display: flex;
+    gap: 1rem;
+}
+
+.camera-row {
+    margin-bottom: 0.5rem;
+}
+
+.control-btn {
+    background: rgba(0, 0, 0, 0.4);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    color: white;
+    font-size: 1.5rem;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    backdrop-filter: blur(5px);
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: background 0.1s, transform 0.1s;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.control-btn:active, .control-btn.active {
+    background: rgba(255, 87, 87, 0.6);
+    transform: scale(0.95);
+    border-color: rgba(255, 255, 255, 0.6);
+}
+
+.control-btn.big {
+    width: 70px;
+    height: 70px;
+    font-size: 2rem;
+}
+
+.control-btn.small {
+    width: 40px;
+    height: 40px;
+    font-size: 1rem;
+}
+
+.control-btn.action {
+    width: 60px;
+    height: 60px;
+    border-radius: 20px;
+    font-size: 1rem;
+    font-weight: bold;
+}
+
+/* Landscape Mode Tweaks */
+@media (max-width: 900px) and (orientation: landscape) {
+    .control-group.center {
+        bottom: auto;
+        top: 1rem;
+        right: 1rem;
+        flex-direction: row;
+    }
+
+    .control-btn.big {
+        width: 60px;
+        height: 60px;
+        font-size: 1.5rem;
+    }
+}
+
+/* Hide desktop hints on mobile */
+@media (max-width: 768px) {
+    #mobile-controls {
+        display: block;
+    }
+
+    .controls-hint {
+        display: none;
+    }
+
+    #player-list {
+        top: 0.5rem;
+        right: 0.5rem;
+        transform: scale(0.8);
+        transform-origin: top right;
+    }
+}
