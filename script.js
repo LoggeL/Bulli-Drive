@@ -78,6 +78,9 @@ function init() {
     document.addEventListener('keydown', onKeyDown, false);
     document.addEventListener('keyup', onKeyUp, false);
 
+    // Mobile Controls
+    setupMobileControls();
+
     // Rename UI
     const nameSubmit = document.getElementById('name-submit');
     const nameInput = document.getElementById('name-input');
@@ -858,6 +861,52 @@ function onKeyUp(e) {
     if (key === 'arrowleft') inputs.arrowleft = false;
     if (key === 'arrowright') inputs.arrowright = false;
     if (inputs.hasOwnProperty(key)) inputs[key] = false;
+}
+
+function setupMobileControls() {
+    const buttons = document.querySelectorAll('.control-btn');
+
+    buttons.forEach(btn => {
+        const key = btn.getAttribute('data-key');
+        if (!key) return;
+
+        const handleStart = (e) => {
+            e.preventDefault(); // Prevent scrolling/zooming
+            if (key === 'space') inputs.space = true;
+            else if (key === 'f') inputs.f = true; // Honk logic handles the trigger
+            else if (inputs.hasOwnProperty(key)) inputs[key] = true;
+
+            btn.classList.add('active');
+
+            if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        };
+
+        const handleEnd = (e) => {
+            e.preventDefault();
+            if (key === 'space') inputs.space = false;
+
+            // For 'f', we rely on the update loop or just let it reset if needed,
+            // but usually standard behavior is to stop pressing.
+            // However, existing logic in update() sets inputs.f = false after processing.
+            // If we want to allow holding it (which the update loop prevents anyway), we can leave it.
+            // But to be safe and consistent with "stop pressing":
+            if (key === 'f') inputs.f = false;
+
+            if (key !== 'f' && key !== 'space' && inputs.hasOwnProperty(key)) {
+                inputs[key] = false;
+            }
+
+            btn.classList.remove('active');
+        };
+
+        btn.addEventListener('touchstart', handleStart, { passive: false });
+        btn.addEventListener('touchend', handleEnd, { passive: false });
+        btn.addEventListener('mousedown', handleStart);
+        btn.addEventListener('mouseup', handleEnd);
+        btn.addEventListener('mouseleave', handleEnd);
+    });
 }
 
 // --- Animation Loop ---
