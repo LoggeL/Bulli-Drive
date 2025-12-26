@@ -521,6 +521,29 @@ function playCollectSound() {
     osc.stop(audioCtx.currentTime + 0.15);
 }
 
+function playJumpSound() {
+    if (!audioCtx) return;
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    
+    // Whoosh sound - rising pitch
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(400, audioCtx.currentTime + 0.15);
+    osc.frequency.exponentialRampToValueAtTime(200, audioCtx.currentTime + 0.3);
+    
+    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+    
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.3);
+}
+
 // --- Particle System ---
 function spawnParticles(x, y, z, color, count, size = 0.4, spread = 1.0, speed = 0.5) {
     for (let i = 0; i < count; i++) {
@@ -987,6 +1010,7 @@ class Bulli {
         if (inputs.space && !this.isFlipping) {
             this.isFlipping = true;
             this.flipVelocity = this.powerups.jump.active ? 0.4 : 0.25;
+            playJumpSound();
         }
 
         // Honk Logic (F)
@@ -1332,6 +1356,42 @@ function setupJoystick(containerId, onMove) {
 }
 
 // --- Animation Loop ---
+let speedLinesCreated = false;
+
+function createSpeedLines() {
+    const container = document.getElementById('speed-lines');
+    if (!container || speedLinesCreated) return;
+    
+    // Create speed line elements
+    for (let i = 0; i < 20; i++) {
+        const line = document.createElement('div');
+        line.className = 'line';
+        line.style.left = `${Math.random() * 100}%`;
+        line.style.animationDelay = `${Math.random() * 0.3}s`;
+        line.style.height = `${20 + Math.random() * 20}%`;
+        container.appendChild(line);
+    }
+    speedLinesCreated = true;
+}
+
+function updateSpeedLines(speed, isBoosting) {
+    const container = document.getElementById('speed-lines');
+    if (!container) return;
+    
+    if (speed > 0.6) {
+        container.classList.add('active');
+        if (isBoosting) {
+            container.classList.add('boost');
+        } else {
+            container.classList.remove('boost');
+        }
+        // Adjust opacity based on speed
+        container.style.opacity = Math.min(1, (speed - 0.6) * 2);
+    } else {
+        container.classList.remove('active', 'boost');
+    }
+}
+
 function animate() {
     requestAnimationFrame(animate);
 
@@ -1347,16 +1407,25 @@ function animate() {
         if (Math.random() < 0.3) {
             spawnDriftParticle();
         }
+        
+        // Update speed lines
+        createSpeedLines();
+        updateSpeedLines(Math.abs(bulli.speed), bulli.powerups.speed.active);
 
-        // Camera Follow
-        const relativeCameraOffset = new THREE.Vector3(0, CONFIG.cameraHeight, -CONFIG.cameraDistance);
+        // Camera Follow with dynamic distance based on boost
+        const boostZoom = bulli.powerups.speed.active ? 1.4 : 1.0;
+        const speedZoom = 1 + Math.abs(bulli.speed) * 0.15; // Slight zoom based on speed
+        const targetDistance = CONFIG.cameraDistance * boostZoom * speedZoom;
+        const targetHeight = CONFIG.cameraHeight * (bulli.powerups.speed.active ? 1.2 : 1.0);
+        
+        const relativeCameraOffset = new THREE.Vector3(0, targetHeight, -targetDistance);
 
         // Apply only the Y rotation of the car group PLUS the orbit angle
         const cameraOffset = relativeCameraOffset.clone();
         cameraOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), bulli.angle + bulli.cameraOrbit);
         cameraOffset.add(bulli.group.position);
 
-        camera.position.lerp(cameraOffset, 0.1);
+        camera.position.lerp(cameraOffset, 0.08);
 
         // Look at car position + offset
         camera.lookAt(
