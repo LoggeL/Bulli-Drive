@@ -603,26 +603,38 @@ function updateParticles(dt) {
 function spawnDriftParticle() {
     if (!bulli || Math.abs(bulli.speed) < 0.3) return;
     
+    const speed = Math.abs(bulli.speed);
+    
     // Spawn behind the car
-    const offset = new THREE.Vector3(0, 0.3, -2);
+    const offset = new THREE.Vector3(
+        (Math.random() - 0.5) * 1.5, // Random X spread for wheel positions
+        0.2,
+        -2.5
+    );
     offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), bulli.angle);
     
-    const x = bulli.group.position.x + offset.x + (Math.random() - 0.5);
+    const x = bulli.group.position.x + offset.x;
     const y = bulli.group.position.y + offset.y;
-    const z = bulli.group.position.z + offset.z + (Math.random() - 0.5);
+    const z = bulli.group.position.z + offset.z;
     
-    const geo = new THREE.SphereGeometry(0.1, 4, 4);
+    // Size scales with speed (0.3 to 0.8)
+    const baseSize = 0.25 + speed * 0.5;
+    const geo = new THREE.SphereGeometry(baseSize, 6, 6);
     const mat = new THREE.MeshBasicMaterial({ 
-        color: bulli.powerups.speed.active ? 0xFF4400 : 0xCCCCCC,
+        color: bulli.powerups.speed.active ? 0xFF4400 : 0xDDDDDD,
         transparent: true,
-        opacity: 0.6
+        opacity: 0.5 + speed * 0.3
     });
     const particle = new THREE.Mesh(geo, mat);
     
     particle.position.set(x, y, z);
     particle.userData = {
-        velocity: new THREE.Vector3(0, 0.02, 0),
-        life: 0.5
+        velocity: new THREE.Vector3(
+            (Math.random() - 0.5) * 0.05,
+            0.03 + speed * 0.02,
+            (Math.random() - 0.5) * 0.05
+        ),
+        life: 0.8 + speed * 0.4
     };
     
     scene.add(particle);
