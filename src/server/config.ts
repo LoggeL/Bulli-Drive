@@ -1,4 +1,4 @@
-export const PORT = 8000;
+export const PORT = Number(process.env.PORT) || 8000;
 
 export const TERRAIN_CONFIG = {
     size: 1000,
