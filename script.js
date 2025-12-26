@@ -27,6 +27,9 @@ let terrainConfig = null;
 let myId = null;
 let myColor = null;
 let myName = "Player";
+let score = 0;
+let coins = [];
+let particles = [];
 const clock = new THREE.Clock();
 
 // --- Initialization ---
@@ -391,6 +394,187 @@ function createEnvironment(treeData) {
             });
         });
     }
+    
+    // Create collectible coins
+    createCoins();
+}
+
+// --- Coin System ---
+function createCoins() {
+    const coinCount = 30;
+    const spawnRadius = 80;
+    
+    for (let i = 0; i < coinCount; i++) {
+        const angle = (i / coinCount) * Math.PI * 2;
+        const radius = 20 + Math.random() * spawnRadius;
+        const x = Math.cos(angle) * radius + (Math.random() - 0.5) * 20;
+        const z = Math.sin(angle) * radius + (Math.random() - 0.5) * 20;
+        
+        createCoin(x, z);
+    }
+}
+
+function createCoin(x, z) {
+    const geo = new THREE.CylinderGeometry(0.8, 0.8, 0.2, 16);
+    const mat = new THREE.MeshStandardMaterial({
+        color: 0xFFD700,
+        emissive: 0xFFAA00,
+        emissiveIntensity: 0.5,
+        metalness: 0.8,
+        roughness: 0.2
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    
+    const terrainY = getTerrainHeight(x, z);
+    mesh.position.set(x, terrainY + 2, z);
+    mesh.rotation.x = Math.PI / 2;
+    mesh.castShadow = true;
+    
+    mesh.userData = {
+        type: 'coin',
+        collected: false,
+        initialY: terrainY + 2,
+        timeOffset: Math.random() * 100
+    };
+    
+    scene.add(mesh);
+    coins.push(mesh);
+}
+
+function checkCoinCollection() {
+    if (!bulli) return;
+    
+    coins.forEach(coin => {
+        if (coin.userData.collected) return;
+        
+        const dx = bulli.group.position.x - coin.position.x;
+        const dz = bulli.group.position.z - coin.position.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        
+        // Floating and spinning animation
+        coin.rotation.z += 0.05;
+        coin.position.y = coin.userData.initialY + Math.sin(Date.now() * 0.003 + coin.userData.timeOffset) * 0.3;
+        
+        if (dist < 3) {
+            collectCoin(coin);
+        }
+    });
+}
+
+function collectCoin(coin) {
+    coin.userData.collected = true;
+    coin.visible = false;
+    score += 10;
+    updateScoreUI();
+    
+    // Spawn particles
+    spawnParticles(coin.position.x, coin.position.y, coin.position.z, 0xFFD700, 8);
+    
+    // Play collect sound
+    playCollectSound();
+    
+    // Respawn coin after delay
+    setTimeout(() => {
+        coin.userData.collected = false;
+        coin.visible = true;
+    }, 10000);
+}
+
+function updateScoreUI() {
+    const scoreEl = document.getElementById('score-display');
+    if (scoreEl) {
+        scoreEl.textContent = score;
+    }
+}
+
+function playCollectSound() {
+    if (!audioCtx) return;
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(1760, audioCtx.currentTime + 0.1);
+    
+    gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+    
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.15);
+}
+
+// --- Particle System ---
+function spawnParticles(x, y, z, color, count) {
+    for (let i = 0; i < count; i++) {
+        const geo = new THREE.SphereGeometry(0.15, 8, 8);
+        const mat = new THREE.MeshBasicMaterial({ color: color });
+        const particle = new THREE.Mesh(geo, mat);
+        
+        particle.position.set(x, y, z);
+        particle.userData = {
+            velocity: new THREE.Vector3(
+                (Math.random() - 0.5) * 0.3,
+                Math.random() * 0.3 + 0.1,
+                (Math.random() - 0.5) * 0.3
+            ),
+            life: 1.0
+        };
+        
+        scene.add(particle);
+        particles.push(particle);
+    }
+}
+
+function updateParticles(dt) {
+    for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        
+        p.position.add(p.userData.velocity);
+        p.userData.velocity.y -= 0.01; // Gravity
+        p.userData.life -= dt * 2;
+        
+        p.scale.setScalar(p.userData.life);
+        
+        if (p.userData.life <= 0) {
+            scene.remove(p);
+            particles.splice(i, 1);
+        }
+    }
+}
+
+// --- Drift/Speed Particles ---
+function spawnDriftParticle() {
+    if (!bulli || Math.abs(bulli.speed) < 0.3) return;
+    
+    // Spawn behind the car
+    const offset = new THREE.Vector3(0, 0.3, -2);
+    offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), bulli.angle);
+    
+    const x = bulli.group.position.x + offset.x + (Math.random() - 0.5);
+    const y = bulli.group.position.y + offset.y;
+    const z = bulli.group.position.z + offset.z + (Math.random() - 0.5);
+    
+    const geo = new THREE.SphereGeometry(0.1, 4, 4);
+    const mat = new THREE.MeshBasicMaterial({ 
+        color: bulli.powerups.speed.active ? 0xFF4400 : 0xCCCCCC,
+        transparent: true,
+        opacity: 0.6
+    });
+    const particle = new THREE.Mesh(geo, mat);
+    
+    particle.position.set(x, y, z);
+    particle.userData = {
+        velocity: new THREE.Vector3(0, 0.02, 0),
+        life: 0.5
+    };
+    
+    scene.add(particle);
+    particles.push(particle);
 }
 
 function createPowerupMarker(p) {
@@ -870,8 +1054,17 @@ function setupMobileControls() {
         const key = btn.getAttribute('data-key');
         if (!key) return;
 
+        let activeTouchId = null;
+
         const handleStart = (e) => {
             e.preventDefault();
+            e.stopPropagation();
+            
+            // Track the specific touch
+            if (e.touches) {
+                activeTouchId = e.touches[0].identifier;
+            }
+            
             if (key === 'space') inputs.space = true;
             else if (key === 'f') inputs.f = true;
             else if (inputs.hasOwnProperty(key)) inputs[key] = true;
@@ -885,6 +1078,15 @@ function setupMobileControls() {
 
         const handleEnd = (e) => {
             e.preventDefault();
+            e.stopPropagation();
+            
+            // Only respond to our tracked touch
+            if (e.changedTouches) {
+                const isOurTouch = Array.from(e.changedTouches).some(t => t.identifier === activeTouchId);
+                if (!isOurTouch) return;
+                activeTouchId = null;
+            }
+            
             if (key === 'space') inputs.space = false;
             if (key === 'f') inputs.f = false;
             if (key !== 'f' && key !== 'space' && inputs.hasOwnProperty(key)) {
@@ -929,9 +1131,7 @@ function setupJoystick(containerId, onMove) {
     const isSmall = base.classList.contains('small');
     const maxDistance = isSmall ? 25 : 40;
     
-    let active = false;
-    let startX = 0, startY = 0;
-    let currentX = 0, currentY = 0;
+    let activeTouchId = null; // Track specific touch
 
     const getCenter = () => {
         const rect = base.getBoundingClientRect();
@@ -965,11 +1165,24 @@ function setupJoystick(containerId, onMove) {
         onMove(0, 0);
     };
 
-    // Touch events
+    // Find our touch in the touch list
+    const findTouch = (touches, id) => {
+        for (let i = 0; i < touches.length; i++) {
+            if (touches[i].identifier === id) return touches[i];
+        }
+        return null;
+    };
+
+    // Touch events with proper multi-touch handling
     base.addEventListener('touchstart', (e) => {
         e.preventDefault();
-        active = true;
-        const touch = e.touches[0];
+        e.stopPropagation();
+        
+        // Only track if we don't have an active touch
+        if (activeTouchId !== null) return;
+        
+        const touch = e.changedTouches[0];
+        activeTouchId = touch.identifier;
         updateStick(touch.clientX, touch.clientY);
         
         if (audioCtx && audioCtx.state === 'suspended') {
@@ -977,40 +1190,52 @@ function setupJoystick(containerId, onMove) {
         }
     }, { passive: false });
 
-    base.addEventListener('touchmove', (e) => {
-        e.preventDefault();
-        if (!active) return;
-        const touch = e.touches[0];
-        updateStick(touch.clientX, touch.clientY);
+    // Use document-level touchmove to track even when finger moves off joystick
+    document.addEventListener('touchmove', (e) => {
+        if (activeTouchId === null) return;
+        
+        const touch = findTouch(e.touches, activeTouchId);
+        if (touch) {
+            updateStick(touch.clientX, touch.clientY);
+        }
     }, { passive: false });
 
-    base.addEventListener('touchend', (e) => {
-        e.preventDefault();
-        active = false;
-        resetStick();
+    document.addEventListener('touchend', (e) => {
+        if (activeTouchId === null) return;
+        
+        const touch = findTouch(e.changedTouches, activeTouchId);
+        if (touch) {
+            activeTouchId = null;
+            resetStick();
+        }
     }, { passive: false });
 
-    base.addEventListener('touchcancel', (e) => {
-        e.preventDefault();
-        active = false;
-        resetStick();
+    document.addEventListener('touchcancel', (e) => {
+        if (activeTouchId === null) return;
+        
+        const touch = findTouch(e.changedTouches, activeTouchId);
+        if (touch) {
+            activeTouchId = null;
+            resetStick();
+        }
     }, { passive: false });
 
     // Mouse events (for testing on desktop)
+    let mouseActive = false;
     base.addEventListener('mousedown', (e) => {
         e.preventDefault();
-        active = true;
+        mouseActive = true;
         updateStick(e.clientX, e.clientY);
     });
 
     document.addEventListener('mousemove', (e) => {
-        if (!active) return;
+        if (!mouseActive) return;
         updateStick(e.clientX, e.clientY);
     });
 
     document.addEventListener('mouseup', () => {
-        if (active) {
-            active = false;
+        if (mouseActive) {
+            mouseActive = false;
             resetStick();
         }
     });
@@ -1025,6 +1250,13 @@ function animate() {
     if (bulli) {
         bulli.update(dt);
         checkPowerupCollection();
+        checkCoinCollection();
+        updateParticles(dt);
+        
+        // Spawn drift particles when moving fast
+        if (Math.random() < 0.3) {
+            spawnDriftParticle();
+        }
 
         // Camera Follow
         const relativeCameraOffset = new THREE.Vector3(0, CONFIG.cameraHeight, -CONFIG.cameraDistance);

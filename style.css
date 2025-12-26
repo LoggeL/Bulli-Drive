@@ -75,6 +75,37 @@ canvas {
     z-index: 10;
 }
 
+/* Score Display */
+#score-container {
+    position: fixed;
+    top: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--glass);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--glass-border);
+    padding: 0.5rem 1.5rem;
+    border-radius: 50px;
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    z-index: 100;
+}
+
+.score-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.6);
+    letter-spacing: 1px;
+}
+
+#score-display {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #FFD700;
+    text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+}
+
 .controls-hint {
     background: var(--glass);
     backdrop-filter: blur(10px);
@@ -317,16 +348,20 @@ canvas {
     position: fixed;
     top: 0;
     left: 0;
+    right: 0;
+    bottom: 0;
     width: 100%;
     height: 100%;
     pointer-events: none;
     z-index: 50;
+    /* Safe area for notched phones */
+    padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
 }
 
 /* Joystick Zones */
 .joystick-zone {
     position: absolute;
-    bottom: 20px;
+    bottom: max(20px, env(safe-area-inset-bottom, 20px));
     pointer-events: auto;
     display: flex;
     flex-direction: column;
@@ -335,11 +370,11 @@ canvas {
 }
 
 .joystick-zone.left {
-    left: 20px;
+    left: max(20px, env(safe-area-inset-left, 20px));
 }
 
 .joystick-zone.right {
-    right: 20px;
+    right: max(20px, env(safe-area-inset-right, 20px));
 }
 
 .joystick-container {
@@ -394,8 +429,8 @@ canvas {
 /* Action Buttons */
 .action-buttons {
     position: absolute;
-    right: 20px;
-    bottom: 180px;
+    right: max(20px, env(safe-area-inset-right, 20px));
+    bottom: calc(180px + env(safe-area-inset-bottom, 0px));
     display: flex;
     flex-direction: column;
     gap: 15px;
@@ -455,46 +490,59 @@ canvas {
 /* Landscape Mode Tweaks */
 @media (max-width: 900px) and (orientation: landscape) {
     .joystick-base {
-        width: 110px;
-        height: 110px;
+        width: 100px;
+        height: 100px;
     }
     
     .joystick-stick {
-        width: 50px;
-        height: 50px;
+        width: 45px;
+        height: 45px;
     }
     
     .joystick-base.small {
-        width: 70px;
-        height: 70px;
+        width: 65px;
+        height: 65px;
     }
     
     .joystick-stick.small {
-        width: 32px;
-        height: 32px;
+        width: 30px;
+        height: 30px;
     }
     
     .control-btn.action {
-        width: 60px;
-        height: 60px;
-        font-size: 1.5rem;
+        width: 55px;
+        height: 55px;
+        font-size: 1.3rem;
     }
     
     .action-buttons {
-        bottom: 140px;
-        gap: 10px;
+        bottom: calc(120px + env(safe-area-inset-bottom, 0px));
+        gap: 8px;
     }
     
     .joystick-zone {
-        bottom: 10px;
+        bottom: max(10px, env(safe-area-inset-bottom, 10px));
     }
     
     .joystick-zone.left {
-        left: 10px;
+        left: max(10px, env(safe-area-inset-left, 10px));
     }
     
     .joystick-zone.right {
-        right: 10px;
+        right: max(10px, env(safe-area-inset-right, 10px));
+    }
+    
+    #score-container {
+        top: 0.5rem;
+        padding: 0.3rem 1rem;
+    }
+    
+    #score-display {
+        font-size: 1.2rem;
+    }
+    
+    .score-label {
+        font-size: 0.7rem;
     }
 }
 
@@ -509,8 +557,8 @@ canvas {
     }
 
     #player-list {
-        top: 0.5rem;
-        right: 0.5rem;
+        top: max(0.5rem, env(safe-area-inset-top, 0.5rem));
+        right: max(0.5rem, env(safe-area-inset-right, 0.5rem));
         transform: scale(0.75);
         transform-origin: top right;
         padding: 0.6rem;
@@ -519,5 +567,9 @@ canvas {
     
     #player-list h3 {
         font-size: 0.9rem;
+    }
+    
+    #score-container {
+        top: max(0.5rem, env(safe-area-inset-top, 0.5rem));
     }
 }
