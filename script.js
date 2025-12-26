@@ -530,6 +530,48 @@ function spawnParticles(x, y, z, color, count) {
     }
 }
 
+// --- Collision Sound ---
+function playCollisionSound(intensity) {
+    if (!audioCtx) return;
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    
+    // Throttle collision sounds
+    const now = Date.now();
+    if (window.lastCollisionSound && now - window.lastCollisionSound < 200) return;
+    window.lastCollisionSound = now;
+    
+    const volume = Math.min(0.3, intensity * 0.5);
+    
+    // Create a "thud" sound with noise
+    const bufferSize = audioCtx.sampleRate * 0.15;
+    const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+    const data = buffer.getChannelData(0);
+    
+    for (let i = 0; i < bufferSize; i++) {
+        // Decaying noise
+        const decay = 1 - (i / bufferSize);
+        data[i] = (Math.random() * 2 - 1) * decay * decay;
+    }
+    
+    const noise = audioCtx.createBufferSource();
+    noise.buffer = buffer;
+    
+    // Low-pass filter for thud effect
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(200 + intensity * 100, audioCtx.currentTime);
+    
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(volume, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+    
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(audioCtx.destination);
+    
+    noise.start();
+}
+
 function updateParticles(dt) {
     for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
@@ -964,6 +1006,8 @@ class Bulli {
             if (dist < obs.radius * (this.group.scale.x || 1)) {
                 collision = true;
                 this.speed *= -0.5; // Bounce back
+                playCollisionSound(Math.abs(this.speed));
+                spawnParticles(obs.x, getTerrainHeight(obs.x, obs.z) + 2, obs.z, 0x228B22, 5);
                 break;
             }
         }
