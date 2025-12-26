@@ -1017,12 +1017,19 @@ class Bulli {
                 collision = true;
                 const impactSpeed = Math.abs(this.speed);
                 this.speed *= -0.5; // Bounce back
-                playCollisionSound(impactSpeed);
-                // Spawn leaves at tree top, with larger size and spread
-                const treeHeight = getTerrainHeight(obs.x, obs.z) + 4;
-                spawnParticles(obs.x, treeHeight, obs.z, 0x228B22, 12, 0.5, 2.5, 0.4);
-                // Also spawn some brown bark particles lower
-                spawnParticles(obs.x, treeHeight - 2, obs.z, 0x8B4513, 4, 0.3, 1.5, 0.3);
+                
+                // Only emit particles and sound if going fast enough
+                if (impactSpeed > 0.25) {
+                    playCollisionSound(impactSpeed);
+                    // Spawn leaves at tree top, with larger size and spread
+                    const treeHeight = getTerrainHeight(obs.x, obs.z) + 4;
+                    const particleCount = Math.min(16, Math.floor(impactSpeed * 15));
+                    spawnParticles(obs.x, treeHeight, obs.z, 0x228B22, particleCount, 0.5, 2.5, 0.4);
+                    // Also spawn some brown bark particles lower
+                    if (impactSpeed > 0.4) {
+                        spawnParticles(obs.x, treeHeight - 2, obs.z, 0x8B4513, 4, 0.3, 1.5, 0.3);
+                    }
+                }
                 break;
             }
         }
