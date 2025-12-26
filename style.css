@@ -31,7 +31,7 @@ canvas {
     height: 100vh;
 }
 
-/* Speed Lines Effect */
+/* Speed Lines Effect - Radial from center */
 #speed-lines {
     position: fixed;
     top: 0;
@@ -41,37 +41,45 @@ canvas {
     pointer-events: none;
     z-index: 5;
     opacity: 0;
-    transition: opacity 0.3s ease;
+    transition: opacity 0.5s ease;
     overflow: hidden;
 }
 
 #speed-lines.active {
-    opacity: 1;
+    opacity: 0.15;
+}
+
+#speed-lines.boost {
+    opacity: 0.7;
 }
 
 #speed-lines .line {
     position: absolute;
-    background: linear-gradient(to bottom, transparent, rgba(255, 255, 255, 0.8), transparent);
+    top: 50%;
+    left: 50%;
     width: 2px;
-    height: 30%;
-    animation: speedLine 0.3s linear infinite;
+    height: 50vh;
+    background: linear-gradient(to bottom, transparent 0%, rgba(255,255,255,0.2) 40%, rgba(255,255,255,0.6) 100%);
+    transform-origin: top center;
+    animation: speedLineRadial 0.5s linear infinite;
 }
 
 #speed-lines.boost .line {
-    background: linear-gradient(to bottom, transparent, rgba(255, 100, 50, 0.9), transparent);
-    width: 3px;
+    width: 4px;
+    background: linear-gradient(to bottom, transparent 0%, rgba(255,150,50,0.4) 30%, rgba(255,100,50,1) 100%);
+    animation-duration: 0.3s;
 }
 
-@keyframes speedLine {
+@keyframes speedLineRadial {
     0% {
-        transform: translateY(-100%);
+        transform: rotate(var(--angle)) scaleY(0);
         opacity: 0;
     }
-    50% {
+    30% {
         opacity: 1;
     }
     100% {
-        transform: translateY(100vh);
+        transform: rotate(var(--angle)) scaleY(1.2);
         opacity: 0;
     }
 }

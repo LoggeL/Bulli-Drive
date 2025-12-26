@@ -1362,13 +1362,14 @@ function createSpeedLines() {
     const container = document.getElementById('speed-lines');
     if (!container || speedLinesCreated) return;
     
-    // Create speed line elements
-    for (let i = 0; i < 20; i++) {
+    // Create radial speed line elements around the center
+    const lineCount = 24;
+    for (let i = 0; i < lineCount; i++) {
+        const angle = (i / lineCount) * 360;
         const line = document.createElement('div');
         line.className = 'line';
-        line.style.left = `${Math.random() * 100}%`;
-        line.style.animationDelay = `${Math.random() * 0.3}s`;
-        line.style.height = `${20 + Math.random() * 20}%`;
+        line.style.setProperty('--angle', `${angle}deg`);
+        line.style.animationDelay = `${Math.random() * 0.5}s`;
         container.appendChild(line);
     }
     speedLinesCreated = true;
@@ -1378,15 +1379,13 @@ function updateSpeedLines(speed, isBoosting) {
     const container = document.getElementById('speed-lines');
     if (!container) return;
     
-    if (speed > 0.6) {
+    // Boost always shows strong effect
+    if (isBoosting) {
+        container.classList.add('active', 'boost');
+    } else if (speed > 0.75) {
+        // Subtle effect only at very high speeds
         container.classList.add('active');
-        if (isBoosting) {
-            container.classList.add('boost');
-        } else {
-            container.classList.remove('boost');
-        }
-        // Adjust opacity based on speed
-        container.style.opacity = Math.min(1, (speed - 0.6) * 2);
+        container.classList.remove('boost');
     } else {
         container.classList.remove('active', 'boost');
     }
