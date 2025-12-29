@@ -8,6 +8,7 @@ import { updateParticles, spawnDriftParticle } from './effects/particles.js';
 import { initSounds, startEngineSound, updateEngineSound } from './effects/sounds.js';
 import { checkCoinCollection, createCoins } from './world/coins.js';
 import { checkPowerupCollection } from './world/powerups.js';
+import { updatePowerupsUI } from './ui/hud.js';
 
 function init() {
     // Scene
@@ -210,6 +211,7 @@ function animate() {
 
         checkCoinCollection();
         checkPowerupCollection();
+        updatePowerupsUI();
     }
 
     // Update remote players (smoothness)

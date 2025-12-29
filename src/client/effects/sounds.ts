@@ -61,7 +61,8 @@ export function playHonkSound(pitch: number = 1.0) {
     source.connect(gain);
     gain.connect(state.audioCtx.destination);
     
-    source.start(curTime);
+    // Skip first 0.5s of the audio file (horrible part)
+    source.start(curTime, 0.5);
     // Stop after 1s total
     source.stop(curTime + 1.0);
 }

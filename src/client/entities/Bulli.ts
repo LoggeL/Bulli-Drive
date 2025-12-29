@@ -236,7 +236,7 @@ export class Bulli {
         // but keeping it here for consistency with original script.
         if (state.inputs.f) {
             const now = Date.now();
-            if (now - this.lastHonkTime > 500) {
+            if (now - this.lastHonkTime > 1500) {
                 this.honk();
                 this.lastHonkTime = now;
 

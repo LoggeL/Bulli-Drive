@@ -79,12 +79,13 @@ canvas {
     justify-content: center;
     align-items: center;
     opacity: 1;
-    transition: opacity 0.5s ease;
+    /* Transition only applied when hiding */
 }
 
 #splash-screen.hidden {
     opacity: 0;
     pointer-events: none;
+    transition: opacity 0.5s ease;
 }
 
 .splash-content {
@@ -156,6 +157,59 @@ canvas {
 
 #start-btn:active {
     transform: translateY(1px);
+}
+
+/* Powerup Panel */
+#powerup-panel {
+    position: fixed;
+    top: 2rem;
+    left: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+    pointer-events: none;
+    z-index: 20;
+}
+
+.powerup-indicator {
+    background: var(--glass);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--glass-border);
+    border-radius: 50px; /* Pill shape */
+    padding: 0.5rem 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    color: white;
+    font-weight: 600;
+    font-size: 0.9rem;
+    animation: slideIn 0.3s ease-out;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+}
+
+.powerup-icon {
+    font-size: 1.2rem;
+}
+
+.powerup-bar-bg {
+    width: 80px;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.powerup-bar-fill {
+    height: 100%;
+    background: white;
+    transform-origin: left;
+    /* transition: width 0.1s linear; */ /* Will use transform scaleX for performance */
+    border-radius: 3px;
+}
+
+@keyframes slideIn {
+    from { transform: translateX(-20px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
 }
 
 /* UI Overlay */
