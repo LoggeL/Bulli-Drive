@@ -200,8 +200,24 @@ function updateRemotePlayer(data: any) {
 
 function removeLoader() {
     const loader = document.getElementById('loading-screen');
+    const splash = document.getElementById('splash-screen');
+    
+    // Setup splash input with saved name
+    const savedName = localStorage.getItem('bulli-player-name');
+    const splashInput = document.getElementById('splash-name-input') as HTMLInputElement;
+    if (splashInput && savedName) {
+        splashInput.value = savedName;
+    }
+    
     if (loader) {
         loader.style.opacity = '0';
-        setTimeout(() => loader.remove(), 500);
+        setTimeout(() => {
+            loader.remove();
+            // Show splash screen
+            if (splash) {
+                splash.classList.remove('hidden');
+                if (splashInput) splashInput.focus();
+            }
+        }, 500);
     }
 }

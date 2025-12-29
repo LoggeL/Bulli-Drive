@@ -30,24 +30,55 @@ function init() {
     try {
         (window as any).AudioContext = (window as any).AudioContext || (window as any).webkitAudioContext;
         state.audioCtx = new AudioContext();
-        
-        // Load sounds
-        initSounds();
     } catch (e) { /* ignore */ }
     
-    // Start engine sound on first user interaction
-    const startAudio = () => {
-        if (state.audioCtx?.state === 'suspended') {
-            state.audioCtx.resume();
-        }
-        startEngineSound();
-        document.removeEventListener('click', startAudio);
-        document.removeEventListener('keydown', startAudio);
-        document.removeEventListener('touchstart', startAudio);
-    };
-    document.addEventListener('click', startAudio);
-    document.addEventListener('keydown', startAudio);
-    document.addEventListener('touchstart', startAudio);
+    // Splash Screen Logic
+    const splashScreen = document.getElementById('splash-screen');
+    const startBtn = document.getElementById('start-btn');
+    const splashInput = document.getElementById('splash-name-input') as HTMLInputElement;
+
+    if (startBtn && splashInput) {
+        // Start game on button click
+        startBtn.addEventListener('click', async () => {
+            const name = splashInput.value.trim() || "Player";
+            
+            // Resume audio
+            if (state.audioCtx?.state === 'suspended') {
+                await state.audioCtx.resume();
+            }
+            
+            // Init and start sounds
+            await initSounds();
+            startEngineSound();
+            
+            // Save name and update player
+            localStorage.setItem('bulli-player-name', name);
+            state.myName = name;
+            
+            // Update local nametag
+            if (state.bulli && state.bulli.nametag) {
+                state.bulli.nametag.innerText = name;
+            }
+            
+            // Notify server
+            if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+                state.ws.send(JSON.stringify({
+                    type: 'rename',
+                    name: name
+                }));
+            }
+            
+            // Hide splash screen
+            if (splashScreen) {
+                splashScreen.classList.add('hidden');
+            }
+        });
+
+        // Allow Enter key to start
+        splashInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') startBtn.click();
+        });
+    }
 
     // Lighting
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
