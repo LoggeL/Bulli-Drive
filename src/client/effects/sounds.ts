@@ -51,12 +51,18 @@ export function playHonkSound(pitch: number = 1.0) {
     source.playbackRate.value = pitch;
     
     const gain = state.audioCtx.createGain();
-    gain.gain.value = 0.5;
+    const curTime = state.audioCtx.currentTime;
+    
+    gain.gain.setValueAtTime(0.5, curTime);
+    // Fade out quickly to keep it short and snappy
+    gain.gain.exponentialRampToValueAtTime(0.01, curTime + 0.15);
     
     source.connect(gain);
     gain.connect(state.audioCtx.destination);
     
-    source.start();
+    source.start(curTime);
+    // Stop early to prevent overlap
+    source.stop(curTime + 0.15);
 }
 
 export async function initEngineSound() {
