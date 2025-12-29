@@ -26,6 +26,40 @@
             <p>Assembling Bulli...</p>
         </div>
     </div>
+    
+    <script>
+        (function() {
+            const messages = [
+                "Assembling Bulli...",
+                "Inflating tires...",
+                "Polishing headlights...",
+                "Checking blinker fluid...",
+                "Calibrating honk...",
+                "Loading terrain...",
+                "Planting trees...",
+                "Paving roads...",
+                "Generating clouds...",
+                "Warming up engine...",
+                "Installing rear-view mirror...",
+                "Tuning radio...",
+                "Fastening seatbelts...",
+                "Checking suspension...",
+                "Adding racing stripes..."
+            ];
+            const loaderText = document.querySelector('.loader p');
+            if (loaderText) {
+                // Pick a random start message
+                let index = Math.floor(Math.random() * messages.length);
+                loaderText.innerText = messages[index];
+                
+                // Cycle every 1.5 seconds
+                setInterval(() => {
+                    index = (index + 1) % messages.length;
+                    loaderText.innerText = messages[index];
+                }, 1500);
+            }
+        })();
+    </script>
 
     <div id="splash-screen" class="hidden">
         <div class="splash-content">
