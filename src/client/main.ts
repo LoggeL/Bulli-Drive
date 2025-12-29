@@ -5,6 +5,7 @@ import { initWebSocket } from './network/websocket.js';
 import { initKeyboard } from './controls/keyboard.js';
 import { setupMobileControls } from './controls/mobile.js';
 import { updateParticles, spawnDriftParticle } from './effects/particles.js';
+import { initEngineSound, startEngineSound, updateEngineSound } from './effects/sounds.js';
 import { checkCoinCollection, createCoins } from './world/coins.js';
 import { checkPowerupCollection } from './world/powerups.js';
 
@@ -29,7 +30,24 @@ function init() {
     try {
         (window as any).AudioContext = (window as any).AudioContext || (window as any).webkitAudioContext;
         state.audioCtx = new AudioContext();
+        
+        // Load engine sound
+        initEngineSound();
     } catch (e) { /* ignore */ }
+    
+    // Start engine sound on first user interaction
+    const startAudio = () => {
+        if (state.audioCtx?.state === 'suspended') {
+            state.audioCtx.resume();
+        }
+        startEngineSound();
+        document.removeEventListener('click', startAudio);
+        document.removeEventListener('keydown', startAudio);
+        document.removeEventListener('touchstart', startAudio);
+    };
+    document.addEventListener('click', startAudio);
+    document.addEventListener('keydown', startAudio);
+    document.addEventListener('touchstart', startAudio);
 
     // Lighting
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
@@ -126,6 +144,10 @@ function animate() {
 
     if (state.bulli) {
         state.bulli.update(dt);
+        
+        // Update engine sound based on speed
+        const isAccelerating = state.inputs.w || state.inputs.s;
+        updateEngineSound(state.bulli.speed, isAccelerating);
         
         // Update Camera
         const carPos = state.bulli.group.position;
