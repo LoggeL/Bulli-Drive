@@ -5,7 +5,7 @@ import { initWebSocket } from './network/websocket.js';
 import { initKeyboard } from './controls/keyboard.js';
 import { setupMobileControls } from './controls/mobile.js';
 import { updateParticles, spawnDriftParticle } from './effects/particles.js';
-import { initEngineSound, startEngineSound, updateEngineSound } from './effects/sounds.js';
+import { initSounds, startEngineSound, updateEngineSound } from './effects/sounds.js';
 import { checkCoinCollection, createCoins } from './world/coins.js';
 import { checkPowerupCollection } from './world/powerups.js';
 
@@ -31,8 +31,8 @@ function init() {
         (window as any).AudioContext = (window as any).AudioContext || (window as any).webkitAudioContext;
         state.audioCtx = new AudioContext();
         
-        // Load engine sound
-        initEngineSound();
+        // Load sounds
+        initSounds();
     } catch (e) { /* ignore */ }
     
     // Start engine sound on first user interaction

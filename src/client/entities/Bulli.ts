@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
 import { state } from '../state.js';
-import { playJumpSound, playCollisionSound } from '../effects/sounds.js';
+import { playJumpSound, playCollisionSound, playHonkSound } from '../effects/sounds.js';
 import { spawnParticles } from '../effects/particles.js';
 import { getTerrainHeight } from '../world/environment.js';
 
@@ -179,29 +179,7 @@ export class Bulli {
     }
 
     honk() {
-        if (!state.audioCtx) return;
-        if (state.audioCtx.state === 'suspended') state.audioCtx.resume();
-
-        const curTime = state.audioCtx.currentTime;
-        const osc = state.audioCtx.createOscillator();
-        const gain = state.audioCtx.createGain();
-
-        osc.connect(gain);
-        gain.connect(state.audioCtx.destination);
-
-        osc.type = 'sawtooth';
-        const pitch = this.pitchOffset || 1.0;
-        const startFreq = 300 * pitch;
-        const endFreq = 350 * pitch;
-
-        osc.frequency.setValueAtTime(startFreq, curTime);
-        osc.frequency.linearRampToValueAtTime(endFreq, curTime + 0.1);
-
-        gain.gain.setValueAtTime(0.2, curTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, curTime + 0.2);
-
-        osc.start(curTime);
-        osc.stop(curTime + 0.25);
+        playHonkSound(this.pitchOffset);
     }
 
     update(dt: number) {

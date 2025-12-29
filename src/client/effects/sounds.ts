@@ -6,18 +6,62 @@ let engineSource: AudioBufferSourceNode | null = null;
 let engineGain: GainNode | null = null;
 let engineLoaded = false;
 
-export async function initEngineSound() {
-    if (!state.audioCtx || engineLoaded) return;
-    
-    try {
-        const response = await fetch('/audio/engine.wav');
-        const arrayBuffer = await response.arrayBuffer();
-        engineBuffer = await state.audioCtx.decodeAudioData(arrayBuffer);
-        engineLoaded = true;
-        console.log('Engine sound loaded');
-    } catch (e) {
-        console.warn('Failed to load engine sound:', e);
+// Honk sound state
+let honkBuffer: AudioBuffer | null = null;
+let honkLoaded = false;
+
+export async function initSounds() {
+    if (!state.audioCtx) return;
+
+    // Load engine sound
+    if (!engineLoaded) {
+        try {
+            const response = await fetch('/audio/engine.wav');
+            const arrayBuffer = await response.arrayBuffer();
+            engineBuffer = await state.audioCtx.decodeAudioData(arrayBuffer);
+            engineLoaded = true;
+            console.log('Engine sound loaded');
+        } catch (e) {
+            console.warn('Failed to load engine sound:', e);
+        }
     }
+
+    // Load honk sound
+    if (!honkLoaded) {
+        try {
+            const response = await fetch('/audio/honk.wav');
+            const arrayBuffer = await response.arrayBuffer();
+            honkBuffer = await state.audioCtx.decodeAudioData(arrayBuffer);
+            honkLoaded = true;
+            console.log('Honk sound loaded');
+        } catch (e) {
+            console.warn('Failed to load honk sound:', e);
+        }
+    }
+}
+
+export function playHonkSound(pitch: number = 1.0) {
+    if (!state.audioCtx || !honkBuffer) return;
+    if (state.audioCtx.state === 'suspended') state.audioCtx.resume();
+
+    const source = state.audioCtx.createBufferSource();
+    source.buffer = honkBuffer;
+    
+    // Vary pitch slightly based on the car's pitch offset
+    source.playbackRate.value = pitch;
+    
+    const gain = state.audioCtx.createGain();
+    gain.gain.value = 0.5;
+    
+    source.connect(gain);
+    gain.connect(state.audioCtx.destination);
+    
+    source.start();
+}
+
+export async function initEngineSound() {
+    // Deprecated, use initSounds instead
+    await initSounds();
 }
 
 export function startEngineSound() {
