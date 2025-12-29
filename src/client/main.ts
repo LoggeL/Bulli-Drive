@@ -147,7 +147,8 @@ function animate() {
         
         // Update engine sound based on speed
         const isAccelerating = state.inputs.w || state.inputs.s;
-        updateEngineSound(state.bulli.speed, isAccelerating);
+        const turboActive = state.bulli.powerups.speed.active;
+        updateEngineSound(state.bulli.speed, isAccelerating, turboActive);
         
         // Update Camera
         const carPos = state.bulli.group.position;

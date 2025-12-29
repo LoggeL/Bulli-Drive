@@ -37,13 +37,15 @@ export function startEngineSound() {
     engineSource.start();
 }
 
-export function updateEngineSound(speed: number, isAccelerating: boolean) {
+export function updateEngineSound(speed: number, isAccelerating: boolean, turboActive: boolean = false) {
     if (!engineSource || !engineGain || !state.audioCtx) return;
     
     const absSpeed = Math.abs(speed);
     
     // Volume based on speed (0 when stopped, max 0.3 at full speed)
-    const targetVolume = Math.min(0.3, absSpeed * 0.4);
+    // Slightly louder during turbo
+    const baseVolume = Math.min(0.3, absSpeed * 0.4);
+    const targetVolume = turboActive ? Math.min(0.4, baseVolume * 1.3) : baseVolume;
     
     // Smooth volume transition
     const currentTime = state.audioCtx.currentTime;
@@ -52,10 +54,12 @@ export function updateEngineSound(speed: number, isAccelerating: boolean) {
     engineGain.gain.linearRampToValueAtTime(targetVolume, currentTime + 0.1);
     
     // Playback rate based on speed (0.8 idle to 1.5 at max speed)
+    // Turbo boost adds extra pitch
     const baseRate = 0.8;
     const speedBoost = absSpeed * 0.7;
     const accelBoost = isAccelerating ? 0.1 : 0;
-    const targetRate = Math.min(1.5, baseRate + speedBoost + accelBoost);
+    const turboBoost = turboActive ? 0.4 : 0;
+    const targetRate = Math.min(2.0, baseRate + speedBoost + accelBoost + turboBoost);
     
     engineSource.playbackRate.cancelScheduledValues(currentTime);
     engineSource.playbackRate.setValueAtTime(engineSource.playbackRate.value, currentTime);
