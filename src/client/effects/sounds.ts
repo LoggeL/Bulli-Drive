@@ -40,8 +40,8 @@ export async function initSounds() {
     }
 }
 
-export function playHonkSound(pitch: number = 1.0) {
-    if (!state.audioCtx || !honkBuffer) return;
+export function playHonkSound(pitch: number = 1.0): number {
+    if (!state.audioCtx || !honkBuffer) return 0;
     if (state.audioCtx.state === 'suspended') state.audioCtx.resume();
 
     const source = state.audioCtx.createBufferSource();
@@ -51,20 +51,14 @@ export function playHonkSound(pitch: number = 1.0) {
     source.playbackRate.value = pitch;
     
     const gain = state.audioCtx.createGain();
-    const curTime = state.audioCtx.currentTime;
-    
-    gain.gain.setValueAtTime(0.5, curTime);
-    // Hold full volume for 0.5s, then fade out over the next 0.5s
-    gain.gain.setValueAtTime(0.5, curTime + 0.5);
-    gain.gain.exponentialRampToValueAtTime(0.01, curTime + 1.0);
+    gain.gain.value = 0.5;
     
     source.connect(gain);
     gain.connect(state.audioCtx.destination);
     
-    // Skip first 0.5s of the audio file (horrible part)
-    source.start(curTime, 0.5);
-    // Stop after 1s total
-    source.stop(curTime + 1.0);
+    source.start(state.audioCtx.currentTime);
+    
+    return honkBuffer.duration;
 }
 
 export async function initEngineSound() {

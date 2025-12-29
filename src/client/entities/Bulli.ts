@@ -20,7 +20,7 @@ export class Bulli {
     friction: number = 0.96;
     isFlipping: boolean = false;
     flipVelocity: number = 0;
-    lastHonkTime: number = 0;
+    nextHonkTime: number = 0;
     powerups = {
         speed: { active: false, timer: 0 },
         size: { active: false, timer: 0 },
@@ -178,8 +178,8 @@ export class Bulli {
         });
     }
 
-    honk() {
-        playHonkSound(this.pitchOffset);
+    honk(): number {
+        return playHonkSound(this.pitchOffset);
     }
 
     update(dt: number) {
@@ -236,9 +236,11 @@ export class Bulli {
         // but keeping it here for consistency with original script.
         if (state.inputs.f) {
             const now = Date.now();
-            if (now - this.lastHonkTime > 1500) {
-                this.honk();
-                this.lastHonkTime = now;
+            if (now >= this.nextHonkTime) {
+                const duration = this.honk();
+                // Cooldown: duration of sound + 0.5s silence
+                // duration is in seconds, convert to ms
+                this.nextHonkTime = now + (duration * 1000) + 500;
 
                 if (state.ws && state.ws.readyState === WebSocket.OPEN) {
                     state.ws.send(JSON.stringify({

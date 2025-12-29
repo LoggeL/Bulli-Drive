@@ -209,15 +209,16 @@ function removeLoader() {
         splashInput.value = savedName;
     }
     
+    // Show splash screen immediately behind loader
+    if (splash) {
+        splash.classList.remove('hidden');
+        if (splashInput) splashInput.focus();
+    }
+
     if (loader) {
         loader.style.opacity = '0';
         setTimeout(() => {
             loader.remove();
-            // Show splash screen
-            if (splash) {
-                splash.classList.remove('hidden');
-                if (splashInput) splashInput.focus();
-            }
         }, 500);
     }
 }
