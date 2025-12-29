@@ -131,9 +131,12 @@ export function spawnDriftParticle() {
     const offsetZ = -2 + (Math.random() - 0.5) * 0.5;
 
     if (isJumping) {
-        // When jumping, spawn following particles
-        const localOffset = new THREE.Vector3(offsetX, offsetY, offsetZ);
-        spawnFollowingParticle(carGroup, localOffset, 0xEEEEEE, size);
+        // When jumping, spawn following particles attached to the flipping body
+        // This ensures smoke comes from the exhaust even while rotating
+        const flipGroup = state.bulli.flipGroup;
+        // Adjust offsetZ to be relative to the car body (rear)
+        const localOffset = new THREE.Vector3(offsetX, offsetY, -2.2 + (Math.random() - 0.5) * 0.2);
+        spawnFollowingParticle(flipGroup, localOffset, 0xEEEEEE, size);
     } else {
         // Normal ground particles
         const worldOffsetX = Math.sin(carAngle + Math.PI) * 2;

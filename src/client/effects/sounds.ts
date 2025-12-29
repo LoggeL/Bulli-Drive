@@ -54,15 +54,16 @@ export function playHonkSound(pitch: number = 1.0) {
     const curTime = state.audioCtx.currentTime;
     
     gain.gain.setValueAtTime(0.5, curTime);
-    // Fade out
-    gain.gain.exponentialRampToValueAtTime(0.01, curTime + 0.4);
+    // Hold full volume for 0.5s, then fade out over the next 0.5s
+    gain.gain.setValueAtTime(0.5, curTime + 0.5);
+    gain.gain.exponentialRampToValueAtTime(0.01, curTime + 1.0);
     
     source.connect(gain);
     gain.connect(state.audioCtx.destination);
     
     source.start(curTime);
-    // Stop to prevent long overlaps
-    source.stop(curTime + 0.4);
+    // Stop after 1s total
+    source.stop(curTime + 1.0);
 }
 
 export async function initEngineSound() {
