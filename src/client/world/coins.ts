@@ -51,4 +51,12 @@ export function collectCoin(coin: THREE.Object3D) {
     updateScoreUI();
     playCollectSound();
     spawnParticles(coin.position.x, coin.position.y, coin.position.z, 0xFFD700, 15, 0.4, 1.5, 0.6);
+    
+    // Send score update to server
+    if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+        state.ws.send(JSON.stringify({
+            type: 'scoreUpdate',
+            score: state.score
+        }));
+    }
 }

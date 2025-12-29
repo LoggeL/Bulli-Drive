@@ -6,7 +6,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { PORT, TERRAIN_CONFIG } from './config.js';
 import { Player } from './types.js';
-import { powerups, trees, initWorld } from './world.js';
+import { powerups, trees, cityData, initWorld } from './world.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -40,7 +40,8 @@ wss.on('connection', (ws: WebSocket) => {
         z: 0,
         angle: 0,
         flipAngle: 0,
-        isFlipping: false
+        isFlipping: false,
+        score: 0
     };
 
     console.log(`Player ${name} (${id}) connected`);
@@ -53,7 +54,9 @@ wss.on('connection', (ws: WebSocket) => {
         players: getPublicPlayers(),
         powerups: powerups,
         terrain: TERRAIN_CONFIG,
-        trees: trees
+        trees: trees,
+        city: cityData,
+        scoreboard: getScoreboard()
     }));
 
     broadcast({
@@ -122,6 +125,14 @@ wss.on('connection', (ws: WebSocket) => {
                         id,
                         name: players[id].name
                     });
+                    
+                    // Broadcast updated scoreboard with new name
+                    broadcastScoreboard();
+                }
+            } else if (data.type === 'scoreUpdate') {
+                if (players[id] && typeof data.score === 'number') {
+                    players[id].score = data.score;
+                    broadcastScoreboard();
                 }
             }
         } catch (e) {
@@ -137,6 +148,7 @@ wss.on('connection', (ws: WebSocket) => {
                 type: 'removePlayer',
                 id
             });
+            broadcastScoreboard();
         }
     });
 });
@@ -152,7 +164,8 @@ function getPublicPlayer(id: string) {
         angle: p.angle,
         flipAngle: p.flipAngle,
         isFlipping: p.isFlipping,
-        scale: p.scale
+        scale: p.scale,
+        score: p.score
     };
 }
 
@@ -162,6 +175,25 @@ function getPublicPlayers() {
         publicPlayers[id] = getPublicPlayer(id);
     }
     return publicPlayers;
+}
+
+function getScoreboard() {
+    return Object.values(players)
+        .map(p => ({
+            id: p.id,
+            name: p.name,
+            score: p.score,
+            color: p.color
+        }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 10);
+}
+
+function broadcastScoreboard() {
+    broadcast({
+        type: 'scoreboard',
+        scoreboard: getScoreboard()
+    });
 }
 
 function broadcast(data: any, excludeId?: string) {

@@ -84,11 +84,14 @@
         </div>
 
         <div id="player-list">
-            <h3>Players</h3>
-            <ul id="players-ul"></ul>
+            <h3>Scoreboard</h3>
+            <ul id="scoreboard-list"></ul>
             <div class="name-change">
-                <input type="text" id="name-input" placeholder="Change name..." maxlength="20">
-                <button id="name-submit">Set</button>
+                <button id="name-toggle" class="name-toggle-btn" aria-label="Change name">&#9998;</button>
+                <div id="name-form" class="name-form hidden">
+                    <input type="text" id="name-input" placeholder="New name..." maxlength="20">
+                    <button id="name-submit">Set</button>
+                </div>
             </div>
         </div>
     </div>

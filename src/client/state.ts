@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { RemotePlayer, Inputs, PowerupData, TerrainConfig } from './types.js';
+import { RemotePlayer, Inputs, PowerupData, TerrainConfig, ScoreboardEntry } from './types.js';
 
 export const state = {
     scene: null as unknown as THREE.Scene,
@@ -25,5 +25,6 @@ export const state = {
     coins: [] as any[],
     particles: [] as any[],
     clock: new THREE.Clock(),
-    cameraAngle: 0
+    cameraAngle: 0,
+    scoreboard: [] as ScoreboardEntry[]
 };

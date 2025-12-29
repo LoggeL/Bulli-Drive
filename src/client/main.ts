@@ -57,8 +57,20 @@ function init() {
     setupMobileControls();
 
     // Rename UI
+    const nameToggle = document.getElementById('name-toggle');
+    const nameForm = document.getElementById('name-form');
     const nameSubmit = document.getElementById('name-submit');
     const nameInput = document.getElementById('name-input') as HTMLInputElement;
+    
+    if (nameToggle && nameForm) {
+        nameToggle.addEventListener('click', () => {
+            nameForm.classList.toggle('hidden');
+            if (!nameForm.classList.contains('hidden') && nameInput) {
+                nameInput.focus();
+            }
+        });
+    }
+    
     if (nameSubmit && nameInput) {
         const savedName = localStorage.getItem('bulli-player-name');
         if (savedName) {
@@ -78,6 +90,16 @@ function init() {
                 nameInput.value = '';
                 nameInput.placeholder = newName;
                 state.myName = newName;
+                
+                // Update local nametag
+                if (state.bulli && state.bulli.nametag) {
+                    state.bulli.nametag.innerText = newName;
+                }
+                
+                // Collapse the form after successful rename
+                if (nameForm) {
+                    nameForm.classList.add('hidden');
+                }
             }
         });
         nameInput.addEventListener('keypress', (e) => {

@@ -1,10 +1,11 @@
 import { state } from '../state.js';
 import { CONFIG } from '../config.js';
-import { ServerMessage, PlayerData } from '../types.js';
+import { ServerMessage, PlayerData, CityData } from '../types.js';
 import { Bulli } from '../entities/Bulli.js';
 import { createEnvironment } from '../world/environment.js';
+import { createCity } from '../world/city.js';
 import { createPowerupMarker, applyPowerupEffect } from '../world/powerups.js';
-import { updatePlayerListUI } from '../ui/playerList.js';
+import { updateScoreboardUI } from '../ui/playerList.js';
 
 export function initWebSocket() {
     state.ws = new WebSocket(CONFIG.serverUrl);
@@ -58,6 +59,14 @@ function handleServerMessage(data: ServerMessage) {
             if (data.terrain) {
                 state.terrainConfig = data.terrain;
                 createEnvironment(data.trees);
+            }
+            
+            if (data.city) {
+                createCity(data.city);
+            }
+            
+            if (data.scoreboard) {
+                state.scoreboard = data.scoreboard;
             }
 
             createLocalPlayer(state.myColor!, state.myName);
@@ -126,8 +135,13 @@ function handleServerMessage(data: ServerMessage) {
             if (rp) {
                 rp.name = data.name;
                 if (rp.nametag) rp.nametag.innerText = data.name;
-                updatePlayerListUI();
             }
+            updateScoreboardUI();
+            break;
+            
+        case 'scoreboard':
+            state.scoreboard = data.scoreboard;
+            updateScoreboardUI();
             break;
     }
 }
@@ -138,7 +152,7 @@ export function createLocalPlayer(color: number, name: string) {
     state.bulli = new Bulli(color, true);
     state.bulli.createNametag(name, true);
     state.scene.add(state.bulli.group);
-    updatePlayerListUI();
+    updateScoreboardUI();
 }
 
 export function addRemotePlayer(p: PlayerData) {
@@ -152,7 +166,7 @@ export function addRemotePlayer(p: PlayerData) {
 
     state.scene.add(remote.group);
     state.remotePlayers[p.id] = remote as any;
-    updatePlayerListUI();
+    updateScoreboardUI();
 }
 
 export function removeRemotePlayer(id: string) {
@@ -160,7 +174,7 @@ export function removeRemotePlayer(id: string) {
         state.scene.remove(state.remotePlayers[id].group);
         if (state.remotePlayers[id].nametag) state.remotePlayers[id].nametag!.remove();
         delete state.remotePlayers[id];
-        updatePlayerListUI();
+        updateScoreboardUI();
     }
 }
 

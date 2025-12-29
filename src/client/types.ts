@@ -19,6 +19,7 @@ export interface PlayerData {
     flipAngle: number;
     isFlipping: boolean;
     scale?: number;
+    score?: number;
 }
 
 export interface PowerupData {
@@ -36,6 +37,35 @@ export interface TreeData {
     x: number;
     z: number;
     height: number;
+}
+
+export interface BuildingData {
+    x: number;
+    z: number;
+    width: number;
+    depth: number;
+    height: number;
+    color: number;
+}
+
+export interface RoadData {
+    x: number;
+    z: number;
+    width: number;
+    length: number;
+    rotation: number;
+}
+
+export interface CityData {
+    buildings: BuildingData[];
+    roads: RoadData[];
+}
+
+export interface ScoreboardEntry {
+    id: string;
+    name: string;
+    score: number;
+    color: number;
 }
 
 export interface RemotePlayer {
@@ -61,11 +91,12 @@ export interface Inputs {
 }
 
 export type ServerMessage = 
-    | { type: 'init', id: string, color: number, name: string, players: Record<string, PlayerData>, powerups: PowerupData[], terrain: TerrainConfig, trees: TreeData[] }
+    | { type: 'init', id: string, color: number, name: string, players: Record<string, PlayerData>, powerups: PowerupData[], terrain: TerrainConfig, trees: TreeData[], city: CityData, scoreboard: ScoreboardEntry[] }
     | { type: 'newPlayer', player: PlayerData }
     | { type: 'update', id: string, x: number, z: number, angle: number, flipAngle: number, isFlipping: boolean, scale?: number }
     | { type: 'removePlayer', id: string }
     | { type: 'powerupCollected', powerupId: number, playerId: string }
     | { type: 'powerupReset', powerupId: number }
     | { type: 'honk', id: string }
-    | { type: 'playerRenamed', id: string, name: string };
+    | { type: 'playerRenamed', id: string, name: string }
+    | { type: 'scoreboard', scoreboard: ScoreboardEntry[] };

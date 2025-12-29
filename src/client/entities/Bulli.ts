@@ -249,7 +249,8 @@ export class Bulli {
 
         if (state.inputs.space && !this.isFlipping) {
             this.isFlipping = true;
-            this.flipVelocity = this.powerups.jump.active ? 0.4 : 0.25;
+            // Super jump: slower rotation for longer air time, same 3x height
+            this.flipVelocity = this.powerups.jump.active ? 0.12 : 0.25;
             playJumpSound();
         }
 

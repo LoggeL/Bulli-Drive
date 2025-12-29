@@ -262,7 +262,7 @@ canvas {
     opacity: 1;
 }
 
-/* Player List */
+/* Player List / Scoreboard */
 #player-list {
     position: fixed;
     top: 2rem;
@@ -273,8 +273,8 @@ canvas {
     padding: 1rem;
     border-radius: 12px;
     z-index: 10;
-    min-width: 200px;
-    pointer-events: auto; /* Enable interaction */
+    min-width: 220px;
+    pointer-events: auto;
 }
 
 #player-list h3 {
@@ -284,16 +284,34 @@ canvas {
     padding-bottom: 0.5rem;
 }
 
-#players-ul {
+#scoreboard-list {
     list-style: none;
+    max-height: 300px;
+    overflow-y: auto;
 }
 
-#players-ul li {
+.scoreboard-row {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    margin-bottom: 0.3rem;
-    font-size: 0.9rem;
+    padding: 0.3rem 0.2rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+}
+
+.scoreboard-row.me {
+    background: rgba(255, 87, 87, 0.2);
+}
+
+.scoreboard-row .rank {
+    width: 20px;
+    text-align: center;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.scoreboard-row.me .rank {
+    color: var(--primary);
 }
 
 .player-dot {
@@ -301,15 +319,66 @@ canvas {
     height: 10px;
     border-radius: 50%;
     display: inline-block;
+    flex-shrink: 0;
+}
+
+.player-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.player-score {
+    font-weight: 700;
+    color: #FFD700;
+    min-width: 35px;
+    text-align: right;
 }
 
 /* Name Change UI */
 .name-change {
-    margin-top: 1rem;
+    margin-top: 0.8rem;
     display: flex;
+    align-items: center;
     gap: 0.5rem;
     border-top: 1px solid rgba(255, 255, 255, 0.1);
     padding-top: 0.8rem;
+}
+
+.name-toggle-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    width: 28px;
+    height: 28px;
+    color: rgba(255, 255, 255, 0.7);
+    cursor: pointer;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.name-toggle-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+.name-form {
+    display: flex;
+    gap: 0.4rem;
+    flex: 1;
+    overflow: hidden;
+    transition: all 0.25s ease;
+}
+
+.name-form.hidden {
+    max-width: 0;
+    opacity: 0;
+    pointer-events: none;
 }
 
 #name-input {
@@ -319,9 +388,10 @@ canvas {
     color: white;
     padding: 0.3rem 0.5rem;
     font-size: 0.8rem;
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     outline: none;
-    user-select: auto; /* Allow text cursor and selection */
+    user-select: auto;
 }
 
 #name-input:focus {
