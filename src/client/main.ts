@@ -176,10 +176,11 @@ function animate() {
     if (state.bulli) {
         state.bulli.update(dt);
         
-        // Update engine sound based on speed
+        // Update engine sound based on speed and jump height
         const isAccelerating = state.inputs.w || state.inputs.s;
         const turboActive = state.bulli.powerups.speed.active;
-        updateEngineSound(state.bulli.speed, isAccelerating, turboActive);
+        const jumpHeight = state.bulli.flipGroup.position.y;
+        updateEngineSound(state.bulli.speed, isAccelerating, turboActive, jumpHeight);
         
         // Update Camera
         const carPos = state.bulli.group.position;

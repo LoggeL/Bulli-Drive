@@ -54,15 +54,15 @@ export function playHonkSound(pitch: number = 1.0) {
     const curTime = state.audioCtx.currentTime;
     
     gain.gain.setValueAtTime(0.5, curTime);
-    // Fade out quickly to keep it short and snappy
-    gain.gain.exponentialRampToValueAtTime(0.01, curTime + 0.15);
+    // Fade out
+    gain.gain.exponentialRampToValueAtTime(0.01, curTime + 0.4);
     
     source.connect(gain);
     gain.connect(state.audioCtx.destination);
     
     source.start(curTime);
-    // Stop early to prevent overlap
-    source.stop(curTime + 0.15);
+    // Stop to prevent long overlaps
+    source.stop(curTime + 0.4);
 }
 
 export async function initEngineSound() {
@@ -87,7 +87,7 @@ export function startEngineSound() {
     engineSource.start();
 }
 
-export function updateEngineSound(speed: number, isAccelerating: boolean, turboActive: boolean = false) {
+export function updateEngineSound(speed: number, isAccelerating: boolean, turboActive: boolean = false, jumpHeight: number = 0) {
     if (!engineSource || !engineGain || !state.audioCtx) return;
     
     const absSpeed = Math.abs(speed);
@@ -105,11 +105,14 @@ export function updateEngineSound(speed: number, isAccelerating: boolean, turboA
     
     // Playback rate based on speed (0.8 idle to 1.5 at max speed)
     // Turbo boost adds extra pitch
+    // Jump height adds pitch (revving in air)
     const baseRate = 0.8;
     const speedBoost = absSpeed * 0.7;
     const accelBoost = isAccelerating ? 0.1 : 0;
     const turboBoost = turboActive ? 0.4 : 0;
-    const targetRate = Math.min(2.0, baseRate + speedBoost + accelBoost + turboBoost);
+    const jumpBoost = Math.max(0, Math.min(0.8, jumpHeight * 0.05)); // Cap pitch increase from height
+
+    const targetRate = Math.min(2.5, baseRate + speedBoost + accelBoost + turboBoost + jumpBoost);
     
     engineSource.playbackRate.cancelScheduledValues(currentTime);
     engineSource.playbackRate.setValueAtTime(engineSource.playbackRate.value, currentTime);
