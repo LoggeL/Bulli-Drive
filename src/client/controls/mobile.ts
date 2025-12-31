@@ -42,12 +42,13 @@ function setupJoystick(containerId: string, onMove: (x: number, y: number) => vo
     if (!stick) return;
 
     let activeTouchId: number | null = null;
-    const rect = container.getBoundingClientRect();
-    const centerX = rect.width / 2;
-    const centerY = rect.height / 2;
-    const maxRadius = rect.width / 2;
 
     const handleTouch = (touch: Touch) => {
+        const rect = container.getBoundingClientRect();
+        const centerX = rect.width / 2;
+        const centerY = rect.height / 2;
+        const maxRadius = rect.width / 2;
+        
         const dx = touch.clientX - (rect.left + centerX);
         const dy = touch.clientY - (rect.top + centerY);
         const dist = Math.sqrt(dx * dx + dy * dy);
