@@ -61,11 +61,6 @@ export function playHonkSound(pitch: number = 1.0): number {
     return honkBuffer.duration;
 }
 
-export async function initEngineSound() {
-    // Deprecated, use initSounds instead
-    await initSounds();
-}
-
 export function startEngineSound() {
     if (!state.audioCtx || !engineBuffer || engineSource) return;
     if (state.audioCtx.state === 'suspended') state.audioCtx.resume();

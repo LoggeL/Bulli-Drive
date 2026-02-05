@@ -6,6 +6,7 @@ import { createEnvironment } from '../world/environment.js';
 import { createCity } from '../world/city.js';
 import { createPowerupMarker, applyPowerupEffect } from '../world/powerups.js';
 import { updateScoreboardUI } from '../ui/playerList.js';
+import { getTerrainHeight } from '../world/environment.js';
 
 export function initWebSocket() {
     state.ws = new WebSocket(CONFIG.serverUrl);
@@ -109,6 +110,9 @@ function handleServerMessage(data: ServerMessage) {
                 if ((p as any).mesh) {
                     (p as any).mesh.material.opacity = 0.2;
                 }
+                if ((p as any).iconMat) {
+                    (p as any).iconMat.opacity = 0.2;
+                }
                 if (data.playerId === state.myId) {
                     applyPowerupEffect(p);
                 }
@@ -121,6 +125,9 @@ function handleServerMessage(data: ServerMessage) {
                 pr.collected = false;
                 if ((pr as any).mesh) {
                     (pr as any).mesh.material.opacity = 0.8;
+                }
+                if ((pr as any).iconMat) {
+                    (pr as any).iconMat.opacity = 0.8;
                 }
             }
             break;
@@ -160,7 +167,9 @@ export function addRemotePlayer(p: PlayerData) {
 
     const remote = new Bulli(p.color, false);
     remote.name = p.name;
-    remote.group.position.set(p.x || 0, 0, p.z || 0);
+    const px = p.x || 0;
+    const pz = p.z || 0;
+    remote.group.position.set(px, getTerrainHeight(px, pz), pz);
     remote.group.rotation.y = p.angle || 0;
     remote.createNametag(p.name, false);
 
@@ -178,10 +187,10 @@ export function removeRemotePlayer(id: string) {
     }
 }
 
-function updateRemotePlayer(data: any) {
+function updateRemotePlayer(data: { id: string; x: number; z: number; y?: number; angle: number; flipAngle: number; isFlipping: boolean; scale?: number }) {
     const remote = state.remotePlayers[data.id];
     if (remote) {
-        remote.group.position.set(data.x, 0, data.z);
+        remote.group.position.set(data.x, getTerrainHeight(data.x, data.z), data.z);
         remote.group.rotation.y = data.angle;
         remote.flipGroup.rotation.x = data.flipAngle;
         if (data.scale) remote.group.scale.set(data.scale, data.scale, data.scale);

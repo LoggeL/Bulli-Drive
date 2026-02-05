@@ -93,7 +93,7 @@ export interface Inputs {
 export type ServerMessage = 
     | { type: 'init', id: string, color: number, name: string, players: Record<string, PlayerData>, powerups: PowerupData[], terrain: TerrainConfig, trees: TreeData[], city: CityData, scoreboard: ScoreboardEntry[] }
     | { type: 'newPlayer', player: PlayerData }
-    | { type: 'update', id: string, x: number, z: number, angle: number, flipAngle: number, isFlipping: boolean, scale?: number }
+    | { type: 'update', id: string, x: number, z: number, y?: number, angle: number, flipAngle: number, isFlipping: boolean, scale?: number }
     | { type: 'removePlayer', id: string }
     | { type: 'powerupCollected', powerupId: number, playerId: string }
     | { type: 'powerupReset', powerupId: number }

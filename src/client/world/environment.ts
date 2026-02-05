@@ -27,14 +27,19 @@ export function createEnvironment(treeData: TreeData[]) {
     }
     geometry.computeVertexNormals();
 
-    const material = new THREE.MeshStandardMaterial({ 
-        color: 0x3b7d3b, 
-        roughness: 0.8,
-        metalness: 0.2
+    const material = new THREE.MeshStandardMaterial({
+        color: 0x4a8c3f,
+        roughness: 0.9,
+        metalness: 0.0
     });
     const ground = new THREE.Mesh(geometry, material);
     ground.receiveShadow = true;
     state.scene.add(ground);
+
+    // Shared tree materials
+    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5D4037, roughness: 0.9 });
+    const foliageMat = new THREE.MeshStandardMaterial({ color: 0x2E7D32, roughness: 0.8 });
+    const foliageLightMat = new THREE.MeshStandardMaterial({ color: 0x3E8D42, roughness: 0.8 });
 
     // Obstacles (Trees)
     state.obstacles = [];
@@ -44,19 +49,25 @@ export function createEnvironment(treeData: TreeData[]) {
 
         // Trunk
         const trunkGeo = new THREE.CylinderGeometry(0.5, 0.7, t.height, 8);
-        const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5D4037 });
         const trunk = new THREE.Mesh(trunkGeo, trunkMat);
         trunk.position.y = t.height / 2;
         trunk.castShadow = true;
+        trunk.receiveShadow = true;
         treeGroup.add(trunk);
 
-        // Foliage
-        const foliageGeo = new THREE.ConeGeometry(3, t.height * 1.5, 8);
-        const foliageMat = new THREE.MeshStandardMaterial({ color: 0x2E7D32 });
-        const foliage = new THREE.Mesh(foliageGeo, foliageMat);
-        foliage.position.y = t.height + (t.height * 0.75);
-        foliage.castShadow = true;
-        treeGroup.add(foliage);
+        // Lower foliage (wider)
+        const foliageGeo1 = new THREE.ConeGeometry(3.5, t.height * 1.0, 8);
+        const foliage1 = new THREE.Mesh(foliageGeo1, foliageMat);
+        foliage1.position.y = t.height + (t.height * 0.4);
+        foliage1.castShadow = true;
+        treeGroup.add(foliage1);
+
+        // Upper foliage (narrower, lighter)
+        const foliageGeo2 = new THREE.ConeGeometry(2.2, t.height * 0.9, 8);
+        const foliage2 = new THREE.Mesh(foliageGeo2, foliageLightMat);
+        foliage2.position.y = t.height + (t.height * 1.0);
+        foliage2.castShadow = true;
+        treeGroup.add(foliage2);
 
         state.scene.add(treeGroup);
         state.obstacles.push({ x: t.x, z: t.z, radius: 1.5 } as any);

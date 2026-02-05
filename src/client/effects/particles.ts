@@ -14,14 +14,14 @@ interface Particle {
 
 export function spawnParticles(x: number, y: number, z: number, color: number, count: number, size = 0.4, spread = 1.0, speed = 0.5) {
     const geo = new THREE.BoxGeometry(size, size, size);
-    const mat = new THREE.MeshStandardMaterial({ 
-        color: color,
-        transparent: true,
-        opacity: 1,
-        roughness: 0.8
-    });
 
     for (let i = 0; i < count; i++) {
+        const mat = new THREE.MeshStandardMaterial({
+            color: color,
+            transparent: true,
+            opacity: 1,
+            roughness: 0.8
+        });
         const p = new THREE.Mesh(geo, mat);
         p.position.set(x, y, z);
         
@@ -77,6 +77,7 @@ export function updateParticles(dt: number) {
         
         if (p.life <= 0) {
             state.scene.remove(p.mesh);
+            if (p.mesh.material instanceof THREE.Material) p.mesh.material.dispose();
             state.particles.splice(i, 1);
             continue;
         }

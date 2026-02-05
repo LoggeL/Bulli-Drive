@@ -5,6 +5,10 @@ import { playJumpSound, playCollisionSound, playHonkSound } from '../effects/sou
 import { spawnParticles } from '../effects/particles.js';
 import { getTerrainHeight } from '../world/environment.js';
 
+// Reusable vectors to avoid per-frame allocations
+const _scaleBig = new THREE.Vector3(2.5, 2.5, 2.5);
+const _scaleNormal = new THREE.Vector3(1, 1, 1);
+
 export class Bulli {
     group: THREE.Group;
     flipGroup: THREE.Group;
@@ -75,38 +79,77 @@ export class Bulli {
         const redMat = new THREE.MeshStandardMaterial({ color: this.colorCode, roughness: 0.2, metalness: 0.1 });
         const whiteMat = new THREE.MeshStandardMaterial({ color: 0xFFFFFF, roughness: 0.2, metalness: 0.1 });
         const chromeMat = new THREE.MeshStandardMaterial({ color: 0xEEEEEE, roughness: 0.0, metalness: 1.0 });
-        const glassMat = new THREE.MeshStandardMaterial({ color: 0x334455, roughness: 0.0, metalness: 0.9 });
+        const glassMat = new THREE.MeshStandardMaterial({
+            color: 0x88BBDD,
+            roughness: 0.0,
+            metalness: 0.3,
+            transparent: true,
+            opacity: 0.6
+        });
         const rubberMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 });
+        const headlightMat = new THREE.MeshStandardMaterial({
+            color: 0xFFFFCC,
+            emissive: 0xFFFFCC,
+            emissiveIntensity: 0.8,
+            roughness: 0.1,
+            metalness: 0.0
+        });
+        const taillightMat = new THREE.MeshStandardMaterial({
+            color: 0xFF2222,
+            emissive: 0xFF0000,
+            emissiveIntensity: 0.6,
+            roughness: 0.2,
+            metalness: 0.0
+        });
 
         const chassisY = 0.8;
 
+        // Lower body (colored)
         const lowerBodyGeo = new THREE.BoxGeometry(width, heightLower, length);
         const lowerBody = new THREE.Mesh(lowerBodyGeo, redMat);
         lowerBody.position.y = chassisY + heightLower / 2;
         lowerBody.castShadow = true;
+        lowerBody.receiveShadow = true;
         this.flipGroup.add(lowerBody);
 
+        // Upper body (white)
         const upperBodyGeo = new THREE.BoxGeometry(width - 0.1, heightUpper, length - 0.2);
         const upperBody = new THREE.Mesh(upperBodyGeo, whiteMat);
         upperBody.position.y = chassisY + heightLower + heightUpper / 2;
         upperBody.castShadow = true;
+        upperBody.receiveShadow = true;
         this.flipGroup.add(upperBody);
 
-        const winW = (width / 2) - 0.3;
-        const winH = 0.7;
-        const leftWinGeo = new THREE.PlaneGeometry(winW, winH);
-        const leftWin = new THREE.Mesh(leftWinGeo, glassMat);
-        leftWin.position.set(-winW / 2 - 0.05, upperBody.position.y, length / 2 - 0.1);
-        leftWin.rotation.x = -Math.PI / 12;
-        leftWin.position.z += 0.02;
-        this.flipGroup.add(leftWin);
+        // Single front windshield
+        const windshieldW = width - 0.6;
+        const windshieldH = 0.8;
+        const windshieldGeo = new THREE.PlaneGeometry(windshieldW, windshieldH);
+        const windshield = new THREE.Mesh(windshieldGeo, glassMat);
+        windshield.position.set(0, upperBody.position.y, length / 2 - 0.05);
+        windshield.rotation.x = -Math.PI / 12;
+        windshield.position.z += 0.02;
+        this.flipGroup.add(windshield);
 
-        const rightWin = new THREE.Mesh(leftWinGeo, glassMat);
-        rightWin.position.set(winW / 2 + 0.05, upperBody.position.y, length / 2 - 0.1);
-        rightWin.rotation.x = -Math.PI / 12;
-        rightWin.position.z += 0.02;
-        this.flipGroup.add(rightWin);
+        // Side windows
+        const sideWinGeo = new THREE.PlaneGeometry(length * 0.35, windshieldH * 0.85);
+        const leftSideWin = new THREE.Mesh(sideWinGeo, glassMat);
+        leftSideWin.position.set(-width / 2 - 0.01, upperBody.position.y, length * 0.1);
+        leftSideWin.rotation.y = -Math.PI / 2;
+        this.flipGroup.add(leftSideWin);
 
+        const rightSideWin = new THREE.Mesh(sideWinGeo, glassMat);
+        rightSideWin.position.set(width / 2 + 0.01, upperBody.position.y, length * 0.1);
+        rightSideWin.rotation.y = Math.PI / 2;
+        this.flipGroup.add(rightSideWin);
+
+        // Rear window
+        const rearWinGeo = new THREE.PlaneGeometry(windshieldW * 0.7, windshieldH * 0.7);
+        const rearWin = new THREE.Mesh(rearWinGeo, glassMat);
+        rearWin.position.set(0, upperBody.position.y, -length / 2 + 0.21);
+        rearWin.rotation.y = Math.PI;
+        this.flipGroup.add(rearWin);
+
+        // Eyes (chibi style)
         const eyeRadius = 0.45;
         const eyeGeo = new THREE.SphereGeometry(eyeRadius, 32, 16);
         const eyeMat = new THREE.MeshStandardMaterial({ color: 0xFFFFFF, roughness: 0.1 });
@@ -119,30 +162,55 @@ export class Bulli {
         lpMesh.position.z = eyeRadius - 0.1;
         leftEyeGroup.add(leMesh);
         leftEyeGroup.add(lpMesh);
-        leftEyeGroup.position.set(-1, lowerBody.position.y + 0.1, length / 2);
+        leftEyeGroup.position.set(-0.8, lowerBody.position.y + 0.15, length / 2 + 0.05);
         this.flipGroup.add(leftEyeGroup);
 
         const rightEyeGroup = leftEyeGroup.clone();
-        rightEyeGroup.position.set(1, lowerBody.position.y + 0.1, length / 2);
+        rightEyeGroup.position.set(0.8, lowerBody.position.y + 0.15, length / 2 + 0.05);
         this.flipGroup.add(rightEyeGroup);
 
+        // VW Logo (chrome disc on front)
         const logoGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.05, 32);
         const logo = new THREE.Mesh(logoGeo, chromeMat);
         logo.rotation.x = Math.PI / 2;
         logo.position.set(0, lowerBody.position.y + 0.3, length / 2 + 0.02);
         this.flipGroup.add(logo);
 
+        // Headlights
+        const headlightGeo = new THREE.SphereGeometry(0.25, 16, 8);
+        const leftHeadlight = new THREE.Mesh(headlightGeo, headlightMat);
+        leftHeadlight.position.set(-width / 2 + 0.3, lowerBody.position.y - 0.2, length / 2 + 0.05);
+        leftHeadlight.scale.z = 0.5;
+        this.flipGroup.add(leftHeadlight);
+
+        const rightHeadlight = new THREE.Mesh(headlightGeo, headlightMat);
+        rightHeadlight.position.set(width / 2 - 0.3, lowerBody.position.y - 0.2, length / 2 + 0.05);
+        rightHeadlight.scale.z = 0.5;
+        this.flipGroup.add(rightHeadlight);
+
+        // Taillights
+        const taillightGeo = new THREE.BoxGeometry(0.4, 0.3, 0.1);
+        const leftTaillight = new THREE.Mesh(taillightGeo, taillightMat);
+        leftTaillight.position.set(-width / 2 + 0.3, lowerBody.position.y - 0.1, -length / 2 - 0.05);
+        this.flipGroup.add(leftTaillight);
+
+        const rightTaillight = new THREE.Mesh(taillightGeo, taillightMat);
+        rightTaillight.position.set(width / 2 - 0.3, lowerBody.position.y - 0.1, -length / 2 - 0.05);
+        this.flipGroup.add(rightTaillight);
+
+        // Bumpers
         const bumperGeo = new THREE.BoxGeometry(width + 0.2, 0.3, 0.4);
-        const frontBumper = new THREE.Mesh(bumperGeo, whiteMat);
+        const frontBumper = new THREE.Mesh(bumperGeo, chromeMat);
         frontBumper.position.set(0, 0.5, length / 2 + 0.2);
         frontBumper.castShadow = true;
         this.flipGroup.add(frontBumper);
 
-        const rearBumper = new THREE.Mesh(bumperGeo, whiteMat);
+        const rearBumper = new THREE.Mesh(bumperGeo, chromeMat);
         rearBumper.position.set(0, 0.5, -length / 2 - 0.2);
         rearBumper.castShadow = true;
         this.flipGroup.add(rearBumper);
 
+        // Wheels
         this.wheels = [];
         const wheelRadius = 0.65;
         const wheelWidth = 0.4;
@@ -196,7 +264,7 @@ export class Bulli {
             }
         });
 
-        if (!this.isLocal) return; 
+        if (!this.isLocal) return;
         if (state.isModalOpen) return;
 
         const frame = dt * 60;
@@ -204,17 +272,16 @@ export class Bulli {
         let currentAccel = this.acceleration;
         let currentMaxSpeed = this.maxSpeed;
         if (this.powerups.speed.active) {
-            // Super fast (3x) decaying to 1x over 5s
             const t = Math.max(0, this.powerups.speed.timer);
-            const factor = 1 + (t / 5) * 2; 
+            const factor = 1 + (t / 5) * 2;
             currentAccel *= factor;
             currentMaxSpeed *= factor;
         }
 
         if (this.powerups.size.active) {
-            this.group.scale.lerp(new THREE.Vector3(2.5, 2.5, 2.5), 0.1);
+            this.group.scale.lerp(_scaleBig, 0.1);
         } else {
-            this.group.scale.lerp(new THREE.Vector3(1, 1, 1), 0.1);
+            this.group.scale.lerp(_scaleNormal, 0.1);
         }
 
         if (state.inputs.w) {
@@ -227,19 +294,14 @@ export class Bulli {
 
         if (state.inputs.space && !this.isFlipping) {
             this.isFlipping = true;
-            // Super jump: slower rotation for longer air time, same 3x height
             this.flipVelocity = this.powerups.jump.active ? 0.12 : 0.25;
             playJumpSound();
         }
 
-        // Honk logic handled in main loop or input handler generally, 
-        // but keeping it here for consistency with original script.
         if (state.inputs.f) {
             const now = Date.now();
             if (now >= this.nextHonkTime) {
                 const duration = this.honk();
-                // Cooldown: duration of sound + 0.5s silence
-                // duration is in seconds, convert to ms
                 this.nextHonkTime = now + (duration * 1000) + 500;
 
                 if (state.ws && state.ws.readyState === WebSocket.OPEN) {
@@ -279,8 +341,8 @@ export class Bulli {
                 if (dist < obs.radius * (this.group.scale.x || 1)) {
                     collision = true;
                     this.speed *= -0.5;
-                    
-                    if (Math.abs(this.speed) > 0.125) { // Original was 0.25 but impactSpeed was abs(this.speed) before bounce
+
+                    if (Math.abs(this.speed) > 0.125) {
                         playCollisionSound(Math.abs(this.speed) * 2);
                         const treeHeight = getTerrainHeight(obs.x, obs.z) + 4;
                         const particleCount = Math.min(16, Math.floor(Math.abs(this.speed) * 30));
