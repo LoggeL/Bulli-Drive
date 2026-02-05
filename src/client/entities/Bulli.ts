@@ -560,12 +560,15 @@ export class Bulli {
                     p.active = false;
                     if (key === 'size') this.group.scale.set(1, 1, 1);
                     if (key === 'ghost') {
-                        // Restore opacity
+                        // Restore opacity and transparent flag
                         this.flipGroup.traverse((child) => {
-                            if ((child as THREE.Mesh).material && child !== this.shieldMesh) {
+                            if ((child as THREE.Mesh).isMesh && child !== this.shieldMesh) {
                                 const mat = (child as THREE.Mesh).material as THREE.MeshStandardMaterial;
-                                if (mat.transparent && mat.userData?.originalOpacity !== undefined) {
+                                if (mat && mat.userData?.originalOpacity !== undefined) {
                                     mat.opacity = mat.userData.originalOpacity;
+                                    mat.transparent = mat.userData.wasTransparent ?? false;
+                                    delete mat.userData.originalOpacity;
+                                    delete mat.userData.wasTransparent;
                                 }
                             }
                         });
@@ -587,16 +590,18 @@ export class Bulli {
             }
         }
 
-        // Ghost transparency effect
+        // Ghost transparency effect - make ALL materials semi-transparent
         if (this.powerups.ghost.active) {
             this.flipGroup.traverse((child) => {
-                if ((child as THREE.Mesh).material && child !== this.shieldMesh) {
+                if ((child as THREE.Mesh).isMesh && child !== this.shieldMesh) {
                     const mat = (child as THREE.Mesh).material as THREE.MeshStandardMaterial;
-                    if (mat.transparent) {
+                    if (mat) {
                         if (mat.userData?.originalOpacity === undefined) {
                             mat.userData = mat.userData || {};
                             mat.userData.originalOpacity = mat.opacity;
+                            mat.userData.wasTransparent = mat.transparent;
                         }
+                        mat.transparent = true;
                         mat.opacity = 0.3 + Math.sin(Date.now() * 0.003) * 0.1;
                     }
                 }

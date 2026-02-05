@@ -114,6 +114,55 @@ export function updateParticles(dt: number) {
     }
 }
 
+export function spawnBoostFireParticle() {
+    if (!state.bulli) return;
+    const speed = Math.abs(state.bulli.speed);
+    if (speed < 0.05) return;
+
+    const carGroup = state.bulli.group;
+    const carAngle = state.bulli.angle;
+
+    // Fire colors: orange, red, yellow
+    const fireColors = [0xFF4500, 0xFF6600, 0xFFAA00, 0xFF2200, 0xFFDD00];
+    const color = fireColors[Math.floor(Math.random() * fireColors.length)];
+    const size = 0.3 + speed * 0.4;
+
+    // Spawn from both exhaust pipes (rear left and rear right)
+    for (let side = -1; side <= 1; side += 2) {
+        const offsetX = side * 0.6;
+        const rearDist = 2.5;
+
+        const worldX = carGroup.position.x - Math.sin(carAngle) * rearDist + Math.cos(carAngle) * offsetX;
+        const worldZ = carGroup.position.z - Math.cos(carAngle) * rearDist - Math.sin(carAngle) * offsetX;
+
+        // Fire shoots backward and slightly upward
+        const backVx = -Math.sin(carAngle) * speed * 0.3;
+        const backVz = -Math.cos(carAngle) * speed * 0.3;
+
+        const geo = new THREE.BoxGeometry(size, size, size);
+        const mat = new THREE.MeshStandardMaterial({
+            color,
+            transparent: true,
+            opacity: 0.9,
+            emissive: color,
+            emissiveIntensity: 0.8,
+            roughness: 1.0
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(worldX + (Math.random() - 0.5) * 0.3, carGroup.position.y + 0.4, worldZ + (Math.random() - 0.5) * 0.3);
+
+        state.particles.push({
+            mesh,
+            vx: backVx + (Math.random() - 0.5) * 0.15,
+            vy: 0.05 + Math.random() * 0.08,
+            vz: backVz + (Math.random() - 0.5) * 0.15,
+            life: 1.0,
+            decay: 0.04 + Math.random() * 0.03
+        });
+        state.scene.add(mesh);
+    }
+}
+
 export function spawnDriftParticle() {
     if (!state.bulli) return;
     const speed = Math.abs(state.bulli.speed);

@@ -4,11 +4,11 @@ import { state } from './state.js';
 import { initWebSocket } from './network/websocket.js';
 import { initKeyboard } from './controls/keyboard.js';
 import { setupMobileControls } from './controls/mobile.js';
-import { updateParticles, spawnDriftParticle } from './effects/particles.js';
+import { updateParticles, spawnDriftParticle, spawnBoostFireParticle } from './effects/particles.js';
 import { initSounds, startEngineSound, updateEngineSound } from './effects/sounds.js';
 import { checkCoinCollection, animateCoins } from './world/coins.js';
 import { checkPowerupCollection, animatePowerups } from './world/powerups.js';
-import { updatePowerupsUI, updateSpeedometer, updateMinimap, updateHealthBar } from './ui/hud.js';
+import { updatePowerupsUI, updateSpeedometer, updateHealthBar } from './ui/hud.js';
 import { updateProjectiles } from './world/projectiles.js';
 import { initSplashScreen, initAboutModal, initRenameUI } from './ui/screens.js';
 import { animateFountain } from './world/city.js';
@@ -18,6 +18,11 @@ const _cameraTarget = new THREE.Vector3();
 const _lookAtTarget = new THREE.Vector3();
 
 let dirLight: THREE.DirectionalLight;
+
+// FPS counter
+let fpsFrames = 0;
+let fpsLastTime = performance.now();
+let fpsDisplay: HTMLElement | null = null;
 
 function init() {
     // Scene
@@ -183,9 +188,13 @@ function animate() {
         checkCoinCollection();
         checkPowerupCollection();
         updateProjectiles(dt);
+        // Boost fire trails
+        if (state.bulli.powerups.speed.active && Math.abs(state.bulli.speed) > 0.05) {
+            spawnBoostFireParticle();
+        }
+
         updatePowerupsUI();
         updateSpeedometer();
-        updateMinimap();
         updateHealthBar();
     }
 
@@ -203,6 +212,16 @@ function animate() {
 
     if (state.renderer && state.scene && state.camera) {
         state.renderer.render(state.scene, state.camera);
+    }
+
+    // FPS counter
+    fpsFrames++;
+    const now = performance.now();
+    if (now - fpsLastTime >= 1000) {
+        if (!fpsDisplay) fpsDisplay = document.getElementById('fps-counter');
+        if (fpsDisplay) fpsDisplay.textContent = fpsFrames + ' FPS';
+        fpsFrames = 0;
+        fpsLastTime = now;
     }
 }
 

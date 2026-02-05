@@ -1239,10 +1239,6 @@ canvas {
         display: none;
     }
 
-    #minimap-canvas {
-        display: none;
-    }
-
     #player-list {
         top: max(0.5rem, env(safe-area-inset-top, 0.5rem));
         right: max(0.5rem, env(safe-area-inset-right, 0.5rem));
@@ -1461,21 +1457,21 @@ canvas {
 }
 
 /* ==========================================================================
-   MINIMAP
+   FPS COUNTER
    ========================================================================== */
 
-#minimap-canvas {
+#fps-counter {
     position: fixed;
-    bottom: calc(2rem + 140px + 1rem);
-    right: 2rem;
-    width: 180px;
-    height: 180px;
-    border-radius: 50%;
-    background: var(--glass);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 2px solid var(--glass-border);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    top: 1rem;
+    left: 1rem;
+    font-family: var(--font-body);
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.5);
+    background: rgba(0, 0, 0, 0.3);
+    padding: 0.25rem 0.6rem;
+    border-radius: var(--radius-sm);
     pointer-events: none;
-    z-index: 15;
+    z-index: 10;
+    letter-spacing: 0.5px;
 }
