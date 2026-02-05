@@ -42,7 +42,8 @@ wss.on('connection', (ws: WebSocket) => {
         angle: 0,
         flipAngle: 0,
         isFlipping: false,
-        score: 0
+        score: 0,
+        health: 100
     };
 
     console.log(`Player ${name} (${id}) connected`);
@@ -163,6 +164,50 @@ wss.on('connection', (ws: WebSocket) => {
                     players[id].score = data.score;
                     broadcastScoreboard();
                 }
+            } else if (data.type === 'shoot') {
+                const target = players[data.targetId];
+                if (target && target.health > 0 && data.targetId !== id) {
+                    const damage = 25;
+                    target.health -= damage;
+                    if (target.health < 0) target.health = 0;
+
+                    console.log(`Player ${players[id]?.name} shot ${target.name} (health: ${target.health})`);
+
+                    broadcast({
+                        type: 'playerHit',
+                        targetId: data.targetId,
+                        shooterId: id,
+                        newHealth: target.health,
+                        damage
+                    });
+
+                    if (target.health <= 0) {
+                        broadcast({
+                            type: 'playerKilled',
+                            targetId: data.targetId,
+                            killerId: id
+                        });
+
+                        // Award killer 50 points
+                        if (players[id]) {
+                            players[id].score += 50;
+                            broadcastScoreboard();
+                        }
+
+                        // Respawn after 3 seconds
+                        const targetId = data.targetId;
+                        setTimeout(() => {
+                            if (players[targetId]) {
+                                players[targetId].health = 100;
+                                broadcast({
+                                    type: 'playerRespawn',
+                                    playerId: targetId,
+                                    health: 100
+                                });
+                            }
+                        }, 3000);
+                    }
+                }
             }
         } catch (e) {
             console.error('Error parsing message', e);
@@ -195,7 +240,8 @@ function getPublicPlayer(id: string) {
         flipAngle: p.flipAngle,
         isFlipping: p.isFlipping,
         scale: p.scale,
-        score: p.score
+        score: p.score,
+        health: p.health
     };
 }
 

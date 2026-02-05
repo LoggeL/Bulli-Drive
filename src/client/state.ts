@@ -7,9 +7,9 @@ export const state = {
     renderer: null as unknown as THREE.WebGLRenderer,
     bulli: null as any, // Local car instance
     remotePlayers: {} as Record<string, RemotePlayer>,
-    inputs: { 
-        w: false, a: false, s: false, d: false, f: false,
-        space: false, arrowleft: false, arrowright: false 
+    inputs: {
+        w: false, a: false, s: false, d: false, e: false, f: false,
+        space: false, arrowleft: false, arrowright: false
     } as Inputs,
     worldPowerups: [] as PowerupData[],
     isModalOpen: false,
@@ -27,5 +27,8 @@ export const state = {
     particles: [] as any[],
     clock: new THREE.Clock(),
     cameraAngle: 0,
+    health: 100,
+    dead: false,
+    respawnTimer: 0,
     scoreboard: [] as ScoreboardEntry[]
 };

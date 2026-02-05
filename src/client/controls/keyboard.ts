@@ -28,8 +28,8 @@ function onKeyUp(e: KeyboardEvent) {
     if (key === 'arrowleft') state.inputs.arrowleft = false;
     if (key === 'arrowright') state.inputs.arrowright = false;
     
-    // Don't reset 'f' on keyup, let Bulli.update consume it
-    if (key in state.inputs && key !== 'f') {
+    // Don't reset 'f' or 'e' on keyup, let Bulli.update consume them
+    if (key in state.inputs && key !== 'f' && key !== 'e') {
         (state.inputs as any)[key] = false;
     }
 }

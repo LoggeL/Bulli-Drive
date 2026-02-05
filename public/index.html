@@ -180,6 +180,8 @@
                     <span class="preview-keys">SPACE</span> <span class="preview-desc">flip</span>
                     <span class="preview-sep">&middot;</span>
                     <span class="preview-keys">F</span> <span class="preview-desc">honk</span>
+                    <span class="preview-sep">&middot;</span>
+                    <span class="preview-keys">E</span> <span class="preview-desc">shoot</span>
                 </div>
             </div>
             <a id="about-link" href="#">ABOUT</a>
@@ -203,6 +205,7 @@
                     <div class="modal-control-row"><span class="modal-key">W A S D</span><span>Drive &amp; steer</span></div>
                     <div class="modal-control-row"><span class="modal-key">SPACE</span><span>Flip car upright</span></div>
                     <div class="modal-control-row"><span class="modal-key">F</span><span>Honk horn</span></div>
+                    <div class="modal-control-row"><span class="modal-key">E</span><span>Shoot projectile</span></div>
                     <div class="modal-control-row"><span class="modal-key">&larr; &rarr;</span><span>Rotate camera</span></div>
                 </div>
 
@@ -249,6 +252,13 @@
             <span id="score-display">0</span>
         </div>
 
+        <div id="health-bar-container">
+            <div id="health-bar-bg">
+                <div id="health-bar-fill"></div>
+            </div>
+            <span id="health-bar-text">100</span>
+        </div>
+
         <div id="powerup-panel"></div>
 
         <div class="controls-hint">
@@ -272,6 +282,10 @@
                 <div class="hint-row">
                     <div class="key">F</div>
                     <span class="hint-desc">honk</span>
+                </div>
+                <div class="hint-row">
+                    <div class="key">E</div>
+                    <span class="hint-desc">shoot</span>
                 </div>
                 <div class="hint-row">
                     <div class="key-row">

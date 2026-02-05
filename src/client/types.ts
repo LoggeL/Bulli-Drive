@@ -94,6 +94,7 @@ export interface Inputs {
     a: boolean;
     s: boolean;
     d: boolean;
+    e: boolean;
     f: boolean;
     space: boolean;
     arrowleft: boolean;
@@ -111,4 +112,7 @@ export type ServerMessage =
     | { type: 'coinReset', coinId: number }
     | { type: 'honk', id: string }
     | { type: 'playerRenamed', id: string, name: string }
-    | { type: 'scoreboard', scoreboard: ScoreboardEntry[] };
+    | { type: 'scoreboard', scoreboard: ScoreboardEntry[] }
+    | { type: 'playerHit', targetId: string, shooterId: string, newHealth: number, damage: number }
+    | { type: 'playerKilled', targetId: string, killerId: string }
+    | { type: 'playerRespawn', playerId: string, health: number };

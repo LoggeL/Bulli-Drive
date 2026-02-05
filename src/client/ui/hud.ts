@@ -178,6 +178,28 @@ function getPowerupColor(type: string) {
     }
 }
 
+// Health bar
+export function updateHealthBar() {
+    const fill = document.getElementById('health-bar-fill');
+    const text = document.getElementById('health-bar-text');
+    if (!fill || !text) return;
+
+    const hp = Math.max(0, Math.min(100, state.health));
+    const pct = hp / 100;
+
+    fill.style.width = (pct * 100) + '%';
+    text.innerText = hp.toString();
+
+    // Green to red gradient based on health
+    if (pct > 0.5) {
+        fill.style.background = `linear-gradient(90deg, #4CAF50, #8BC34A)`;
+    } else if (pct > 0.25) {
+        fill.style.background = `linear-gradient(90deg, #FF9800, #FFC107)`;
+    } else {
+        fill.style.background = `linear-gradient(90deg, #f44336, #E84545)`;
+    }
+}
+
 // Minimap
 let minimapCanvas: HTMLCanvasElement | null = null;
 let minimapCtx: CanvasRenderingContext2D | null = null;

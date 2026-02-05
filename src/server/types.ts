@@ -13,6 +13,7 @@ export interface Player {
     isFlipping: boolean;
     scale?: number;
     score: number;
+    health: number;
 }
 
 export interface Building {

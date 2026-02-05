@@ -8,6 +8,7 @@ import { createPowerupMarker, applyPowerupEffect } from '../world/powerups.js';
 import { createCoinsFromServer, removeCoinById, resetCoinById } from '../world/coins.js';
 import { updateScoreboardUI } from '../ui/playerList.js';
 import { getTerrainHeight } from '../world/environment.js';
+import { playHitSound } from '../effects/sounds.js';
 
 export function initWebSocket() {
     state.ws = new WebSocket(CONFIG.serverUrl);
@@ -169,7 +170,88 @@ function handleServerMessage(data: ServerMessage) {
             state.scoreboard = data.scoreboard;
             updateScoreboardUI();
             break;
+
+        case 'playerHit':
+            if (data.targetId === state.myId) {
+                // Local player was hit
+                state.health = data.newHealth;
+                playHitSound();
+                flashScreenRed();
+            }
+            break;
+
+        case 'playerKilled':
+            if (data.targetId === state.myId) {
+                // Local player was killed
+                state.dead = true;
+                state.health = 0;
+                showRespawnOverlay();
+            }
+            break;
+
+        case 'playerRespawn':
+            if (data.playerId === state.myId) {
+                // Local player respawned
+                state.dead = false;
+                state.health = data.health;
+                hideRespawnOverlay();
+            }
+            break;
     }
+}
+
+function flashScreenRed() {
+    let overlay = document.getElementById('damage-flash');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'damage-flash';
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(255,0,0,0.3);pointer-events:none;z-index:200;transition:opacity 0.3s;';
+        document.body.appendChild(overlay);
+    }
+    overlay.style.opacity = '1';
+    setTimeout(() => { overlay!.style.opacity = '0'; }, 200);
+}
+
+function showRespawnOverlay() {
+    let overlay = document.getElementById('respawn-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'respawn-overlay';
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;flex-direction:column;justify-content:center;align-items:center;z-index:300;pointer-events:none;';
+
+        const title = document.createElement('div');
+        title.style.cssText = 'font-family:Righteous,cursive;font-size:2.5rem;color:#E84545;text-shadow:0 0 20px rgba(232,69,69,0.5);';
+        title.textContent = 'ELIMINATED';
+
+        const timer = document.createElement('div');
+        timer.id = 'respawn-timer';
+        timer.style.cssText = 'font-family:Quicksand,sans-serif;font-size:1.2rem;color:rgba(255,255,255,0.7);margin-top:0.5rem;';
+        timer.textContent = 'Respawning in 3...';
+
+        overlay.appendChild(title);
+        overlay.appendChild(timer);
+        document.body.appendChild(overlay);
+    }
+    overlay.style.display = 'flex';
+
+    // Countdown
+    let count = 3;
+    const timerEl = document.getElementById('respawn-timer');
+    if (timerEl) timerEl.textContent = 'Respawning in 3...';
+    const interval = setInterval(() => {
+        count--;
+        if (count <= 0) {
+            clearInterval(interval);
+            if (timerEl) timerEl.textContent = 'Respawning...';
+        } else if (timerEl) {
+            timerEl.textContent = `Respawning in ${count}...`;
+        }
+    }, 1000);
+}
+
+function hideRespawnOverlay() {
+    const overlay = document.getElementById('respawn-overlay');
+    if (overlay) overlay.style.display = 'none';
 }
 
 export function createLocalPlayer(color: number, name: string) {

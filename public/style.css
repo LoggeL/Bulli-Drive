@@ -584,6 +584,44 @@ canvas {
     line-height: 1;
 }
 
+/* Health Bar */
+#health-bar-container {
+    position: fixed;
+    top: 3.2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    z-index: 100;
+    pointer-events: none;
+}
+
+#health-bar-bg {
+    width: 120px;
+    height: 10px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 5px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+#health-bar-fill {
+    height: 100%;
+    width: 100%;
+    background: linear-gradient(90deg, #4CAF50, #8BC34A);
+    border-radius: 5px;
+    transition: width 0.3s ease;
+}
+
+#health-bar-text {
+    font-family: var(--font-display);
+    font-size: 0.85rem;
+    color: var(--cream);
+    text-shadow: 0 0 6px rgba(255, 255, 255, 0.3);
+    min-width: 24px;
+}
+
 /* Controls Hint */
 .controls-hint {
     background: var(--glass);

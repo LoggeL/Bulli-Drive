@@ -8,7 +8,8 @@ import { updateParticles, spawnDriftParticle } from './effects/particles.js';
 import { initSounds, startEngineSound, updateEngineSound } from './effects/sounds.js';
 import { checkCoinCollection, animateCoins } from './world/coins.js';
 import { checkPowerupCollection, animatePowerups } from './world/powerups.js';
-import { updatePowerupsUI, updateSpeedometer, updateMinimap } from './ui/hud.js';
+import { updatePowerupsUI, updateSpeedometer, updateMinimap, updateHealthBar } from './ui/hud.js';
+import { updateProjectiles } from './world/projectiles.js';
 import { initSplashScreen, initAboutModal, initRenameUI } from './ui/screens.js';
 
 // Reusable vectors to avoid per-frame allocations
@@ -180,9 +181,11 @@ function animate() {
 
         checkCoinCollection();
         checkPowerupCollection();
+        updateProjectiles(dt);
         updatePowerupsUI();
         updateSpeedometer();
         updateMinimap();
+        updateHealthBar();
     }
 
     // Animate world objects

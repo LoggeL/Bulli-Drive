@@ -51,7 +51,7 @@ export function playHonkSound(pitch: number = 1.0): number {
     source.playbackRate.value = pitch;
     
     const gain = state.audioCtx.createGain();
-    gain.gain.value = 0.5;
+    gain.gain.value = 0.15;
     
     source.connect(gain);
     gain.connect(state.audioCtx.destination);
@@ -165,6 +165,53 @@ export function playJumpSound() {
 
     osc.start(curTime);
     osc.stop(curTime + 0.4);
+}
+
+export function playShootSound() {
+    if (!state.audioCtx) return;
+    if (state.audioCtx.state === 'suspended') state.audioCtx.resume();
+
+    const curTime = state.audioCtx.currentTime;
+
+    // Short laser-like synth sound
+    const osc = state.audioCtx.createOscillator();
+    const gain = state.audioCtx.createGain();
+
+    osc.connect(gain);
+    gain.connect(state.audioCtx.destination);
+
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(880, curTime);
+    osc.frequency.exponentialRampToValueAtTime(220, curTime + 0.15);
+
+    gain.gain.setValueAtTime(0.12, curTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, curTime + 0.15);
+
+    osc.start(curTime);
+    osc.stop(curTime + 0.15);
+}
+
+export function playHitSound() {
+    if (!state.audioCtx) return;
+    if (state.audioCtx.state === 'suspended') state.audioCtx.resume();
+
+    const curTime = state.audioCtx.currentTime;
+
+    const osc = state.audioCtx.createOscillator();
+    const gain = state.audioCtx.createGain();
+
+    osc.connect(gain);
+    gain.connect(state.audioCtx.destination);
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(300, curTime);
+    osc.frequency.exponentialRampToValueAtTime(80, curTime + 0.2);
+
+    gain.gain.setValueAtTime(0.15, curTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, curTime + 0.25);
+
+    osc.start(curTime);
+    osc.stop(curTime + 0.25);
 }
 
 export function playCollisionSound(intensity: number) {

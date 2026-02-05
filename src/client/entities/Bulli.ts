@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
 import { state } from '../state.js';
-import { playJumpSound, playCollisionSound, playHonkSound } from '../effects/sounds.js';
+import { playJumpSound, playCollisionSound, playHonkSound, playShootSound } from '../effects/sounds.js';
+import { createProjectile } from '../world/projectiles.js';
 import { spawnParticles } from '../effects/particles.js';
 import { getTerrainHeight } from '../world/environment.js';
 
@@ -102,6 +103,7 @@ export class Bulli {
     isFlipping: boolean = false;
     flipVelocity: number = 0;
     nextHonkTime: number = 0;
+    lastShootTime: number = 0;
     powerups = {
         speed: { active: false, timer: 0 },
         size: { active: false, timer: 0 },
@@ -531,6 +533,22 @@ export class Bulli {
         return playHonkSound(this.pitchOffset);
     }
 
+    shoot() {
+        const now = Date.now();
+        if (now - this.lastShootTime < 500) return;
+        this.lastShootTime = now;
+
+        playShootSound();
+
+        // Fire from the front of the car
+        const frontOffset = 3.5;
+        const startX = this.group.position.x + Math.sin(this.angle) * frontOffset;
+        const startZ = this.group.position.z + Math.cos(this.angle) * frontOffset;
+        const startY = this.group.position.y;
+
+        createProjectile(startX, startY, startZ, this.angle, this.colorCode, state.myId || '');
+    }
+
     update(dt: number) {
         this.updateNametag();
 
@@ -587,6 +605,7 @@ export class Bulli {
 
         if (!this.isLocal) return;
         if (state.isModalOpen) return;
+        if (state.dead) return;
 
         const frame = dt * 60;
 
@@ -632,6 +651,11 @@ export class Bulli {
                 }
             }
             state.inputs.f = false;
+        }
+
+        if (state.inputs.e) {
+            this.shoot();
+            state.inputs.e = false;
         }
 
         if (this.isFlipping) {
