@@ -4,10 +4,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>VW Bulli Globe Drive</title>
+    <title>Bulli Drive — Hit the Road</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Righteous&family=Quicksand:wght@400;600;700&family=Permanent+Marker&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <script type="importmap">
         {
@@ -22,11 +22,44 @@
 <body>
     <div id="loading-screen">
         <div class="loader">
-            <div class="spinner"></div>
-            <p>Assembling Bulli...</p>
+            <div class="bulli-loader">
+                <svg viewBox="0 0 120 60" class="bulli-svg">
+                    <g class="bulli-body">
+                        <!-- Body -->
+                        <rect x="10" y="18" width="85" height="28" rx="6" fill="#E84545"/>
+                        <rect x="10" y="18" width="85" height="14" rx="6" fill="#F5F5F5"/>
+                        <rect x="10" y="26" width="85" height="6" fill="#F5F5F5"/>
+                        <!-- Windshield -->
+                        <rect x="72" y="12" width="20" height="18" rx="4" fill="#88BBDD" opacity="0.7"/>
+                        <!-- Side window -->
+                        <rect x="46" y="14" width="22" height="12" rx="2" fill="#88BBDD" opacity="0.5"/>
+                        <!-- Headlight -->
+                        <circle cx="94" cy="36" r="3" fill="#FFD700"/>
+                        <!-- Bumper -->
+                        <rect x="94" y="30" width="4" height="16" rx="2" fill="#CCC"/>
+                        <!-- VW Logo -->
+                        <circle cx="50" cy="38" r="4" fill="none" stroke="#FFF" stroke-width="1.5"/>
+                    </g>
+                    <!-- Wheels -->
+                    <g class="wheel wheel-front">
+                        <circle cx="78" cy="48" r="8" fill="#222"/>
+                        <circle cx="78" cy="48" r="4" fill="#999"/>
+                    </g>
+                    <g class="wheel wheel-rear">
+                        <circle cx="28" cy="48" r="8" fill="#222"/>
+                        <circle cx="28" cy="48" r="4" fill="#999"/>
+                    </g>
+                    <!-- Road line -->
+                    <line x1="0" y1="56" x2="120" y2="56" stroke="#555" stroke-width="1" stroke-dasharray="8,6" class="road-line"/>
+                </svg>
+            </div>
+            <p class="loader-text">Assembling Bulli...</p>
+            <div class="loader-bar">
+                <div class="loader-bar-fill"></div>
+            </div>
         </div>
     </div>
-    
+
     <script>
         (function() {
             const messages = [
@@ -44,30 +77,52 @@
                 "Tuning radio...",
                 "Fastening seatbelts...",
                 "Checking suspension...",
-                "Adding racing stripes..."
+                "Adding racing stripes...",
+                "Waxing the surfboard...",
+                "Finding good vibes..."
             ];
-            const loaderText = document.querySelector('.loader p');
+            const loaderText = document.querySelector('.loader-text');
             if (loaderText) {
-                // Pick a random start message
                 let index = Math.floor(Math.random() * messages.length);
                 loaderText.innerText = messages[index];
-                
-                // Cycle every 1.5 seconds
                 setInterval(() => {
                     index = (index + 1) % messages.length;
-                    loaderText.innerText = messages[index];
-                }, 1500);
+                    loaderText.style.opacity = '0';
+                    setTimeout(() => {
+                        loaderText.innerText = messages[index];
+                        loaderText.style.opacity = '1';
+                    }, 200);
+                }, 1800);
             }
         })();
     </script>
 
     <div id="splash-screen" class="hidden">
+        <div class="splash-bg"></div>
         <div class="splash-content">
-            <h1>Bulli Drive</h1>
+            <div class="splash-badge">MULTIPLAYER</div>
+            <h1 class="splash-title">
+                <span class="title-bulli">Bulli</span>
+                <span class="title-drive">Drive</span>
+            </h1>
+            <p class="splash-tagline">Collect coins. Grab powerups. Own the road.</p>
             <div class="input-group">
-                <input type="text" id="splash-name-input" placeholder="Enter your name" maxlength="20">
+                <label for="splash-name-input" class="input-label">YOUR ROAD NAME</label>
+                <input type="text" id="splash-name-input" placeholder="e.g. SurfKing42" maxlength="20" autocomplete="off">
             </div>
-            <button id="start-btn">START ENGINE</button>
+            <button id="start-btn">
+                <span class="btn-icon">&#9654;</span>
+                START ENGINE
+            </button>
+            <div class="splash-controls-preview">
+                <div class="preview-row">
+                    <span class="preview-keys">WASD</span> <span class="preview-desc">drive</span>
+                    <span class="preview-sep">&middot;</span>
+                    <span class="preview-keys">SPACE</span> <span class="preview-desc">flip</span>
+                    <span class="preview-sep">&middot;</span>
+                    <span class="preview-keys">F</span> <span class="preview-desc">honk</span>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -97,32 +152,42 @@
 
     <div id="ui-overlay">
         <div id="score-container">
-            <span class="score-label">SCORE</span>
+            <span class="score-coin-icon">&#9733;</span>
             <span id="score-display">0</span>
         </div>
-        
+
         <div id="powerup-panel"></div>
 
         <div class="controls-hint">
-            <div class="key">W</div>
-            <div class="row">
-                <div class="key">A</div>
-                <div class="key">S</div>
-                <div class="key">D</div>
+            <div class="hint-title">CONTROLS</div>
+            <div class="hint-grid">
+                <div class="hint-row">
+                    <div class="key-cluster">
+                        <div class="key">W</div>
+                        <div class="key-row">
+                            <div class="key">A</div>
+                            <div class="key">S</div>
+                            <div class="key">D</div>
+                        </div>
+                    </div>
+                    <span class="hint-desc">drive</span>
+                </div>
+                <div class="hint-row">
+                    <div class="key wide">SPACE</div>
+                    <span class="hint-desc">flip</span>
+                </div>
+                <div class="hint-row">
+                    <div class="key">F</div>
+                    <span class="hint-desc">honk</span>
+                </div>
+                <div class="hint-row">
+                    <div class="key-row">
+                        <div class="key">&larr;</div>
+                        <div class="key">&rarr;</div>
+                    </div>
+                    <span class="hint-desc">camera</span>
+                </div>
             </div>
-            <div class="key" style="width: 140px; margin-top: 0.5rem;">SPACE</div>
-            <span>to flip</span>
-
-            <div class="row" style="margin-top: 1rem;">
-                <div class="key">F</div>
-            </div>
-            <span>to honk</span>
-
-            <div class="row" style="margin-top: 1rem;">
-                <div class="key">&larr;</div>
-                <div class="key">&rarr;</div>
-            </div>
-            <span>rotate camera</span>
         </div>
 
         <div id="interaction-prompt" class="hidden">
@@ -130,7 +195,7 @@
         </div>
 
         <div id="player-list">
-            <h3>Scoreboard</h3>
+            <h3><span class="trophy-icon">&#127942;</span> Scoreboard</h3>
             <ul id="scoreboard-list"></ul>
             <div class="name-change">
                 <button id="name-toggle" class="name-toggle-btn" aria-label="Change name">&#9998;</button>
