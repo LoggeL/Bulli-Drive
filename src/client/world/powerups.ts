@@ -58,7 +58,7 @@ export function createPowerupMarker(p: PowerupData) {
 }
 
 export function animatePowerups(time: number) {
-    state.projects.forEach(p => {
+    state.worldPowerups.forEach(p => {
         const mesh = (p as any).mesh as THREE.Mesh | undefined;
         if (!mesh) return;
         const baseY = powerupBaseY.get(mesh);
@@ -79,7 +79,7 @@ export function checkPowerupCollection() {
     const carPos = state.bulli.group.position;
     const scale = state.bulli.group.scale.x || 1;
     const collectRadius = 5 * scale;
-    state.projects.forEach(p => {
+    state.worldPowerups.forEach(p => {
         if (p.collected) return;
         _powerupCheckVec.set(p.x, carPos.y, p.z);
         const dist = carPos.distanceTo(_powerupCheckVec);

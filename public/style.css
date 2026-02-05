@@ -326,6 +326,71 @@ canvas {
     box-shadow: 0 0 0 4px rgba(245, 166, 35, 0.15);
 }
 
+/* ==========================================================================
+   CAR SELECTOR
+   ========================================================================== */
+
+.car-selector {
+    margin-bottom: 1.5rem;
+}
+
+.car-selector .input-label {
+    margin-bottom: 0.7rem;
+}
+
+.car-selector-row {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.car-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.5rem 0.4rem 0.4rem;
+    border-radius: var(--radius-md);
+    border: 2px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    cursor: pointer;
+    transition: all 0.25s ease;
+    width: 68px;
+    color: var(--sunset-red);
+}
+
+.car-card:hover {
+    border-color: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.08);
+    transform: translateY(-2px);
+}
+
+.car-card.selected {
+    border-color: var(--sunset-orange);
+    background: rgba(245, 166, 35, 0.12);
+    box-shadow: 0 0 16px rgba(245, 166, 35, 0.25), inset 0 0 8px rgba(245, 166, 35, 0.08);
+    transform: scale(1.08);
+}
+
+.car-icon {
+    width: 52px;
+    height: 32px;
+}
+
+.car-name {
+    font-family: var(--font-body);
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.car-card.selected .car-name {
+    color: var(--sunset-orange);
+}
+
 #start-btn {
     background: linear-gradient(135deg, var(--sunset-red) 0%, #D63031 100%);
     color: white;
@@ -616,6 +681,81 @@ canvas {
     transform: translate(-50%, 80px);
     opacity: 0;
     pointer-events: none;
+}
+
+/* ==========================================================================
+   SPEEDOMETER
+   ========================================================================== */
+
+#speedometer {
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+    width: 140px;
+    height: 140px;
+    background: var(--glass);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--glass-border);
+    border-radius: 50%;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+    pointer-events: none;
+}
+
+#speedo-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 140px;
+    height: 140px;
+}
+
+#speedo-value {
+    font-family: var(--font-display);
+    font-size: 1.8rem;
+    color: var(--cream);
+    text-shadow: 0 0 10px rgba(255, 248, 231, 0.3);
+    line-height: 1;
+    position: relative;
+    z-index: 1;
+    margin-top: 4px;
+}
+
+#speedo-unit {
+    font-family: var(--font-body);
+    font-size: 0.55rem;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    position: relative;
+    z-index: 1;
+}
+
+#speedo-turbo {
+    position: absolute;
+    bottom: 18px;
+    font-family: var(--font-display);
+    font-size: 0.6rem;
+    letter-spacing: 2px;
+    color: var(--sunset-gold);
+    text-shadow: 0 0 8px rgba(255, 213, 79, 0.6);
+    animation: turbo-pulse 0.5s ease-in-out infinite alternate;
+    z-index: 1;
+}
+
+#speedo-turbo.hidden {
+    display: none;
+}
+
+@keyframes turbo-pulse {
+    from { opacity: 0.6; }
+    to { opacity: 1; }
 }
 
 /* ==========================================================================
@@ -1057,6 +1197,14 @@ canvas {
         display: none;
     }
 
+    #speedometer {
+        display: none;
+    }
+
+    #minimap-canvas {
+        display: none;
+    }
+
     #player-list {
         top: max(0.5rem, env(safe-area-inset-top, 0.5rem));
         right: max(0.5rem, env(safe-area-inset-right, 0.5rem));
@@ -1086,6 +1234,20 @@ canvas {
     .title-drive {
         font-size: 1.5rem;
         letter-spacing: 6px;
+    }
+
+    .car-card {
+        width: 56px;
+        padding: 0.35rem 0.3rem 0.3rem;
+    }
+
+    .car-icon {
+        width: 42px;
+        height: 26px;
+    }
+
+    .car-name {
+        font-size: 0.5rem;
     }
 }
 
@@ -1177,4 +1339,105 @@ canvas {
 #modal-body {
     line-height: 1.6;
     color: rgba(255, 255, 255, 0.75);
+    max-height: 65vh;
+    overflow-y: auto;
+}
+
+#about-link {
+    display: inline-block;
+    margin-top: 1rem;
+    font-family: var(--font-body);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: var(--text-muted);
+    text-decoration: none;
+    text-transform: uppercase;
+    transition: color 0.2s ease;
+}
+
+#about-link:hover {
+    color: var(--sunset-orange);
+}
+
+.modal-desc {
+    font-family: var(--font-body);
+    font-size: 0.95rem;
+    margin-bottom: 1.2rem;
+}
+
+.modal-section-title {
+    font-family: var(--font-display);
+    font-size: 1.1rem;
+    color: var(--sunset-gold);
+    margin: 1.2rem 0 0.6rem;
+}
+
+.modal-controls-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.modal-control-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-family: var(--font-body);
+    font-size: 0.9rem;
+}
+
+.modal-key {
+    display: inline-block;
+    min-width: 80px;
+    padding: 0.2rem 0.5rem;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+    font-family: var(--font-body);
+    font-weight: 700;
+    font-size: 0.8rem;
+    letter-spacing: 0.1em;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.modal-powerup-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.modal-powerup-item {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-family: var(--font-body);
+    font-size: 0.9rem;
+}
+
+.powerup-icon {
+    font-size: 1.4rem;
+    min-width: 28px;
+    text-align: center;
+}
+
+/* ==========================================================================
+   MINIMAP
+   ========================================================================== */
+
+#minimap-canvas {
+    position: fixed;
+    bottom: calc(2rem + 140px + 1rem);
+    right: 2rem;
+    width: 180px;
+    height: 180px;
+    border-radius: 50%;
+    background: var(--glass);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 2px solid var(--glass-border);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    pointer-events: none;
+    z-index: 15;
 }

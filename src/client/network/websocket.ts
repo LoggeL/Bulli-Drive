@@ -5,6 +5,7 @@ import { Bulli } from '../entities/Bulli.js';
 import { createEnvironment } from '../world/environment.js';
 import { createCity } from '../world/city.js';
 import { createPowerupMarker, applyPowerupEffect } from '../world/powerups.js';
+import { createCoinsFromServer, removeCoinById, resetCoinById } from '../world/coins.js';
 import { updateScoreboardUI } from '../ui/playerList.js';
 import { getTerrainHeight } from '../world/environment.js';
 
@@ -26,12 +27,12 @@ export function initWebSocket() {
             state.terrainConfig = {
                 size: 1000,
                 segments: 128,
-                frequency1: 0.008,
-                amplitude1: 3.5,
-                frequency2: 0.025,
-                amplitude2: 1.5,
-                frequency3: 0.06,
-                amplitude3: 0.6
+                frequency1: 0.006,
+                amplitude1: 6.0,
+                frequency2: 0.018,
+                amplitude2: 3.0,
+                frequency3: 0.045,
+                amplitude3: 1.2
             };
             createEnvironment([]); 
             
@@ -82,10 +83,15 @@ function handleServerMessage(data: ServerMessage) {
             }
 
             if (data.powerups) {
-                state.projects = data.powerups;
-                state.projects.forEach(p => {
+                state.worldPowerups = data.powerups;
+                state.worldPowerups.forEach(p => {
                     createPowerupMarker(p);
                 });
+            }
+
+            if (data.coins) {
+                state.serverCoins = data.coins;
+                createCoinsFromServer(data.coins);
             }
             break;
 
@@ -106,7 +112,7 @@ function handleServerMessage(data: ServerMessage) {
             break;
 
         case 'powerupCollected':
-            const p = state.projects.find(pu => pu.id === data.powerupId);
+            const p = state.worldPowerups.find(pu => pu.id === data.powerupId);
             if (p) {
                 p.collected = true;
                 if ((p as any).mesh) {
@@ -122,7 +128,7 @@ function handleServerMessage(data: ServerMessage) {
             break;
 
         case 'powerupReset':
-            const pr = state.projects.find(pu => pu.id === data.powerupId);
+            const pr = state.worldPowerups.find(pu => pu.id === data.powerupId);
             if (pr) {
                 pr.collected = false;
                 if ((pr as any).mesh) {
@@ -132,6 +138,17 @@ function handleServerMessage(data: ServerMessage) {
                     (pr as any).iconMat.opacity = 0.8;
                 }
             }
+            break;
+
+        case 'coinCollected':
+            // Another player collected a coin - remove it visually
+            if (data.playerId !== state.myId) {
+                removeCoinById(data.coinId);
+            }
+            break;
+
+        case 'coinReset':
+            resetCoinById(data.coinId);
             break;
 
         case 'honk':
@@ -158,7 +175,9 @@ function handleServerMessage(data: ServerMessage) {
 export function createLocalPlayer(color: number, name: string) {
     state.myColor = color;
     state.myName = name;
-    state.bulli = new Bulli(color, true);
+    const savedCarType = localStorage.getItem('bulli-car-type') || 'bulli';
+    state.myCarType = savedCarType;
+    state.bulli = new Bulli(color, true, savedCarType as any);
     state.bulli.createNametag(name, true);
     state.scene.add(state.bulli.group);
     updateScoreboardUI();
@@ -167,7 +186,7 @@ export function createLocalPlayer(color: number, name: string) {
 export function addRemotePlayer(p: PlayerData) {
     if (state.remotePlayers[p.id]) return;
 
-    const remote = new Bulli(p.color, false);
+    const remote = new Bulli(p.color, false, (p.carType as any) || undefined);
     remote.name = p.name;
     const px = p.x || 0;
     const pz = p.z || 0;

@@ -110,6 +110,65 @@
                 <label for="splash-name-input" class="input-label">YOUR ROAD NAME</label>
                 <input type="text" id="splash-name-input" placeholder="e.g. SurfKing42" maxlength="20" autocomplete="off">
             </div>
+            <div class="car-selector">
+                <label class="input-label">CHOOSE YOUR RIDE</label>
+                <div class="car-selector-row">
+                    <div class="car-card selected" data-car="bulli">
+                        <svg viewBox="0 0 80 50" class="car-icon">
+                            <rect x="10" y="10" width="55" height="22" rx="4" fill="currentColor"/>
+                            <rect x="10" y="10" width="55" height="11" rx="4" fill="rgba(255,255,255,0.85)"/>
+                            <rect x="10" y="17" width="55" height="4" fill="rgba(255,255,255,0.85)"/>
+                            <rect x="48" y="6" width="14" height="14" rx="3" fill="rgba(136,187,221,0.6)"/>
+                            <circle cx="25" cy="36" r="6" fill="#222"/><circle cx="25" cy="36" r="3" fill="#999"/>
+                            <circle cx="55" cy="36" r="6" fill="#222"/><circle cx="55" cy="36" r="3" fill="#999"/>
+                        </svg>
+                        <span class="car-name">Bulli</span>
+                    </div>
+                    <div class="car-card" data-car="beetle">
+                        <svg viewBox="0 0 80 50" class="car-icon">
+                            <rect x="15" y="16" width="50" height="18" rx="4" fill="currentColor"/>
+                            <ellipse cx="40" cy="16" rx="22" ry="10" fill="currentColor"/>
+                            <rect x="28" y="9" width="18" height="10" rx="3" fill="rgba(136,187,221,0.6)"/>
+                            <circle cx="25" cy="38" r="6" fill="#222"/><circle cx="25" cy="38" r="3" fill="#999"/>
+                            <circle cx="55" cy="38" r="6" fill="#222"/><circle cx="55" cy="38" r="3" fill="#999"/>
+                        </svg>
+                        <span class="car-name">Beetle</span>
+                    </div>
+                    <div class="car-card" data-car="pickup">
+                        <svg viewBox="0 0 80 50" class="car-icon">
+                            <rect x="8" y="12" width="25" height="20" rx="3" fill="currentColor"/>
+                            <rect x="33" y="20" width="35" height="12" rx="2" fill="currentColor"/>
+                            <rect x="33" y="18" width="1" height="14" fill="rgba(255,255,255,0.3)"/>
+                            <rect x="16" y="8" width="14" height="12" rx="3" fill="rgba(136,187,221,0.6)"/>
+                            <circle cx="22" cy="36" r="6" fill="#222"/><circle cx="22" cy="36" r="3" fill="#999"/>
+                            <circle cx="58" cy="36" r="6" fill="#222"/><circle cx="58" cy="36" r="3" fill="#999"/>
+                        </svg>
+                        <span class="car-name">Pickup</span>
+                    </div>
+                    <div class="car-card" data-car="sport">
+                        <svg viewBox="0 0 80 50" class="car-icon">
+                            <rect x="10" y="22" width="60" height="12" rx="3" fill="currentColor"/>
+                            <rect x="25" y="16" width="28" height="10" rx="3" fill="currentColor"/>
+                            <rect x="30" y="14" width="16" height="8" rx="2" fill="rgba(136,187,221,0.6)"/>
+                            <rect x="12" y="28" width="56" height="2" rx="1" fill="rgba(255,255,255,0.2)"/>
+                            <circle cx="24" cy="38" r="6" fill="#222"/><circle cx="24" cy="38" r="3" fill="#999"/>
+                            <circle cx="56" cy="38" r="6" fill="#222"/><circle cx="56" cy="38" r="3" fill="#999"/>
+                        </svg>
+                        <span class="car-name">Sport</span>
+                    </div>
+                    <div class="car-card" data-car="jeep">
+                        <svg viewBox="0 0 80 50" class="car-icon">
+                            <rect x="12" y="10" width="56" height="22" rx="3" fill="currentColor"/>
+                            <rect x="10" y="8" width="60" height="3" rx="1" fill="currentColor"/>
+                            <rect x="20" y="6" width="14" height="14" rx="2" fill="rgba(136,187,221,0.6)"/>
+                            <circle cx="6" cy="24" r="4" fill="#333" stroke="#555" stroke-width="1"/>
+                            <circle cx="25" cy="36" r="7" fill="#222"/><circle cx="25" cy="36" r="3.5" fill="#999"/>
+                            <circle cx="55" cy="36" r="7" fill="#222"/><circle cx="55" cy="36" r="3.5" fill="#999"/>
+                        </svg>
+                        <span class="car-name">Jeep</span>
+                    </div>
+                </div>
+            </div>
             <button id="start-btn">
                 <span class="btn-icon">&#9654;</span>
                 START ENGINE
@@ -121,6 +180,40 @@
                     <span class="preview-keys">SPACE</span> <span class="preview-desc">flip</span>
                     <span class="preview-sep">&middot;</span>
                     <span class="preview-keys">F</span> <span class="preview-desc">honk</span>
+                </div>
+            </div>
+            <a id="about-link" href="#">ABOUT</a>
+        </div>
+    </div>
+
+    <div id="modal-container" class="hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content">
+            <button class="close-btn" id="modal-close">&times;</button>
+            <h2 id="modal-title">About Bulli Drive</h2>
+            <div id="modal-body">
+                <p class="modal-desc">
+                    A multiplayer 3D driving game where you cruise around a sun-soaked California cityscape
+                    in a classic VW Bulli. Collect coins, grab powerups, and compete with other drivers on
+                    the open road.
+                </p>
+
+                <h3 class="modal-section-title">Controls</h3>
+                <div class="modal-controls-grid">
+                    <div class="modal-control-row"><span class="modal-key">W A S D</span><span>Drive &amp; steer</span></div>
+                    <div class="modal-control-row"><span class="modal-key">SPACE</span><span>Flip car upright</span></div>
+                    <div class="modal-control-row"><span class="modal-key">F</span><span>Honk horn</span></div>
+                    <div class="modal-control-row"><span class="modal-key">&larr; &rarr;</span><span>Rotate camera</span></div>
+                </div>
+
+                <h3 class="modal-section-title">Powerups</h3>
+                <div class="modal-powerup-list">
+                    <div class="modal-powerup-item"><span class="powerup-icon">&#9889;</span><span><strong>Speed Boost</strong> &mdash; Doubles your top speed</span></div>
+                    <div class="modal-powerup-item"><span class="powerup-icon">&#127812;</span><span><strong>Grow</strong> &mdash; Makes your car huge</span></div>
+                    <div class="modal-powerup-item"><span class="powerup-icon">&#129432;</span><span><strong>Jump</strong> &mdash; Launch into the air</span></div>
+                    <div class="modal-powerup-item"><span class="powerup-icon">&#128737;</span><span><strong>Shield</strong> &mdash; Protects from collisions</span></div>
+                    <div class="modal-powerup-item"><span class="powerup-icon">&#129522;</span><span><strong>Magnet</strong> &mdash; Attracts nearby coins</span></div>
+                    <div class="modal-powerup-item"><span class="powerup-icon">&#128123;</span><span><strong>Ghost</strong> &mdash; Pass through obstacles</span></div>
                 </div>
             </div>
         </div>
@@ -193,6 +286,15 @@
         <div id="interaction-prompt" class="hidden">
             POWERUP COLLECTED!
         </div>
+
+        <div id="speedometer">
+            <canvas id="speedo-canvas" width="140" height="140"></canvas>
+            <div id="speedo-value">0</div>
+            <div id="speedo-unit">km/h</div>
+            <div id="speedo-turbo" class="hidden">TURBO</div>
+        </div>
+
+        <canvas id="minimap-canvas" width="180" height="180"></canvas>
 
         <div id="player-list">
             <h3><span class="trophy-icon">&#127942;</span> Scoreboard</h3>

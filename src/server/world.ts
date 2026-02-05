@@ -1,8 +1,9 @@
-import { Powerup, Tree, Building, Road, CityData } from './types.js';
+import { Powerup, Tree, Building, Road, CityData, Coin } from './types.js';
 import { POWERUP_TYPES } from './config.js';
 
 export const powerups: Powerup[] = [];
 export const trees: Tree[] = [];
+export const coins: Coin[] = [];
 export const cityData: CityData = { buildings: [], roads: [] };
 
 // City configuration
@@ -15,16 +16,18 @@ const CITY_CONFIG = {
     buildingMargin: 3
 };
 
-// Muted building colors (realistic tones)
+// Mediterranean / California palette
 const BUILDING_COLORS = [
-    0x8B8B8B, // Gray
-    0x9C8B7A, // Tan
-    0x7A8B8B, // Slate
-    0x8B7A6B, // Brown
-    0x6B7A8B, // Dusty blue
-    0x7A7A6B, // Olive gray
-    0x8B8B7A, // Warm gray
-    0x6B6B7A, // Cool gray
+    0xC17A56, // Terracotta
+    0xE8D5B7, // Sand
+    0xF5F0E1, // Cream
+    0xB8D4E3, // Pale blue
+    0xA8C6A0, // Sage green
+    0xFAF6F0, // Warm white
+    0xE8856A, // Coral
+    0xD4A574, // Adobe tan
+    0xC9B99A, // Khaki sand
+    0xE0C8A8, // Stucco beige
 ];
 
 function isInCityArea(x: number, z: number): boolean {
@@ -142,6 +145,22 @@ export function initWorld() {
             type: type.type,
             color: type.color,
             label: type.label,
+            collected: false
+        });
+    }
+
+    // Init Coins (spread around, avoid city center)
+    for (let i = 0; i < 30; i++) {
+        let x, z;
+        do {
+            x = (Math.random() - 0.5) * 600;
+            z = (Math.random() - 0.5) * 600;
+        } while (Math.abs(x) < 30 && Math.abs(z) < 30);
+
+        coins.push({
+            id: i,
+            x,
+            z,
             collected: false
         });
     }

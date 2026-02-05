@@ -5,6 +5,7 @@ export interface Player {
     ws: WebSocket;
     color: number;
     name: string;
+    carType: string;
     x: number;
     z: number;
     angle: number;
@@ -51,6 +52,13 @@ export interface Tree {
     x: number;
     z: number;
     height: number;
+}
+
+export interface Coin {
+    id: number;
+    x: number;
+    z: number;
+    collected: boolean;
 }
 
 export interface TerrainConfig {

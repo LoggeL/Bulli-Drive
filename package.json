@@ -26,6 +26,7 @@
     "@types/three": "^0.182.0",
     "@types/uuid": "^10.0.0",
     "@types/ws": "^8.18.1",
+    "puppeteer": "^24.37.1",
     "typescript": "^5.9.3"
   }
 }

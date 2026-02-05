@@ -6,9 +6,10 @@ import { initKeyboard } from './controls/keyboard.js';
 import { setupMobileControls } from './controls/mobile.js';
 import { updateParticles, spawnDriftParticle } from './effects/particles.js';
 import { initSounds, startEngineSound, updateEngineSound } from './effects/sounds.js';
-import { checkCoinCollection, createCoins, animateCoins } from './world/coins.js';
+import { checkCoinCollection, animateCoins } from './world/coins.js';
 import { checkPowerupCollection, animatePowerups } from './world/powerups.js';
-import { updatePowerupsUI } from './ui/hud.js';
+import { updatePowerupsUI, updateSpeedometer, updateMinimap } from './ui/hud.js';
+import { initSplashScreen, initAboutModal, initRenameUI } from './ui/screens.js';
 
 // Reusable vectors to avoid per-frame allocations
 const _cameraTarget = new THREE.Vector3();
@@ -40,53 +41,52 @@ function init() {
         state.audioCtx = new AudioContext();
     } catch (e) { /* ignore */ }
 
-    // Splash Screen Logic
+    // Splash Screen
     const splashScreen = document.getElementById('splash-screen');
-    const startBtn = document.getElementById('start-btn');
-    const splashInput = document.getElementById('splash-name-input') as HTMLInputElement;
+    initSplashScreen(async (name, carType) => {
+        // Resume audio
+        if (state.audioCtx?.state === 'suspended') {
+            await state.audioCtx.resume();
+        }
 
-    if (startBtn && splashInput) {
-        // Start game on button click
-        startBtn.addEventListener('click', async () => {
-            const name = splashInput.value.trim() || "Player";
+        // Init and start sounds
+        await initSounds();
+        startEngineSound();
 
-            // Resume audio
-            if (state.audioCtx?.state === 'suspended') {
-                await state.audioCtx.resume();
-            }
+        // Save name and car type
+        localStorage.setItem('bulli-player-name', name);
+        localStorage.setItem('bulli-car-type', carType);
+        state.myName = name;
+        state.myCarType = carType;
 
-            // Init and start sounds
-            await initSounds();
-            startEngineSound();
+        // Rebuild local car with selected type
+        if (state.bulli) {
+            state.scene.remove(state.bulli.group);
+            if (state.bulli.nametag) state.bulli.nametag.remove();
 
-            // Save name and update player
-            localStorage.setItem('bulli-player-name', name);
-            state.myName = name;
+            const { Bulli } = await import('./entities/Bulli.js');
+            state.bulli = new Bulli(state.myColor!, true, carType as any);
+            state.bulli.createNametag(name, true);
+            state.scene.add(state.bulli.group);
+        }
 
-            // Update local nametag
-            if (state.bulli && state.bulli.nametag) {
-                state.bulli.nametag.innerText = name;
-            }
+        // Notify server of name and car type
+        if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+            state.ws.send(JSON.stringify({
+                type: 'rename',
+                name: name
+            }));
+            state.ws.send(JSON.stringify({
+                type: 'setCarType',
+                carType: carType
+            }));
+        }
 
-            // Notify server
-            if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-                state.ws.send(JSON.stringify({
-                    type: 'rename',
-                    name: name
-                }));
-            }
-
-            // Hide splash screen
-            if (splashScreen) {
-                splashScreen.classList.add('hidden');
-            }
-        });
-
-        // Allow Enter key to start
-        splashInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') startBtn.click();
-        });
-    }
+        // Hide splash screen
+        if (splashScreen) {
+            splashScreen.classList.add('hidden');
+        }
+    });
 
     // Lighting - Hemisphere light for natural outdoor sky/ground color blending
     const hemiLight = new THREE.HemisphereLight(0x87CEEB, 0x3b7d3b, 0.4);
@@ -116,58 +116,9 @@ function init() {
     initKeyboard();
     setupMobileControls();
 
-    // Rename UI
-    const nameToggle = document.getElementById('name-toggle');
-    const nameForm = document.getElementById('name-form');
-    const nameSubmit = document.getElementById('name-submit');
-    const nameInput = document.getElementById('name-input') as HTMLInputElement;
-
-    if (nameToggle && nameForm) {
-        nameToggle.addEventListener('click', () => {
-            nameForm.classList.toggle('hidden');
-            if (!nameForm.classList.contains('hidden') && nameInput) {
-                nameInput.focus();
-            }
-        });
-    }
-
-    if (nameSubmit && nameInput) {
-        const savedName = localStorage.getItem('bulli-player-name');
-        if (savedName) {
-            nameInput.placeholder = savedName;
-        }
-
-        nameSubmit.addEventListener('click', () => {
-            const newName = nameInput.value.trim();
-            if (newName) {
-                localStorage.setItem('bulli-player-name', newName);
-                if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-                    state.ws.send(JSON.stringify({
-                        type: 'rename',
-                        name: newName
-                    }));
-                }
-                nameInput.value = '';
-                nameInput.placeholder = newName;
-                state.myName = newName;
-
-                // Update local nametag
-                if (state.bulli && state.bulli.nametag) {
-                    state.bulli.nametag.innerText = newName;
-                }
-
-                // Collapse the form after successful rename
-                if (nameForm) {
-                    nameForm.classList.add('hidden');
-                }
-            }
-        });
-        nameInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') nameSubmit.click();
-        });
-    }
-
-    createCoins();
+    // UI modules
+    initRenameUI();
+    initAboutModal();
 
     // Start Loop
     animate();
@@ -230,6 +181,8 @@ function animate() {
         checkCoinCollection();
         checkPowerupCollection();
         updatePowerupsUI();
+        updateSpeedometer();
+        updateMinimap();
     }
 
     // Animate world objects

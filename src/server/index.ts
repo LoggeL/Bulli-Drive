@@ -6,7 +6,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { PORT, TERRAIN_CONFIG } from './config.js';
 import { Player } from './types.js';
-import { powerups, trees, cityData, initWorld } from './world.js';
+import { powerups, trees, coins, cityData, initWorld } from './world.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -36,6 +36,7 @@ wss.on('connection', (ws: WebSocket) => {
         ws,
         color,
         name,
+        carType: 'bulli',
         x: 0,
         z: 0,
         angle: 0,
@@ -53,6 +54,7 @@ wss.on('connection', (ws: WebSocket) => {
         name,
         players: getPublicPlayers(),
         powerups: powerups,
+        coins: coins,
         terrain: TERRAIN_CONFIG,
         trees: trees,
         city: cityData,
@@ -109,6 +111,26 @@ wss.on('connection', (ws: WebSocket) => {
                         });
                     }, 20000);
                 }
+            } else if (data.type === 'collectCoin') {
+                const coin = coins.find(c => c.id === data.coinId);
+                if (coin && !coin.collected) {
+                    coin.collected = true;
+                    console.log(`Player ${players[id]?.name} collected coin ${coin.id}`);
+
+                    broadcast({
+                        type: 'coinCollected',
+                        coinId: coin.id,
+                        playerId: id
+                    });
+
+                    setTimeout(() => {
+                        coin.collected = false;
+                        broadcast({
+                            type: 'coinReset',
+                            coinId: coin.id
+                        });
+                    }, 15000);
+                }
             } else if (data.type === 'honk') {
                 broadcast({
                     type: 'honk',
@@ -128,6 +150,13 @@ wss.on('connection', (ws: WebSocket) => {
                     
                     // Broadcast updated scoreboard with new name
                     broadcastScoreboard();
+                }
+            } else if (data.type === 'setCarType') {
+                if (players[id] && data.carType) {
+                    const validTypes = ['bulli', 'pickup', 'sport', 'beetle', 'jeep'];
+                    if (validTypes.includes(data.carType)) {
+                        players[id].carType = data.carType;
+                    }
                 }
             } else if (data.type === 'scoreUpdate') {
                 if (players[id] && typeof data.score === 'number') {
@@ -159,6 +188,7 @@ function getPublicPlayer(id: string) {
         id: p.id,
         color: p.color,
         name: p.name,
+        carType: p.carType,
         x: p.x,
         z: p.z,
         angle: p.angle,

@@ -4,36 +4,59 @@ import { getTerrainHeight } from './environment.js';
 import { playCollectSound } from '../effects/sounds.js';
 import { spawnParticles } from '../effects/particles.js';
 import { updateScoreUI } from '../ui/hud.js';
+import { CoinData } from '../types.js';
 
 // Store base Y for bobbing animation
 const coinBaseY: Map<THREE.Mesh, number> = new Map();
+// Map coin server ID to mesh
+const coinMeshes: Map<number, THREE.Mesh> = new Map();
 
-export function createCoins() {
-    for (let i = 0; i < 30; i++) {
-        const x = (Math.random() - 0.5) * 600;
-        const z = (Math.random() - 0.5) * 600;
-        // Avoid center
-        if (Math.abs(x) < 30 && Math.abs(z) < 30) continue;
-        createCoin(x, z);
-    }
+const coinGeo = new THREE.CylinderGeometry(0.8, 0.8, 0.2, 16);
+const coinMat = new THREE.MeshStandardMaterial({
+    color: 0xFFD700,
+    metalness: 1.0,
+    roughness: 0.1,
+    emissive: 0xFFD700,
+    emissiveIntensity: 0.3
+});
+
+export function createCoinsFromServer(coinsData: CoinData[]) {
+    coinsData.forEach(cd => {
+        if (!cd.collected) {
+            createCoin(cd.id, cd.x, cd.z);
+        }
+    });
 }
 
-export function createCoin(x: number, z: number) {
-    const geo = new THREE.CylinderGeometry(0.8, 0.8, 0.2, 16);
-    const mat = new THREE.MeshStandardMaterial({
-        color: 0xFFD700,
-        metalness: 1.0,
-        roughness: 0.1,
-        emissive: 0xFFD700,
-        emissiveIntensity: 0.3
-    });
-    const coin = new THREE.Mesh(geo, mat);
+export function createCoin(id: number, x: number, z: number) {
+    const coin = new THREE.Mesh(coinGeo, coinMat.clone());
     const baseY = getTerrainHeight(x, z) + 2.0;
     coin.position.set(x, baseY, z);
     coin.castShadow = true;
+    (coin as any).coinId = id;
     state.scene.add(coin);
     state.coins.push(coin);
     coinBaseY.set(coin, baseY);
+    coinMeshes.set(id, coin);
+}
+
+export function removeCoinById(coinId: number) {
+    const coin = coinMeshes.get(coinId);
+    if (coin) {
+        state.scene.remove(coin);
+        coinBaseY.delete(coin);
+        coinMeshes.delete(coinId);
+        const idx = state.coins.indexOf(coin);
+        if (idx !== -1) state.coins.splice(idx, 1);
+    }
+}
+
+export function resetCoinById(coinId: number) {
+    // Find original position from server data stored in state
+    const cd = state.serverCoins?.find((c: CoinData) => c.id === coinId);
+    if (cd) {
+        createCoin(cd.id, cd.x, cd.z);
+    }
 }
 
 export function animateCoins(time: number) {
@@ -77,22 +100,28 @@ export function checkCoinCollection() {
         const dz = carPos.z - coin.position.z;
         const dist = Math.sqrt(dx * dx + dz * dz);
         if (dist < collectRadius) {
-            collectCoin(coin);
+            const coinId = (coin as any).coinId as number;
+            collectCoin(coin, coinId);
             state.coins.splice(i, 1);
         }
     }
 }
 
-export function collectCoin(coin: THREE.Mesh) {
+export function collectCoin(coin: THREE.Mesh, coinId: number) {
     state.scene.remove(coin);
     coinBaseY.delete(coin);
+    coinMeshes.delete(coinId);
     state.score += 10;
     updateScoreUI();
     playCollectSound();
     spawnParticles(coin.position.x, coin.position.y, coin.position.z, 0xFFD700, 15, 0.4, 1.5, 0.6);
 
-    // Send score update to server
+    // Notify server about coin collection
     if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+        state.ws.send(JSON.stringify({
+            type: 'collectCoin',
+            coinId: coinId
+        }));
         state.ws.send(JSON.stringify({
             type: 'scoreUpdate',
             score: state.score

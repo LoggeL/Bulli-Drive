@@ -15,6 +15,7 @@ export interface PlayerData {
     id: string;
     color: number;
     name: string;
+    carType?: string;
     x: number;
     z: number;
     angle: number;
@@ -31,6 +32,13 @@ export interface PowerupData {
     type: string;
     color: number;
     label: string;
+    collected: boolean;
+}
+
+export interface CoinData {
+    id: number;
+    x: number;
+    z: number;
     collected: boolean;
 }
 
@@ -92,13 +100,15 @@ export interface Inputs {
     arrowright: boolean;
 }
 
-export type ServerMessage = 
-    | { type: 'init', id: string, color: number, name: string, players: Record<string, PlayerData>, powerups: PowerupData[], terrain: TerrainConfig, trees: TreeData[], city: CityData, scoreboard: ScoreboardEntry[] }
+export type ServerMessage =
+    | { type: 'init', id: string, color: number, name: string, players: Record<string, PlayerData>, powerups: PowerupData[], coins: CoinData[], terrain: TerrainConfig, trees: TreeData[], city: CityData, scoreboard: ScoreboardEntry[] }
     | { type: 'newPlayer', player: PlayerData }
     | { type: 'update', id: string, x: number, z: number, y?: number, angle: number, flipAngle: number, isFlipping: boolean, scale?: number }
     | { type: 'removePlayer', id: string }
     | { type: 'powerupCollected', powerupId: number, playerId: string }
     | { type: 'powerupReset', powerupId: number }
+    | { type: 'coinCollected', coinId: number, playerId: string }
+    | { type: 'coinReset', coinId: number }
     | { type: 'honk', id: string }
     | { type: 'playerRenamed', id: string, name: string }
     | { type: 'scoreboard', scoreboard: ScoreboardEntry[] };

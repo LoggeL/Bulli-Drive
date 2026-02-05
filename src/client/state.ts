@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { RemotePlayer, Inputs, PowerupData, TerrainConfig, ScoreboardEntry } from './types.js';
+import { RemotePlayer, Inputs, PowerupData, CoinData, TerrainConfig, ScoreboardEntry } from './types.js';
 
 export const state = {
     scene: null as unknown as THREE.Scene,
@@ -11,8 +11,7 @@ export const state = {
         w: false, a: false, s: false, d: false, f: false,
         space: false, arrowleft: false, arrowright: false 
     } as Inputs,
-    projects: [] as PowerupData[], // Using the same name as in original script for powerups
-    activeProject: null as PowerupData | null,
+    worldPowerups: [] as PowerupData[],
     isModalOpen: false,
     audioCtx: null as AudioContext | null,
     ws: null as WebSocket | null,
@@ -21,8 +20,10 @@ export const state = {
     myId: null as string | null,
     myColor: null as number | null,
     myName: "Player",
+    myCarType: "bulli",
     score: 0,
     coins: [] as any[],
+    serverCoins: null as CoinData[] | null,
     particles: [] as any[],
     clock: new THREE.Clock(),
     cameraAngle: 0,
