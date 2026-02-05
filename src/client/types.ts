@@ -7,6 +7,8 @@ export interface TerrainConfig {
     amplitude1: number;
     frequency2: number;
     amplitude2: number;
+    frequency3: number;
+    amplitude3: number;
 }
 
 export interface PlayerData {

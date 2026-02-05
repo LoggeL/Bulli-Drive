@@ -24,8 +24,22 @@ export function createPowerupMarker(p: PowerupData) {
     const baseY = getTerrainHeight(p.x, p.z) + 1.5;
     marker.position.set(p.x, baseY, p.z);
 
-    // Add floating icon
-    const iconGeo = new THREE.OctahedronGeometry(0.8);
+    // Add floating icon - different shapes per type
+    let iconGeo: THREE.BufferGeometry;
+    switch (p.type) {
+        case 'shield':
+            iconGeo = new THREE.SphereGeometry(0.7, 8, 6);
+            break;
+        case 'magnet':
+            iconGeo = new THREE.TorusGeometry(0.5, 0.2, 8, 12);
+            break;
+        case 'ghost':
+            iconGeo = new THREE.ConeGeometry(0.6, 1.2, 6);
+            break;
+        default:
+            iconGeo = new THREE.OctahedronGeometry(0.8);
+            break;
+    }
     const iconMat = new THREE.MeshStandardMaterial({
         color: p.color,
         transparent: true,
@@ -86,8 +100,11 @@ export function requestPowerupCollection(p: PowerupData) {
 
 export function applyPowerupEffect(p: PowerupData) {
     if (!state.bulli) return;
-    state.bulli.powerups[p.type as keyof typeof state.bulli.powerups].active = true;
-    state.bulli.powerups[p.type as keyof typeof state.bulli.powerups].timer = 5;
+    const key = p.type as keyof typeof state.bulli.powerups;
+    state.bulli.powerups[key].active = true;
+    // Shield and ghost last longer
+    const duration = (p.type === 'shield' || p.type === 'ghost') ? 8 : 5;
+    state.bulli.powerups[key].timer = duration;
 
     showInteractionPrompt(`${p.label.toUpperCase()} ACTIVATED!`);
 }

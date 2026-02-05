@@ -25,11 +25,13 @@ export function initWebSocket() {
         if (!state.bulli) {
             state.terrainConfig = {
                 size: 1000,
-                segments: 64,
-                frequency1: 0.02,
-                amplitude1: 0,
-                frequency2: 0.05,
-                amplitude2: 0
+                segments: 128,
+                frequency1: 0.008,
+                amplitude1: 3.5,
+                frequency2: 0.025,
+                amplitude2: 1.5,
+                frequency3: 0.06,
+                amplitude3: 0.6
             };
             createEnvironment([]); 
             

@@ -127,7 +127,7 @@ export function initWorld() {
     generateCity();
     
     // Init Powerups (spread around, some in city)
-    for (let i = 0; i < 15; i++) {
+    for (let i = 0; i < 25; i++) {
         const type = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
         let x, z;
         do {

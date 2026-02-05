@@ -45,6 +45,23 @@ export function animateCoins(time: number) {
         if (baseY !== undefined) {
             coin.position.y = baseY + Math.sin(time * 3.0 + coin.position.x) * 0.3;
         }
+
+        // Magnet attraction: pull coins towards the car
+        if (state.bulli && state.bulli.powerups.magnet.active) {
+            const carPos = state.bulli.group.position;
+            const dx = carPos.x - coin.position.x;
+            const dz = carPos.z - coin.position.z;
+            const dist = Math.sqrt(dx * dx + dz * dz);
+            const magnetRange = 25;
+            if (dist < magnetRange && dist > 1) {
+                const pull = 0.08 * (1 - dist / magnetRange);
+                coin.position.x += dx * pull;
+                coin.position.z += dz * pull;
+                // Update base Y for new position
+                const newBaseY = getTerrainHeight(coin.position.x, coin.position.z) + 2.0;
+                coinBaseY.set(coin, newBaseY);
+            }
+        }
     });
 }
 
@@ -52,7 +69,8 @@ export function checkCoinCollection() {
     if (!state.bulli) return;
     const carPos = state.bulli.group.position;
     const scale = state.bulli.group.scale.x || 1;
-    const collectRadius = 3 * scale;
+    const magnetActive = state.bulli.powerups.magnet.active;
+    const collectRadius = (magnetActive ? 6 : 3) * scale;
     for (let i = state.coins.length - 1; i >= 0; i--) {
         const coin = state.coins[i];
         const dx = carPos.x - coin.position.x;
