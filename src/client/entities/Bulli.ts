@@ -9,6 +9,74 @@ import { getTerrainHeight } from '../world/environment.js';
 const _scaleBig = new THREE.Vector3(2.5, 2.5, 2.5);
 const _scaleNormal = new THREE.Vector3(1, 1, 1);
 
+// Cached VW logo texture
+let _vwLogoTexture: THREE.CanvasTexture | null = null;
+
+function createVWLogoTexture(): THREE.CanvasTexture {
+    if (_vwLogoTexture) return _vwLogoTexture;
+
+    const size = 256;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+    const cx = size / 2;
+    const cy = size / 2;
+    const r = size * 0.45;
+
+    // Transparent background
+    ctx.clearRect(0, 0, size, size);
+
+    // Circle background - chrome/silver
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = '#C0C0C0';
+    ctx.fill();
+
+    // Outer ring border
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.lineWidth = size * 0.04;
+    ctx.strokeStyle = '#888888';
+    ctx.stroke();
+
+    // Inner ring
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 0.82, 0, Math.PI * 2);
+    ctx.lineWidth = size * 0.025;
+    ctx.strokeStyle = '#888888';
+    ctx.stroke();
+
+    // Draw VW letters
+    ctx.fillStyle = '#333333';
+    ctx.strokeStyle = '#333333';
+    ctx.lineWidth = size * 0.045;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    const s = r * 0.65; // scale factor
+
+    // V shape (upper part)
+    ctx.beginPath();
+    ctx.moveTo(cx - s * 0.55, cy - s * 0.7);
+    ctx.lineTo(cx, cy + s * 0.15);
+    ctx.lineTo(cx + s * 0.55, cy - s * 0.7);
+    ctx.stroke();
+
+    // W shape (lower part - two V's joined)
+    ctx.beginPath();
+    ctx.moveTo(cx - s * 0.7, cy - s * 0.15);
+    ctx.lineTo(cx - s * 0.28, cy + s * 0.75);
+    ctx.lineTo(cx, cy + s * 0.2);
+    ctx.lineTo(cx + s * 0.28, cy + s * 0.75);
+    ctx.lineTo(cx + s * 0.7, cy - s * 0.15);
+    ctx.stroke();
+
+    _vwLogoTexture = new THREE.CanvasTexture(canvas);
+    _vwLogoTexture.colorSpace = THREE.SRGBColorSpace;
+    return _vwLogoTexture;
+}
+
 // Car types with different visual profiles
 export type CarType = 'bulli' | 'pickup' | 'sport' | 'beetle' | 'jeep';
 const CAR_TYPES: CarType[] = ['bulli', 'pickup', 'sport', 'beetle', 'jeep'];
@@ -160,11 +228,8 @@ export class Bulli {
         // Eyes
         this.addEyes(lowerBody.position.y + 0.15, length / 2 + 0.05, 0.45);
 
-        // VW Logo
-        const logo = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.05, 32), chromeMat);
-        logo.rotation.x = Math.PI / 2;
-        logo.position.set(0, lowerBody.position.y + 0.3, length / 2 + 0.02);
-        this.flipGroup.add(logo);
+        // VW Logo (canvas-textured disc)
+        this.addVWLogo(lowerBody.position.y + 0.3, length / 2 + 0.03, 0.5);
 
         // Headlights & taillights
         this.addLights(width, lowerBody.position.y, length, headlightMat, taillightMat);
@@ -307,6 +372,9 @@ export class Bulli {
         // Big cute eyes
         this.addEyes(chassisY + bodyHeight * 0.5, length / 2 + 0.05, 0.55);
 
+        // VW Logo on front
+        this.addVWLogo(chassisY + bodyHeight * 0.5, length / 2 + 0.03, 0.4);
+
         this.addLights(width, chassisY + bodyHeight * 0.3, length, headlightMat, taillightMat);
         this.addBumpers(width, length, chromeMat);
         this.addWheels(width, 0.6, 0.35, 1.0, rubberMat, chromeMat);
@@ -364,6 +432,20 @@ export class Bulli {
     }
 
     // ---- SHARED HELPERS ----
+    addVWLogo(logoY: number, logoZ: number, radius: number) {
+        const logoTexture = createVWLogoTexture();
+        const logoMat = new THREE.MeshStandardMaterial({
+            map: logoTexture,
+            transparent: true,
+            roughness: 0.1,
+            metalness: 0.6
+        });
+        const logoGeo = new THREE.CircleGeometry(radius, 32);
+        const logo = new THREE.Mesh(logoGeo, logoMat);
+        logo.position.set(0, logoY, logoZ);
+        this.flipGroup.add(logo);
+    }
+
     addEyes(eyeY: number, eyeZ: number, radius: number) {
         const eyeGeo = new THREE.SphereGeometry(radius, 32, 16);
         const eyeMat = new THREE.MeshStandardMaterial({ color: 0xFFFFFF, roughness: 0.1 });
