@@ -24,8 +24,9 @@ export interface CityData {
     roads: RoadData[];
 }
 
-const ROAD_COLOR = 0x2a2a2a;
+const ROAD_COLOR = 0x333333;
 const LANE_MARKING_COLOR = 0xeeeeee;
+const SIDEWALK_COLOR = 0xaaaaaa;
 const PARK_COLOR = 0x4a7c3f;
 
 export function createCity(cityData: CityData) {
@@ -38,45 +39,69 @@ export function createCity(cityData: CityData) {
 }
 
 function createRoads(roads: RoadData[]) {
-    const roadMat = new THREE.MeshStandardMaterial({ 
-        color: ROAD_COLOR, 
+    const roadMat = new THREE.MeshStandardMaterial({
+        color: ROAD_COLOR,
         roughness: 0.9,
-        metalness: 0.1
+        metalness: 0.0
     });
-    
+
     const markingMat = new THREE.MeshStandardMaterial({
         color: LANE_MARKING_COLOR,
         roughness: 0.5
     });
-    
+
+    const sidewalkMat = new THREE.MeshStandardMaterial({
+        color: SIDEWALK_COLOR,
+        roughness: 0.8,
+        metalness: 0.0
+    });
+
     roads.forEach(road => {
+        const terrainY = getTerrainHeight(road.x, road.z);
+
         // Road surface
         const roadGeo = new THREE.PlaneGeometry(road.width, road.length);
         roadGeo.rotateX(-Math.PI / 2);
-        
+
         const roadMesh = new THREE.Mesh(roadGeo, roadMat);
-        roadMesh.position.set(road.x, getTerrainHeight(road.x, road.z) + 0.02, road.z);
+        roadMesh.position.set(road.x, terrainY + 0.02, road.z);
         roadMesh.rotation.y = road.rotation;
         roadMesh.receiveShadow = true;
         state.scene.add(roadMesh);
-        
+
+        // Sidewalk curbs (thin raised strips on both edges)
+        const curbWidth = 0.8;
+        const curbGeo = new THREE.BoxGeometry(curbWidth, 0.15, road.length);
+        [-1, 1].forEach(side => {
+            const curb = new THREE.Mesh(curbGeo, sidewalkMat);
+            const offset = (road.width / 2 + curbWidth / 2) * side;
+            if (road.rotation === 0) {
+                curb.position.set(road.x + offset, terrainY + 0.08, road.z);
+            } else {
+                curb.position.set(road.x, terrainY + 0.08, road.z + offset);
+                curb.rotation.y = Math.PI / 2;
+            }
+            curb.receiveShadow = true;
+            state.scene.add(curb);
+        });
+
         // Lane markings (dashed center line)
         const dashLength = 3;
         const dashGap = 2;
         const dashWidth = 0.3;
         const numDashes = Math.floor(road.length / (dashLength + dashGap));
-        
+
         for (let i = 0; i < numDashes; i++) {
             const dashGeo = new THREE.PlaneGeometry(dashWidth, dashLength);
             dashGeo.rotateX(-Math.PI / 2);
-            
+
             const dash = new THREE.Mesh(dashGeo, markingMat);
-            const offset = -road.length / 2 + (i + 0.5) * (dashLength + dashGap);
-            
+            const lineOffset = -road.length / 2 + (i + 0.5) * (dashLength + dashGap);
+
             if (road.rotation === 0) {
-                dash.position.set(road.x, getTerrainHeight(road.x, road.z + offset) + 0.03, road.z + offset);
+                dash.position.set(road.x, getTerrainHeight(road.x, road.z + lineOffset) + 0.03, road.z + lineOffset);
             } else {
-                dash.position.set(road.x + offset, getTerrainHeight(road.x + offset, road.z) + 0.03, road.z);
+                dash.position.set(road.x + lineOffset, getTerrainHeight(road.x + lineOffset, road.z) + 0.03, road.z);
                 dash.rotation.y = Math.PI / 2;
             }
             state.scene.add(dash);
@@ -103,11 +128,11 @@ function createBuildings(buildings: BuildingData[]) {
         
         // Windows
         const windowMat = new THREE.MeshStandardMaterial({
-            color: 0x334455,
-            roughness: 0.1,
-            metalness: 0.8,
-            emissive: 0x111122,
-            emissiveIntensity: 0.1
+            color: 0x446688,
+            roughness: 0.0,
+            metalness: 0.6,
+            emissive: 0x223344,
+            emissiveIntensity: 0.3
         });
         
         const windowSize = 1.2;
@@ -161,6 +186,13 @@ function createBuildings(buildings: BuildingData[]) {
             }
         }
         
+        // Door on front face
+        const doorMat = new THREE.MeshStandardMaterial({ color: 0x4a3728, roughness: 0.7 });
+        const doorGeo = new THREE.PlaneGeometry(1.2, 2.2);
+        const door = new THREE.Mesh(doorGeo, doorMat);
+        door.position.set(0, 1.1, building.depth / 2 + 0.06);
+        buildingGroup.add(door);
+
         // Roof detail
         const roofGeo = new THREE.BoxGeometry(building.width * 0.3, 1, building.depth * 0.3);
         const roofMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.9 });
