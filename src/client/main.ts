@@ -11,6 +11,7 @@ import { checkPowerupCollection, animatePowerups } from './world/powerups.js';
 import { updatePowerupsUI, updateSpeedometer, updateMinimap, updateHealthBar } from './ui/hud.js';
 import { updateProjectiles } from './world/projectiles.js';
 import { initSplashScreen, initAboutModal, initRenameUI } from './ui/screens.js';
+import { animateFountain } from './world/city.js';
 
 // Reusable vectors to avoid per-frame allocations
 const _cameraTarget = new THREE.Vector3();
@@ -103,10 +104,10 @@ function init() {
     dirLight.shadow.mapSize.height = CONFIG.shadowMapSize;
     dirLight.shadow.camera.near = 0.5;
     dirLight.shadow.camera.far = 500;
-    dirLight.shadow.camera.left = -100;
-    dirLight.shadow.camera.right = 100;
-    dirLight.shadow.camera.top = 100;
-    dirLight.shadow.camera.bottom = -100;
+    dirLight.shadow.camera.left = -60;
+    dirLight.shadow.camera.right = 60;
+    dirLight.shadow.camera.top = 60;
+    dirLight.shadow.camera.bottom = -60;
     state.scene.add(dirLight);
 
     // Init WebSocket
@@ -191,6 +192,7 @@ function animate() {
     // Animate world objects
     animateCoins(time);
     animatePowerups(time);
+    animateFountain(time);
 
     // Update remote players (smoothness)
     for (const id in state.remotePlayers) {

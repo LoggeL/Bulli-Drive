@@ -4,7 +4,7 @@ export const CONFIG = {
     cameraHeight: 25,
     cameraDistance: 35,
     cameraLookAtY: 0,
-    shadowMapSize: 2048,
+    shadowMapSize: 1024,
     // Dynamic WS URL: Use current hostname/port
     serverUrl: window.location.origin.replace(/^http/, 'ws')
 };

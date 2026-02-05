@@ -613,7 +613,7 @@ export class Bulli {
         let currentMaxSpeed = this.maxSpeed;
         if (this.powerups.speed.active) {
             const t = Math.max(0, this.powerups.speed.timer);
-            const factor = 1 + (t / 5) * 2;
+            const factor = 1 + (t / 5) * 0.8;
             currentAccel *= factor;
             currentMaxSpeed *= factor;
         }

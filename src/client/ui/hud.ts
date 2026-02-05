@@ -85,8 +85,8 @@ export function updateSpeedometer() {
     if (!speedoCtx || !speedoCanvas || !speedoValue || !speedoTurbo) return;
 
     const rawSpeed = Math.abs(state.bulli.speed);
-    const kmh = Math.round(rawSpeed * 200);
-    const maxKmh = 250;
+    const kmh = Math.round(rawSpeed * 120);
+    const maxKmh = 180;
     const pct = Math.min(kmh / maxKmh, 1);
     const turboActive = state.bulli.powerups.speed.active;
 

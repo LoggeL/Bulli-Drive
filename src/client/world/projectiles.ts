@@ -7,6 +7,7 @@ interface Projectile {
     dx: number;
     dz: number;
     age: number;
+    angle: number;
     ownerId: string;
 }
 
@@ -18,7 +19,7 @@ const HIT_DISTANCE = 3.0;
 const projectiles: Projectile[] = [];
 
 export function createProjectile(x: number, y: number, z: number, angle: number, color: number, ownerId: string) {
-    const geo = new THREE.SphereGeometry(PROJECTILE_RADIUS, 8, 6);
+    const geo = new THREE.CapsuleGeometry(0.15, 0.6, 4, 8);
     const mat = new THREE.MeshStandardMaterial({
         color,
         emissive: color,
@@ -27,12 +28,22 @@ export function createProjectile(x: number, y: number, z: number, angle: number,
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(x, y + 1.5, z);
 
+    // Orient capsule in travel direction (capsule is vertical by default)
+    mesh.rotation.x = Math.PI / 2;
+    mesh.rotation.y = angle;
+
+    // Add subtle glow light if fewer than 5 active projectiles
+    if (projectiles.length < 5) {
+        const light = new THREE.PointLight(color, 0.5, 5);
+        mesh.add(light);
+    }
+
     state.scene.add(mesh);
 
     const dx = Math.sin(angle) * PROJECTILE_SPEED;
     const dz = Math.cos(angle) * PROJECTILE_SPEED;
 
-    projectiles.push({ mesh, dx, dz, age: 0, ownerId });
+    projectiles.push({ mesh, dx, dz, age: 0, angle, ownerId });
 }
 
 export function updateProjectiles(dt: number) {

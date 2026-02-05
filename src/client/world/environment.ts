@@ -91,15 +91,24 @@ export function createEnvironment(treeData: TreeData[]) {
     const foliageMat = new THREE.MeshStandardMaterial({ color: 0x2E7D32, roughness: 0.8 });
     const foliageLightMat = new THREE.MeshStandardMaterial({ color: 0x3E8D42, roughness: 0.8 });
 
-    // Rock material
+    // Rock materials
     const rockMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.95, metalness: 0.05 });
     const rockDarkMat = new THREE.MeshStandardMaterial({ color: 0x666666, roughness: 0.95, metalness: 0.05 });
 
-    // Bush material
+    // Bush materials
     const bushMat = new THREE.MeshStandardMaterial({ color: 0x2D6B22, roughness: 0.9 });
     const bushLightMat = new THREE.MeshStandardMaterial({ color: 0x3D8B32, roughness: 0.9 });
 
-    // Obstacles (Trees)
+    // Shared geometries - create once, reuse for all instances
+    const rockGeoLarge = new THREE.DodecahedronGeometry(1.0, 0);
+    const rockGeoSmall = new THREE.DodecahedronGeometry(0.5, 0);
+    const bushGeoMain = new THREE.SphereGeometry(1.0, 8, 6);
+    const bushGeoLobe = new THREE.SphereGeometry(0.7, 6, 5);
+    const flowerGeo = new THREE.SphereGeometry(0.2, 6, 4);
+    const stemGeo = new THREE.CylinderGeometry(0.02, 0.03, 0.3, 4);
+    const stemMat = new THREE.MeshStandardMaterial({ color: 0x2D6B22 });
+
+    // Obstacles (Trees) - server-driven, keep all
     state.obstacles = [];
     treeData.forEach(t => {
         const treeGroup = new THREE.Group();
@@ -131,8 +140,8 @@ export function createEnvironment(treeData: TreeData[]) {
         state.obstacles.push({ x: t.x, z: t.z, radius: 1.5 } as any);
     });
 
-    // Scatter rocks across the terrain
-    for (let i = 0; i < 80; i++) {
+    // Scatter rocks across the terrain (reduced from 80 to 40)
+    for (let i = 0; i < 40; i++) {
         const rx = (Math.random() - 0.5) * 700;
         const rz = (Math.random() - 0.5) * 700;
         // Skip city area
@@ -143,11 +152,10 @@ export function createEnvironment(treeData: TreeData[]) {
         rockGroup.position.set(rx, h, rz);
 
         const rockSize = 0.8 + Math.random() * 2.0;
-        const rockGeo = new THREE.DodecahedronGeometry(rockSize, 0);
-        const rock = new THREE.Mesh(rockGeo, Math.random() > 0.5 ? rockMat : rockDarkMat);
+        const rock = new THREE.Mesh(rockGeoLarge, Math.random() > 0.5 ? rockMat : rockDarkMat);
         rock.position.y = rockSize * 0.4;
         rock.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
-        rock.scale.y = 0.5 + Math.random() * 0.4;
+        rock.scale.set(rockSize, rockSize * (0.5 + Math.random() * 0.4), rockSize);
         rock.castShadow = true;
         rock.receiveShadow = true;
         rockGroup.add(rock);
@@ -155,10 +163,10 @@ export function createEnvironment(treeData: TreeData[]) {
         // Sometimes add a second smaller rock
         if (Math.random() > 0.5) {
             const smallSize = rockSize * 0.5;
-            const smallRock = new THREE.Mesh(new THREE.DodecahedronGeometry(smallSize, 0), rockDarkMat);
+            const smallRock = new THREE.Mesh(rockGeoSmall, rockDarkMat);
             smallRock.position.set(rockSize * 0.8, smallSize * 0.3, rockSize * 0.3);
             smallRock.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
-            smallRock.scale.y = 0.6;
+            smallRock.scale.set(smallSize / 0.5, smallSize / 0.5 * 0.6, smallSize / 0.5);
             smallRock.castShadow = true;
             rockGroup.add(smallRock);
         }
@@ -169,8 +177,8 @@ export function createEnvironment(treeData: TreeData[]) {
         }
     }
 
-    // Scatter bushes
-    for (let i = 0; i < 60; i++) {
+    // Scatter bushes (reduced from 60 to 30)
+    for (let i = 0; i < 30; i++) {
         const bx = (Math.random() - 0.5) * 600;
         const bz = (Math.random() - 0.5) * 600;
         if (Math.abs(bx) < 120 && Math.abs(bz) < 120) continue;
@@ -181,11 +189,11 @@ export function createEnvironment(treeData: TreeData[]) {
 
         const bushSize = 1.0 + Math.random() * 1.5;
         const mainBush = new THREE.Mesh(
-            new THREE.SphereGeometry(bushSize, 8, 6),
+            bushGeoMain,
             Math.random() > 0.5 ? bushMat : bushLightMat
         );
         mainBush.position.y = bushSize * 0.6;
-        mainBush.scale.y = 0.6 + Math.random() * 0.3;
+        mainBush.scale.set(bushSize, bushSize * (0.6 + Math.random() * 0.3), bushSize);
         mainBush.castShadow = true;
         bushGroup.add(mainBush);
 
@@ -193,11 +201,11 @@ export function createEnvironment(treeData: TreeData[]) {
         if (Math.random() > 0.4) {
             const lobSize = bushSize * 0.7;
             const lobe = new THREE.Mesh(
-                new THREE.SphereGeometry(lobSize, 6, 5),
+                bushGeoLobe,
                 bushLightMat
             );
             lobe.position.set(bushSize * 0.6, lobSize * 0.5, bushSize * 0.3);
-            lobe.scale.y = 0.7;
+            lobe.scale.set(lobSize / 0.7, lobSize / 0.7 * 0.7, lobSize / 0.7);
             lobe.castShadow = true;
             bushGroup.add(lobe);
         }
@@ -205,9 +213,13 @@ export function createEnvironment(treeData: TreeData[]) {
         state.scene.add(bushGroup);
     }
 
-    // Scatter wildflower patches (colored dots on the ground)
+    // Scatter wildflower patches (reduced from 40 to 20)
     const flowerColors = [0xFF6B9D, 0xFFD93D, 0xC084FC, 0xFF8C42, 0x6BCB77];
-    for (let i = 0; i < 40; i++) {
+    // Pre-create flower materials for each color (shared across patches)
+    const flowerMats = flowerColors.map(c => new THREE.MeshStandardMaterial({
+        color: c, emissive: c, emissiveIntensity: 0.15, roughness: 0.8
+    }));
+    for (let i = 0; i < 20; i++) {
         const fx = (Math.random() - 0.5) * 500;
         const fz = (Math.random() - 0.5) * 500;
         if (Math.abs(fx) < 120 && Math.abs(fz) < 120) continue;
@@ -217,16 +229,12 @@ export function createEnvironment(treeData: TreeData[]) {
         patchGroup.position.set(fx, h + 0.05, fz);
 
         const flowerCount = 5 + Math.floor(Math.random() * 10);
-        const baseColor = flowerColors[Math.floor(Math.random() * flowerColors.length)];
-        const flowerMat = new THREE.MeshStandardMaterial({
-            color: baseColor, emissive: baseColor, emissiveIntensity: 0.15, roughness: 0.8
-        });
+        const flowerMat = flowerMats[Math.floor(Math.random() * flowerMats.length)];
 
         for (let j = 0; j < flowerCount; j++) {
-            const flower = new THREE.Mesh(
-                new THREE.SphereGeometry(0.15 + Math.random() * 0.15, 6, 4),
-                flowerMat
-            );
+            const flower = new THREE.Mesh(flowerGeo, flowerMat);
+            const fScale = 0.75 + Math.random() * 0.75;
+            flower.scale.setScalar(fScale);
             flower.position.set(
                 (Math.random() - 0.5) * 4,
                 0.15 + Math.random() * 0.3,
@@ -235,8 +243,7 @@ export function createEnvironment(treeData: TreeData[]) {
             patchGroup.add(flower);
 
             // Stem
-            const stemMat = new THREE.MeshStandardMaterial({ color: 0x2D6B22 });
-            const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.03, 0.3, 4), stemMat);
+            const stem = new THREE.Mesh(stemGeo, stemMat);
             stem.position.set(flower.position.x, flower.position.y - 0.15, flower.position.z);
             patchGroup.add(stem);
         }
