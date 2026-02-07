@@ -31,5 +31,7 @@ export const state = {
     dead: false,
     respawnTimer: 0,
     scoreboard: [] as ScoreboardEntry[],
-    killfeed: [] as { killer: string; victim: string; time: number }[]
+    killfeed: [] as { killer: string; victim: string; time: number }[],
+    respawnShield: false as boolean,
+    respawnMoveStart: 0 as number
 };

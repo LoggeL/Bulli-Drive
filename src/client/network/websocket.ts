@@ -252,6 +252,8 @@ function handleServerMessage(data: ServerMessage) {
                 // Local player respawned at new location
                 state.dead = false;
                 state.health = data.health;
+                state.respawnShield = true;
+                state.respawnMoveStart = 0;
                 if (state.bulli) {
                     state.bulli.group.position.x = data.x;
                     state.bulli.group.position.z = data.z;
@@ -268,6 +270,8 @@ function handleServerMessage(data: ServerMessage) {
                     respawnRemote.health = data.health;
                     respawnRemote.group.position.set(data.x, getTerrainHeight(data.x, data.z), data.z);
                     respawnRemote.flipGroup.visible = true;
+                    respawnRemote._respawnShield = true;
+                    respawnRemote._respawnMoveStart = 0;
                     if (respawnRemote.updateHealthBar) respawnRemote.updateHealthBar();
                 }
             }

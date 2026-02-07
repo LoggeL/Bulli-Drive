@@ -227,6 +227,40 @@ function animate() {
             }
         }
 
+        // Respawn shield decay
+        if (state.respawnShield && state.bulli.shieldMesh) {
+            const speed = Math.abs(state.bulli.speed);
+            if (speed > 0.05 && state.respawnMoveStart === 0) {
+                state.respawnMoveStart = Date.now();
+            }
+
+            const shieldMat = state.bulli.shieldMesh.material as any;
+            state.bulli.shieldMesh.visible = true;
+
+            if (state.respawnMoveStart > 0) {
+                const elapsed = Date.now() - state.respawnMoveStart;
+                const decay = 3000;
+                const progress = Math.min(1, elapsed / decay);
+                shieldMat.opacity = 0.3 * (1 - progress);
+                shieldMat.emissiveIntensity = 0.4 * (1 - progress);
+                state.bulli.shieldMesh.rotation.y += dt * 2;
+
+                if (progress >= 1) {
+                    state.respawnShield = false;
+                    state.bulli.shieldMesh.visible = false;
+                    shieldMat.opacity = 0;
+                    shieldMat.emissiveIntensity = 0;
+                    if (state.ws?.readyState === WebSocket.OPEN) {
+                        state.ws.send(JSON.stringify({ type: 'respawnShieldExpired' }));
+                    }
+                }
+            } else {
+                shieldMat.opacity = 0.25 + Math.sin(Date.now() * 0.005) * 0.1;
+                shieldMat.emissiveIntensity = 0.4 + Math.sin(Date.now() * 0.008) * 0.2;
+                state.bulli.shieldMesh.rotation.y += dt * 2;
+            }
+        }
+
         updatePowerupsUI();
         updateSpeedometer();
         updateHealthBar();
@@ -306,6 +340,39 @@ function animate() {
                 remote.nametag.style.opacity = '';
                 const badge = remote.nametag.querySelector('.afk-badge');
                 if (badge) badge.remove();
+            }
+        }
+
+        // Respawn shield decay for remote players
+        if (remote._respawnShield && remote.shieldMesh) {
+            const hasMoved = remote._lastPx !== undefined &&
+                (remote._lastPx !== remote.group.position.x || remote._lastPz !== remote.group.position.z);
+
+            if (hasMoved && remote._respawnMoveStart === 0) {
+                remote._respawnMoveStart = nowMs;
+            }
+
+            const rsMat = remote.shieldMesh.material as any;
+            remote.shieldMesh.visible = true;
+
+            if (remote._respawnMoveStart > 0) {
+                const elapsed = nowMs - remote._respawnMoveStart;
+                const decay = 3000;
+                const progress = Math.min(1, elapsed / decay);
+                rsMat.opacity = 0.3 * (1 - progress);
+                rsMat.emissiveIntensity = 0.4 * (1 - progress);
+                remote.shieldMesh.rotation.y += dt * 2;
+
+                if (progress >= 1) {
+                    remote._respawnShield = false;
+                    remote.shieldMesh.visible = false;
+                    rsMat.opacity = 0;
+                    rsMat.emissiveIntensity = 0;
+                }
+            } else {
+                rsMat.opacity = 0.25 + Math.sin(nowMs * 0.005) * 0.1;
+                rsMat.emissiveIntensity = 0.4 + Math.sin(nowMs * 0.008) * 0.2;
+                remote.shieldMesh.rotation.y += dt * 2;
             }
         }
 

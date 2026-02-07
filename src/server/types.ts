@@ -18,6 +18,7 @@ export interface Player {
     ghostActive: boolean;
     megaActive: boolean;
     lastActivity: number;
+    respawnShield: boolean;
 }
 
 export interface Building {

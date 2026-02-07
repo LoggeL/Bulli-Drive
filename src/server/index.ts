@@ -47,7 +47,8 @@ wss.on('connection', (ws: WebSocket) => {
         shieldActive: false,
         ghostActive: false,
         megaActive: false,
-        lastActivity: Date.now()
+        lastActivity: Date.now(),
+        respawnShield: false
     };
 
     console.log(`Player ${name} (${id}) connected`);
@@ -174,11 +175,18 @@ wss.on('connection', (ws: WebSocket) => {
                     players[id].score = data.score;
                     broadcastScoreboard();
                 }
+            } else if (data.type === 'respawnShieldExpired') {
+                if (players[id]) {
+                    players[id].respawnShield = false;
+                }
             } else if (data.type === 'shoot') {
                 const target = players[data.targetId];
                 if (target && target.health > 0 && data.targetId !== id) {
                     // AFK players (no update for 3+ seconds) are invulnerable
                     if (Date.now() - target.lastActivity > 3000) return;
+
+                    // Respawn shield blocks all damage
+                    if (target.respawnShield) return;
 
                     // Shield blocks one hit
                     if (target.shieldActive) {
@@ -234,6 +242,7 @@ wss.on('connection', (ws: WebSocket) => {
                                 players[targetId].health = 100;
                                 players[targetId].x = spawnX;
                                 players[targetId].z = spawnZ;
+                                players[targetId].respawnShield = true;
 
                                 broadcast({
                                     type: 'playerRespawn',
