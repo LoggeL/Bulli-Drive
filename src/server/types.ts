@@ -16,6 +16,8 @@ export interface Player {
     health: number;
     shieldActive: boolean;
     ghostActive: boolean;
+    megaActive: boolean;
+    lastActivity: number;
 }
 
 export interface Building {

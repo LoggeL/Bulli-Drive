@@ -45,7 +45,9 @@ wss.on('connection', (ws: WebSocket) => {
         score: 0,
         health: 100,
         shieldActive: false,
-        ghostActive: false
+        ghostActive: false,
+        megaActive: false,
+        lastActivity: Date.now()
     };
 
     console.log(`Player ${name} (${id}) connected`);
@@ -83,6 +85,8 @@ wss.on('connection', (ws: WebSocket) => {
                     players[id].scale = data.scale;
                     if (data.shieldActive !== undefined) players[id].shieldActive = data.shieldActive;
                     if (data.ghostActive !== undefined) players[id].ghostActive = data.ghostActive;
+                    if (data.megaActive !== undefined) players[id].megaActive = data.megaActive;
+                    players[id].lastActivity = Date.now();
 
                     broadcast({
                         type: 'update',
@@ -173,6 +177,9 @@ wss.on('connection', (ws: WebSocket) => {
             } else if (data.type === 'shoot') {
                 const target = players[data.targetId];
                 if (target && target.health > 0 && data.targetId !== id) {
+                    // AFK players (no update for 3+ seconds) are invulnerable
+                    if (Date.now() - target.lastActivity > 3000) return;
+
                     // Shield blocks one hit
                     if (target.shieldActive) {
                         target.shieldActive = false;
@@ -185,7 +192,8 @@ wss.on('connection', (ws: WebSocket) => {
                         return;
                     }
 
-                    const damage = 25;
+                    // Mega halves incoming damage
+                    const damage = target.megaActive ? 12 : 25;
                     target.health -= damage;
                     if (target.health < 0) target.health = 0;
 

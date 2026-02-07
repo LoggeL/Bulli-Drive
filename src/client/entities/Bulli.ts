@@ -644,14 +644,14 @@ export class Bulli {
 
         // Update shield visual
         if (this.shieldMesh) {
-            const shieldMat = this.shieldMesh.material as THREE.MeshStandardMaterial;
             if (this.powerups.shield.active) {
+                this.shieldMesh.visible = true;
+                const shieldMat = this.shieldMesh.material as THREE.MeshStandardMaterial;
                 shieldMat.opacity = 0.25 + Math.sin(Date.now() * 0.005) * 0.1;
                 shieldMat.emissiveIntensity = 0.4 + Math.sin(Date.now() * 0.008) * 0.2;
                 this.shieldMesh.rotation.y += dt * 2;
             } else {
-                shieldMat.opacity = 0;
-                shieldMat.emissiveIntensity = 0;
+                this.shieldMesh.visible = false;
             }
         }
 
@@ -817,7 +817,8 @@ export class Bulli {
                 isFlipping: this.isFlipping,
                 scale: this.group.scale.x,
                 ghostActive: this.powerups.ghost.active,
-                shieldActive: this.powerups.shield.active
+                shieldActive: this.powerups.shield.active,
+                megaActive: this.powerups.size.active
             }));
         }
     }

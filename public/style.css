@@ -921,6 +921,19 @@ canvas {
     color: var(--sunset-gold);
 }
 
+/* AFK badge */
+.afk-badge {
+    color: var(--sunset-gold);
+    font-size: 0.65rem;
+    letter-spacing: 1px;
+    animation: afk-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes afk-pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+}
+
 /* ==========================================================================
    SCOREBOARD / PLAYER LIST
    ========================================================================== */

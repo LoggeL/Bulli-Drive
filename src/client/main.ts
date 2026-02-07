@@ -5,6 +5,8 @@ import { initWebSocket } from './network/websocket.js';
 import { initKeyboard } from './controls/keyboard.js';
 import { setupMobileControls } from './controls/mobile.js';
 import { updateParticles, spawnDriftParticle, spawnBoostFireParticle, spawnDamageSmoke } from './effects/particles.js';
+import { playCollisionSound } from './effects/sounds.js';
+import { showHitmarker } from './ui/hud.js';
 import { initSounds, startEngineSound, updateEngineSound } from './effects/sounds.js';
 import { checkCoinCollection, animateCoins } from './world/coins.js';
 import { checkPowerupCollection, animatePowerups } from './world/powerups.js';
@@ -23,6 +25,9 @@ let dirLight: THREE.DirectionalLight;
 let fpsFrames = 0;
 let fpsLastTime = performance.now();
 let fpsDisplay: HTMLElement | null = null;
+
+// Mega ram cooldown per player
+const ramCooldowns: Record<string, number> = {};
 
 function init() {
     // Scene
@@ -193,6 +198,35 @@ function animate() {
             spawnBoostFireParticle();
         }
 
+        // Mega ram: collide with other players to damage them
+        if (state.bulli.powerups.size.active && Math.abs(state.bulli.speed) > 0.05 && !state.dead) {
+            const now = Date.now();
+            const myX = state.bulli.group.position.x;
+            const myZ = state.bulli.group.position.z;
+            const ramRadius = 6;
+
+            for (const id in state.remotePlayers) {
+                const remote = state.remotePlayers[id] as any;
+                if (!remote.flipGroup.visible) continue;
+                const dx = myX - remote.group.position.x;
+                const dz = myZ - remote.group.position.z;
+                const dist = Math.sqrt(dx * dx + dz * dz);
+
+                if (dist < ramRadius && (!ramCooldowns[id] || now - ramCooldowns[id] > 1000)) {
+                    ramCooldowns[id] = now;
+                    if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+                        state.ws.send(JSON.stringify({
+                            type: 'shoot',
+                            targetId: id,
+                            damage: 25
+                        }));
+                    }
+                    playCollisionSound(0.5);
+                    showHitmarker();
+                }
+            }
+        }
+
         updatePowerupsUI();
         updateSpeedometer();
         updateHealthBar();
@@ -217,12 +251,66 @@ function animate() {
     animateFountain(time);
 
     // Update remote players (smoothness)
+    const nowMs = Date.now();
     for (const id in state.remotePlayers) {
         const remote = state.remotePlayers[id] as any;
         remote.updateNametag();
 
+        // AFK detection: track last position change
+        const px = remote.group.position.x;
+        const pz = remote.group.position.z;
+        if (remote._lastPx !== px || remote._lastPz !== pz) {
+            remote._lastPx = px;
+            remote._lastPz = pz;
+            remote._lastMoveTime = nowMs;
+        }
+        const isAfk = remote._lastMoveTime && (nowMs - remote._lastMoveTime > 3000);
+
+        // AFK visualization: gray out + show ZZZ
+        if (isAfk && !remote._afkApplied) {
+            remote._afkApplied = true;
+            remote.flipGroup.traverse((child: any) => {
+                if (child.isMesh) {
+                    const mat = child.material;
+                    if (mat) {
+                        mat.userData = mat.userData || {};
+                        if (mat.userData._origColor === undefined) {
+                            mat.userData._origColor = mat.color.getHex();
+                        }
+                        mat.color.setHex(0x888888);
+                    }
+                }
+            });
+            if (remote.nametag) {
+                remote.nametag.style.opacity = '0.4';
+                const nameEl = remote.nametag.querySelector('.nametag-name');
+                if (nameEl && !remote.nametag.querySelector('.afk-badge')) {
+                    const badge = document.createElement('span');
+                    badge.className = 'afk-badge';
+                    badge.textContent = ' ZZZ';
+                    nameEl.appendChild(badge);
+                }
+            }
+        } else if (!isAfk && remote._afkApplied) {
+            remote._afkApplied = false;
+            remote.flipGroup.traverse((child: any) => {
+                if (child.isMesh) {
+                    const mat = child.material;
+                    if (mat?.userData?._origColor !== undefined) {
+                        mat.color.setHex(mat.userData._origColor);
+                        delete mat.userData._origColor;
+                    }
+                }
+            });
+            if (remote.nametag) {
+                remote.nametag.style.opacity = '';
+                const badge = remote.nametag.querySelector('.afk-badge');
+                if (badge) badge.remove();
+            }
+        }
+
         // Damage smoke for remote players
-        if (remote.health < 100 && remote.flipGroup.visible) {
+        if (remote.health < 100 && remote.flipGroup.visible && !isAfk) {
             const damagePercent = 1 - remote.health / 100;
             if (Math.random() < damagePercent * 0.15) {
                 spawnDamageSmoke(

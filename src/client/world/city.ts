@@ -581,16 +581,16 @@ export function animateFountain(time: number) {
         if (v.life <= 0) {
             // Respawn particle at pillar top with upward velocity
             const angle = Math.random() * Math.PI * 2;
-            const spread = 0.3;
+            const spread = 0.5;
             p.position.set(
                 Math.cos(angle) * spread,
                 2.8,
                 Math.sin(angle) * spread
             );
-            v.vy = 1.5 + Math.random() * 1.0;
-            v.vx = Math.cos(angle) * (0.3 + Math.random() * 0.5);
-            v.vz = Math.sin(angle) * (0.3 + Math.random() * 0.5);
-            v.life = 0.8 + Math.random() * 0.6;
+            v.vy = 2.5 + Math.random() * 2.0;
+            v.vx = Math.cos(angle) * (0.6 + Math.random() * 1.0);
+            v.vz = Math.sin(angle) * (0.6 + Math.random() * 1.0);
+            v.life = 1.6 + Math.random() * 1.2;
             p.visible = true;
         } else {
             // Update physics
