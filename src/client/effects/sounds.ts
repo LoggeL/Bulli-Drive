@@ -6,9 +6,6 @@ let engineSource: AudioBufferSourceNode | null = null;
 let engineGain: GainNode | null = null;
 let engineLoaded = false;
 
-// Honk sound state
-let honkBuffer: AudioBuffer | null = null;
-let honkLoaded = false;
 
 export async function initSounds() {
     if (!state.audioCtx) return;
@@ -26,39 +23,85 @@ export async function initSounds() {
         }
     }
 
-    // Load honk sound
-    if (!honkLoaded) {
-        try {
-            const response = await fetch('/audio/honk.wav');
-            const arrayBuffer = await response.arrayBuffer();
-            honkBuffer = await state.audioCtx.decodeAudioData(arrayBuffer);
-            honkLoaded = true;
-            console.log('Honk sound loaded');
-        } catch (e) {
-            console.warn('Failed to load honk sound:', e);
-        }
-    }
 }
 
 export function playHonkSound(pitch: number = 1.0): number {
-    if (!state.audioCtx || !honkBuffer) return 0;
+    if (!state.audioCtx) return 0;
     if (state.audioCtx.state === 'suspended') state.audioCtx.resume();
 
-    const source = state.audioCtx.createBufferSource();
-    source.buffer = honkBuffer;
-    
-    // Vary pitch slightly based on the car's pitch offset
-    source.playbackRate.value = pitch;
-    
-    const gain = state.audioCtx.createGain();
-    gain.gain.value = 0.15;
-    
-    source.connect(gain);
-    gain.connect(state.audioCtx.destination);
-    
-    source.start(state.audioCtx.currentTime);
-    
-    return honkBuffer.duration;
+    const ctx = state.audioCtx;
+    const t = ctx.currentTime;
+    const duration = 0.55;
+    const baseFreq = 340 * pitch;
+
+    // Main horn oscillator - square wave for buzzy old horn character
+    const osc1 = ctx.createOscillator();
+    osc1.type = 'square';
+    osc1.frequency.setValueAtTime(baseFreq, t);
+    // Slight sag on attack like an old electromagnetic horn
+    osc1.frequency.setValueAtTime(baseFreq * 0.92, t);
+    osc1.frequency.linearRampToValueAtTime(baseFreq, t + 0.06);
+    // Gentle wobble from mechanical vibration
+    osc1.frequency.setValueAtTime(baseFreq, t + 0.06);
+    osc1.frequency.linearRampToValueAtTime(baseFreq * 1.01, t + 0.15);
+    osc1.frequency.linearRampToValueAtTime(baseFreq * 0.99, t + 0.3);
+    osc1.frequency.linearRampToValueAtTime(baseFreq, t + 0.45);
+    // Droop off at the end
+    osc1.frequency.linearRampToValueAtTime(baseFreq * 0.88, t + duration);
+
+    // Second oscillator slightly detuned for richness - old horns aren't clean
+    const osc2 = ctx.createOscillator();
+    osc2.type = 'sawtooth';
+    osc2.frequency.setValueAtTime(baseFreq * 1.005, t);
+    osc2.frequency.setValueAtTime(baseFreq * 0.925, t);
+    osc2.frequency.linearRampToValueAtTime(baseFreq * 1.005, t + 0.06);
+    osc2.frequency.linearRampToValueAtTime(baseFreq * 0.885, t + duration);
+
+    // Third oscillator - sub harmonic for body
+    const osc3 = ctx.createOscillator();
+    osc3.type = 'sine';
+    osc3.frequency.setValueAtTime(baseFreq * 0.5, t);
+
+    // Gain envelope - sharp attack, sustain, quick release
+    const masterGain = ctx.createGain();
+    masterGain.gain.setValueAtTime(0, t);
+    masterGain.gain.linearRampToValueAtTime(0.12, t + 0.02);
+    masterGain.gain.setValueAtTime(0.12, t + 0.04);
+    masterGain.gain.linearRampToValueAtTime(0.10, t + 0.1);
+    masterGain.gain.setValueAtTime(0.10, t + duration - 0.08);
+    masterGain.gain.linearRampToValueAtTime(0, t + duration);
+
+    // Individual gains for mixing
+    const gain1 = ctx.createGain();
+    gain1.gain.value = 0.6;
+    const gain2 = ctx.createGain();
+    gain2.gain.value = 0.25;
+    const gain3 = ctx.createGain();
+    gain3.gain.value = 0.15;
+
+    // Bandpass filter to simulate the resonant horn bell
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = baseFreq * 1.8;
+    filter.Q.value = 2.5;
+
+    osc1.connect(gain1);
+    osc2.connect(gain2);
+    osc3.connect(gain3);
+    gain1.connect(filter);
+    gain2.connect(filter);
+    gain3.connect(masterGain);
+    filter.connect(masterGain);
+    masterGain.connect(ctx.destination);
+
+    osc1.start(t);
+    osc2.start(t);
+    osc3.start(t);
+    osc1.stop(t + duration);
+    osc2.stop(t + duration);
+    osc3.stop(t + duration);
+
+    return duration;
 }
 
 export function startEngineSound() {
