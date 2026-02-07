@@ -77,6 +77,8 @@ function handleServerMessage(data: ServerMessage) {
             }
 
             createLocalPlayer(state.myColor!, state.myName);
+            state.respawnShield = true;
+            state.respawnMoveStart = 0;
             removeLoader();
 
             for (const pid in data.players) {

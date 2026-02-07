@@ -603,11 +603,11 @@ export class Bulli {
 
         playShootSound();
 
-        // Fire from the front of the car
+        // Fire from the front of the car (account for jump height)
         const frontOffset = 3.5;
         const startX = this.group.position.x + Math.sin(this.angle) * frontOffset;
         const startZ = this.group.position.z + Math.cos(this.angle) * frontOffset;
-        const startY = this.group.position.y;
+        const startY = this.group.position.y + this.flipGroup.position.y;
 
         createProjectile(startX, startY, startZ, this.angle, this.colorCode, state.myId || '');
     }

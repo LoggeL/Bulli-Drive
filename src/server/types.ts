@@ -7,6 +7,7 @@ export interface Player {
     name: string;
     carType: string;
     x: number;
+    y: number;
     z: number;
     angle: number;
     flipAngle: number;

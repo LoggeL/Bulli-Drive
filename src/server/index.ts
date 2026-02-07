@@ -38,6 +38,7 @@ wss.on('connection', (ws: WebSocket) => {
         name,
         carType: 'bulli',
         x: 0,
+        y: 0,
         z: 0,
         angle: 0,
         flipAngle: 0,
@@ -48,7 +49,7 @@ wss.on('connection', (ws: WebSocket) => {
         ghostActive: false,
         megaActive: false,
         lastActivity: Date.now(),
-        respawnShield: false
+        respawnShield: true
     };
 
     console.log(`Player ${name} (${id}) connected`);
@@ -79,6 +80,7 @@ wss.on('connection', (ws: WebSocket) => {
             if (data.type === 'update') {
                 if (players[id]) {
                     players[id].x = data.x;
+                    players[id].y = data.y || 0;
                     players[id].z = data.z;
                     players[id].angle = data.angle;
                     players[id].flipAngle = data.flipAngle;
@@ -187,6 +189,9 @@ wss.on('connection', (ws: WebSocket) => {
 
                     // Respawn shield blocks all damage
                     if (target.respawnShield) return;
+
+                    // Super jump makes player unhittable (y > 10 = jump powerup height)
+                    if (target.y > 10) return;
 
                     // Shield blocks one hit
                     if (target.shieldActive) {
