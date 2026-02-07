@@ -4,7 +4,7 @@ import { state } from './state.js';
 import { initWebSocket } from './network/websocket.js';
 import { initKeyboard } from './controls/keyboard.js';
 import { setupMobileControls } from './controls/mobile.js';
-import { updateParticles, spawnDriftParticle, spawnBoostFireParticle } from './effects/particles.js';
+import { updateParticles, spawnDriftParticle, spawnBoostFireParticle, spawnDamageSmoke } from './effects/particles.js';
 import { initSounds, startEngineSound, updateEngineSound } from './effects/sounds.js';
 import { checkCoinCollection, animateCoins } from './world/coins.js';
 import { checkPowerupCollection, animatePowerups } from './world/powerups.js';
@@ -196,6 +196,19 @@ function animate() {
         updatePowerupsUI();
         updateSpeedometer();
         updateHealthBar();
+
+        // Damage smoke based on health
+        if (state.health < 100 && !state.dead) {
+            const damagePercent = 1 - state.health / 100;
+            if (Math.random() < damagePercent * 0.3) {
+                spawnDamageSmoke(
+                    state.bulli.group.position.x,
+                    state.bulli.group.position.y,
+                    state.bulli.group.position.z,
+                    state.health
+                );
+            }
+        }
     }
 
     // Animate world objects
@@ -205,7 +218,21 @@ function animate() {
 
     // Update remote players (smoothness)
     for (const id in state.remotePlayers) {
-        state.remotePlayers[id].updateNametag();
+        const remote = state.remotePlayers[id] as any;
+        remote.updateNametag();
+
+        // Damage smoke for remote players
+        if (remote.health < 100 && remote.flipGroup.visible) {
+            const damagePercent = 1 - remote.health / 100;
+            if (Math.random() < damagePercent * 0.15) {
+                spawnDamageSmoke(
+                    remote.group.position.x,
+                    remote.group.position.y,
+                    remote.group.position.z,
+                    remote.health
+                );
+            }
+        }
     }
 
     updateParticles(dt);

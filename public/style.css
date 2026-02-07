@@ -826,6 +826,101 @@ canvas {
     box-shadow: 0 2px 10px rgba(232, 69, 69, 0.3);
 }
 
+/* Health bar inside nametag */
+.nametag-hp {
+    width: 40px;
+    height: 3px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 2px;
+    margin: 3px auto 0;
+    overflow: hidden;
+}
+
+.nametag-hp-fill {
+    height: 100%;
+    width: 100%;
+    background: #4CAF50;
+    border-radius: 2px;
+    transition: width 0.3s, background 0.3s;
+}
+
+/* ==========================================================================
+   HITMARKER
+   ========================================================================== */
+
+#hitmarker {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 2rem;
+    color: white;
+    text-shadow: 0 0 8px rgba(255, 255, 255, 0.8), 0 0 2px rgba(0, 0, 0, 0.8);
+    pointer-events: none;
+    z-index: 150;
+    opacity: 0;
+    transition: opacity 0.15s;
+    font-family: var(--font-body);
+    font-weight: 700;
+}
+
+#hitmarker.visible {
+    opacity: 1;
+}
+
+/* ==========================================================================
+   KILLFEED
+   ========================================================================== */
+
+#killfeed {
+    position: fixed;
+    top: 2rem;
+    right: 250px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    pointer-events: none;
+    z-index: 20;
+    max-width: 300px;
+}
+
+.killfeed-entry {
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(6px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius-sm);
+    padding: 0.35rem 0.8rem;
+    font-family: var(--font-body);
+    font-size: 0.75rem;
+    font-weight: 600;
+    white-space: nowrap;
+    opacity: 0;
+    transform: translateX(20px);
+    transition: opacity 0.3s, transform 0.3s;
+}
+
+.killfeed-entry.visible {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.killfeed-entry.fading {
+    opacity: 0;
+    transform: translateX(20px);
+}
+
+.kf-killer {
+    color: var(--sunset-red);
+}
+
+.kf-action {
+    color: var(--text-muted);
+}
+
+.kf-victim {
+    color: var(--sunset-gold);
+}
+
 /* ==========================================================================
    SCOREBOARD / PLAYER LIST
    ========================================================================== */

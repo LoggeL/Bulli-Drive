@@ -114,6 +114,76 @@ export function updateParticles(dt: number) {
     }
 }
 
+export function spawnExplosion(x: number, y: number, z: number, color: number) {
+    const count = 25;
+    const geo = new THREE.BoxGeometry(0.4, 0.4, 0.4);
+    const colors = [color, 0x333333, 0x555555, 0xFF4400, 0xFF6600];
+
+    for (let i = 0; i < count; i++) {
+        const c = colors[Math.floor(Math.random() * colors.length)];
+        const mat = new THREE.MeshStandardMaterial({
+            color: c,
+            transparent: true,
+            opacity: 1,
+            emissive: i < 8 ? 0xFF4400 : 0x000000,
+            emissiveIntensity: i < 8 ? 0.5 : 0,
+            roughness: 0.8
+        });
+        const size = 0.3 + Math.random() * 0.5;
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(
+            x + (Math.random() - 0.5) * 2,
+            y + 1 + Math.random() * 2,
+            z + (Math.random() - 0.5) * 2
+        );
+        mesh.scale.set(size, size, size);
+
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 0.2 + Math.random() * 0.4;
+        state.particles.push({
+            mesh,
+            vx: Math.cos(angle) * speed,
+            vy: 0.2 + Math.random() * 0.4,
+            vz: Math.sin(angle) * speed,
+            life: 1.0,
+            decay: 0.015 + Math.random() * 0.015
+        });
+        state.scene.add(mesh);
+    }
+}
+
+export function spawnDamageSmoke(x: number, y: number, z: number, health: number) {
+    const damagePercent = 1 - health / 100;
+    // Color: light gray for minor damage, dark gray/black for critical
+    const grayValue = Math.floor(180 - damagePercent * 150);
+    const color = (grayValue << 16) | (grayValue << 8) | grayValue;
+    const size = 0.3 + damagePercent * 0.4;
+
+    const geo = new THREE.BoxGeometry(size, size, size);
+    const mat = new THREE.MeshStandardMaterial({
+        color,
+        transparent: true,
+        opacity: 0.5 + damagePercent * 0.3,
+        roughness: 1.0
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(
+        x + (Math.random() - 0.5) * 1.5,
+        y + 1.5 + Math.random() * 0.5,
+        z + (Math.random() - 0.5) * 1.5
+    );
+
+    state.particles.push({
+        mesh,
+        vx: (Math.random() - 0.5) * 0.05,
+        vy: 0.05 + Math.random() * 0.08,
+        vz: (Math.random() - 0.5) * 0.05,
+        life: 1.0,
+        decay: 0.03 + Math.random() * 0.02
+    });
+    state.scene.add(mesh);
+}
+
 export function spawnBoostFireParticle() {
     if (!state.bulli) return;
     const speed = Math.abs(state.bulli.speed);

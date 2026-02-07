@@ -14,6 +14,8 @@ export interface Player {
     scale?: number;
     score: number;
     health: number;
+    shieldActive: boolean;
+    ghostActive: boolean;
 }
 
 export interface Building {

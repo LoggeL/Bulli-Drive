@@ -1,5 +1,74 @@
 import { state } from '../state.js';
 
+// Hitmarker
+let hitmarkerEl: HTMLElement | null = null;
+let hitmarkerTimeout: number = 0;
+
+export function showHitmarker() {
+    if (!hitmarkerEl) {
+        hitmarkerEl = document.getElementById('hitmarker');
+    }
+    if (!hitmarkerEl) {
+        hitmarkerEl = document.createElement('div');
+        hitmarkerEl.id = 'hitmarker';
+        hitmarkerEl.textContent = '\u2715';
+        document.body.appendChild(hitmarkerEl);
+    }
+    hitmarkerEl.classList.add('visible');
+    clearTimeout(hitmarkerTimeout);
+    hitmarkerTimeout = window.setTimeout(() => {
+        hitmarkerEl?.classList.remove('visible');
+    }, 200);
+}
+
+// Killfeed
+let killfeedContainer: HTMLElement | null = null;
+
+export function addKillfeedEntry(killer: string, victim: string) {
+    if (!killfeedContainer) {
+        killfeedContainer = document.getElementById('killfeed');
+        if (!killfeedContainer) {
+            killfeedContainer = document.createElement('div');
+            killfeedContainer.id = 'killfeed';
+            document.body.appendChild(killfeedContainer);
+        }
+    }
+
+    const entry = document.createElement('div');
+    entry.className = 'killfeed-entry';
+
+    const killerSpan = document.createElement('span');
+    killerSpan.className = 'kf-killer';
+    killerSpan.textContent = killer;
+
+    const actionSpan = document.createElement('span');
+    actionSpan.className = 'kf-action';
+    actionSpan.textContent = ' eliminated ';
+
+    const victimSpan = document.createElement('span');
+    victimSpan.className = 'kf-victim';
+    victimSpan.textContent = victim;
+
+    entry.appendChild(killerSpan);
+    entry.appendChild(actionSpan);
+    entry.appendChild(victimSpan);
+    killfeedContainer.prepend(entry);
+
+    // Trigger animation
+    requestAnimationFrame(() => entry.classList.add('visible'));
+
+    // Remove after 5 seconds
+    setTimeout(() => {
+        entry.classList.add('fading');
+        setTimeout(() => entry.remove(), 500);
+    }, 5000);
+
+    // Limit to 5 entries
+    while (killfeedContainer.children.length > 5) {
+        killfeedContainer.lastChild?.remove();
+    }
+}
+
 export function updateScoreUI() {
     const display = document.getElementById('score-display');
     if (display) display.innerText = state.score.toString();

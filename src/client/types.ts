@@ -23,6 +23,7 @@ export interface PlayerData {
     isFlipping: boolean;
     scale?: number;
     score?: number;
+    health?: number;
 }
 
 export interface PowerupData {
@@ -84,7 +85,11 @@ export interface RemotePlayer {
     flipGroup: THREE.Group;
     name: string;
     colorCode: number;
+    health: number;
     nametag?: HTMLElement;
+    healthBarFill?: HTMLElement;
+    shieldMesh?: THREE.Mesh;
+    powerups: { ghost: { active: boolean; timer: number }; shield: { active: boolean; timer: number } };
     updateNametag(): void;
     honk(): void;
 }
@@ -104,7 +109,7 @@ export interface Inputs {
 export type ServerMessage =
     | { type: 'init', id: string, color: number, name: string, players: Record<string, PlayerData>, powerups: PowerupData[], coins: CoinData[], terrain: TerrainConfig, trees: TreeData[], city: CityData, scoreboard: ScoreboardEntry[] }
     | { type: 'newPlayer', player: PlayerData }
-    | { type: 'update', id: string, x: number, z: number, y?: number, angle: number, flipAngle: number, isFlipping: boolean, scale?: number }
+    | { type: 'update', id: string, x: number, z: number, y?: number, angle: number, flipAngle: number, isFlipping: boolean, scale?: number, ghostActive?: boolean, shieldActive?: boolean }
     | { type: 'removePlayer', id: string }
     | { type: 'powerupCollected', powerupId: number, playerId: string }
     | { type: 'powerupReset', powerupId: number }
@@ -114,5 +119,6 @@ export type ServerMessage =
     | { type: 'playerRenamed', id: string, name: string }
     | { type: 'scoreboard', scoreboard: ScoreboardEntry[] }
     | { type: 'playerHit', targetId: string, shooterId: string, newHealth: number, damage: number }
-    | { type: 'playerKilled', targetId: string, killerId: string }
-    | { type: 'playerRespawn', playerId: string, health: number };
+    | { type: 'playerKilled', targetId: string, killerId: string, killerName: string, targetName: string }
+    | { type: 'playerRespawn', playerId: string, health: number, x: number, z: number }
+    | { type: 'shieldBreak', targetId: string, shooterId: string };

@@ -59,7 +59,7 @@ function initSharedResources() {
     sharedBushMat = new THREE.MeshStandardMaterial({ color: 0x3D8B37, roughness: 0.9 });
 
     // Fountain particle resources
-    sharedParticleGeo = new THREE.SphereGeometry(0.08, 4, 4);
+    sharedParticleGeo = new THREE.SphereGeometry(0.3, 6, 6);
     sharedParticleMat = new THREE.MeshStandardMaterial({
         color: 0x88ccee, transparent: true, opacity: 0.6, roughness: 0.1
     });

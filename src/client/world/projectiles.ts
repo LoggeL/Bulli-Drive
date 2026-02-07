@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { state } from '../state.js';
 import { playHitSound } from '../effects/sounds.js';
+import { showHitmarker } from '../ui/hud.js';
 
 interface Projectile {
     mesh: THREE.Mesh;
@@ -82,6 +83,7 @@ export function updateProjectiles(dt: number) {
                 }
 
                 playHitSound();
+                showHitmarker();
 
                 // Remove projectile
                 state.scene.remove(p.mesh);

@@ -30,5 +30,6 @@ export const state = {
     health: 100,
     dead: false,
     respawnTimer: 0,
-    scoreboard: [] as ScoreboardEntry[]
+    scoreboard: [] as ScoreboardEntry[],
+    killfeed: [] as { killer: string; victim: string; time: number }[]
 };

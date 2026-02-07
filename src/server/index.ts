@@ -43,7 +43,9 @@ wss.on('connection', (ws: WebSocket) => {
         flipAngle: 0,
         isFlipping: false,
         score: 0,
-        health: 100
+        health: 100,
+        shieldActive: false,
+        ghostActive: false
     };
 
     console.log(`Player ${name} (${id}) connected`);
@@ -79,6 +81,8 @@ wss.on('connection', (ws: WebSocket) => {
                     players[id].flipAngle = data.flipAngle;
                     players[id].isFlipping = data.isFlipping;
                     players[id].scale = data.scale;
+                    if (data.shieldActive !== undefined) players[id].shieldActive = data.shieldActive;
+                    if (data.ghostActive !== undefined) players[id].ghostActive = data.ghostActive;
 
                     broadcast({
                         type: 'update',
@@ -89,7 +93,9 @@ wss.on('connection', (ws: WebSocket) => {
                         angle: data.angle,
                         flipAngle: data.flipAngle,
                         isFlipping: data.isFlipping,
-                        scale: data.scale
+                        scale: data.scale,
+                        ghostActive: players[id].ghostActive,
+                        shieldActive: players[id].shieldActive
                     }, id);
                 }
             } else if (data.type === 'collectPowerup') {
@@ -167,6 +173,18 @@ wss.on('connection', (ws: WebSocket) => {
             } else if (data.type === 'shoot') {
                 const target = players[data.targetId];
                 if (target && target.health > 0 && data.targetId !== id) {
+                    // Shield blocks one hit
+                    if (target.shieldActive) {
+                        target.shieldActive = false;
+                        console.log(`Player ${target.name}'s shield blocked shot from ${players[id]?.name}`);
+                        broadcast({
+                            type: 'shieldBreak',
+                            targetId: data.targetId,
+                            shooterId: id
+                        });
+                        return;
+                    }
+
                     const damage = 25;
                     target.health -= damage;
                     if (target.health < 0) target.health = 0;
@@ -185,7 +203,9 @@ wss.on('connection', (ws: WebSocket) => {
                         broadcast({
                             type: 'playerKilled',
                             targetId: data.targetId,
-                            killerId: id
+                            killerId: id,
+                            killerName: players[id]?.name || 'Unknown',
+                            targetName: target.name
                         });
 
                         // Award killer 50 points
@@ -194,15 +214,25 @@ wss.on('connection', (ws: WebSocket) => {
                             broadcastScoreboard();
                         }
 
-                        // Respawn after 3 seconds
+                        // Respawn after 3 seconds at random location
                         const targetId = data.targetId;
                         setTimeout(() => {
                             if (players[targetId]) {
+                                const angle = Math.random() * Math.PI * 2;
+                                const dist = 40 + Math.random() * 60;
+                                const spawnX = Math.cos(angle) * dist;
+                                const spawnZ = Math.sin(angle) * dist;
+
                                 players[targetId].health = 100;
+                                players[targetId].x = spawnX;
+                                players[targetId].z = spawnZ;
+
                                 broadcast({
                                     type: 'playerRespawn',
                                     playerId: targetId,
-                                    health: 100
+                                    health: 100,
+                                    x: spawnX,
+                                    z: spawnZ
                                 });
                             }
                         }, 3000);

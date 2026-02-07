@@ -9,6 +9,8 @@ import { createCoinsFromServer, removeCoinById, resetCoinById } from '../world/c
 import { updateScoreboardUI } from '../ui/playerList.js';
 import { getTerrainHeight } from '../world/environment.js';
 import { playHitSound } from '../effects/sounds.js';
+import { spawnExplosion } from '../effects/particles.js';
+import { addKillfeedEntry } from '../ui/hud.js';
 
 export function initWebSocket() {
     state.ws = new WebSocket(CONFIG.serverUrl);
@@ -157,11 +159,34 @@ function handleServerMessage(data: ServerMessage) {
             if (remote) remote.honk();
             break;
 
+        case 'shieldBreak':
+            if (data.targetId === state.myId) {
+                // Local player's shield was broken
+                if (state.bulli) {
+                    state.bulli.powerups.shield.active = false;
+                    state.bulli.powerups.shield.timer = 0;
+                }
+                // Flash blue briefly instead of red
+                flashScreenBlue();
+            } else {
+                // Remote player's shield was broken
+                const shieldRemote = state.remotePlayers[data.targetId] as any;
+                if (shieldRemote && shieldRemote.shieldMesh) {
+                    const mat = shieldRemote.shieldMesh.material as any;
+                    mat.opacity = 0;
+                    mat.emissiveIntensity = 0;
+                }
+            }
+            break;
+
         case 'playerRenamed':
             const rp = state.remotePlayers[data.id];
             if (rp) {
                 rp.name = data.name;
-                if (rp.nametag) rp.nametag.innerText = data.name;
+                if (rp.nametag) {
+                    const nameEl = rp.nametag.querySelector('.nametag-name');
+                    if (nameEl) nameEl.textContent = data.name;
+                }
             }
             updateScoreboardUI();
             break;
@@ -177,24 +202,74 @@ function handleServerMessage(data: ServerMessage) {
                 state.health = data.newHealth;
                 playHitSound();
                 flashScreenRed();
+            } else {
+                // Remote player was hit - update their health bar
+                const hitRemote = state.remotePlayers[data.targetId] as any;
+                if (hitRemote) {
+                    hitRemote.health = data.newHealth;
+                    if (hitRemote.updateHealthBar) hitRemote.updateHealthBar();
+                }
             }
             break;
 
         case 'playerKilled':
+            // Killfeed for all kills
+            addKillfeedEntry(data.killerName || 'Unknown', data.targetName || 'Unknown');
+
             if (data.targetId === state.myId) {
-                // Local player was killed
+                // Local player was killed - explode and show respawn
                 state.dead = true;
                 state.health = 0;
+                if (state.bulli) {
+                    spawnExplosion(
+                        state.bulli.group.position.x,
+                        state.bulli.group.position.y,
+                        state.bulli.group.position.z,
+                        state.bulli.colorCode
+                    );
+                    state.bulli.flipGroup.visible = false;
+                }
                 showRespawnOverlay();
+            } else {
+                // Remote player was killed - explode their car
+                const killedRemote = state.remotePlayers[data.targetId] as any;
+                if (killedRemote) {
+                    killedRemote.health = 0;
+                    if (killedRemote.updateHealthBar) killedRemote.updateHealthBar();
+                    spawnExplosion(
+                        killedRemote.group.position.x,
+                        killedRemote.group.position.y,
+                        killedRemote.group.position.z,
+                        killedRemote.colorCode
+                    );
+                    killedRemote.flipGroup.visible = false;
+                }
             }
             break;
 
         case 'playerRespawn':
             if (data.playerId === state.myId) {
-                // Local player respawned
+                // Local player respawned at new location
                 state.dead = false;
                 state.health = data.health;
+                if (state.bulli) {
+                    state.bulli.group.position.x = data.x;
+                    state.bulli.group.position.z = data.z;
+                    state.bulli.group.position.y = getTerrainHeight(data.x, data.z);
+                    state.bulli.speed = 0;
+                    state.bulli.flipGroup.visible = true;
+                    state.bulli.health = data.health;
+                }
                 hideRespawnOverlay();
+            } else {
+                // Remote player respawned
+                const respawnRemote = state.remotePlayers[data.playerId] as any;
+                if (respawnRemote) {
+                    respawnRemote.health = data.health;
+                    respawnRemote.group.position.set(data.x, getTerrainHeight(data.x, data.z), data.z);
+                    respawnRemote.flipGroup.visible = true;
+                    if (respawnRemote.updateHealthBar) respawnRemote.updateHealthBar();
+                }
             }
             break;
     }
@@ -210,6 +285,18 @@ function flashScreenRed() {
     }
     overlay.style.opacity = '1';
     setTimeout(() => { overlay!.style.opacity = '0'; }, 200);
+}
+
+function flashScreenBlue() {
+    let overlay = document.getElementById('shield-flash');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'shield-flash';
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,191,255,0.3);pointer-events:none;z-index:200;transition:opacity 0.3s;';
+        document.body.appendChild(overlay);
+    }
+    overlay.style.opacity = '1';
+    setTimeout(() => { overlay!.style.opacity = '0'; }, 300);
 }
 
 function showRespawnOverlay() {
@@ -270,11 +357,13 @@ export function addRemotePlayer(p: PlayerData) {
 
     const remote = new Bulli(p.color, false, (p.carType as any) || undefined);
     remote.name = p.name;
+    remote.health = p.health ?? 100;
     const px = p.x || 0;
     const pz = p.z || 0;
     remote.group.position.set(px, getTerrainHeight(px, pz), pz);
     remote.group.rotation.y = p.angle || 0;
     remote.createNametag(p.name, false);
+    remote.updateHealthBar();
 
     state.scene.add(remote.group);
     state.remotePlayers[p.id] = remote as any;
@@ -290,8 +379,8 @@ export function removeRemotePlayer(id: string) {
     }
 }
 
-function updateRemotePlayer(data: { id: string; x: number; z: number; y?: number; angle: number; flipAngle: number; isFlipping: boolean; scale?: number }) {
-    const remote = state.remotePlayers[data.id];
+function updateRemotePlayer(data: { id: string; x: number; z: number; y?: number; angle: number; flipAngle: number; isFlipping: boolean; scale?: number; ghostActive?: boolean; shieldActive?: boolean }) {
+    const remote = state.remotePlayers[data.id] as any;
     if (remote) {
         remote.group.position.set(data.x, getTerrainHeight(data.x, data.z), data.z);
         remote.group.rotation.y = data.angle;
@@ -306,6 +395,27 @@ function updateRemotePlayer(data: { id: string; x: number; z: number; y?: number
             remote.flipGroup.position.y = lift * 8;
         } else {
             remote.flipGroup.position.y = 0;
+        }
+
+        // Ghost visual on remote player
+        if (data.ghostActive !== undefined && remote.setGhostVisual) {
+            const wasGhost = remote.powerups?.ghost?.active ?? false;
+            if (data.ghostActive !== wasGhost) {
+                remote.setGhostVisual(data.ghostActive);
+                if (remote.powerups) remote.powerups.ghost.active = data.ghostActive;
+            }
+        }
+
+        // Shield visual on remote player
+        if (data.shieldActive !== undefined && remote.shieldMesh) {
+            const mat = remote.shieldMesh.material;
+            if (data.shieldActive) {
+                mat.opacity = 0.25 + Math.sin(Date.now() * 0.005) * 0.1;
+                mat.emissiveIntensity = 0.4;
+            } else {
+                mat.opacity = 0;
+                mat.emissiveIntensity = 0;
+            }
         }
     }
 }

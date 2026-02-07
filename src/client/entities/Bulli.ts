@@ -112,9 +112,11 @@ export class Bulli {
         magnet: { active: false, timer: 0 },
         ghost: { active: false, timer: 0 }
     };
+    health: number = 100;
     shieldMesh?: THREE.Mesh;
     wheels: THREE.Group[] = [];
     nametag?: HTMLDivElement;
+    healthBarFill?: HTMLDivElement;
 
     constructor(colorCode = 0xD32F2F, isLocal = false, carType?: CarType) {
         this.group = new THREE.Group();
@@ -133,8 +135,69 @@ export class Bulli {
         this.name = name;
         this.nametag = document.createElement('div');
         this.nametag.className = 'nametag' + (isLocal ? ' local' : '');
-        this.nametag.innerText = name;
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'nametag-name';
+        nameSpan.textContent = name;
+        this.nametag.appendChild(nameSpan);
+
+        if (!isLocal) {
+            const hpBar = document.createElement('div');
+            hpBar.className = 'nametag-hp';
+            const hpFill = document.createElement('div');
+            hpFill.className = 'nametag-hp-fill';
+            hpBar.appendChild(hpFill);
+            this.nametag.appendChild(hpBar);
+            this.healthBarFill = hpFill;
+        }
+
         document.body.appendChild(this.nametag);
+    }
+
+    updateHealthBar() {
+        if (!this.healthBarFill) return;
+        const pct = Math.max(0, Math.min(100, this.health));
+        this.healthBarFill.style.width = pct + '%';
+        if (pct > 50) {
+            this.healthBarFill.style.background = '#4CAF50';
+        } else if (pct > 25) {
+            this.healthBarFill.style.background = '#FF9800';
+        } else {
+            this.healthBarFill.style.background = '#f44336';
+        }
+    }
+
+    setGhostVisual(active: boolean) {
+        if (active) {
+            this.flipGroup.traverse((child) => {
+                if ((child as THREE.Mesh).isMesh && child !== this.shieldMesh) {
+                    const mat = (child as THREE.Mesh).material as THREE.MeshStandardMaterial;
+                    if (mat) {
+                        if (mat.userData?.originalOpacity === undefined) {
+                            mat.userData = mat.userData || {};
+                            mat.userData.originalOpacity = mat.opacity;
+                            mat.userData.wasTransparent = mat.transparent;
+                        }
+                        mat.transparent = true;
+                        mat.opacity = 0.1;
+                    }
+                }
+            });
+            if (this.nametag) this.nametag.style.display = 'none';
+        } else {
+            this.flipGroup.traverse((child) => {
+                if ((child as THREE.Mesh).isMesh && child !== this.shieldMesh) {
+                    const mat = (child as THREE.Mesh).material as THREE.MeshStandardMaterial;
+                    if (mat && mat.userData?.originalOpacity !== undefined) {
+                        mat.opacity = mat.userData.originalOpacity;
+                        mat.transparent = mat.userData.wasTransparent ?? false;
+                        delete mat.userData.originalOpacity;
+                        delete mat.userData.wasTransparent;
+                    }
+                }
+            });
+            // nametag display restored by updateNametag
+        }
     }
 
     updateNametag() {
@@ -572,6 +635,8 @@ export class Bulli {
                                 }
                             }
                         });
+                        // Restore nametag
+                        if (this.nametag) this.nametag.style.display = '';
                     }
                 }
             }
@@ -602,10 +667,12 @@ export class Bulli {
                             mat.userData.wasTransparent = mat.transparent;
                         }
                         mat.transparent = true;
-                        mat.opacity = 0.3 + Math.sin(Date.now() * 0.003) * 0.1;
+                        mat.opacity = 0.1;
                     }
                 }
             });
+            // Hide nametag during ghost
+            if (this.nametag) this.nametag.style.display = 'none';
         }
 
         if (!this.isLocal) return;
@@ -748,7 +815,9 @@ export class Bulli {
                 angle: this.angle,
                 flipAngle: this.flipGroup.rotation.x,
                 isFlipping: this.isFlipping,
-                scale: this.group.scale.x
+                scale: this.group.scale.x,
+                ghostActive: this.powerups.ghost.active,
+                shieldActive: this.powerups.shield.active
             }));
         }
     }
