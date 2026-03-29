@@ -1258,6 +1258,16 @@ canvas {
     box-shadow: 0 0 25px rgba(245, 166, 35, 0.5);
 }
 
+.control-btn.action.shoot {
+    background: rgba(232, 69, 69, 0.25);
+    border-color: rgba(232, 69, 69, 0.4);
+}
+
+.control-btn.action.shoot:active, .control-btn.action.shoot.active {
+    background: rgba(232, 69, 69, 0.6);
+    box-shadow: 0 0 25px rgba(232, 69, 69, 0.5);
+}
+
 .control-btn.action.flip {
     background: rgba(43, 122, 155, 0.25);
     border-color: rgba(43, 122, 155, 0.4);
@@ -1417,7 +1427,7 @@ canvas {
 #modal-container {
     position: fixed;
     inset: 0;
-    z-index: 100;
+    z-index: 9100;
     display: flex;
     justify-content: center;
     align-items: center;

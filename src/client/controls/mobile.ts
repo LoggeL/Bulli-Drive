@@ -15,6 +15,7 @@ export function setupMobileControls() {
 
     const honkBtn = document.getElementById('btn-honk');
     const flipBtn = document.getElementById('btn-flip');
+    const shootBtn = document.getElementById('btn-shoot');
 
     if (honkBtn) {
         honkBtn.addEventListener('touchstart', (e) => {
@@ -31,6 +32,13 @@ export function setupMobileControls() {
         flipBtn.addEventListener('touchend', (e) => {
             e.preventDefault();
             state.inputs.space = false;
+        });
+    }
+
+    if (shootBtn) {
+        shootBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            state.inputs.e = true;
         });
     }
 }
