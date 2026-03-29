@@ -21,6 +21,14 @@ const publicPath = path.join(__dirname, '../public');
 app.use(express.static(publicPath));
 
 const players: Record<string, Player> = {};
+const BASE_SHOT_DAMAGE = 25;
+const MEGA_DAMAGE_REDUCTION = 0.4;
+const POWERUP_DURATIONS = {
+    shield: 8000,
+    ghost: 8000,
+    size: 5000
+} as const;
+const MEGA_SCALE = 2.5;
 
 initWorld();
 
@@ -81,25 +89,10 @@ wss.on('connection', (ws: WebSocket) => {
                     players[id].angle = data.angle;
                     players[id].flipAngle = data.flipAngle;
                     players[id].isFlipping = data.isFlipping;
-                    players[id].scale = data.scale;
-                    if (data.shieldActive !== undefined) players[id].shieldActive = data.shieldActive;
-                    if (data.ghostActive !== undefined) players[id].ghostActive = data.ghostActive;
-                    if (data.megaActive !== undefined) players[id].megaActive = data.megaActive;
+                    players[id].scale = players[id].megaActive ? MEGA_SCALE : 1;
                     players[id].lastActivity = Date.now();
 
-                    broadcast({
-                        type: 'update',
-                        id,
-                        x: data.x,
-                        z: data.z,
-                        y: data.y,
-                        angle: data.angle,
-                        flipAngle: data.flipAngle,
-                        isFlipping: data.isFlipping,
-                        scale: data.scale,
-                        ghostActive: players[id].ghostActive,
-                        shieldActive: players[id].shieldActive
-                    }, id);
+                    broadcastPlayerState(id, data.y, id);
                 }
             } else if (data.type === 'collectPowerup') {
                 const powerup = powerups.find(p => p.id === data.powerupId);
@@ -112,6 +105,16 @@ wss.on('connection', (ws: WebSocket) => {
                         powerupId: powerup.id,
                         playerId: id
                     });
+
+                    if (players[id]) {
+                        if (powerup.type === 'shield') {
+                            activatePowerup(id, 'shieldActive', POWERUP_DURATIONS.shield);
+                        } else if (powerup.type === 'ghost') {
+                            activatePowerup(id, 'ghostActive', POWERUP_DURATIONS.ghost);
+                        } else if (powerup.type === 'size') {
+                            activatePowerup(id, 'megaActive', POWERUP_DURATIONS.size);
+                        }
+                    }
 
                     setTimeout(() => {
                         powerup.collected = false;
@@ -203,6 +206,10 @@ wss.on('connection', (ws: WebSocket) => {
                     // Shield blocks one hit
                     if (target.shieldActive) {
                         target.shieldActive = false;
+                        if (target.shieldTimeout) {
+                            clearTimeout(target.shieldTimeout);
+                            target.shieldTimeout = undefined;
+                        }
                         console.log(`Player ${target.name}'s shield blocked shot from ${players[id]?.name}`);
                         broadcast({
                             type: 'shieldBreak',
@@ -212,8 +219,10 @@ wss.on('connection', (ws: WebSocket) => {
                         return;
                     }
 
-                    // Mega halves incoming damage
-                    const damage = target.megaActive ? 12 : 25;
+                    // Mega form is tougher and shrugs off a chunk of incoming damage.
+                    const damage = target.megaActive
+                        ? Math.round(BASE_SHOT_DAMAGE * MEGA_DAMAGE_REDUCTION)
+                        : BASE_SHOT_DAMAGE;
                     target.health -= damage;
                     if (target.health < 0) target.health = 0;
 
@@ -255,6 +264,11 @@ wss.on('connection', (ws: WebSocket) => {
                                 players[targetId].x = spawnX;
                                 players[targetId].z = spawnZ;
                                 players[targetId].respawnShield = true;
+                                players[targetId].shieldActive = false;
+                                players[targetId].ghostActive = false;
+                                players[targetId].megaActive = false;
+                                players[targetId].scale = 1;
+                                clearPowerupTimeouts(players[targetId]);
 
                                 broadcast({
                                     type: 'playerRespawn',
@@ -298,7 +312,7 @@ function getPublicPlayer(id: string) {
         angle: p.angle,
         flipAngle: p.flipAngle,
         isFlipping: p.isFlipping,
-        scale: p.scale,
+        scale: p.megaActive ? MEGA_SCALE : 1,
         score: p.score,
         health: p.health
     };
@@ -331,6 +345,67 @@ function broadcastScoreboard() {
         type: 'scoreboard',
         scoreboard: getScoreboard()
     });
+}
+
+function activatePowerup(id: string, flag: 'shieldActive' | 'ghostActive' | 'megaActive', durationMs: number) {
+    const player = players[id];
+    if (!player) return;
+
+    player[flag] = true;
+    if (flag === 'megaActive') {
+        player.scale = MEGA_SCALE;
+    }
+
+    const timeoutKey = (
+        flag === 'shieldActive' ? 'shieldTimeout' :
+        flag === 'ghostActive' ? 'ghostTimeout' :
+        'megaTimeout'
+    ) as 'shieldTimeout' | 'ghostTimeout' | 'megaTimeout';
+
+    if (player[timeoutKey]) {
+        clearTimeout(player[timeoutKey]);
+    }
+
+    broadcastPlayerState(id, player.y);
+
+    player[timeoutKey] = setTimeout(() => {
+        const current = players[id];
+        if (!current) return;
+        current[flag] = false;
+        if (flag === 'megaActive') {
+            current.scale = 1;
+        }
+        current[timeoutKey] = undefined;
+        broadcastPlayerState(id, current.y);
+    }, durationMs);
+}
+
+function clearPowerupTimeouts(player: Player) {
+    for (const key of ['shieldTimeout', 'ghostTimeout', 'megaTimeout'] as const) {
+        if (player[key]) {
+            clearTimeout(player[key]);
+            player[key] = undefined;
+        }
+    }
+}
+
+function broadcastPlayerState(id: string, y?: number, excludeId?: string) {
+    const player = players[id];
+    if (!player) return;
+
+    broadcast({
+        type: 'update',
+        id,
+        x: player.x,
+        z: player.z,
+        y,
+        angle: player.angle,
+        flipAngle: player.flipAngle,
+        isFlipping: player.isFlipping,
+        scale: player.megaActive ? MEGA_SCALE : 1,
+        ghostActive: player.ghostActive,
+        shieldActive: player.shieldActive
+    }, excludeId);
 }
 
 function broadcast(data: any, excludeId?: string) {

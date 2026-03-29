@@ -257,6 +257,13 @@ function handleServerMessage(data: ServerMessage) {
                 state.respawnShield = true;
                 state.respawnMoveStart = 0;
                 if (state.bulli) {
+                    state.bulli.powerups.shield.active = false;
+                    state.bulli.powerups.shield.timer = 0;
+                    state.bulli.powerups.ghost.active = false;
+                    state.bulli.powerups.ghost.timer = 0;
+                    state.bulli.powerups.size.active = false;
+                    state.bulli.powerups.size.timer = 0;
+                    state.bulli.group.scale.set(1, 1, 1);
                     state.bulli.group.position.x = data.x;
                     state.bulli.group.position.z = data.z;
                     state.bulli.group.position.y = getTerrainHeight(data.x, data.z);
@@ -270,6 +277,12 @@ function handleServerMessage(data: ServerMessage) {
                 const respawnRemote = state.remotePlayers[data.playerId] as any;
                 if (respawnRemote) {
                     respawnRemote.health = data.health;
+                    if (respawnRemote.powerups) {
+                        respawnRemote.powerups.ghost.active = false;
+                        respawnRemote.powerups.shield.active = false;
+                    }
+                    respawnRemote.group.scale.set(1, 1, 1);
+                    if (respawnRemote.setGhostVisual) respawnRemote.setGhostVisual(false);
                     respawnRemote.group.position.set(data.x, getTerrainHeight(data.x, data.z), data.z);
                     respawnRemote.flipGroup.visible = true;
                     respawnRemote._respawnShield = true;

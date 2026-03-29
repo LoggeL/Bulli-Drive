@@ -204,6 +204,10 @@ export class Bulli {
 
     updateNametag() {
         if (!this.nametag || !state.camera) return;
+        if (this.powerups.ghost.active) {
+            this.nametag.style.display = 'none';
+            return;
+        }
 
         const pos = this.group.position.clone();
         pos.y += 4;

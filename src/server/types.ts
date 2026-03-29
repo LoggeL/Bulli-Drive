@@ -19,6 +19,9 @@ export interface Player {
     shieldActive: boolean;
     ghostActive: boolean;
     megaActive: boolean;
+    shieldTimeout?: ReturnType<typeof setTimeout>;
+    ghostTimeout?: ReturnType<typeof setTimeout>;
+    megaTimeout?: ReturnType<typeof setTimeout>;
     lastActivity: number;
     respawnShield: boolean;
 }

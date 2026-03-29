@@ -77,8 +77,7 @@ export function animatePowerups(time: number) {
 export function checkPowerupCollection() {
     if (!state.bulli) return;
     const carPos = state.bulli.group.position;
-    const scale = state.bulli.group.scale.x || 1;
-    const collectRadius = 5 * scale;
+    const collectRadius = 5;
     state.worldPowerups.forEach(p => {
         if (p.collected) return;
         _powerupCheckVec.set(p.x, carPos.y, p.z);

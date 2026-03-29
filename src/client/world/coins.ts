@@ -91,9 +91,8 @@ export function animateCoins(time: number) {
 export function checkCoinCollection() {
     if (!state.bulli) return;
     const carPos = state.bulli.group.position;
-    const scale = state.bulli.group.scale.x || 1;
     const magnetActive = state.bulli.powerups.magnet.active;
-    const collectRadius = (magnetActive ? 6 : 3) * scale;
+    const collectRadius = magnetActive ? 6 : 3;
     for (let i = state.coins.length - 1; i >= 0; i--) {
         const coin = state.coins[i];
         const dx = carPos.x - coin.position.x;
