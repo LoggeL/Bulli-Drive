@@ -3,6 +3,7 @@ import { WebSocket } from 'ws';
 export interface Player {
     id: string;
     ws: WebSocket;
+    ready: boolean;
     color: number;
     name: string;
     carType: string;

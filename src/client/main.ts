@@ -92,6 +92,9 @@ function init() {
                 type: 'setCarType',
                 carType: carType
             }));
+            state.ws.send(JSON.stringify({
+                type: 'playerReady'
+            }));
         }
 
         // Hide splash screen

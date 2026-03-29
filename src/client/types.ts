@@ -117,6 +117,7 @@ export type ServerMessage =
     | { type: 'coinReset', coinId: number }
     | { type: 'honk', id: string }
     | { type: 'playerRenamed', id: string, name: string }
+    | { type: 'playerReady' }
     | { type: 'scoreboard', scoreboard: ScoreboardEntry[] }
     | { type: 'playerHit', targetId: string, shooterId: string, newHealth: number, damage: number }
     | { type: 'playerKilled', targetId: string, killerId: string, killerName: string, targetName: string }

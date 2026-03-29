@@ -34,6 +34,7 @@ wss.on('connection', (ws: WebSocket) => {
     players[id] = {
         id,
         ws,
+        ready: false,
         color,
         name,
         carType: 'bulli',
@@ -67,11 +68,6 @@ wss.on('connection', (ws: WebSocket) => {
         city: cityData,
         scoreboard: getScoreboard()
     }));
-
-    broadcast({
-        type: 'newPlayer',
-        player: getPublicPlayer(id)
-    }, id);
 
     ws.on('message', (message: string) => {
         try {
@@ -156,14 +152,16 @@ wss.on('connection', (ws: WebSocket) => {
                     players[id].name = data.name.substring(0, 20);
                     console.log(`Player ${oldName} renamed to ${players[id].name}`);
 
-                    broadcast({
-                        type: 'playerRenamed',
-                        id,
-                        name: players[id].name
-                    });
-                    
-                    // Broadcast updated scoreboard with new name
-                    broadcastScoreboard();
+                    if (players[id].ready) {
+                        broadcast({
+                            type: 'playerRenamed',
+                            id,
+                            name: players[id].name
+                        });
+                        
+                        // Broadcast updated scoreboard with new name
+                        broadcastScoreboard();
+                    }
                 }
             } else if (data.type === 'setCarType') {
                 if (players[id] && data.carType) {
@@ -171,6 +169,15 @@ wss.on('connection', (ws: WebSocket) => {
                     if (validTypes.includes(data.carType)) {
                         players[id].carType = data.carType;
                     }
+                }
+            } else if (data.type === 'playerReady') {
+                if (players[id] && !players[id].ready) {
+                    players[id].ready = true;
+                    broadcast({
+                        type: 'newPlayer',
+                        player: getPublicPlayer(id)
+                    }, id);
+                    broadcastScoreboard();
                 }
             } else if (data.type === 'scoreUpdate') {
                 if (players[id] && typeof data.score === 'number') {
@@ -300,6 +307,7 @@ function getPublicPlayer(id: string) {
 function getPublicPlayers() {
     const publicPlayers: Record<string, any> = {};
     for (const id in players) {
+        if (!players[id].ready) continue;
         publicPlayers[id] = getPublicPlayer(id);
     }
     return publicPlayers;
@@ -307,6 +315,7 @@ function getPublicPlayers() {
 
 function getScoreboard() {
     return Object.values(players)
+        .filter(p => p.ready)
         .map(p => ({
             id: p.id,
             name: p.name,
