@@ -10,18 +10,29 @@ interface Projectile {
     age: number;
     angle: number;
     ownerId: string;
+    hitRadius: number;
 }
 
 const PROJECTILE_SPEED = 80;
 const PROJECTILE_MAX_AGE = 2.0;
 const HIT_DISTANCE = 3.0;
+const MEGA_PROJECTILE_SCALE = 1.8;
+const MEGA_HIT_DISTANCE = 4.5;
 
 // Cached shared geometry - created once, never disposed
 const _projectileGeo = new THREE.CapsuleGeometry(0.15, 0.6, 4, 8);
 
 const projectiles: Projectile[] = [];
 
-export function createProjectile(x: number, y: number, z: number, angle: number, color: number, ownerId: string) {
+export function createProjectile(
+    x: number,
+    y: number,
+    z: number,
+    angle: number,
+    color: number,
+    ownerId: string,
+    isMega = false
+) {
     const mat = new THREE.MeshStandardMaterial({
         color,
         emissive: color,
@@ -31,13 +42,24 @@ export function createProjectile(x: number, y: number, z: number, angle: number,
     mesh.position.set(x, y + 1.5, z);
     mesh.rotation.x = Math.PI / 2;
     mesh.rotation.y = angle;
+    if (isMega) {
+        mesh.scale.setScalar(MEGA_PROJECTILE_SCALE);
+    }
 
     state.scene.add(mesh);
 
     const dx = Math.sin(angle) * PROJECTILE_SPEED;
     const dz = Math.cos(angle) * PROJECTILE_SPEED;
 
-    projectiles.push({ mesh, dx, dz, age: 0, angle, ownerId });
+    projectiles.push({
+        mesh,
+        dx,
+        dz,
+        age: 0,
+        angle,
+        ownerId,
+        hitRadius: isMega ? MEGA_HIT_DISTANCE : HIT_DISTANCE
+    });
 }
 
 function removeProjectile(index: number) {
@@ -73,7 +95,7 @@ export function updateProjectiles(dt: number) {
             const dz = p.mesh.position.z - rz;
             const dist = Math.sqrt(dx * dx + dz * dz);
 
-            if (dist < HIT_DISTANCE) {
+            if (dist < p.hitRadius) {
                 if (state.ws && state.ws.readyState === WebSocket.OPEN) {
                     state.ws.send(JSON.stringify({
                         type: 'shoot',

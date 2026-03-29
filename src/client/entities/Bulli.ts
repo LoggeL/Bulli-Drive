@@ -9,6 +9,8 @@ import { getTerrainHeight } from '../world/environment.js';
 // Reusable vectors to avoid per-frame allocations
 const _scaleBig = new THREE.Vector3(2.5, 2.5, 2.5);
 const _scaleNormal = new THREE.Vector3(1, 1, 1);
+const MEGA_COLLISION_RADIUS_SCALE = 1.45;
+const MEGA_PROJECTILE_FRONT_OFFSET = 4.3;
 
 // Cached VW logo texture
 let _vwLogoTexture: THREE.CanvasTexture | null = null;
@@ -603,13 +605,14 @@ export class Bulli {
 
         playShootSound();
 
+        const megaActive = this.powerups.size.active;
         // Fire from the front of the car (account for jump height)
-        const frontOffset = 3.5;
+        const frontOffset = megaActive ? MEGA_PROJECTILE_FRONT_OFFSET : 3.5;
         const startX = this.group.position.x + Math.sin(this.angle) * frontOffset;
         const startZ = this.group.position.z + Math.cos(this.angle) * frontOffset;
         const startY = this.group.position.y + this.flipGroup.position.y;
 
-        createProjectile(startX, startY, startZ, this.angle, this.colorCode, state.myId || '');
+        createProjectile(startX, startY, startZ, this.angle, this.colorCode, state.myId || '', megaActive);
     }
 
     update(dt: number) {
@@ -752,11 +755,14 @@ export class Bulli {
         let collision = false;
         // Ghost powerup = pass through obstacles
         if (!this.isFlipping && !this.powerups.ghost.active) {
+            const collisionScale = this.powerups.size.active
+                ? MEGA_COLLISION_RADIUS_SCALE
+                : (this.group.scale.x || 1);
             for (const obs of state.obstacles as any[]) {
                 const dx = nextX - obs.x;
                 const dz = nextZ - obs.z;
                 const dist = Math.sqrt(dx * dx + dz * dz);
-                if (dist < obs.radius * (this.group.scale.x || 1)) {
+                if (dist < obs.radius * collisionScale) {
                     // Shield powerup = no bounce, just stop
                     if (this.powerups.shield.active) {
                         collision = true;
