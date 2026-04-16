@@ -132,12 +132,13 @@ export function initWorld() {
     // Init Powerups (spread around, some in city)
     for (let i = 0; i < 25; i++) {
         const type = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
-        let x, z;
-        do {
+        let x = 0, z = 0;
+        for (let attempts = 0; attempts < 30; attempts++) {
             x = (Math.random() - 0.5) * 400;
             z = (Math.random() - 0.5) * 400;
-        } while (isInCityArea(x, z) && !isOnRoad(x, z)); // Place on roads if in city
-        
+            if (!(isInCityArea(x, z) && !isOnRoad(x, z))) break;
+        }
+
         powerups.push({
             id: i,
             x,
@@ -151,11 +152,12 @@ export function initWorld() {
 
     // Init Coins (spread around, avoid city center)
     for (let i = 0; i < 30; i++) {
-        let x, z;
-        do {
+        let x = 0, z = 0;
+        for (let attempts = 0; attempts < 30; attempts++) {
             x = (Math.random() - 0.5) * 600;
             z = (Math.random() - 0.5) * 600;
-        } while (Math.abs(x) < 30 && Math.abs(z) < 30);
+            if (!(Math.abs(x) < 30 && Math.abs(z) < 30)) break;
+        }
 
         coins.push({
             id: i,

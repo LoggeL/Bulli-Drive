@@ -43,11 +43,23 @@ export function setupMobileControls() {
     }
 }
 
-function setupJoystick(containerId: string, onMove: (x: number, y: number) => void) {
+interface JoystickHandle {
+    destroy(): void;
+}
+
+const activeJoysticks: JoystickHandle[] = [];
+
+export function destroyMobileControls() {
+    while (activeJoysticks.length) {
+        activeJoysticks.pop()!.destroy();
+    }
+}
+
+function setupJoystick(containerId: string, onMove: (x: number, y: number) => void): JoystickHandle | null {
     const container = document.getElementById(containerId);
-    if (!container) return;
+    if (!container) return null;
     const stick = container.querySelector('.joystick-stick') as HTMLElement;
-    if (!stick) return;
+    if (!stick) return null;
 
     let activeTouchId: number | null = null;
 
@@ -56,12 +68,12 @@ function setupJoystick(containerId: string, onMove: (x: number, y: number) => vo
         const centerX = rect.width / 2;
         const centerY = rect.height / 2;
         const maxRadius = rect.width / 2;
-        
+
         const dx = touch.clientX - (rect.left + centerX);
         const dy = touch.clientY - (rect.top + centerY);
         const dist = Math.sqrt(dx * dx + dy * dy);
         const angle = Math.atan2(dy, dx);
-        
+
         const moveRadius = Math.min(dist, maxRadius);
         const moveX = Math.cos(angle) * moveRadius;
         const moveY = Math.sin(angle) * moveRadius;
@@ -70,22 +82,22 @@ function setupJoystick(containerId: string, onMove: (x: number, y: number) => vo
         onMove(moveX / maxRadius, moveY / maxRadius);
     };
 
-    container.addEventListener('touchstart', (e) => {
+    const onStart = (e: TouchEvent) => {
         if (activeTouchId !== null) return;
         const touch = e.changedTouches[0];
         activeTouchId = touch.identifier;
         handleTouch(touch);
-    }, { passive: false });
+    };
 
-    window.addEventListener('touchmove', (e) => {
+    const onMoveTouch = (e: TouchEvent) => {
         for (let i = 0; i < e.changedTouches.length; i++) {
             if (e.changedTouches[i].identifier === activeTouchId) {
                 handleTouch(e.changedTouches[i]);
             }
         }
-    }, { passive: false });
+    };
 
-    const endTouch = (e: TouchEvent) => {
+    const onEnd = (e: TouchEvent) => {
         for (let i = 0; i < e.changedTouches.length; i++) {
             if (e.changedTouches[i].identifier === activeTouchId) {
                 activeTouchId = null;
@@ -95,6 +107,19 @@ function setupJoystick(containerId: string, onMove: (x: number, y: number) => vo
         }
     };
 
-    window.addEventListener('touchend', endTouch);
-    window.addEventListener('touchcancel', endTouch);
+    container.addEventListener('touchstart', onStart, { passive: false });
+    window.addEventListener('touchmove', onMoveTouch, { passive: false });
+    window.addEventListener('touchend', onEnd);
+    window.addEventListener('touchcancel', onEnd);
+
+    const handle: JoystickHandle = {
+        destroy() {
+            container.removeEventListener('touchstart', onStart);
+            window.removeEventListener('touchmove', onMoveTouch);
+            window.removeEventListener('touchend', onEnd);
+            window.removeEventListener('touchcancel', onEnd);
+        }
+    };
+    activeJoysticks.push(handle);
+    return handle;
 }

@@ -20,7 +20,17 @@ export function initWebSocket() {
     };
 
     state.ws.onmessage = (event) => {
-        const data: ServerMessage = JSON.parse(event.data);
+        let data: ServerMessage;
+        try {
+            data = JSON.parse(event.data);
+        } catch (err) {
+            console.warn('Dropping malformed server message', err);
+            return;
+        }
+        if (!data || typeof data !== 'object' || typeof (data as any).type !== 'string') {
+            console.warn('Dropping server message without type');
+            return;
+        }
         handleServerMessage(data);
     };
 
@@ -318,6 +328,8 @@ function flashScreenBlue() {
     setTimeout(() => { overlay!.style.opacity = '0'; }, 300);
 }
 
+let respawnInterval: number = 0;
+
 function showRespawnOverlay() {
     let overlay = document.getElementById('respawn-overlay');
     if (!overlay) {
@@ -340,14 +352,19 @@ function showRespawnOverlay() {
     }
     overlay.style.display = 'flex';
 
-    // Countdown
+    // Countdown - clear any prior interval to avoid stacking on rapid re-deaths
+    if (respawnInterval) {
+        clearInterval(respawnInterval);
+        respawnInterval = 0;
+    }
     let count = 3;
     const timerEl = document.getElementById('respawn-timer');
     if (timerEl) timerEl.textContent = 'Respawning in 3...';
-    const interval = setInterval(() => {
+    respawnInterval = window.setInterval(() => {
         count--;
         if (count <= 0) {
-            clearInterval(interval);
+            clearInterval(respawnInterval);
+            respawnInterval = 0;
             if (timerEl) timerEl.textContent = 'Respawning...';
         } else if (timerEl) {
             timerEl.textContent = `Respawning in ${count}...`;
@@ -356,6 +373,10 @@ function showRespawnOverlay() {
 }
 
 function hideRespawnOverlay() {
+    if (respawnInterval) {
+        clearInterval(respawnInterval);
+        respawnInterval = 0;
+    }
     const overlay = document.getElementById('respawn-overlay');
     if (overlay) overlay.style.display = 'none';
 }
@@ -400,41 +421,52 @@ export function removeRemotePlayer(id: string) {
 
 function updateRemotePlayer(data: { id: string; x: number; z: number; y?: number; angle: number; flipAngle: number; isFlipping: boolean; scale?: number; ghostActive?: boolean; shieldActive?: boolean }) {
     const remote = state.remotePlayers[data.id] as any;
-    if (remote) {
-        remote.group.position.set(data.x, getTerrainHeight(data.x, data.z), data.z);
-        remote.group.rotation.y = data.angle;
-        remote.flipGroup.rotation.x = data.flipAngle;
-        if (data.scale) remote.group.scale.set(data.scale, data.scale, data.scale);
+    if (!remote) return;
 
-        if (data.y !== undefined) {
-            remote.flipGroup.position.y = data.y;
-        } else if (data.isFlipping) {
-            const normRot = data.flipAngle;
-            const lift = Math.sin(normRot / 2);
-            remote.flipGroup.position.y = lift * 8;
+    // Reject any non-finite coords/angles - prevents NaN/Infinity from corrupting the scene
+    if (!Number.isFinite(data.x) || !Number.isFinite(data.z) ||
+        !Number.isFinite(data.angle) || !Number.isFinite(data.flipAngle)) {
+        return;
+    }
+    const x = Math.max(-2000, Math.min(2000, data.x));
+    const z = Math.max(-2000, Math.min(2000, data.z));
+
+    remote.group.position.set(x, getTerrainHeight(x, z), z);
+    remote.group.rotation.y = data.angle;
+    remote.flipGroup.rotation.x = data.flipAngle;
+    if (data.scale && Number.isFinite(data.scale)) {
+        const s = Math.max(0.1, Math.min(10, data.scale));
+        remote.group.scale.set(s, s, s);
+    }
+
+    if (data.y !== undefined && Number.isFinite(data.y)) {
+        remote.flipGroup.position.y = Math.max(-100, Math.min(500, data.y));
+    } else if (data.isFlipping) {
+        const normRot = data.flipAngle;
+        const lift = Math.sin(normRot / 2);
+        remote.flipGroup.position.y = lift * 8;
+    } else {
+        remote.flipGroup.position.y = 0;
+    }
+
+    // Ghost visual on remote player
+    if (data.ghostActive !== undefined && remote.setGhostVisual) {
+        const wasGhost = remote.powerups?.ghost?.active ?? false;
+        if (data.ghostActive !== wasGhost) {
+            remote.setGhostVisual(data.ghostActive);
+            if (remote.powerups) remote.powerups.ghost.active = data.ghostActive;
+        }
+    }
+
+    // Shield visual on remote player
+    if (data.shieldActive !== undefined && remote.shieldMesh) {
+        const mat = remote.shieldMesh.material;
+        if (data.shieldActive) {
+            mat.opacity = 0.25 + Math.sin(Date.now() * 0.005) * 0.1;
+            mat.emissiveIntensity = 0.4;
         } else {
-            remote.flipGroup.position.y = 0;
-        }
-
-        // Ghost visual on remote player
-        if (data.ghostActive !== undefined && remote.setGhostVisual) {
-            const wasGhost = remote.powerups?.ghost?.active ?? false;
-            if (data.ghostActive !== wasGhost) {
-                remote.setGhostVisual(data.ghostActive);
-                if (remote.powerups) remote.powerups.ghost.active = data.ghostActive;
-            }
-        }
-
-        // Shield visual on remote player
-        if (data.shieldActive !== undefined && remote.shieldMesh) {
-            const mat = remote.shieldMesh.material;
-            if (data.shieldActive) {
-                mat.opacity = 0.25 + Math.sin(Date.now() * 0.005) * 0.1;
-                mat.emissiveIntensity = 0.4;
-            } else {
-                mat.opacity = 0;
-                mat.emissiveIntensity = 0;
-            }
+            mat.opacity = 0;
+            mat.emissiveIntensity = 0;
         }
     }
 }

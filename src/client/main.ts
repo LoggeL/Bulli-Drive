@@ -179,7 +179,9 @@ function animate() {
         const camY = carPos.y + CONFIG.cameraHeight * zoomOut * heightBoost;
 
         _cameraTarget.set(camX, camY, camZ);
-        state.camera.position.lerp(_cameraTarget, 0.1);
+        // Framerate-independent lerp: equivalent to k=0.1 at 60fps, scales smoothly otherwise
+        const camLerp = 1 - Math.pow(1 - 0.1, dt * 60);
+        state.camera.position.lerp(_cameraTarget, camLerp);
         _lookAtTarget.set(carPos.x, carPos.y + CONFIG.cameraLookAtY, carPos.z);
         state.camera.lookAt(_lookAtTarget);
 

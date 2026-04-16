@@ -13,7 +13,8 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
+// 64 KB cap on inbound frames - guards against memory exhaustion via giant payloads
+const wss = new WebSocketServer({ server, maxPayload: 64 * 1024 });
 
 // Serve static files from public directory
 // Note: In the new structure, public is at the root
@@ -29,15 +30,55 @@ const POWERUP_DURATIONS = {
     size: 5000
 } as const;
 const MEGA_SCALE = 2.5;
+const VALID_CAR_TYPES = ['bulli', 'pickup', 'sport', 'beetle', 'jeep'];
+const WORLD_BOUND = 1000;
+const MAX_SCORE = 1_000_000;
+const HEARTBEAT_INTERVAL_MS = 30_000;
+
+function randomSpawn(): { x: number; z: number } {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 40 + Math.random() * 60;
+    return { x: Math.cos(angle) * dist, z: Math.sin(angle) * dist };
+}
+
+function safeSend(ws: WebSocket, msg: string) {
+    if (ws.readyState !== WebSocket.OPEN) return;
+    try {
+        ws.send(msg);
+    } catch (err) {
+        console.warn('ws.send failed', err);
+    }
+}
 
 initWorld();
 
 console.log(`Server starting...`);
 
+// Heartbeat - terminate stale connections so the players map doesn't accumulate ghosts
+const heartbeat = setInterval(() => {
+    wss.clients.forEach((client) => {
+        const c = client as WebSocket & { isAlive?: boolean };
+        if (c.isAlive === false) {
+            c.terminate();
+            return;
+        }
+        c.isAlive = false;
+        try { c.ping(); } catch { /* ignore */ }
+    });
+}, HEARTBEAT_INTERVAL_MS);
+
+wss.on('close', () => clearInterval(heartbeat));
+
 wss.on('connection', (ws: WebSocket) => {
     const id = uuidv4();
-    const color = Math.random() * 0xffffff;
+    const color = Math.floor(Math.random() * 0xffffff);
     const name = `Player ${Math.floor(Math.random() * 1000)}`;
+    const spawn = randomSpawn();
+
+    (ws as WebSocket & { isAlive?: boolean }).isAlive = true;
+    ws.on('pong', () => {
+        (ws as WebSocket & { isAlive?: boolean }).isAlive = true;
+    });
 
     players[id] = {
         id,
@@ -46,9 +87,9 @@ wss.on('connection', (ws: WebSocket) => {
         color,
         name,
         carType: 'bulli',
-        x: 0,
+        x: spawn.x,
         y: 0,
-        z: 0,
+        z: spawn.z,
         angle: 0,
         flipAngle: 0,
         isFlipping: false,
@@ -57,13 +98,16 @@ wss.on('connection', (ws: WebSocket) => {
         shieldActive: false,
         ghostActive: false,
         megaActive: false,
+        shieldTimeout: undefined,
+        ghostTimeout: undefined,
+        megaTimeout: undefined,
         lastActivity: Date.now(),
         respawnShield: true
     };
 
     console.log(`Player ${name} (${id}) connected`);
 
-    ws.send(JSON.stringify({
+    safeSend(ws, JSON.stringify({
         type: 'init',
         id,
         color,
@@ -78,227 +122,259 @@ wss.on('connection', (ws: WebSocket) => {
     }));
 
     ws.on('message', (message: string) => {
+        let data: any;
         try {
-            const data = JSON.parse(message);
-
-            if (data.type === 'update') {
-                if (players[id]) {
-                    players[id].x = data.x;
-                    players[id].y = data.y || 0;
-                    players[id].z = data.z;
-                    players[id].angle = data.angle;
-                    players[id].flipAngle = data.flipAngle;
-                    players[id].isFlipping = data.isFlipping;
-                    players[id].scale = players[id].megaActive ? MEGA_SCALE : 1;
-                    players[id].lastActivity = Date.now();
-
-                    broadcastPlayerState(id, data.y, id);
-                }
-            } else if (data.type === 'collectPowerup') {
-                const powerup = powerups.find(p => p.id === data.powerupId);
-                if (powerup && !powerup.collected) {
-                    powerup.collected = true;
-                    console.log(`Player ${players[id]?.name} collected powerup ${powerup.id} (${powerup.type})`);
-
-                    broadcast({
-                        type: 'powerupCollected',
-                        powerupId: powerup.id,
-                        playerId: id
-                    });
-
-                    if (players[id]) {
-                        if (powerup.type === 'shield') {
-                            activatePowerup(id, 'shieldActive', POWERUP_DURATIONS.shield);
-                        } else if (powerup.type === 'ghost') {
-                            activatePowerup(id, 'ghostActive', POWERUP_DURATIONS.ghost);
-                        } else if (powerup.type === 'size') {
-                            activatePowerup(id, 'megaActive', POWERUP_DURATIONS.size);
-                        }
-                    }
-
-                    setTimeout(() => {
-                        powerup.collected = false;
-                        broadcast({
-                            type: 'powerupReset',
-                            powerupId: powerup.id
-                        });
-                    }, 20000);
-                }
-            } else if (data.type === 'collectCoin') {
-                const coin = coins.find(c => c.id === data.coinId);
-                if (coin && !coin.collected) {
-                    coin.collected = true;
-                    console.log(`Player ${players[id]?.name} collected coin ${coin.id}`);
-
-                    broadcast({
-                        type: 'coinCollected',
-                        coinId: coin.id,
-                        playerId: id
-                    });
-
-                    setTimeout(() => {
-                        coin.collected = false;
-                        broadcast({
-                            type: 'coinReset',
-                            coinId: coin.id
-                        });
-                    }, 15000);
-                }
-            } else if (data.type === 'honk') {
-                broadcast({
-                    type: 'honk',
-                    id
-                }, id);
-            } else if (data.type === 'rename') {
-                if (players[id] && data.name) {
-                    const oldName = players[id].name;
-                    players[id].name = data.name.substring(0, 20);
-                    console.log(`Player ${oldName} renamed to ${players[id].name}`);
-
-                    if (players[id].ready) {
-                        broadcast({
-                            type: 'playerRenamed',
-                            id,
-                            name: players[id].name
-                        });
-                        
-                        // Broadcast updated scoreboard with new name
-                        broadcastScoreboard();
-                    }
-                }
-            } else if (data.type === 'setCarType') {
-                if (players[id] && data.carType) {
-                    const validTypes = ['bulli', 'pickup', 'sport', 'beetle', 'jeep'];
-                    if (validTypes.includes(data.carType)) {
-                        players[id].carType = data.carType;
-                    }
-                }
-            } else if (data.type === 'playerReady') {
-                if (players[id] && !players[id].ready) {
-                    players[id].ready = true;
-                    broadcast({
-                        type: 'newPlayer',
-                        player: getPublicPlayer(id)
-                    }, id);
-                    broadcastScoreboard();
-                }
-            } else if (data.type === 'scoreUpdate') {
-                if (players[id] && typeof data.score === 'number') {
-                    players[id].score = data.score;
-                    broadcastScoreboard();
-                }
-            } else if (data.type === 'respawnShieldExpired') {
-                if (players[id]) {
-                    players[id].respawnShield = false;
-                }
-            } else if (data.type === 'shoot') {
-                const target = players[data.targetId];
-                if (target && target.health > 0 && data.targetId !== id) {
-                    // AFK players (no update for 3+ seconds) are invulnerable
-                    if (Date.now() - target.lastActivity > 3000) return;
-
-                    // Respawn shield blocks all damage
-                    if (target.respawnShield) return;
-
-                    // Super jump makes player unhittable (y > 10 = jump powerup height)
-                    if (target.y > 10) return;
-
-                    // Shield blocks one hit
-                    if (target.shieldActive) {
-                        target.shieldActive = false;
-                        if (target.shieldTimeout) {
-                            clearTimeout(target.shieldTimeout);
-                            target.shieldTimeout = undefined;
-                        }
-                        console.log(`Player ${target.name}'s shield blocked shot from ${players[id]?.name}`);
-                        broadcast({
-                            type: 'shieldBreak',
-                            targetId: data.targetId,
-                            shooterId: id
-                        });
-                        return;
-                    }
-
-                    // Mega form is tougher and shrugs off a chunk of incoming damage.
-                    const damage = target.megaActive
-                        ? Math.round(BASE_SHOT_DAMAGE * MEGA_DAMAGE_REDUCTION)
-                        : BASE_SHOT_DAMAGE;
-                    target.health -= damage;
-                    if (target.health < 0) target.health = 0;
-
-                    console.log(`Player ${players[id]?.name} shot ${target.name} (health: ${target.health})`);
-
-                    broadcast({
-                        type: 'playerHit',
-                        targetId: data.targetId,
-                        shooterId: id,
-                        newHealth: target.health,
-                        damage
-                    });
-
-                    if (target.health <= 0) {
-                        broadcast({
-                            type: 'playerKilled',
-                            targetId: data.targetId,
-                            killerId: id,
-                            killerName: players[id]?.name || 'Unknown',
-                            targetName: target.name
-                        });
-
-                        // Award killer 50 points
-                        if (players[id]) {
-                            players[id].score += 50;
-                            broadcastScoreboard();
-                        }
-
-                        // Respawn after 3 seconds at random location
-                        const targetId = data.targetId;
-                        setTimeout(() => {
-                            if (players[targetId]) {
-                                const angle = Math.random() * Math.PI * 2;
-                                const dist = 40 + Math.random() * 60;
-                                const spawnX = Math.cos(angle) * dist;
-                                const spawnZ = Math.sin(angle) * dist;
-
-                                players[targetId].health = 100;
-                                players[targetId].x = spawnX;
-                                players[targetId].z = spawnZ;
-                                players[targetId].respawnShield = true;
-                                players[targetId].shieldActive = false;
-                                players[targetId].ghostActive = false;
-                                players[targetId].megaActive = false;
-                                players[targetId].scale = 1;
-                                clearPowerupTimeouts(players[targetId]);
-
-                                broadcast({
-                                    type: 'playerRespawn',
-                                    playerId: targetId,
-                                    health: 100,
-                                    x: spawnX,
-                                    z: spawnZ
-                                });
-                            }
-                        }, 3000);
-                    }
-                }
-            }
+            data = JSON.parse(message);
         } catch (e) {
-            console.error('Error parsing message', e);
+            console.warn('Dropping invalid JSON from', id);
+            return;
+        }
+        if (!data || typeof data !== 'object' || typeof data.type !== 'string') {
+            return;
+        }
+
+        try {
+            handleClientMessage(id, data);
+        } catch (e) {
+            console.error('Handler error for type', data.type, e);
         }
     });
 
     ws.on('close', () => {
-        console.log(`Player ${players[id]?.name} disconnected`);
-        if (players[id]) {
-            delete players[id];
-            broadcast({
-                type: 'removePlayer',
-                id
-            });
-            broadcastScoreboard();
-        }
+        const player = players[id];
+        if (!player) return;
+        console.log(`Player ${player.name} disconnected`);
+        clearPowerupTimeouts(player);
+        delete players[id];
+        broadcast({
+            type: 'removePlayer',
+            id
+        });
+        broadcastScoreboard();
+    });
+
+    ws.on('error', (err) => {
+        console.warn(`ws error for ${id}`, err);
     });
 });
+
+function handleClientMessage(id: string, data: any) {
+    const player = players[id];
+    if (!player) return;
+
+    switch (data.type) {
+        case 'update': {
+            if (!Number.isFinite(data.x) || !Number.isFinite(data.z) ||
+                !Number.isFinite(data.angle) || !Number.isFinite(data.flipAngle)) return;
+            const y = Number.isFinite(data.y) ? data.y : 0;
+            if (Math.abs(data.x) > WORLD_BOUND || Math.abs(data.z) > WORLD_BOUND ||
+                Math.abs(y) > 500) return;
+
+            player.x = data.x;
+            player.y = y;
+            player.z = data.z;
+            player.angle = data.angle;
+            player.flipAngle = data.flipAngle;
+            player.isFlipping = !!data.isFlipping;
+            player.scale = player.megaActive ? MEGA_SCALE : 1;
+            player.lastActivity = Date.now();
+
+            broadcastPlayerState(id, y, id);
+            return;
+        }
+
+        case 'collectPowerup': {
+            if (typeof data.powerupId !== 'number') return;
+            const powerup = powerups.find(p => p.id === data.powerupId);
+            // Atomic check-and-set: capture the bool, flip immediately, then act
+            if (!powerup || powerup.collected) return;
+            powerup.collected = true;
+
+            console.log(`Player ${player.name} collected powerup ${powerup.id} (${powerup.type})`);
+            broadcast({
+                type: 'powerupCollected',
+                powerupId: powerup.id,
+                playerId: id
+            });
+
+            if (powerup.type === 'shield') {
+                activatePowerup(id, 'shieldActive', POWERUP_DURATIONS.shield);
+            } else if (powerup.type === 'ghost') {
+                activatePowerup(id, 'ghostActive', POWERUP_DURATIONS.ghost);
+            } else if (powerup.type === 'size') {
+                activatePowerup(id, 'megaActive', POWERUP_DURATIONS.size);
+            }
+
+            setTimeout(() => {
+                powerup.collected = false;
+                broadcast({
+                    type: 'powerupReset',
+                    powerupId: powerup.id
+                });
+            }, 20000);
+            return;
+        }
+
+        case 'collectCoin': {
+            if (typeof data.coinId !== 'number') return;
+            const coin = coins.find(c => c.id === data.coinId);
+            if (!coin || coin.collected) return;
+            coin.collected = true;
+
+            console.log(`Player ${player.name} collected coin ${coin.id}`);
+            broadcast({
+                type: 'coinCollected',
+                coinId: coin.id,
+                playerId: id
+            });
+
+            setTimeout(() => {
+                coin.collected = false;
+                broadcast({
+                    type: 'coinReset',
+                    coinId: coin.id
+                });
+            }, 15000);
+            return;
+        }
+
+        case 'honk': {
+            broadcast({ type: 'honk', id }, id);
+            return;
+        }
+
+        case 'rename': {
+            if (typeof data.name !== 'string') return;
+            const cleanName = data.name.replace(/[\u0000-\u001f\u007f]/g, '').trim().substring(0, 20);
+            if (!cleanName) return;
+            const oldName = player.name;
+            player.name = cleanName;
+            console.log(`Player ${oldName} renamed to ${player.name}`);
+            if (player.ready) {
+                broadcast({ type: 'playerRenamed', id, name: player.name });
+                broadcastScoreboard();
+            }
+            return;
+        }
+
+        case 'setCarType': {
+            if (typeof data.carType !== 'string') return;
+            if (!VALID_CAR_TYPES.includes(data.carType)) return;
+            player.carType = data.carType;
+            return;
+        }
+
+        case 'playerReady': {
+            if (player.ready) return;
+            player.ready = true;
+            broadcast({ type: 'newPlayer', player: getPublicPlayer(id) }, id);
+            broadcastScoreboard();
+            return;
+        }
+
+        case 'scoreUpdate': {
+            if (typeof data.score !== 'number' || !Number.isFinite(data.score)) return;
+            player.score = Math.max(0, Math.min(MAX_SCORE, Math.floor(data.score)));
+            broadcastScoreboard();
+            return;
+        }
+
+        case 'respawnShieldExpired': {
+            player.respawnShield = false;
+            return;
+        }
+
+        case 'shoot': {
+            if (typeof data.targetId !== 'string' || data.targetId === id) return;
+            const target = players[data.targetId];
+            if (!target || target.health <= 0) return;
+
+            // AFK players (no update for 3+ seconds) are invulnerable
+            if (Date.now() - target.lastActivity > 3000) return;
+            // Respawn shield blocks all damage
+            if (target.respawnShield) return;
+            // Super jump makes player unhittable (y > 10 = jump powerup height)
+            if (target.y > 10) return;
+
+            // Shield blocks one hit
+            if (target.shieldActive) {
+                target.shieldActive = false;
+                if (target.shieldTimeout) {
+                    clearTimeout(target.shieldTimeout);
+                    target.shieldTimeout = undefined;
+                }
+                console.log(`Player ${target.name}'s shield blocked shot from ${player.name}`);
+                broadcast({
+                    type: 'shieldBreak',
+                    targetId: data.targetId,
+                    shooterId: id
+                });
+                return;
+            }
+
+            const damage = target.megaActive
+                ? Math.round(BASE_SHOT_DAMAGE * MEGA_DAMAGE_REDUCTION)
+                : BASE_SHOT_DAMAGE;
+            target.health -= damage;
+            if (target.health < 0) target.health = 0;
+
+            console.log(`Player ${player.name} shot ${target.name} (health: ${target.health})`);
+
+            broadcast({
+                type: 'playerHit',
+                targetId: data.targetId,
+                shooterId: id,
+                newHealth: target.health,
+                damage
+            });
+
+            if (target.health <= 0) {
+                broadcast({
+                    type: 'playerKilled',
+                    targetId: data.targetId,
+                    killerId: id,
+                    killerName: player.name,
+                    targetName: target.name
+                });
+
+                player.score += 50;
+                broadcastScoreboard();
+
+                // Respawn after 3 seconds at a random location.
+                // Re-resolve target inside the timeout so we don't poke a stale reference
+                // if the player disconnected (and possibly a new player took the slot).
+                const targetId = data.targetId;
+                setTimeout(() => {
+                    const reborn = players[targetId];
+                    if (!reborn) return;
+                    const sp = randomSpawn();
+
+                    reborn.health = 100;
+                    reborn.x = sp.x;
+                    reborn.z = sp.z;
+                    reborn.respawnShield = true;
+                    reborn.shieldActive = false;
+                    reborn.ghostActive = false;
+                    reborn.megaActive = false;
+                    reborn.scale = 1;
+                    clearPowerupTimeouts(reborn);
+
+                    broadcast({
+                        type: 'playerRespawn',
+                        playerId: targetId,
+                        health: 100,
+                        x: sp.x,
+                        z: sp.z
+                    });
+                }, 3000);
+            }
+            return;
+        }
+
+        default:
+            return;
+    }
+}
 
 function getPublicPlayer(id: string) {
     const p = players[id];
@@ -410,17 +486,10 @@ function broadcastPlayerState(id: string, y?: number, excludeId?: string) {
 
 function broadcast(data: any, excludeId?: string) {
     const msg = JSON.stringify(data);
+    const excludeWs = excludeId ? players[excludeId]?.ws : undefined;
     wss.clients.forEach((client) => {
-        if (client.readyState === WebSocket.OPEN) {
-            let shouldSend = true;
-            if (excludeId && players[excludeId] && client === players[excludeId].ws) {
-                shouldSend = false;
-            }
-
-            if (shouldSend) {
-                client.send(msg);
-            }
-        }
+        if (client === excludeWs) return;
+        safeSend(client as WebSocket, msg);
     });
 }
 
