@@ -90,6 +90,7 @@ export function playHonkSound(pitch: number = 1.0): number {
     osc3.connect(gain3);
     gain1.connect(filter);
     gain2.connect(filter);
+    // osc3 is the sub-harmonic body; bypass the bandpass so the low end isn't carved out
     gain3.connect(masterGain);
     filter.connect(masterGain);
     masterGain.connect(ctx.destination);
