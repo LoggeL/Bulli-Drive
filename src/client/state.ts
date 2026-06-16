@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { RemotePlayer, Inputs, PowerupData, CoinData, TerrainConfig, ScoreboardEntry } from './types.js';
+import { RemotePlayer, Inputs, PowerupData, CoinData, TerrainConfig, ScoreboardEntry, Obstacle } from './types.js';
 
 export const state = {
     scene: null as unknown as THREE.Scene,
@@ -15,7 +15,7 @@ export const state = {
     isModalOpen: false,
     audioCtx: null as AudioContext | null,
     ws: null as WebSocket | null,
-    obstacles: [] as THREE.Object3D[],
+    obstacles: [] as Obstacle[],
     terrainConfig: null as TerrainConfig | null,
     myId: null as string | null,
     myColor: null as number | null,

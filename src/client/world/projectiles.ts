@@ -2,14 +2,14 @@ import * as THREE from 'three';
 import { state } from '../state.js';
 import { playHitSound } from '../effects/sounds.js';
 import { showHitmarker } from '../ui/hud.js';
+import { sendToServer } from '../network/socket.js';
+import { distSq2D } from './util.js';
 
 interface Projectile {
     mesh: THREE.Mesh;
     dx: number;
     dz: number;
     age: number;
-    angle: number;
-    ownerId: string;
     hitRadius: number;
 }
 
@@ -56,8 +56,6 @@ export function createProjectile(
         dx,
         dz,
         age: 0,
-        angle,
-        ownerId,
         hitRadius: isMega ? MEGA_HIT_DISTANCE : HIT_DISTANCE
     });
 }
@@ -82,8 +80,15 @@ export function updateProjectiles(dt: number) {
             continue;
         }
 
+        // Swept movement: test the whole segment travelled this frame against
+        // each target circle so fast projectiles can't tunnel at low framerates.
+        const sx = p.mesh.position.x;
+        const sz = p.mesh.position.z;
         p.mesh.position.x += p.dx * dt;
         p.mesh.position.z += p.dz * dt;
+        const segX = p.mesh.position.x - sx;
+        const segZ = p.mesh.position.z - sz;
+        const segLenSq = segX * segX + segZ * segZ;
 
         let hit = false;
         for (const id in state.remotePlayers) {
@@ -91,18 +96,17 @@ export function updateProjectiles(dt: number) {
             if (!remote.flipGroup.visible) continue;
             const rx = remote.group.position.x;
             const rz = remote.group.position.z;
-            const dx = p.mesh.position.x - rx;
-            const dz = p.mesh.position.z - rz;
-            const dist = Math.sqrt(dx * dx + dz * dz);
 
-            if (dist < p.hitRadius) {
-                if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-                    state.ws.send(JSON.stringify({
-                        type: 'shoot',
-                        targetId: id,
-                        damage: 25
-                    }));
-                }
+            // Closest point on the swept segment to the target
+            let t = 0;
+            if (segLenSq > 0) {
+                t = Math.max(0, Math.min(1, ((rx - sx) * segX + (rz - sz) * segZ) / segLenSq));
+            }
+            const cx = sx + segX * t;
+            const cz = sz + segZ * t;
+
+            if (distSq2D(cx, cz, rx, rz) < p.hitRadius * p.hitRadius) {
+                sendToServer({ type: 'shoot', targetId: id });
 
                 playHitSound();
                 showHitmarker();
@@ -114,12 +118,4 @@ export function updateProjectiles(dt: number) {
 
         if (!hit) i++;
     }
-}
-
-export function clearProjectiles() {
-    for (const p of projectiles) {
-        state.scene.remove(p.mesh);
-        (p.mesh.material as THREE.Material).dispose();
-    }
-    projectiles.length = 0;
 }

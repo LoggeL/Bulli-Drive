@@ -8,9 +8,12 @@ export function getTerrainHeight(x: number, z: number) {
     const freq3 = (state.terrainConfig as any).frequency3 || 0;
     const amp3 = (state.terrainConfig as any).amplitude3 || 0;
 
-    // Flatten city area (within ~110 units of center)
+    // Flatten the whole city footprint. The 4x4 grid spans local [-104, 116] on
+    // each axis, so its farthest corner is sqrt(116^2 + 116^2) ~= 164 from
+    // center; flatten out to there (+ a blend ring) so no road/building edge
+    // sits on a slope.
     const distFromCenter = Math.sqrt(x * x + z * z);
-    const cityRadius = 110;
+    const cityRadius = 164;
     const blendRadius = 40;
     let flattenFactor = 1.0;
     if (distFromCenter < cityRadius) {
@@ -137,7 +140,7 @@ export function createEnvironment(treeData: TreeData[]) {
         treeGroup.add(foliage2);
 
         state.scene.add(treeGroup);
-        state.obstacles.push({ x: t.x, z: t.z, radius: 1.5 } as any);
+        state.obstacles.push({ x: t.x, z: t.z, radius: 1.5 });
     });
 
     // Scatter rocks across the terrain (reduced from 80 to 40)
@@ -173,7 +176,7 @@ export function createEnvironment(treeData: TreeData[]) {
 
         state.scene.add(rockGroup);
         if (rockSize > 1.2) {
-            state.obstacles.push({ x: rx, z: rz, radius: rockSize * 0.7 } as any);
+            state.obstacles.push({ x: rx, z: rz, radius: rockSize * 0.7 });
         }
     }
 

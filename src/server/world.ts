@@ -1,18 +1,18 @@
-import { Powerup, Tree, Building, Road, CityData, Coin } from './types.js';
-import { POWERUP_TYPES } from './config.js';
+import { Powerup, Tree, Coin, CityData } from './types.js';
+import { POWERUP_TYPES, CITY_LAYOUT } from '../shared/constants.js';
 
 export const powerups: Powerup[] = [];
 export const trees: Tree[] = [];
 export const coins: Coin[] = [];
 export const cityData: CityData = { buildings: [], roads: [] };
 
-// City configuration
+// City configuration (grid dimensions are shared with the client)
 const CITY_CONFIG = {
     centerX: 0,
     centerZ: 0,
-    blockSize: 40,
-    roadWidth: 12,
-    gridSize: 4, // 4x4 blocks
+    blockSize: CITY_LAYOUT.blockSize,
+    roadWidth: CITY_LAYOUT.roadWidth,
+    gridSize: CITY_LAYOUT.gridSize,
     buildingMargin: 3
 };
 
@@ -31,31 +31,54 @@ const BUILDING_COLORS = [
 ];
 
 function isInCityArea(x: number, z: number): boolean {
-    const halfCity = (CITY_CONFIG.gridSize * (CITY_CONFIG.blockSize + CITY_CONFIG.roadWidth)) / 2;
-    return Math.abs(x - CITY_CONFIG.centerX) < halfCity && Math.abs(z - CITY_CONFIG.centerZ) < halfCity;
+    const { blockSize, roadWidth, gridSize, centerX, centerZ } = CITY_CONFIG;
+    const totalBlockSize = blockSize + roadWidth;
+    const halfCity = (gridSize * totalBlockSize) / 2;
+    // The road grid has gridSize+1 road lines, so it spans
+    // [center - halfCity, center + halfCity + roadWidth] on each axis.
+    const localX = x - centerX;
+    const localZ = z - centerZ;
+    return localX >= -halfCity && localX <= halfCity + roadWidth &&
+           localZ >= -halfCity && localZ <= halfCity + roadWidth;
 }
 
 function isOnRoad(x: number, z: number): boolean {
     const { blockSize, roadWidth, gridSize, centerX, centerZ } = CITY_CONFIG;
     const totalBlockSize = blockSize + roadWidth;
     const halfCity = (gridSize * totalBlockSize) / 2;
-    
+
     // Offset from city center
     const localX = x - centerX + halfCity;
     const localZ = z - centerZ + halfCity;
-    
+
     // Check if on road grid
     const xMod = localX % totalBlockSize;
     const zMod = localZ % totalBlockSize;
-    
+
     return xMod < roadWidth || zMod < roadWidth;
+}
+
+// Sample random positions in [-range/2, range/2]^2 until reject() passes.
+// Returns ok=false (with the last candidate) when all attempts were rejected.
+function placeWithRejection(
+    range: number,
+    maxAttempts: number,
+    reject: (x: number, z: number) => boolean
+): { x: number; z: number; ok: boolean } {
+    let x = 0, z = 0;
+    for (let attempts = 0; attempts < maxAttempts; attempts++) {
+        x = (Math.random() - 0.5) * range;
+        z = (Math.random() - 0.5) * range;
+        if (!reject(x, z)) return { x, z, ok: true };
+    }
+    return { x, z, ok: false };
 }
 
 function generateCity() {
     const { blockSize, roadWidth, gridSize, centerX, centerZ, buildingMargin } = CITY_CONFIG;
     const totalBlockSize = blockSize + roadWidth;
     const halfCity = (gridSize * totalBlockSize) / 2;
-    
+
     // Generate roads
     for (let i = 0; i <= gridSize; i++) {
         // Horizontal roads
@@ -67,7 +90,7 @@ function generateCity() {
             length: roadWidth,
             rotation: 0
         });
-        
+
         // Vertical roads
         const xPos = centerX - halfCity + i * totalBlockSize + roadWidth / 2;
         cityData.roads.push({
@@ -78,40 +101,40 @@ function generateCity() {
             rotation: Math.PI / 2
         });
     }
-    
+
     // Generate buildings in each block
     for (let bx = 0; bx < gridSize; bx++) {
         for (let bz = 0; bz < gridSize; bz++) {
             // Block center
             const blockCenterX = centerX - halfCity + roadWidth + bx * totalBlockSize + blockSize / 2;
             const blockCenterZ = centerZ - halfCity + roadWidth + bz * totalBlockSize + blockSize / 2;
-            
+
             // Skip center block for spawn area / plaza
             if (bx === Math.floor(gridSize / 2) - 1 && bz === Math.floor(gridSize / 2) - 1) {
                 continue; // Central plaza
             }
-            
+
             // Park in one corner
             if (bx === gridSize - 1 && bz === gridSize - 1) {
                 continue; // Park area (will be green in client)
             }
-            
+
             // Generate 1-4 buildings per block
             const numBuildings = 1 + Math.floor(Math.random() * 3);
             const subBlockSize = (blockSize - buildingMargin * 2) / 2;
-            
+
             for (let i = 0; i < numBuildings; i++) {
                 const subX = i % 2;
                 const subZ = Math.floor(i / 2);
-                
+
                 const buildingX = blockCenterX - subBlockSize / 2 + subX * subBlockSize;
                 const buildingZ = blockCenterZ - subBlockSize / 2 + subZ * subBlockSize;
-                
+
                 const width = 8 + Math.random() * (subBlockSize - 10);
                 const depth = 8 + Math.random() * (subBlockSize - 10);
                 const height = 6 + Math.random() * 20;
                 const color = BUILDING_COLORS[Math.floor(Math.random() * BUILDING_COLORS.length)];
-                
+
                 cityData.buildings.push({
                     x: buildingX,
                     z: buildingZ,
@@ -128,21 +151,19 @@ function generateCity() {
 export function initWorld() {
     // Generate city
     generateCity();
-    
-    // Init Powerups (spread around, some in city)
+
+    // Init Powerups: keep them within reach of the action - on city roads or in
+    // the open ring just around the city (<=150 from center), never inside a
+    // building block or out in the distant wilderness.
     for (let i = 0; i < 25; i++) {
         const type = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
-        let x = 0, z = 0;
-        for (let attempts = 0; attempts < 30; attempts++) {
-            x = (Math.random() - 0.5) * 400;
-            z = (Math.random() - 0.5) * 400;
-            if (!(isInCityArea(x, z) && !isOnRoad(x, z))) break;
-        }
+        const spot = placeWithRejection(300, 30, (x, z) =>
+            (isInCityArea(x, z) && !isOnRoad(x, z)) || (x * x + z * z) > 150 * 150);
 
         powerups.push({
             id: i,
-            x,
-            z,
+            x: spot.x,
+            z: spot.z,
             type: type.type,
             color: type.color,
             label: type.label,
@@ -150,39 +171,30 @@ export function initWorld() {
         });
     }
 
-    // Init Coins (spread around, avoid city center)
+    // Init Coins: spread across the playable area (within ~140 of center),
+    // skipping the central spawn pad and building-block interiors.
     for (let i = 0; i < 30; i++) {
-        let x = 0, z = 0;
-        for (let attempts = 0; attempts < 30; attempts++) {
-            x = (Math.random() - 0.5) * 600;
-            z = (Math.random() - 0.5) * 600;
-            if (!(Math.abs(x) < 30 && Math.abs(z) < 30)) break;
-        }
+        const spot = placeWithRejection(280, 30, (x, z) =>
+            (Math.abs(x) < 25 && Math.abs(z) < 25) || (isInCityArea(x, z) && !isOnRoad(x, z)));
 
         coins.push({
             id: i,
-            x,
-            z,
+            x: spot.x,
+            z: spot.z,
             collected: false
         });
     }
 
-    // Init Trees (outside city area)
+    // Init Trees (outside city area; skip the tree if no valid spot was found)
     for (let i = 0; i < 120; i++) {
-        let x, z;
-        let attempts = 0;
-        do {
-            x = (Math.random() - 0.5) * 600;
-            z = (Math.random() - 0.5) * 600;
-            attempts++;
-        } while ((isInCityArea(x, z) || (Math.abs(x) < 40 && Math.abs(z) < 40)) && attempts < 20);
-        
-        if (attempts >= 20) continue;
-        
+        const spot = placeWithRejection(600, 20, (x, z) =>
+            isInCityArea(x, z) || (Math.abs(x) < 40 && Math.abs(z) < 40));
+        if (!spot.ok) continue;
+
         trees.push({
             id: i,
-            x: x,
-            z: z,
+            x: spot.x,
+            z: spot.z,
             height: 4 + Math.random() * 5
         });
     }

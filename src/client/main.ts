@@ -222,8 +222,7 @@ function animate() {
                     if (state.ws && state.ws.readyState === WebSocket.OPEN) {
                         state.ws.send(JSON.stringify({
                             type: 'shoot',
-                            targetId: id,
-                            damage: 25
+                            targetId: id
                         }));
                     }
                     playCollisionSound(0.5);

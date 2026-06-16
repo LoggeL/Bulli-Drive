@@ -1,4 +1,7 @@
-import * as THREE from 'three';
+// Shared wire protocol - single source of truth for client and server.
+// Field shapes must match what is actually serialized on each side.
+
+// ---------- DTOs ----------
 
 export interface TerrainConfig {
     size: number;
@@ -9,21 +12,6 @@ export interface TerrainConfig {
     amplitude2: number;
     frequency3: number;
     amplitude3: number;
-}
-
-export interface PlayerData {
-    id: string;
-    color: number;
-    name: string;
-    carType?: string;
-    x: number;
-    z: number;
-    angle: number;
-    flipAngle: number;
-    isFlipping: boolean;
-    scale?: number;
-    score?: number;
-    health?: number;
 }
 
 export interface PowerupData {
@@ -72,6 +60,21 @@ export interface CityData {
     roads: RoadData[];
 }
 
+export interface PlayerData {
+    id: string;
+    color: number;
+    name: string;
+    carType?: string;
+    x: number;
+    z: number;
+    angle: number;
+    flipAngle: number;
+    isFlipping: boolean;
+    scale?: number;
+    score?: number;
+    health?: number;
+}
+
 export interface ScoreboardEntry {
     id: string;
     name: string;
@@ -79,38 +82,21 @@ export interface ScoreboardEntry {
     color: number;
 }
 
-// Collision obstacles in the XZ plane. Buildings are axis-aligned boxes
-// (rect, AABB collision); trees / rocks / round props are circles.
-export type Obstacle =
-    | { type?: 'circle'; x: number; z: number; radius: number }
-    | { type: 'rect'; x: number; z: number; halfWidth: number; halfDepth: number };
+// ---------- Client -> Server ----------
+// Note: no 'scoreUpdate' (server is sole score authority) and 'shoot' carries no damage.
 
-export interface RemotePlayer {
-    id: string;
-    group: THREE.Group;
-    flipGroup: THREE.Group;
-    name: string;
-    colorCode: number;
-    health: number;
-    nametag?: HTMLElement;
-    healthBarFill?: HTMLElement;
-    shieldMesh?: THREE.Mesh;
-    powerups: { ghost: { active: boolean; timer: number }; shield: { active: boolean; timer: number } };
-    updateNametag(): void;
-    honk(): void;
-}
+export type ClientMessage =
+    | { type: 'update', x: number, z: number, y?: number, angle: number, flipAngle: number, isFlipping: boolean, scale?: number, ghostActive?: boolean, shieldActive?: boolean, megaActive?: boolean }
+    | { type: 'collectPowerup', powerupId: number }
+    | { type: 'collectCoin', coinId: number }
+    | { type: 'honk' }
+    | { type: 'rename', name: string }
+    | { type: 'setCarType', carType: string }
+    | { type: 'playerReady' }
+    | { type: 'respawnShieldExpired' }
+    | { type: 'shoot', targetId: string };
 
-export interface Inputs {
-    w: boolean;
-    a: boolean;
-    s: boolean;
-    d: boolean;
-    e: boolean;
-    f: boolean;
-    space: boolean;
-    arrowleft: boolean;
-    arrowright: boolean;
-}
+// ---------- Server -> Client ----------
 
 export type ServerMessage =
     | { type: 'init', id: string, color: number, name: string, players: Record<string, PlayerData>, powerups: PowerupData[], coins: CoinData[], terrain: TerrainConfig, trees: TreeData[], city: CityData, scoreboard: ScoreboardEntry[] }
@@ -123,7 +109,6 @@ export type ServerMessage =
     | { type: 'coinReset', coinId: number }
     | { type: 'honk', id: string }
     | { type: 'playerRenamed', id: string, name: string }
-    | { type: 'playerReady' }
     | { type: 'scoreboard', scoreboard: ScoreboardEntry[] }
     | { type: 'playerHit', targetId: string, shooterId: string, newHealth: number, damage: number }
     | { type: 'playerKilled', targetId: string, killerId: string, killerName: string, targetName: string }

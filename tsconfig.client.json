@@ -2,8 +2,9 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "outDir": "public/js",
-    "rootDir": "src/client",
+    "rootDir": "src",
+    "moduleResolution": "bundler",
     "types": ["three"]
   },
-  "include": ["src/client/**/*"]
+  "include": ["src/client/**/*", "src/shared/**/*"]
 }

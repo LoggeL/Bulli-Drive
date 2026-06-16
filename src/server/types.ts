@@ -1,5 +1,20 @@
 import { WebSocket } from 'ws';
 
+// Wire DTOs live in src/shared/protocol.ts; re-export them under the names
+// the server modules historically used.
+export type {
+    PowerupData as Powerup,
+    CoinData as Coin,
+    TreeData as Tree,
+    BuildingData as Building,
+    RoadData as Road,
+    CityData,
+    TerrainConfig,
+    PlayerData,
+    ScoreboardEntry
+} from '../shared/protocol.js';
+
+// Server-only per-connection state
 export interface Player {
     id: string;
     ws: WebSocket;
@@ -13,7 +28,6 @@ export interface Player {
     angle: number;
     flipAngle: number;
     isFlipping: boolean;
-    scale?: number;
     score: number;
     health: number;
     shieldActive: boolean;
@@ -22,63 +36,13 @@ export interface Player {
     shieldTimeout?: ReturnType<typeof setTimeout>;
     ghostTimeout?: ReturnType<typeof setTimeout>;
     megaTimeout?: ReturnType<typeof setTimeout>;
+    respawnShieldTimeout?: ReturnType<typeof setTimeout>;
+    respawnTimeout?: ReturnType<typeof setTimeout>;
     lastActivity: number;
+    // Rate-limit bookkeeping
+    lastUpdateAt: number;
+    lastHonkAt: number;
+    lastRenameAt: number;
+    lastShotAt: number;
     respawnShield: boolean;
-}
-
-export interface Building {
-    x: number;
-    z: number;
-    width: number;
-    depth: number;
-    height: number;
-    color: number;
-}
-
-export interface Road {
-    x: number;
-    z: number;
-    width: number;
-    length: number;
-    rotation: number;
-}
-
-export interface CityData {
-    buildings: Building[];
-    roads: Road[];
-}
-
-export interface Powerup {
-    id: number;
-    x: number;
-    z: number;
-    type: string;
-    color: number;
-    label: string;
-    collected: boolean;
-}
-
-export interface Tree {
-    id: number;
-    x: number;
-    z: number;
-    height: number;
-}
-
-export interface Coin {
-    id: number;
-    x: number;
-    z: number;
-    collected: boolean;
-}
-
-export interface TerrainConfig {
-    size: number;
-    segments: number;
-    frequency1: number;
-    amplitude1: number;
-    frequency2: number;
-    amplitude2: number;
-    frequency3: number;
-    amplitude3: number;
 }

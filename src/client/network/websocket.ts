@@ -4,7 +4,8 @@ import { ServerMessage, PlayerData, CityData } from '../types.js';
 import { Bulli } from '../entities/Bulli.js';
 import { createEnvironment } from '../world/environment.js';
 import { createCity } from '../world/city.js';
-import { createPowerupMarker, applyPowerupEffect } from '../world/powerups.js';
+import { createPowerupMarker, applyPowerupEffect, setPowerupCollectedVisual } from '../world/powerups.js';
+import { WORLD_BOUND } from '../../shared/constants.js';
 import { createCoinsFromServer, removeCoinById, resetCoinById } from '../world/coins.js';
 import { updateScoreboardUI } from '../ui/playerList.js';
 import { getTerrainHeight } from '../world/environment.js';
@@ -130,12 +131,8 @@ function handleServerMessage(data: ServerMessage) {
             const p = state.worldPowerups.find(pu => pu.id === data.powerupId);
             if (p) {
                 p.collected = true;
-                if ((p as any).mesh) {
-                    (p as any).mesh.material.opacity = 0.2;
-                }
-                if ((p as any).iconMat) {
-                    (p as any).iconMat.opacity = 0.2;
-                }
+                // Dim the marker and clear our pending-collect guard for this id.
+                setPowerupCollectedVisual(data.powerupId, true);
                 if (data.playerId === state.myId) {
                     applyPowerupEffect(p);
                 }
@@ -146,12 +143,7 @@ function handleServerMessage(data: ServerMessage) {
             const pr = state.worldPowerups.find(pu => pu.id === data.powerupId);
             if (pr) {
                 pr.collected = false;
-                if ((pr as any).mesh) {
-                    (pr as any).mesh.material.opacity = 0.8;
-                }
-                if ((pr as any).iconMat) {
-                    (pr as any).iconMat.opacity = 0.8;
-                }
+                setPowerupCollectedVisual(data.powerupId, false);
             }
             break;
 
@@ -428,8 +420,8 @@ function updateRemotePlayer(data: { id: string; x: number; z: number; y?: number
         !Number.isFinite(data.angle) || !Number.isFinite(data.flipAngle)) {
         return;
     }
-    const x = Math.max(-2000, Math.min(2000, data.x));
-    const z = Math.max(-2000, Math.min(2000, data.z));
+    const x = Math.max(-WORLD_BOUND, Math.min(WORLD_BOUND, data.x));
+    const z = Math.max(-WORLD_BOUND, Math.min(WORLD_BOUND, data.z));
 
     remote.group.position.set(x, getTerrainHeight(x, z), z);
     remote.group.rotation.y = data.angle;
