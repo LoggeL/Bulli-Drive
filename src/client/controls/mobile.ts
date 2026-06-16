@@ -22,6 +22,10 @@ export function setupMobileControls() {
             e.preventDefault();
             state.inputs.f = true;
         });
+        honkBtn.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            state.inputs.f = false;
+        });
     }
 
     if (flipBtn) {
@@ -39,6 +43,10 @@ export function setupMobileControls() {
         shootBtn.addEventListener('touchstart', (e) => {
             e.preventDefault();
             state.inputs.e = true;
+        });
+        shootBtn.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            state.inputs.e = false;
         });
     }
 }

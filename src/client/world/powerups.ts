@@ -3,12 +3,18 @@ import { state } from '../state.js';
 import { PowerupData } from '../types.js';
 import { getTerrainHeight } from './environment.js';
 import { showInteractionPrompt } from '../ui/hud.js';
+import { sendToServer } from '../network/socket.js';
+import { POWERUP_DURATIONS_MS } from '../../shared/constants.js';
+import { distSq2D } from './util.js';
 
 // Store base Y for bobbing animation
 const powerupBaseY: Map<THREE.Mesh, number> = new Map();
+// Marker meshes/materials keyed by server powerup id (no more (p as any) stuffing)
+const powerupMarkers = new Map<PowerupData['id'], { mesh: THREE.Mesh; iconMat: THREE.MeshStandardMaterial }>();
+// Powerups we already sent a collectPowerup for (until confirmed/reset)
+const pendingCollects = new Set<number>();
 
-// Reusable vector for distance checks
-const _powerupCheckVec = new THREE.Vector3();
+const COLLECT_RADIUS = 5;
 
 export function createPowerupMarker(p: PowerupData) {
     const geo = new THREE.TorusGeometry(1.5, 0.2, 16, 32);
@@ -53,14 +59,24 @@ export function createPowerupMarker(p: PowerupData) {
 
     state.scene.add(marker);
     powerupBaseY.set(marker, baseY);
-    (p as any).mesh = marker;
-    (p as any).iconMat = iconMat;
+    powerupMarkers.set(p.id, { mesh: marker, iconMat });
+}
+
+// Dim/restore the marker visuals when a powerup is collected/reset (called from websocket.ts)
+export function setPowerupCollectedVisual(id: PowerupData['id'], collected: boolean): void {
+    pendingCollects.delete(id);
+    const entry = powerupMarkers.get(id);
+    if (!entry) return;
+    const opacity = collected ? 0.2 : 0.8;
+    (entry.mesh.material as THREE.MeshStandardMaterial).opacity = opacity;
+    entry.iconMat.opacity = opacity;
 }
 
 export function animatePowerups(time: number) {
     state.worldPowerups.forEach(p => {
-        const mesh = (p as any).mesh as THREE.Mesh | undefined;
-        if (!mesh) return;
+        const entry = powerupMarkers.get(p.id);
+        if (!entry) return;
+        const mesh = entry.mesh;
         const baseY = powerupBaseY.get(mesh);
         if (baseY !== undefined) {
             mesh.position.y = baseY + Math.sin(time * 2.0 + p.id) * 0.5;
@@ -77,33 +93,30 @@ export function animatePowerups(time: number) {
 export function checkPowerupCollection() {
     if (!state.bulli) return;
     const carPos = state.bulli.group.position;
-    const collectRadius = 5;
+    const collectRadiusSq = COLLECT_RADIUS * COLLECT_RADIUS;
     state.worldPowerups.forEach(p => {
         if (p.collected) return;
-        _powerupCheckVec.set(p.x, carPos.y, p.z);
-        const dist = carPos.distanceTo(_powerupCheckVec);
-        if (dist < collectRadius) {
+        if (distSq2D(carPos.x, carPos.z, p.x, p.z) < collectRadiusSq) {
             requestPowerupCollection(p);
         }
     });
 }
 
 export function requestPowerupCollection(p: PowerupData) {
-    if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-        state.ws.send(JSON.stringify({
-            type: 'collectPowerup',
-            powerupId: p.id
-        }));
+    // Only ask once per powerup until the server confirms or resets it
+    if (pendingCollects.has(p.id)) return;
+    if (sendToServer({ type: 'collectPowerup', powerupId: p.id })) {
+        pendingCollects.add(p.id);
     }
 }
 
 export function applyPowerupEffect(p: PowerupData) {
     if (!state.bulli) return;
+    // Guard against unknown/unsupported powerup types from the server
+    if (!(p.type in state.bulli.powerups)) return;
     const key = p.type as keyof typeof state.bulli.powerups;
     state.bulli.powerups[key].active = true;
-    // Shield and ghost last longer
-    const duration = (p.type === 'shield' || p.type === 'ghost') ? 8 : 5;
-    state.bulli.powerups[key].timer = duration;
+    state.bulli.powerups[key].timer = (POWERUP_DURATIONS_MS[p.type] ?? 5000) / 1000;
 
     showInteractionPrompt(`${p.label.toUpperCase()} ACTIVATED!`);
 }

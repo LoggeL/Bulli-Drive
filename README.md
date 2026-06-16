@@ -1,38 +1,32 @@
-# VW Bulli Globe Drive
+# Bulli Drive
 
-A multiplayer 3D driving experience featuring a chibi-style VW Bulli. 
+A multiplayer 3D driving game featuring a chibi-style VW Bulli. Cruise a sun-soaked
+city, collect coins and powerups, and shoot it out with other drivers.
 
-![Screenshot](image.png)
+![Screenshot](public/assets/image.png)
 
 ## Features
-- **Multiplayer:** Real-time synchronization of position, rotation, and flipping.
-- **Physics:** Frame-rate independent driving and flipping physics.
-- **Interactions:** Honk at other players and explore project markers.
+- **Multiplayer:** Real-time sync of position, rotation, flipping, honks and shots.
+- **Combat:** Shoot projectiles at other players, score kills, climb the scoreboard.
+- **Powerups & coins:** Turbo, Mega, Super Jump, Shield, Magnet and Ghost powerups plus collectible coins, shared across all players.
 - **3D Graphics:** Built with Three.js.
 
 ## Getting Started
 
 ### Prerequisites
-- Node.js installed
+- Node.js >= 18
 
-### Installation
-1. Clone the repository.
-2. Install dependencies:
-   ```bash
-   pnpm install
-   ```
-
-### Running the Server
-Start the server with:
+### Install, build and run
 ```bash
-node server.js
+npm install
+npm run build
+npm start
 ```
-The game will be available at `http://localhost:8000`.
+The game is then available at `http://localhost:8000`.
 
 ## Controls
 - **WASD:** Drive and steer
-- **SPACE:** Frontflip
+- **SPACE:** Flip
+- **E:** Shoot projectile
 - **F:** Honk
 - **Arrow Keys:** Rotate camera
-- **E:** Interact with projects
-

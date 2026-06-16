@@ -53,6 +53,11 @@ export function initAboutModal(): void {
         if (modalContainer) {
             modalContainer.classList.remove('hidden');
             state.isModalOpen = true;
+            // Drop any held keys so the car doesn't keep driving behind the modal
+            // (and doesn't resume on close because a keyup was missed).
+            for (const k of Object.keys(state.inputs) as (keyof typeof state.inputs)[]) {
+                state.inputs[k] = false;
+            }
         }
     }
 
@@ -118,9 +123,11 @@ export function initRenameUI(): void {
                 nameInput.placeholder = newName;
                 state.myName = newName;
 
-                // Update local nametag
+                // Update local nametag (only the name span, not the whole
+                // element, so its child structure survives).
                 if (state.bulli && state.bulli.nametag) {
-                    state.bulli.nametag.innerText = newName;
+                    const nameEl = state.bulli.nametag.querySelector('.nametag-name');
+                    if (nameEl) nameEl.textContent = newName;
                 }
 
                 // Collapse the form after successful rename

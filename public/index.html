@@ -86,7 +86,12 @@
             if (loaderText) {
                 let index = Math.floor(Math.random() * messages.length);
                 loaderText.innerText = messages[index];
-                setInterval(() => {
+                const msgInterval = setInterval(() => {
+                    // Stop cycling once the loading screen is gone - avoids a leaked interval
+                    if (!document.getElementById('loading-screen')) {
+                        clearInterval(msgInterval);
+                        return;
+                    }
                     index = (index + 1) % messages.length;
                     loaderText.style.opacity = '0';
                     setTimeout(() => {
@@ -325,7 +330,7 @@
         </div>
     </div>
 
-    <script type="module" src="js/main.js"></script>
+    <script type="module" src="js/client/main.js"></script>
 </body>
 
 </html>

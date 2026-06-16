@@ -7,6 +7,8 @@ export function initKeyboard() {
 
 function onKeyDown(e: KeyboardEvent) {
     if (document.activeElement?.tagName === 'INPUT') return;
+    // Don't register new driving inputs while a modal/overlay is open.
+    if (state.isModalOpen) return;
 
     const key = e.key.toLowerCase();
     if (key === ' ') state.inputs.space = true;
