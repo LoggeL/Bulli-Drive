@@ -21,8 +21,12 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server, maxPayload: 64 * 1024 });
 setWss(wss);
 
-// Serve static files from the public directory (built client lives in public/js)
-const publicPath = path.join(__dirname, '../public');
+// Serve static files from the public directory (built client lives in public/js).
+// This file compiles to dist/server/index.js (rootDir is src, so the shared/
+// modules can be included), so public/ - which sits next to dist/ - is two
+// levels up from __dirname both in the Docker image (/app/public) and in local
+// dev (<repo>/public).
+const publicPath = path.join(__dirname, '../../public');
 app.use(express.static(publicPath));
 
 initWorld();
