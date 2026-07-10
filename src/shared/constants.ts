@@ -63,6 +63,16 @@ export const CITY_LAYOUT = {
     gridSize: 4
 };
 
+// Shared client/server collision footprint for the authored props in Sunset
+// Plaza. The server uses these clearances for spawning; the client uses them
+// for vehicle collisions and rendering positions.
+export const PLAZA_PROP_LAYOUT = {
+    planterOffset: 13,
+    parasolOffset: 13 * 0.58,
+    planterRadius: 1.6,
+    parasolRadius: 0.9
+};
+
 export const DEFAULT_TERRAIN_CONFIG = {
     size: 1000,
     segments: 128,

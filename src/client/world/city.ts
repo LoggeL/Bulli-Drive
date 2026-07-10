@@ -2,12 +2,23 @@ import * as THREE from 'three';
 import { state } from '../state.js';
 import { BuildingData, RoadData, CityData } from '../types.js';
 import { getTerrainHeight } from './environment.js';
-import { CITY_LAYOUT } from '../../shared/constants.js';
+import { CITY_LAYOUT, PLAZA_PROP_LAYOUT } from '../../shared/constants.js';
 
-const ROAD_COLOR = 0x333333;
-const LANE_MARKING_COLOR = 0xeeeeee;
-const SIDEWALK_COLOR = 0xaaaaaa;
-const PARK_COLOR = 0x4a7c3f;
+const ROAD_COLOR = 0x282a2b;
+const INTERSECTION_COLOR = 0x242627;
+const LANE_MARKING_COLOR = 0xf6e7ba;
+const SIDEWALK_COLOR = 0xc8c1ae;
+const PARK_COLOR = 0x4f8a48;
+
+const PLAZA_BLOCK = { x: Math.floor(CITY_LAYOUT.gridSize / 2) - 1, z: Math.floor(CITY_LAYOUT.gridSize / 2) - 1 };
+const PARK_BLOCK = { x: CITY_LAYOUT.gridSize - 1, z: CITY_LAYOUT.gridSize - 1 };
+
+function roadGridCenter(index: number): number {
+    const { blockSize, roadWidth, gridSize } = CITY_LAYOUT;
+    const totalBlockSize = blockSize + roadWidth;
+    const halfCity = (gridSize * totalBlockSize) / 2;
+    return -halfCity + index * totalBlockSize + roadWidth / 2;
+}
 
 // Center of a city block (bx, bz) in world coordinates, derived from the shared layout
 function blockCenter(bx: number, bz: number): { x: number; z: number } {
@@ -129,9 +140,13 @@ export function createCity(cityData: CityData) {
 
     initSharedResources();
     createRoads(cityData.roads);
+    createIntersectionDetails();
+    createBlockSurfaces();
     createBuildings(cityData.buildings);
     createPark();
     createPlaza();
+    createStreetDetails();
+    createDistrictSigns();
 }
 
 function createRoads(roads: RoadData[]) {
@@ -152,36 +167,47 @@ function createRoads(roads: RoadData[]) {
         metalness: 0.0
     });
 
+    const edgeMarkingMat = new THREE.MeshStandardMaterial({
+        color: 0xf3c969,
+        roughness: 0.65
+    });
+
     roads.forEach(road => {
         const terrainY = getTerrainHeight(road.x, road.z);
+        const roadGroup = new THREE.Group();
+        roadGroup.position.set(road.x, terrainY, road.z);
+        roadGroup.rotation.y = road.rotation;
 
         // Road surface
         const roadGeo = new THREE.PlaneGeometry(road.width, road.length);
         roadGeo.rotateX(-Math.PI / 2);
 
         const roadMesh = new THREE.Mesh(roadGeo, roadMat);
-        roadMesh.position.set(road.x, terrainY + 0.05, road.z);
-        roadMesh.rotation.y = road.rotation;
+        roadMesh.position.y = 0.05;
         roadMesh.receiveShadow = true;
-        state.scene.add(roadMesh);
+        roadGroup.add(roadMesh);
 
-        // Local axes of the rotated road: "along" runs down the road length,
-        // "across" is perpendicular to it (matches the old 0 / PI/2 branches).
-        const acrossX = Math.cos(road.rotation);
-        const acrossZ = Math.sin(road.rotation);
-        const alongX = Math.sin(road.rotation);
-        const alongZ = Math.cos(road.rotation);
-
-        // Sidewalk curbs (thin raised strips on both edges)
-        const curbWidth = 0.8;
-        const curbGeo = new THREE.BoxGeometry(curbWidth, 0.15, road.length);
+        // All road pieces are authored in one local coordinate system: width
+        // runs across local X and length runs along local Z. Rotating the group
+        // once keeps asphalt, curbs and markings in lockstep.
+        const curbWidth = 1.1;
+        const curbGeo = new THREE.BoxGeometry(curbWidth, 0.15, CITY_LAYOUT.blockSize);
+        const edgeGeo = new THREE.PlaneGeometry(0.13, CITY_LAYOUT.blockSize - 1.5);
+        edgeGeo.rotateX(-Math.PI / 2);
         [-1, 1].forEach(side => {
-            const curb = new THREE.Mesh(curbGeo, sidewalkMat);
             const offset = (road.width / 2 + curbWidth / 2) * side;
-            curb.position.set(road.x + acrossX * offset, terrainY + 0.08, road.z + acrossZ * offset);
-            curb.rotation.y = road.rotation;
-            curb.receiveShadow = true;
-            state.scene.add(curb);
+            for (let segment = 0; segment < CITY_LAYOUT.gridSize; segment++) {
+                const segmentOffset = -road.length / 2 + CITY_LAYOUT.roadWidth +
+                    CITY_LAYOUT.blockSize / 2 + segment * (CITY_LAYOUT.blockSize + CITY_LAYOUT.roadWidth);
+                const curb = new THREE.Mesh(curbGeo, sidewalkMat);
+                curb.position.set(offset, 0.09, segmentOffset);
+                curb.receiveShadow = true;
+                roadGroup.add(curb);
+
+                const edge = new THREE.Mesh(edgeGeo, edgeMarkingMat);
+                edge.position.set((road.width / 2 - 0.5) * side, 0.072, segmentOffset);
+                roadGroup.add(edge);
+            }
         });
 
         // Lane markings (dashed center line)
@@ -194,16 +220,120 @@ function createRoads(roads: RoadData[]) {
         dashGeo.rotateX(-Math.PI / 2);
 
         for (let i = 0; i < numDashes; i++) {
-            const dash = new THREE.Mesh(dashGeo, markingMat);
             const lineOffset = -road.length / 2 + (i + 0.5) * (dashLength + dashGap);
-            const dashX = road.x + alongX * lineOffset;
-            const dashZ = road.z + alongZ * lineOffset;
-            // Sample terrain per-dash so markings hug the ground at sloped city edges.
-            dash.position.set(dashX, getTerrainHeight(dashX, dashZ) + 0.07, dashZ);
-            dash.rotation.y = road.rotation;
-            state.scene.add(dash);
+            let insideIntersection = false;
+            for (let intersection = 0; intersection <= CITY_LAYOUT.gridSize; intersection++) {
+                const intersectionOffset = -road.length / 2 + CITY_LAYOUT.roadWidth / 2 +
+                    intersection * (CITY_LAYOUT.blockSize + CITY_LAYOUT.roadWidth);
+                if (Math.abs(lineOffset - intersectionOffset) < CITY_LAYOUT.roadWidth / 2 + 0.8) {
+                    insideIntersection = true;
+                    break;
+                }
+            }
+            if (insideIntersection) continue;
+
+            const dash = new THREE.Mesh(dashGeo, markingMat);
+            dash.position.set(0, 0.073, lineOffset);
+            roadGroup.add(dash);
         }
+
+        state.scene.add(roadGroup);
     });
+}
+
+function createIntersectionDetails() {
+    const { roadWidth, gridSize } = CITY_LAYOUT;
+    const asphaltMat = new THREE.MeshStandardMaterial({ color: INTERSECTION_COLOR, roughness: 0.94 });
+    const stripeMat = new THREE.MeshStandardMaterial({ color: 0xf8f1d8, roughness: 0.6 });
+    const padGeo = new THREE.PlaneGeometry(roadWidth + 0.2, roadWidth + 0.2);
+    padGeo.rotateX(-Math.PI / 2);
+
+    const stripeLength = roadWidth - 3;
+    const stripeGeo = new THREE.BoxGeometry(stripeLength, 0.025, 0.42);
+    const bandsPerApproach = 5;
+    const stripeCount = (gridSize + 1) * (gridSize + 1) * bandsPerApproach * 4;
+    const stripes = new THREE.InstancedMesh(stripeGeo, stripeMat, stripeCount);
+    const pads = new THREE.InstancedMesh(padGeo, asphaltMat, (gridSize + 1) * (gridSize + 1));
+    pads.receiveShadow = true;
+    const matrix = new THREE.Matrix4();
+    const quaternion = new THREE.Quaternion();
+    const scale = new THREE.Vector3(1, 1, 1);
+    let instance = 0;
+    let padInstance = 0;
+
+    for (let ix = 0; ix <= gridSize; ix++) {
+        for (let iz = 0; iz <= gridSize; iz++) {
+            const x = roadGridCenter(ix);
+            const z = roadGridCenter(iz);
+            const y = getTerrainHeight(x, z);
+
+            quaternion.identity();
+            matrix.compose(new THREE.Vector3(x, y + 0.056, z), quaternion, scale);
+            pads.setMatrixAt(padInstance++, matrix);
+
+            for (const side of [-1, 1]) {
+                for (let band = 0; band < bandsPerApproach; band++) {
+                    const approachOffset = side * (roadWidth / 2 + 0.65 + band * 0.72);
+                    quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), 0);
+                    matrix.compose(
+                        new THREE.Vector3(x, y + 0.085, z + approachOffset),
+                        quaternion,
+                        scale
+                    );
+                    stripes.setMatrixAt(instance++, matrix);
+
+                    quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+                    matrix.compose(
+                        new THREE.Vector3(x + approachOffset, y + 0.085, z),
+                        quaternion,
+                        scale
+                    );
+                    stripes.setMatrixAt(instance++, matrix);
+                }
+            }
+        }
+    }
+
+    stripes.count = instance;
+    stripes.instanceMatrix.needsUpdate = true;
+    pads.instanceMatrix.needsUpdate = true;
+    state.scene.add(pads);
+    state.scene.add(stripes);
+}
+
+function createBlockSurfaces() {
+    const { blockSize, gridSize } = CITY_LAYOUT;
+    const blockColors = [0xc9bea4, 0xd5c7aa, 0xbac8c1, 0xd7b9a8];
+    const blockMaterials = blockColors.map(color => new THREE.MeshStandardMaterial({ color, roughness: 0.92 }));
+    const alleyMat = new THREE.MeshStandardMaterial({ color: 0x716f68, roughness: 0.95 });
+
+    for (let bx = 0; bx < gridSize; bx++) {
+        for (let bz = 0; bz < gridSize; bz++) {
+            if ((bx === PLAZA_BLOCK.x && bz === PLAZA_BLOCK.z) ||
+                (bx === PARK_BLOCK.x && bz === PARK_BLOCK.z)) continue;
+
+            const center = blockCenter(bx, bz);
+            const y = getTerrainHeight(center.x, center.z);
+            const surfaceGeo = new THREE.PlaneGeometry(blockSize - 2, blockSize - 2);
+            surfaceGeo.rotateX(-Math.PI / 2);
+            const surface = new THREE.Mesh(surfaceGeo, blockMaterials[(bx + bz * 2) % blockMaterials.length]);
+            surface.position.set(center.x, y + 0.032, center.z);
+            surface.receiveShadow = true;
+            state.scene.add(surface);
+
+            const alleyHorizontalGeo = new THREE.PlaneGeometry(blockSize - 3, 2.1);
+            alleyHorizontalGeo.rotateX(-Math.PI / 2);
+            const alleyHorizontal = new THREE.Mesh(alleyHorizontalGeo, alleyMat);
+            alleyHorizontal.position.set(center.x, y + 0.041, center.z);
+            state.scene.add(alleyHorizontal);
+
+            const alleyVerticalGeo = new THREE.PlaneGeometry(2.1, blockSize - 3);
+            alleyVerticalGeo.rotateX(-Math.PI / 2);
+            const alleyVertical = new THREE.Mesh(alleyVerticalGeo, alleyMat);
+            alleyVertical.position.set(center.x, y + 0.042, center.z);
+            state.scene.add(alleyVertical);
+        }
+    }
 }
 
 // Seeded random for deterministic building details
@@ -400,6 +530,71 @@ function addRoofProps(group: THREE.Group, building: BuildingData, seed: number, 
     }
 }
 
+function addBuildingShapeDetails(group: THREE.Group, building: BuildingData, seed: number, seed2: number) {
+    const trimMat = new THREE.MeshStandardMaterial({ color: 0xf1dfc2, roughness: 0.78 });
+    const darkTrimMat = new THREE.MeshStandardMaterial({ color: 0x55483f, roughness: 0.86 });
+
+    // A shadowed ground-floor band and bright parapet give the skyline much
+    // stronger silhouettes than one unbroken box per building.
+    const baseBand = new THREE.Mesh(
+        new THREE.BoxGeometry(building.width + 0.18, 0.55, building.depth + 0.18),
+        darkTrimMat
+    );
+    baseBand.position.y = 0.3;
+    baseBand.castShadow = true;
+    group.add(baseBand);
+
+    const parapet = new THREE.Mesh(
+        new THREE.BoxGeometry(building.width + 0.38, 0.38, building.depth + 0.38),
+        trimMat
+    );
+    parapet.position.y = building.height + 0.12;
+    parapet.castShadow = true;
+    group.add(parapet);
+
+    if (building.height > 13 && seed > 0.62) {
+        const crownHeight = 1.1 + seed2 * 1.3;
+        const crown = new THREE.Mesh(
+            new THREE.BoxGeometry(building.width * 0.62, crownHeight, building.depth * 0.62),
+            trimMat
+        );
+        crown.position.y = building.height + crownHeight / 2 + 0.28;
+        crown.castShadow = true;
+        group.add(crown);
+    }
+
+    // Short buildings become colourful storefronts, while taller buildings
+    // receive a pair of shallow balconies facing the street.
+    if (building.height < 11 || seed2 > 0.72) {
+        const signColors = [0xe84545, 0xf3a23a, 0x2f86a6, 0x5b9c68];
+        const signColor = signColors[Math.floor(seed * signColors.length)];
+        const sign = new THREE.Mesh(
+            new THREE.BoxGeometry(Math.min(3.8, building.width * 0.45), 0.7, 0.18),
+            new THREE.MeshStandardMaterial({
+                color: signColor,
+                emissive: signColor,
+                emissiveIntensity: 0.18,
+                roughness: 0.55
+            })
+        );
+        sign.position.set(0, 3.05, building.depth / 2 + 0.14);
+        sign.castShadow = true;
+        group.add(sign);
+    } else {
+        const balconyMat = new THREE.MeshStandardMaterial({ color: 0xdbc9aa, roughness: 0.8 });
+        for (const y of [4.6, 8.1]) {
+            if (y >= building.height - 1) continue;
+            const balcony = new THREE.Mesh(
+                new THREE.BoxGeometry(building.width * 0.55, 0.16, 1.0),
+                balconyMat
+            );
+            balcony.position.set(0, y, building.depth / 2 + 0.45);
+            balcony.castShadow = true;
+            group.add(balcony);
+        }
+    }
+}
+
 function createBuildings(buildings: BuildingData[]) {
     buildings.forEach(building => {
         const buildingGroup = new THREE.Group();
@@ -424,6 +619,7 @@ function createBuildings(buildings: BuildingData[]) {
         addDoor(buildingGroup, building, seed3);
         addAwning(buildingGroup, building, seed, seed2);
         addRoofProps(buildingGroup, building, seed, seed2, seed3);
+        addBuildingShapeDetails(buildingGroup, building, seed, seed2);
 
         buildingGroup.position.set(
             building.x,
@@ -445,26 +641,64 @@ function createBuildings(buildings: BuildingData[]) {
 }
 
 function createPark() {
-    // Park is in the corner block (grid position gridSize-1, gridSize-1)
-    const { blockSize, gridSize } = CITY_LAYOUT;
-    const { x: parkX, z: parkZ } = blockCenter(gridSize - 1, gridSize - 1);
+    const { blockSize } = CITY_LAYOUT;
+    const { x: parkX, z: parkZ } = blockCenter(PARK_BLOCK.x, PARK_BLOCK.z);
+    const terrainY = getTerrainHeight(parkX, parkZ);
 
-    // Grass area
-    const grassGeo = new THREE.PlaneGeometry(blockSize - 4, blockSize - 4);
+    const grassGeo = new THREE.PlaneGeometry(blockSize - 2, blockSize - 2);
     grassGeo.rotateX(-Math.PI / 2);
     const grassMat = new THREE.MeshStandardMaterial({ color: PARK_COLOR, roughness: 0.9 });
     const grass = new THREE.Mesh(grassGeo, grassMat);
-    grass.position.set(parkX, getTerrainHeight(parkX, parkZ) + 0.01, parkZ);
+    grass.position.set(parkX, terrainY + 0.03, parkZ);
     grass.receiveShadow = true;
     state.scene.add(grass);
 
-    // Park benches
+    // Sand-coloured walking paths create a clear loop and cross-axis through
+    // the park instead of leaving it as an undifferentiated grass square.
+    const pathMat = new THREE.MeshStandardMaterial({ color: 0xd8c392, roughness: 0.95 });
+    const pathHorizontalGeo = new THREE.PlaneGeometry(blockSize - 4, 3.2);
+    pathHorizontalGeo.rotateX(-Math.PI / 2);
+    const pathHorizontal = new THREE.Mesh(pathHorizontalGeo, pathMat);
+    pathHorizontal.position.set(parkX, terrainY + 0.045, parkZ);
+    state.scene.add(pathHorizontal);
+
+    const pathVerticalGeo = new THREE.PlaneGeometry(3.2, blockSize - 4);
+    pathVerticalGeo.rotateX(-Math.PI / 2);
+    const pathVertical = new THREE.Mesh(pathVerticalGeo, pathMat);
+    pathVertical.position.set(parkX, terrainY + 0.046, parkZ);
+    state.scene.add(pathVertical);
+
+    // Reflecting pond with a stone rim at the centre of Palm Park.
+    const pondGeo = new THREE.CircleGeometry(5.2, 32);
+    pondGeo.rotateX(-Math.PI / 2);
+    const pondMat = new THREE.MeshStandardMaterial({
+        color: 0x3f9db0,
+        emissive: 0x174d59,
+        emissiveIntensity: 0.18,
+        roughness: 0.18,
+        metalness: 0.12,
+        transparent: true,
+        opacity: 0.9
+    });
+    const pond = new THREE.Mesh(pondGeo, pondMat);
+    pond.position.set(parkX, terrainY + 0.09, parkZ);
+    state.scene.add(pond);
+
+    const pondRim = new THREE.Mesh(
+        new THREE.TorusGeometry(5.35, 0.32, 8, 32),
+        new THREE.MeshStandardMaterial({ color: 0xb3aa96, roughness: 0.88 })
+    );
+    pondRim.rotation.x = Math.PI / 2;
+    pondRim.position.set(parkX, terrainY + 0.17, parkZ);
+    pondRim.castShadow = true;
+    state.scene.add(pondRim);
+
     const benchMat = new THREE.MeshStandardMaterial({ color: 0x5D4037, roughness: 0.8 });
     const benchPositions = [
-        { x: parkX - 8, z: parkZ },
-        { x: parkX + 8, z: parkZ },
-        { x: parkX, z: parkZ - 8 },
-        { x: parkX, z: parkZ + 8 }
+        { x: parkX - 9, z: parkZ - 6 },
+        { x: parkX + 9, z: parkZ + 6 },
+        { x: parkX - 6, z: parkZ + 9 },
+        { x: parkX + 6, z: parkZ - 9 }
     ];
 
     benchPositions.forEach(pos => {
@@ -477,6 +711,12 @@ function createPark() {
         seat.castShadow = true;
         benchGroup.add(seat);
 
+        const back = new THREE.Mesh(new THREE.BoxGeometry(3, 0.7, 0.16), benchMat);
+        back.position.set(0, 0.92, 0.34);
+        back.rotation.x = -0.12;
+        back.castShadow = true;
+        benchGroup.add(back);
+
         // Legs
         const legGeo = new THREE.BoxGeometry(0.2, 0.5, 0.2);
         [-1.2, 1.2].forEach(xOff => {
@@ -487,27 +727,51 @@ function createPark() {
         });
 
         benchGroup.position.set(pos.x, getTerrainHeight(pos.x, pos.z), pos.z);
-        if (pos.x === parkX) benchGroup.rotation.y = Math.PI / 2;
+        benchGroup.rotation.y = Math.atan2(parkX - pos.x, parkZ - pos.z);
         state.scene.add(benchGroup);
+        state.obstacles.push({ x: pos.x, z: pos.z, radius: 1.7 });
     });
 
-    // Park trees
     const parkTreePositions = [
-        { x: parkX - 12, z: parkZ - 12 },
-        { x: parkX + 12, z: parkZ - 12 },
-        { x: parkX - 12, z: parkZ + 12 },
-        { x: parkX + 12, z: parkZ + 12 },
-        { x: parkX, z: parkZ }
+        { x: parkX - 13, z: parkZ - 13 },
+        { x: parkX + 13, z: parkZ - 13 },
+        { x: parkX - 13, z: parkZ + 13 },
+        { x: parkX + 13, z: parkZ + 13 }
     ];
 
     parkTreePositions.forEach(pos => {
         createParkTree(pos.x, pos.z);
     });
+
+    const flowerColors = [0xf2c84b, 0xe95d78, 0x8e68d8, 0xf18d4c];
+    const flowerPositions = [
+        { x: parkX - 9, z: parkZ },
+        { x: parkX + 9, z: parkZ },
+        { x: parkX, z: parkZ - 9 },
+        { x: parkX, z: parkZ + 9 }
+    ];
+    flowerPositions.forEach((pos, index) => {
+        const bedGeo = new THREE.CircleGeometry(1.7, 20);
+        bedGeo.rotateX(-Math.PI / 2);
+        const bed = new THREE.Mesh(
+            bedGeo,
+            new THREE.MeshStandardMaterial({
+                color: flowerColors[index],
+                emissive: flowerColors[index],
+                emissiveIntensity: 0.08,
+                roughness: 0.9
+            })
+        );
+        bed.position.set(pos.x, terrainY + 0.07, pos.z);
+        state.scene.add(bed);
+    });
+
+    state.obstacles.push({ x: parkX, z: parkZ, radius: 5.7 });
 }
 
 function createParkTree(x: number, z: number) {
     const treeGroup = new THREE.Group();
-    const height = 5 + Math.random() * 3;
+    const height = 5.5 + seededRandom(x, z, 91) * 2.5;
 
     // Trunk
     const trunkGeo = new THREE.CylinderGeometry(0.3, 0.4, height, 8);
@@ -518,12 +782,17 @@ function createParkTree(x: number, z: number) {
     treeGroup.add(trunk);
 
     // Foliage (rounder for park trees)
-    const foliageGeo = new THREE.SphereGeometry(2.5, 8, 8);
-    const foliageMat = new THREE.MeshStandardMaterial({ color: 0x2E7D32 });
-    const foliage = new THREE.Mesh(foliageGeo, foliageMat);
-    foliage.position.y = height + 1.5;
-    foliage.castShadow = true;
-    treeGroup.add(foliage);
+    const foliageMat = new THREE.MeshStandardMaterial({ color: 0x2E7D32, roughness: 0.85 });
+    const foliageLightMat = new THREE.MeshStandardMaterial({ color: 0x4a9a4e, roughness: 0.85 });
+    [-1.2, 0, 1.2].forEach((offset, index) => {
+        const foliage = new THREE.Mesh(
+            new THREE.SphereGeometry(index === 1 ? 2.6 : 2.1, 8, 7),
+            index === 1 ? foliageLightMat : foliageMat
+        );
+        foliage.position.set(offset, height + 1.2 + (index === 1 ? 0.8 : 0), (index - 1) * 0.45);
+        foliage.castShadow = true;
+        treeGroup.add(foliage);
+    });
 
     treeGroup.position.set(x, getTerrainHeight(x, z), z);
     state.scene.add(treeGroup);
@@ -531,27 +800,216 @@ function createParkTree(x: number, z: number) {
     state.obstacles.push({ x, z, radius: 1 });
 }
 
-function createPlaza() {
-    // Plaza is in the center block of the grid
-    const { blockSize, gridSize } = CITY_LAYOUT;
-    const bx = Math.floor(gridSize / 2) - 1;
-    const { x: plazaX, z: plazaZ } = blockCenter(bx, bx);
+function createPalmTree(x: number, z: number, salt: number) {
+    const palm = new THREE.Group();
+    const height = 6.5 + seededRandom(x, z, salt) * 2.2;
+    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x9a6b45, roughness: 0.9 });
+    const leafMats = [
+        new THREE.MeshStandardMaterial({ color: 0x27734d, roughness: 0.82, side: THREE.DoubleSide }),
+        new THREE.MeshStandardMaterial({ color: 0x3f925b, roughness: 0.82, side: THREE.DoubleSide })
+    ];
 
-    // Plaza ground (light colored tiles)
-    const plazaGeo = new THREE.PlaneGeometry(blockSize - 4, blockSize - 4);
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.42, height, 8), trunkMat);
+    trunk.position.y = height / 2;
+    trunk.rotation.z = (seededRandom(x, z, salt + 1) - 0.5) * 0.07;
+    trunk.castShadow = true;
+    palm.add(trunk);
+
+    for (let i = 0; i < 7; i++) {
+        const angle = (i / 7) * Math.PI * 2;
+        const leaf = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.09, 4.2), leafMats[i % 2]);
+        leaf.position.set(Math.sin(angle) * 1.45, height + 0.05, Math.cos(angle) * 1.45);
+        leaf.rotation.order = 'YXZ';
+        leaf.rotation.y = angle;
+        leaf.rotation.x = 0.28;
+        leaf.castShadow = true;
+        palm.add(leaf);
+    }
+
+    const coconutMat = new THREE.MeshStandardMaterial({ color: 0x654229, roughness: 0.9 });
+    for (let i = 0; i < 3; i++) {
+        const coconut = new THREE.Mesh(new THREE.SphereGeometry(0.24, 6, 5), coconutMat);
+        const angle = (i / 3) * Math.PI * 2;
+        coconut.position.set(Math.cos(angle) * 0.35, height - 0.18, Math.sin(angle) * 0.35);
+        palm.add(coconut);
+    }
+
+    palm.position.set(x, getTerrainHeight(x, z), z);
+    state.scene.add(palm);
+    state.obstacles.push({ x, z, radius: 1.0 });
+}
+
+function createStreetDetails() {
+    const { blockSize, roadWidth, gridSize } = CITY_LAYOUT;
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x334247, roughness: 0.55, metalness: 0.55 });
+    const lampMat = new THREE.MeshStandardMaterial({
+        color: 0xffe4a3,
+        emissive: 0xffc95a,
+        emissiveIntensity: 1.25,
+        roughness: 0.32
+    });
+    const poleGeo = new THREE.CylinderGeometry(0.12, 0.18, 5.2, 8);
+    const armGeo = new THREE.BoxGeometry(1.25, 0.12, 0.12);
+    const lampGeo = new THREE.SphereGeometry(0.28, 8, 6);
+    const cornerOffset = blockSize / 2 - 2.1;
+
+    function addStreetLight(x: number, z: number, rotation: number) {
+        const light = new THREE.Group();
+        const pole = new THREE.Mesh(poleGeo, poleMat);
+        pole.position.y = 2.6;
+        pole.castShadow = true;
+        light.add(pole);
+
+        const arm = new THREE.Mesh(armGeo, poleMat);
+        arm.position.set(0.5, 5.08, 0);
+        arm.castShadow = true;
+        light.add(arm);
+
+        const bulb = new THREE.Mesh(lampGeo, lampMat);
+        bulb.position.set(1.02, 4.92, 0);
+        light.add(bulb);
+
+        light.position.set(x, getTerrainHeight(x, z), z);
+        light.rotation.y = rotation;
+        state.scene.add(light);
+        state.obstacles.push({ x, z, radius: 0.7 });
+    }
+
+    for (let bx = 0; bx < gridSize; bx++) {
+        for (let bz = 0; bz < gridSize; bz++) {
+            const center = blockCenter(bx, bz);
+            const flip = (bx + bz) % 2 === 0;
+            const corners = flip
+                ? [{ x: -cornerOffset, z: -cornerOffset }, { x: cornerOffset, z: cornerOffset }]
+                : [{ x: -cornerOffset, z: cornerOffset }, { x: cornerOffset, z: -cornerOffset }];
+            corners.forEach(corner => {
+                const x = center.x + corner.x;
+                const z = center.z + corner.z;
+                addStreetLight(x, z, Math.atan2(-corner.x, -corner.z));
+            });
+        }
+    }
+
+    // A palm-lined central boulevard anchors the California identity and is
+    // visible from most blocks, making orientation much easier at speed.
+    const boulevardX = roadGridCenter(Math.floor(gridSize / 2));
+    for (let bz = 0; bz < gridSize; bz++) {
+        const z = blockCenter(0, bz).z;
+        createPalmTree(boulevardX - roadWidth / 2 - 2.2, z, 200 + bz);
+        createPalmTree(boulevardX + roadWidth / 2 + 2.2, z, 220 + bz);
+    }
+}
+
+function createSignTexture(label: string, accent: string): THREE.CanvasTexture {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+        ctx.fillStyle = '#20353a';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = 12;
+        ctx.strokeRect(8, 8, canvas.width - 16, canvas.height - 16);
+        ctx.fillStyle = '#fff8e7';
+        ctx.font = '700 52px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, canvas.width / 2, canvas.height / 2 + 2);
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+}
+
+function createDistrictSigns() {
+    const postMat = new THREE.MeshStandardMaterial({ color: 0x3b4a4d, roughness: 0.65, metalness: 0.45 });
+
+    function addSign(label: string, accent: string, x: number, z: number, rotation: number) {
+        const sign = new THREE.Group();
+        const texture = createSignTexture(label, accent);
+        const boardGeo = new THREE.PlaneGeometry(7.4, 1.85);
+        const boardMat = new THREE.MeshBasicMaterial({ map: texture, side: THREE.FrontSide });
+        for (const face of [{ z: 0.025, rotation: 0 }, { z: -0.025, rotation: Math.PI }]) {
+            const board = new THREE.Mesh(boardGeo, boardMat);
+            board.position.set(0, 3.9, face.z);
+            board.rotation.y = face.rotation;
+            sign.add(board);
+        }
+
+        for (const postX of [-2.6, 2.6]) {
+            const post = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.13, 3.3, 7), postMat);
+            post.position.set(postX, 1.65, 0);
+            post.castShadow = true;
+            sign.add(post);
+            state.obstacles.push({
+                x: x + Math.cos(rotation) * postX,
+                z: z - Math.sin(rotation) * postX,
+                radius: 0.35
+            });
+        }
+
+        sign.position.set(x, getTerrainHeight(x, z), z);
+        sign.rotation.y = rotation;
+        state.scene.add(sign);
+    }
+
+    const plaza = blockCenter(PLAZA_BLOCK.x, PLAZA_BLOCK.z);
+    const park = blockCenter(PARK_BLOCK.x, PARK_BLOCK.z);
+    addSign('SUNSET PLAZA', '#f3a23a', plaza.x, plaza.z - CITY_LAYOUT.blockSize / 2 + 2.1, 0);
+    addSign('PALM PARK', '#6fbd77', park.x, park.z - CITY_LAYOUT.blockSize / 2 + 2.1, 0);
+}
+
+function createPlaza() {
+    const { blockSize } = CITY_LAYOUT;
+    const { x: plazaX, z: plazaZ } = blockCenter(PLAZA_BLOCK.x, PLAZA_BLOCK.z);
+    const terrainAtFountain = getTerrainHeight(plazaX, plazaZ);
+
+    const plazaGeo = new THREE.PlaneGeometry(blockSize - 2, blockSize - 2);
     plazaGeo.rotateX(-Math.PI / 2);
-    const plazaMat = new THREE.MeshStandardMaterial({ color: 0xccccbb, roughness: 0.7 });
+    const plazaMat = new THREE.MeshStandardMaterial({ color: 0xd8cdb7, roughness: 0.82 });
     const plaza = new THREE.Mesh(plazaGeo, plazaMat);
-    plaza.position.set(plazaX, getTerrainHeight(plazaX, plazaZ) + 0.01, plazaZ);
+    plaza.position.set(plazaX, terrainAtFountain + 0.031, plazaZ);
     plaza.receiveShadow = true;
     state.scene.add(plaza);
+
+    // One textured mesh replaces 64 individual tile meshes, preserving the
+    // checkerboard landmark while keeping the mobile draw-call budget lean.
+    const tileCanvas = document.createElement('canvas');
+    tileCanvas.width = 512;
+    tileCanvas.height = 512;
+    const tileCtx = tileCanvas.getContext('2d');
+    const tileCount = 8;
+    const tilePixels = tileCanvas.width / tileCount;
+    if (tileCtx) {
+        for (let tx = 0; tx < tileCount; tx++) {
+            for (let tz = 0; tz < tileCount; tz++) {
+                tileCtx.fillStyle = (tx + tz) % 2 === 0 ? '#e5d8bd' : '#c77b5b';
+                tileCtx.fillRect(tx * tilePixels, tz * tilePixels, tilePixels, tilePixels);
+                tileCtx.strokeStyle = 'rgba(91, 70, 55, 0.24)';
+                tileCtx.lineWidth = 2;
+                tileCtx.strokeRect(tx * tilePixels, tz * tilePixels, tilePixels, tilePixels);
+            }
+        }
+    }
+    const tileTexture = new THREE.CanvasTexture(tileCanvas);
+    tileTexture.colorSpace = THREE.SRGBColorSpace;
+    const tileGeo = new THREE.PlaneGeometry(blockSize - 4, blockSize - 4);
+    tileGeo.rotateX(-Math.PI / 2);
+    const tiledPlaza = new THREE.Mesh(
+        tileGeo,
+        new THREE.MeshStandardMaterial({ map: tileTexture, roughness: 0.8 })
+    );
+    tiledPlaza.position.set(plazaX, terrainAtFountain + 0.043, plazaZ);
+    tiledPlaza.receiveShadow = true;
+    state.scene.add(tiledPlaza);
 
     // Central fountain
     const fountainGroup = new THREE.Group();
 
     // Base
-    const baseGeo = new THREE.CylinderGeometry(4, 4.5, 0.8, 16);
-    const stoneMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.6 });
+    const baseGeo = new THREE.CylinderGeometry(4, 4.5, 0.8, 24);
+    const stoneMat = new THREE.MeshStandardMaterial({ color: 0xb9ad95, roughness: 0.72 });
     const base = new THREE.Mesh(baseGeo, stoneMat);
     base.position.y = 0.4;
     base.castShadow = true;
@@ -559,9 +1017,11 @@ function createPlaza() {
     fountainGroup.add(base);
 
     // Water
-    const waterGeo = new THREE.CylinderGeometry(3.5, 3.5, 0.3, 16);
+    const waterGeo = new THREE.CylinderGeometry(3.5, 3.5, 0.3, 24);
     const waterMat = new THREE.MeshStandardMaterial({
-        color: 0x4488aa,
+        color: 0x3f9fb8,
+        emissive: 0x174d5b,
+        emissiveIntensity: 0.2,
         roughness: 0.1,
         metalness: 0.3,
         transparent: true,
@@ -578,7 +1038,14 @@ function createPlaza() {
     pillar.castShadow = true;
     fountainGroup.add(pillar);
 
-    const terrainAtFountain = getTerrainHeight(plazaX, plazaZ);
+    const topBowl = new THREE.Mesh(
+        new THREE.CylinderGeometry(1.6, 1.9, 0.35, 20),
+        stoneMat
+    );
+    topBowl.position.y = 2.75;
+    topBowl.castShadow = true;
+    fountainGroup.add(topBowl);
+
     fountainGroup.position.set(plazaX, terrainAtFountain, plazaZ);
     state.scene.add(fountainGroup);
 
@@ -593,6 +1060,51 @@ function createPlaza() {
         velocities.push({ vx: 0, vy: 0, vz: 0, life: 0 });
     }
     fountain = { water, baseY: 0.85 /* local Y within group */, particles, velocities };
+
+    const planterMat = new THREE.MeshStandardMaterial({ color: 0x9b644d, roughness: 0.86 });
+    const planterGreen = new THREE.MeshStandardMaterial({ color: 0x4c8f4d, roughness: 0.9 });
+    const parasolColors = [0xe84545, 0xf0a23a, 0x368ca6, 0x6ca469];
+    const planterOffset = PLAZA_PROP_LAYOUT.planterOffset;
+    const cornerOffsets = [
+        { x: -planterOffset, z: -planterOffset }, { x: planterOffset, z: -planterOffset },
+        { x: -planterOffset, z: planterOffset }, { x: planterOffset, z: planterOffset }
+    ];
+    cornerOffsets.forEach((offset, index) => {
+        const planter = new THREE.Group();
+        const pot = new THREE.Mesh(new THREE.CylinderGeometry(1.45, 1.2, 1.0, 10), planterMat);
+        pot.position.y = 0.5;
+        pot.castShadow = true;
+        planter.add(pot);
+        const shrub = new THREE.Mesh(new THREE.SphereGeometry(1.35, 8, 7), planterGreen);
+        shrub.position.y = 1.65;
+        shrub.castShadow = true;
+        planter.add(shrub);
+        const planterX = plazaX + offset.x;
+        const planterZ = plazaZ + offset.z;
+        planter.position.set(planterX, terrainAtFountain + 0.04, planterZ);
+        state.scene.add(planter);
+        state.obstacles.push({ x: planterX, z: planterZ, radius: PLAZA_PROP_LAYOUT.planterRadius });
+
+        const parasol = new THREE.Group();
+        const pole = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.06, 0.07, 2.8, 6),
+            new THREE.MeshStandardMaterial({ color: 0x6b5948, roughness: 0.8 })
+        );
+        pole.position.y = 1.4;
+        parasol.add(pole);
+        const canopy = new THREE.Mesh(
+            new THREE.ConeGeometry(2.0, 0.65, 12),
+            new THREE.MeshStandardMaterial({ color: parasolColors[index], roughness: 0.72 })
+        );
+        canopy.position.y = 2.85;
+        canopy.castShadow = true;
+        parasol.add(canopy);
+        const parasolX = plazaX + Math.sign(offset.x) * PLAZA_PROP_LAYOUT.parasolOffset;
+        const parasolZ = plazaZ + Math.sign(offset.z) * PLAZA_PROP_LAYOUT.parasolOffset;
+        parasol.position.set(parasolX, terrainAtFountain + 0.04, parasolZ);
+        state.scene.add(parasol);
+        state.obstacles.push({ x: parasolX, z: parasolZ, radius: PLAZA_PROP_LAYOUT.parasolRadius });
+    });
 
     // Fountain as obstacle
     state.obstacles.push({ x: plazaX, z: plazaZ, radius: 5 });

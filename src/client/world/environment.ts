@@ -1,6 +1,33 @@
 import * as THREE from 'three';
 import { state } from '../state.js';
 import { TreeData } from '../types.js';
+import { CITY_LAYOUT } from '../../shared/constants.js';
+
+const CITY_GRID_HALF_SPAN = CITY_LAYOUT.gridSize * (CITY_LAYOUT.blockSize + CITY_LAYOUT.roadWidth) / 2;
+const CITY_MIN = -CITY_GRID_HALF_SPAN;
+const CITY_MAX = CITY_GRID_HALF_SPAN + CITY_LAYOUT.roadWidth;
+const CITY_CENTER = (CITY_MIN + CITY_MAX) / 2;
+const CITY_HALF_EXTENT = (CITY_MAX - CITY_MIN) / 2;
+const CITY_CLEARANCE = CITY_LAYOUT.roadWidth / 2;
+const CITY_FLAT_RADIUS = Math.SQRT2 * (CITY_HALF_EXTENT + CITY_CLEARANCE);
+const CITY_SCENERY_HALF_EXTENT = CITY_HALF_EXTENT + CITY_CLEARANCE;
+const SCENERY_SEED = 0x42554c4c; // "BULL"
+
+function createSeededRandom(seed: number): () => number {
+    let value = seed >>> 0;
+    return () => {
+        value = (value + 0x6D2B79F5) >>> 0;
+        let mixed = value;
+        mixed = Math.imul(mixed ^ (mixed >>> 15), mixed | 1);
+        mixed ^= mixed + Math.imul(mixed ^ (mixed >>> 7), mixed | 61);
+        return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+function isInsideCitySceneryExclusion(x: number, z: number): boolean {
+    return Math.abs(x - CITY_CENTER) < CITY_SCENERY_HALF_EXTENT &&
+        Math.abs(z - CITY_CENTER) < CITY_SCENERY_HALF_EXTENT;
+}
 
 export function getTerrainHeight(x: number, z: number) {
     if (!state.terrainConfig) return 0;
@@ -8,18 +35,15 @@ export function getTerrainHeight(x: number, z: number) {
     const freq3 = (state.terrainConfig as any).frequency3 || 0;
     const amp3 = (state.terrainConfig as any).amplitude3 || 0;
 
-    // Flatten the whole city footprint. The 4x4 grid spans local [-104, 116] on
-    // each axis, so its farthest corner is sqrt(116^2 + 116^2) ~= 164 from
-    // center; flatten out to there (+ a blend ring) so no road/building edge
-    // sits on a slope.
-    const distFromCenter = Math.sqrt(x * x + z * z);
-    const cityRadius = 164;
+    // Flatten the full city footprint plus half a road of clearance. Both the
+    // footprint and its slightly offset center come from the shared layout.
+    const distFromCenter = Math.hypot(x - CITY_CENTER, z - CITY_CENTER);
     const blendRadius = 40;
     let flattenFactor = 1.0;
-    if (distFromCenter < cityRadius) {
+    if (distFromCenter < CITY_FLAT_RADIUS) {
         flattenFactor = 0.0;
-    } else if (distFromCenter < cityRadius + blendRadius) {
-        flattenFactor = (distFromCenter - cityRadius) / blendRadius;
+    } else if (distFromCenter < CITY_FLAT_RADIUS + blendRadius) {
+        flattenFactor = (distFromCenter - CITY_FLAT_RADIUS) / blendRadius;
         flattenFactor = flattenFactor * flattenFactor; // Smooth ease-in
     }
 
@@ -36,6 +60,9 @@ export function getTerrainHeight(x: number, z: number) {
 export function createEnvironment(treeData: TreeData[]) {
     if (!state.terrainConfig) return;
     const { size, segments } = state.terrainConfig;
+    // Reset on every environment build so every client and reconnect produces
+    // exactly the same procedural scenery.
+    const sceneryRandom = createSeededRandom(SCENERY_SEED);
 
     // Ground Plane
     const geometry = new THREE.PlaneGeometry(size, size, segments, segments);
@@ -145,30 +172,30 @@ export function createEnvironment(treeData: TreeData[]) {
 
     // Scatter rocks across the terrain (reduced from 80 to 40)
     for (let i = 0; i < 40; i++) {
-        const rx = (Math.random() - 0.5) * 700;
-        const rz = (Math.random() - 0.5) * 700;
+        const rx = (sceneryRandom() - 0.5) * 700;
+        const rz = (sceneryRandom() - 0.5) * 700;
         // Skip city area
-        if (Math.abs(rx) < 120 && Math.abs(rz) < 120) continue;
+        if (isInsideCitySceneryExclusion(rx, rz)) continue;
 
         const rockGroup = new THREE.Group();
         const h = getTerrainHeight(rx, rz);
         rockGroup.position.set(rx, h, rz);
 
-        const rockSize = 0.8 + Math.random() * 2.0;
-        const rock = new THREE.Mesh(rockGeoLarge, Math.random() > 0.5 ? rockMat : rockDarkMat);
+        const rockSize = 0.8 + sceneryRandom() * 2.0;
+        const rock = new THREE.Mesh(rockGeoLarge, sceneryRandom() > 0.5 ? rockMat : rockDarkMat);
         rock.position.y = rockSize * 0.4;
-        rock.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
-        rock.scale.set(rockSize, rockSize * (0.5 + Math.random() * 0.4), rockSize);
+        rock.rotation.set(sceneryRandom() * Math.PI, sceneryRandom() * Math.PI, 0);
+        rock.scale.set(rockSize, rockSize * (0.5 + sceneryRandom() * 0.4), rockSize);
         rock.castShadow = true;
         rock.receiveShadow = true;
         rockGroup.add(rock);
 
         // Sometimes add a second smaller rock
-        if (Math.random() > 0.5) {
+        if (sceneryRandom() > 0.5) {
             const smallSize = rockSize * 0.5;
             const smallRock = new THREE.Mesh(rockGeoSmall, rockDarkMat);
             smallRock.position.set(rockSize * 0.8, smallSize * 0.3, rockSize * 0.3);
-            smallRock.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
+            smallRock.rotation.set(sceneryRandom() * Math.PI, sceneryRandom() * Math.PI, 0);
             smallRock.scale.set(smallSize / 0.5, smallSize / 0.5 * 0.6, smallSize / 0.5);
             smallRock.castShadow = true;
             rockGroup.add(smallRock);
@@ -182,26 +209,26 @@ export function createEnvironment(treeData: TreeData[]) {
 
     // Scatter bushes (reduced from 60 to 30)
     for (let i = 0; i < 30; i++) {
-        const bx = (Math.random() - 0.5) * 600;
-        const bz = (Math.random() - 0.5) * 600;
-        if (Math.abs(bx) < 120 && Math.abs(bz) < 120) continue;
+        const bx = (sceneryRandom() - 0.5) * 600;
+        const bz = (sceneryRandom() - 0.5) * 600;
+        if (isInsideCitySceneryExclusion(bx, bz)) continue;
 
         const h = getTerrainHeight(bx, bz);
         const bushGroup = new THREE.Group();
         bushGroup.position.set(bx, h, bz);
 
-        const bushSize = 1.0 + Math.random() * 1.5;
+        const bushSize = 1.0 + sceneryRandom() * 1.5;
         const mainBush = new THREE.Mesh(
             bushGeoMain,
-            Math.random() > 0.5 ? bushMat : bushLightMat
+            sceneryRandom() > 0.5 ? bushMat : bushLightMat
         );
         mainBush.position.y = bushSize * 0.6;
-        mainBush.scale.set(bushSize, bushSize * (0.6 + Math.random() * 0.3), bushSize);
+        mainBush.scale.set(bushSize, bushSize * (0.6 + sceneryRandom() * 0.3), bushSize);
         mainBush.castShadow = true;
         bushGroup.add(mainBush);
 
         // Secondary lobe
-        if (Math.random() > 0.4) {
+        if (sceneryRandom() > 0.4) {
             const lobSize = bushSize * 0.7;
             const lobe = new THREE.Mesh(
                 bushGeoLobe,
@@ -223,25 +250,25 @@ export function createEnvironment(treeData: TreeData[]) {
         color: c, emissive: c, emissiveIntensity: 0.15, roughness: 0.8
     }));
     for (let i = 0; i < 20; i++) {
-        const fx = (Math.random() - 0.5) * 500;
-        const fz = (Math.random() - 0.5) * 500;
-        if (Math.abs(fx) < 120 && Math.abs(fz) < 120) continue;
+        const fx = (sceneryRandom() - 0.5) * 500;
+        const fz = (sceneryRandom() - 0.5) * 500;
+        if (isInsideCitySceneryExclusion(fx, fz)) continue;
 
         const h = getTerrainHeight(fx, fz);
         const patchGroup = new THREE.Group();
         patchGroup.position.set(fx, h + 0.05, fz);
 
-        const flowerCount = 5 + Math.floor(Math.random() * 10);
-        const flowerMat = flowerMats[Math.floor(Math.random() * flowerMats.length)];
+        const flowerCount = 5 + Math.floor(sceneryRandom() * 10);
+        const flowerMat = flowerMats[Math.floor(sceneryRandom() * flowerMats.length)];
 
         for (let j = 0; j < flowerCount; j++) {
             const flower = new THREE.Mesh(flowerGeo, flowerMat);
-            const fScale = 0.75 + Math.random() * 0.75;
+            const fScale = 0.75 + sceneryRandom() * 0.75;
             flower.scale.setScalar(fScale);
             flower.position.set(
-                (Math.random() - 0.5) * 4,
-                0.15 + Math.random() * 0.3,
-                (Math.random() - 0.5) * 4
+                (sceneryRandom() - 0.5) * 4,
+                0.15 + sceneryRandom() * 0.3,
+                (sceneryRandom() - 0.5) * 4
             );
             patchGroup.add(flower);
 

@@ -113,7 +113,7 @@ export interface Inputs {
 }
 
 export type ServerMessage =
-    | { type: 'init', id: string, color: number, name: string, players: Record<string, PlayerData>, powerups: PowerupData[], coins: CoinData[], terrain: TerrainConfig, trees: TreeData[], city: CityData, scoreboard: ScoreboardEntry[] }
+    | { type: 'init', id: string, color: number, name: string, spawn: { x: number; z: number }, players: Record<string, PlayerData>, powerups: PowerupData[], coins: CoinData[], terrain: TerrainConfig, trees: TreeData[], city: CityData, scoreboard: ScoreboardEntry[] }
     | { type: 'newPlayer', player: PlayerData }
     | { type: 'update', id: string, x: number, z: number, y?: number, angle: number, flipAngle: number, isFlipping: boolean, scale?: number, ghostActive?: boolean, shieldActive?: boolean }
     | { type: 'removePlayer', id: string }

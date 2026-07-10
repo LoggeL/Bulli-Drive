@@ -14,6 +14,7 @@ import { updatePowerupsUI, updateSpeedometer, updateHealthBar } from './ui/hud.j
 import { updateProjectiles } from './world/projectiles.js';
 import { initSplashScreen, initAboutModal, initRenameUI } from './ui/screens.js';
 import { animateFountain } from './world/city.js';
+import { updateMinimap } from './ui/minimap.js';
 
 // Reusable vectors to avoid per-frame allocations
 const _cameraTarget = new THREE.Vector3();
@@ -73,11 +74,16 @@ function init() {
 
         // Rebuild local car with selected type
         if (state.bulli) {
+            const previousPosition = state.bulli.group.position.clone();
+            const previousAngle = state.bulli.angle;
             state.scene.remove(state.bulli.group);
             if (state.bulli.nametag) state.bulli.nametag.remove();
 
             const { Bulli } = await import('./entities/Bulli.js');
             state.bulli = new Bulli(state.myColor!, true, carType as any);
+            state.bulli.group.position.copy(previousPosition);
+            state.bulli.angle = previousAngle;
+            state.bulli.group.rotation.y = previousAngle;
             state.bulli.createNametag(name, true);
             state.scene.add(state.bulli.group);
         }
@@ -395,6 +401,7 @@ function animate() {
     }
 
     updateParticles(dt);
+    updateMinimap(performance.now());
 
     if (state.renderer && state.scene && state.camera) {
         state.renderer.render(state.scene, state.camera);

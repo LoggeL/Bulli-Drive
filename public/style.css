@@ -1358,7 +1358,7 @@ canvas {
     }
 
     #player-list {
-        top: max(0.5rem, env(safe-area-inset-top, 0.5rem));
+        top: max(4.75rem, calc(env(safe-area-inset-top, 0px) + 4.25rem));
         right: max(0.5rem, env(safe-area-inset-right, 0.5rem));
         transform: scale(0.75);
         transform-origin: top right;
@@ -1580,8 +1580,8 @@ canvas {
 
 #fps-counter {
     position: fixed;
-    top: 1rem;
-    left: 1rem;
+    top: 16.9rem;
+    left: 1.2rem;
     font-family: var(--font-body);
     font-size: 0.75rem;
     font-weight: 700;
@@ -1592,4 +1592,139 @@ canvas {
     pointer-events: none;
     z-index: 10;
     letter-spacing: 0.5px;
+}
+
+/* ==========================================================================
+   CITY RADAR
+   ========================================================================== */
+
+#map-panel {
+    position: fixed;
+    top: 1rem;
+    left: 1rem;
+    width: 204px;
+    padding: 0.65rem 0.7rem 0.55rem;
+    background:
+        linear-gradient(150deg, rgba(23, 55, 54, 0.9), rgba(8, 22, 25, 0.82));
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255, 248, 231, 0.2);
+    border-radius: var(--radius-md);
+    box-shadow:
+        0 10px 32px rgba(0, 0, 0, 0.28),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    z-index: 12;
+    pointer-events: none;
+}
+
+.map-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 0 0.2rem 0.45rem;
+}
+
+.map-panel-title {
+    font-family: var(--font-display);
+    font-size: 0.72rem;
+    letter-spacing: 1.5px;
+    color: var(--cream);
+}
+
+.map-compass {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--sunset-red);
+    color: white;
+    font-family: var(--font-display);
+    font-size: 0.62rem;
+    box-shadow: 0 0 12px rgba(232, 69, 69, 0.45);
+}
+
+#minimap-canvas {
+    display: block;
+    width: 180px;
+    height: 180px;
+    border-radius: 9px;
+    border: 1px solid rgba(255, 248, 231, 0.16);
+    box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.32);
+}
+
+.map-legend {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.35rem;
+    margin-top: 0.45rem;
+    color: rgba(255, 255, 255, 0.62);
+    font-family: var(--font-body);
+    font-size: 0.5rem;
+    font-weight: 700;
+    letter-spacing: 0.45px;
+}
+
+.map-legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.22rem;
+}
+
+.legend-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+}
+
+.legend-dot.player {
+    background: white;
+    box-shadow: 0 0 0 1px var(--sunset-red);
+}
+
+.legend-dot.coin {
+    background: var(--sunset-gold);
+}
+
+.legend-dot.powerup {
+    background: #9a72ff;
+    box-shadow: 0 0 5px rgba(154, 114, 255, 0.8);
+}
+
+@media (max-width: 768px), (pointer: coarse) {
+    #map-panel {
+        top: max(0.5rem, env(safe-area-inset-top, 0.5rem));
+        left: max(0.5rem, env(safe-area-inset-left, 0.5rem));
+        width: 136px;
+        padding: 0.45rem;
+        border-radius: 10px;
+    }
+
+    .map-panel-header {
+        margin-bottom: 0.3rem;
+    }
+
+    .map-panel-title {
+        font-size: 0.56rem;
+    }
+
+    .map-compass {
+        width: 16px;
+        height: 16px;
+        font-size: 0.5rem;
+    }
+
+    #minimap-canvas {
+        width: 120px;
+        height: 120px;
+        border-radius: 7px;
+    }
+
+    .map-legend,
+    #fps-counter {
+        display: none;
+    }
 }

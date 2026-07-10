@@ -95,6 +95,7 @@ wss.on('connection', (ws: WebSocket) => {
         id,
         color,
         name,
+        spawn,
         players: getPublicPlayers(),
         powerups,
         coins,

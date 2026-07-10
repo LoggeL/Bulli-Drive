@@ -6,6 +6,23 @@ export const trees: Tree[] = [];
 export const coins: Coin[] = [];
 export const cityData: CityData = { buildings: [], roads: [] };
 
+type RandomSource = () => number;
+
+// Re-created for every initWorld call so a restart or regeneration produces
+// exactly the same authoritative world payload.
+const WORLD_SEED = 0xB0111D;
+
+function createSeededRandom(seed: number): RandomSource {
+    let state = seed >>> 0;
+    return () => {
+        state = (state + 0x6D2B79F5) >>> 0;
+        let value = state;
+        value = Math.imul(value ^ (value >>> 15), value | 1);
+        value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+        return ((value ^ (value >>> 14)) >>> 0) / 0x100000000;
+    };
+}
+
 // City configuration (grid dimensions are shared with the client)
 const CITY_CONFIG = {
     centerX: 0,
@@ -63,41 +80,48 @@ function isOnRoad(x: number, z: number): boolean {
 function placeWithRejection(
     range: number,
     maxAttempts: number,
+    random: RandomSource,
     reject: (x: number, z: number) => boolean
 ): { x: number; z: number; ok: boolean } {
     let x = 0, z = 0;
     for (let attempts = 0; attempts < maxAttempts; attempts++) {
-        x = (Math.random() - 0.5) * range;
-        z = (Math.random() - 0.5) * range;
+        x = (random() - 0.5) * range;
+        z = (random() - 0.5) * range;
         if (!reject(x, z)) return { x, z, ok: true };
     }
     return { x, z, ok: false };
 }
 
-function generateCity() {
+function generateCity(random: RandomSource) {
     const { blockSize, roadWidth, gridSize, centerX, centerZ, buildingMargin } = CITY_CONFIG;
     const totalBlockSize = blockSize + roadWidth;
     const halfCity = (gridSize * totalBlockSize) / 2;
+    // Includes both outer road widths: [-halfCity, halfCity + roadWidth].
+    const fullCitySpan = gridSize * totalBlockSize + roadWidth;
+    const roadSpanCenterX = centerX + roadWidth / 2;
+    const roadSpanCenterZ = centerZ + roadWidth / 2;
 
-    // Generate roads
+    // PlaneGeometry(width, length) is long on local Z before rotation. Keep
+    // width as the across-road dimension for every road, and center the long
+    // axis over the complete outer-road footprint.
     for (let i = 0; i <= gridSize; i++) {
-        // Horizontal roads
-        const zPos = centerZ - halfCity + i * totalBlockSize + roadWidth / 2;
-        cityData.roads.push({
-            x: centerX,
-            z: zPos,
-            width: halfCity * 2,
-            length: roadWidth,
-            rotation: 0
-        });
-
-        // Vertical roads
+        // Vertical (x-constant) roads run along world Z with no rotation.
         const xPos = centerX - halfCity + i * totalBlockSize + roadWidth / 2;
         cityData.roads.push({
             x: xPos,
-            z: centerZ,
+            z: roadSpanCenterZ,
             width: roadWidth,
-            length: halfCity * 2,
+            length: fullCitySpan,
+            rotation: 0
+        });
+
+        // Horizontal (z-constant) roads rotate the long local Z axis onto X.
+        const zPos = centerZ - halfCity + i * totalBlockSize + roadWidth / 2;
+        cityData.roads.push({
+            x: roadSpanCenterX,
+            z: zPos,
+            width: roadWidth,
+            length: fullCitySpan,
             rotation: Math.PI / 2
         });
     }
@@ -119,8 +143,8 @@ function generateCity() {
                 continue; // Park area (will be green in client)
             }
 
-            // Generate 1-4 buildings per block
-            const numBuildings = 1 + Math.floor(Math.random() * 3);
+            // Generate 1-3 buildings per block
+            const numBuildings = 1 + Math.floor(random() * 3);
             const subBlockSize = (blockSize - buildingMargin * 2) / 2;
 
             for (let i = 0; i < numBuildings; i++) {
@@ -130,10 +154,10 @@ function generateCity() {
                 const buildingX = blockCenterX - subBlockSize / 2 + subX * subBlockSize;
                 const buildingZ = blockCenterZ - subBlockSize / 2 + subZ * subBlockSize;
 
-                const width = 8 + Math.random() * (subBlockSize - 10);
-                const depth = 8 + Math.random() * (subBlockSize - 10);
-                const height = 6 + Math.random() * 20;
-                const color = BUILDING_COLORS[Math.floor(Math.random() * BUILDING_COLORS.length)];
+                const width = 8 + random() * (subBlockSize - 10);
+                const depth = 8 + random() * (subBlockSize - 10);
+                const height = 6 + random() * 20;
+                const color = BUILDING_COLORS[Math.floor(random() * BUILDING_COLORS.length)];
 
                 cityData.buildings.push({
                     x: buildingX,
@@ -149,15 +173,23 @@ function generateCity() {
 }
 
 export function initWorld() {
-    // Generate city
-    generateCity();
+    // initWorld is deliberately re-entrant: never append a second copy of the
+    // map or retain collected state when regenerating it.
+    powerups.length = 0;
+    trees.length = 0;
+    coins.length = 0;
+    cityData.buildings.length = 0;
+    cityData.roads.length = 0;
+
+    const random = createSeededRandom(WORLD_SEED);
+    generateCity(random);
 
     // Init Powerups: keep them within reach of the action - on city roads or in
     // the open ring just around the city (<=150 from center), never inside a
     // building block or out in the distant wilderness.
     for (let i = 0; i < 25; i++) {
-        const type = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
-        const spot = placeWithRejection(300, 30, (x, z) =>
+        const type = POWERUP_TYPES[Math.floor(random() * POWERUP_TYPES.length)];
+        const spot = placeWithRejection(300, 30, random, (x, z) =>
             (isInCityArea(x, z) && !isOnRoad(x, z)) || (x * x + z * z) > 150 * 150);
 
         powerups.push({
@@ -174,7 +206,7 @@ export function initWorld() {
     // Init Coins: spread across the playable area (within ~140 of center),
     // skipping the central spawn pad and building-block interiors.
     for (let i = 0; i < 30; i++) {
-        const spot = placeWithRejection(280, 30, (x, z) =>
+        const spot = placeWithRejection(280, 30, random, (x, z) =>
             (Math.abs(x) < 25 && Math.abs(z) < 25) || (isInCityArea(x, z) && !isOnRoad(x, z)));
 
         coins.push({
@@ -187,7 +219,7 @@ export function initWorld() {
 
     // Init Trees (outside city area; skip the tree if no valid spot was found)
     for (let i = 0; i < 120; i++) {
-        const spot = placeWithRejection(600, 20, (x, z) =>
+        const spot = placeWithRejection(600, 20, random, (x, z) =>
             isInCityArea(x, z) || (Math.abs(x) < 40 && Math.abs(z) < 40));
         if (!spot.ok) continue;
 
@@ -195,7 +227,7 @@ export function initWorld() {
             id: i,
             x: spot.x,
             z: spot.z,
-            height: 4 + Math.random() * 5
+            height: 4 + random() * 5
         });
     }
 }

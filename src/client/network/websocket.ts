@@ -12,6 +12,7 @@ import { getTerrainHeight } from '../world/environment.js';
 import { playHitSound } from '../effects/sounds.js';
 import { spawnExplosion } from '../effects/particles.js';
 import { addKillfeedEntry } from '../ui/hud.js';
+import { initMinimap } from '../ui/minimap.js';
 
 export function initWebSocket() {
     state.ws = new WebSocket(CONFIG.serverUrl);
@@ -81,13 +82,14 @@ function handleServerMessage(data: ServerMessage) {
             
             if (data.city) {
                 createCity(data.city);
+                initMinimap(data.city);
             }
             
             if (data.scoreboard) {
                 state.scoreboard = data.scoreboard;
             }
 
-            createLocalPlayer(state.myColor!, state.myName);
+            createLocalPlayer(state.myColor!, state.myName, data.spawn);
             state.respawnShield = true;
             state.respawnMoveStart = 0;
             removeLoader();
@@ -373,12 +375,13 @@ function hideRespawnOverlay() {
     if (overlay) overlay.style.display = 'none';
 }
 
-export function createLocalPlayer(color: number, name: string) {
+export function createLocalPlayer(color: number, name: string, spawn = { x: 0, z: 0 }) {
     state.myColor = color;
     state.myName = name;
     const savedCarType = localStorage.getItem('bulli-car-type') || 'bulli';
     state.myCarType = savedCarType;
     state.bulli = new Bulli(color, true, savedCarType as any);
+    state.bulli.group.position.set(spawn.x, getTerrainHeight(spawn.x, spawn.z), spawn.z);
     state.bulli.createNametag(name, true);
     state.scene.add(state.bulli.group);
     updateScoreboardUI();

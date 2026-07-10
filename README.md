@@ -10,6 +10,7 @@ city, collect coins and powerups, and shoot it out with other drivers.
 - **Combat:** Shoot projectiles at other players, score kills, climb the scoreboard.
 - **Powerups & coins:** Turbo, Mega, Super Jump, Shield, Magnet and Ghost powerups plus collectible coins, shared across all players.
 - **3D Graphics:** Built with Three.js.
+- **Sunset city:** A deterministic, connected road grid with marked crossings, palm-lined streets, a tiled fountain plaza, landscaped park, and live city radar.
 
 ## Getting Started
 

@@ -317,6 +317,19 @@
 
         <div id="fps-counter">0 FPS</div>
 
+        <div id="map-panel" aria-label="City radar">
+            <div class="map-panel-header">
+                <span class="map-panel-title">CITY RADAR</span>
+                <span class="map-compass">N</span>
+            </div>
+            <canvas id="minimap-canvas" width="180" height="180" role="img" aria-label="Live map of roads, landmarks, pickups, and players"></canvas>
+            <div class="map-legend" aria-hidden="true">
+                <span><i class="legend-dot player"></i>YOU</span>
+                <span><i class="legend-dot coin"></i>COIN</span>
+                <span><i class="legend-dot powerup"></i>POWERUP</span>
+            </div>
+        </div>
+
         <div id="player-list">
             <h3><span class="trophy-icon">&#127942;</span> Scoreboard</h3>
             <ul id="scoreboard-list"></ul>
