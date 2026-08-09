@@ -4,7 +4,7 @@
   "main": "dist/server/index.js",
   "scripts": {
     "test": "tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.server.json --noEmit",
-    "build:client": "tsc -p tsconfig.client.json",
+    "build:client": "node scripts/clean-client-build.mjs && tsc -p tsconfig.client.json && node scripts/version-client-build.mjs",
     "build:server": "tsc -p tsconfig.server.json",
     "build": "npm run build:client && npm run build:server",
     "start": "node dist/server/index.js",

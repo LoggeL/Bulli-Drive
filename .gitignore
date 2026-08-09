@@ -9,6 +9,7 @@ yarn-error.log*
 .DS_Store
 dist/
 public/js/
+public/build-version.txt
 *.tsbuildinfo
 src/**/*.js
 src/**/*.js.map

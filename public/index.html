@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Righteous&family=Quicksand:wght@400;600;700&family=Permanent+Marker&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
+    <link id="app-stylesheet" rel="stylesheet" href="style.css">
     <script type="importmap">
         {
             "imports": {
@@ -380,7 +380,21 @@
         </div>
     </div>
 
-    <script type="module" src="js/client/main.js"></script>
+    <script type="module">
+        const versionResponse = await fetch('/build-version.txt', { cache: 'no-store' });
+        if (!versionResponse.ok) {
+            throw new Error(`Unable to load client build version (${versionResponse.status})`);
+        }
+
+        const buildVersion = (await versionResponse.text()).trim();
+        if (!/^[a-f0-9]{16}$/.test(buildVersion)) {
+            throw new Error('Invalid client build version');
+        }
+
+        const stylesheet = document.getElementById('app-stylesheet');
+        if (stylesheet) stylesheet.setAttribute('href', `style.css?v=${buildVersion}`);
+        await import(`./js/client/main.js?v=${buildVersion}`);
+    </script>
 </body>
 
 </html>

@@ -112,7 +112,12 @@ function init() {
 
         // Hide splash screen
         if (splashScreen) {
+            const focused = document.activeElement;
+            if (focused instanceof HTMLElement && splashScreen.contains(focused)) {
+                focused.blur();
+            }
             splashScreen.classList.add('hidden');
+            splashScreen.inert = true;
         }
     });
 

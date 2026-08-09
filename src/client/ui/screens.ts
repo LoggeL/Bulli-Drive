@@ -32,6 +32,11 @@ export function initSplashScreen(onStart: (name: string, carType: string) => Pro
     if (startBtn && splashInput) {
         startBtn.addEventListener('click', async () => {
             const name = splashInput.value.trim() || "Player";
+            // The hidden splash input/button must not retain focus after the
+            // game starts, otherwise gameplay keys (especially Space) are
+            // correctly treated as form/button input and never reach the car.
+            splashInput.blur();
+            startBtn.blur();
             await onStart(name, selectedCarType);
         });
 
@@ -53,6 +58,7 @@ export function initAboutModal(): void {
 
     function showModal() {
         if (modalContainer) {
+            modalContainer.inert = false;
             modalContainer.classList.remove('hidden');
             state.isModalOpen = true;
             // Drop any held keys so the car doesn't keep driving behind the modal
@@ -64,9 +70,18 @@ export function initAboutModal(): void {
 
     function hideModal() {
         if (modalContainer) {
+            const focused = document.activeElement;
+            if (focused instanceof HTMLElement && modalContainer.contains(focused)) {
+                focused.blur();
+            }
             modalContainer.classList.add('hidden');
+            modalContainer.inert = true;
             state.isModalOpen = false;
         }
+    }
+
+    if (modalContainer?.classList.contains('hidden')) {
+        modalContainer.inert = true;
     }
 
     if (aboutLink) {

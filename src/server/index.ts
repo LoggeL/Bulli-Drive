@@ -27,7 +27,30 @@ setWss(wss);
 // levels up from __dirname both in the Docker image (/app/public) and in local
 // dev (<repo>/public).
 const publicPath = path.join(__dirname, '../../public');
-app.use(express.static(publicPath));
+
+function preventStaleClientCaching(response: http.ServerResponse) {
+    response.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    response.setHeader('CDN-Cache-Control', 'no-store');
+    response.setHeader('Cloudflare-CDN-Cache-Control', 'no-store');
+}
+
+app.get(['/', '/index.html'], (_request, response) => {
+    preventStaleClientCaching(response);
+    response.sendFile(path.join(publicPath, 'index.html'));
+});
+
+app.get('/build-version.txt', (_request, response) => {
+    preventStaleClientCaching(response);
+    response.sendFile(path.join(publicPath, 'build-version.txt'));
+});
+
+app.use(express.static(publicPath, {
+    setHeaders(response, filePath) {
+        if (/\.(?:css|html|js|txt)$/.test(filePath)) {
+            preventStaleClientCaching(response);
+        }
+    }
+}));
 
 initWorld();
 
