@@ -6,7 +6,7 @@ import { initKeyboard } from './controls/keyboard.js';
 import { setupMobileControls } from './controls/mobile.js';
 import { updateParticles, spawnDriftParticle, spawnBoostFireParticle, spawnDamageSmoke } from './effects/particles.js';
 import { playCollisionSound } from './effects/sounds.js';
-import { setRecoveryControlVisible, showHitmarker } from './ui/hud.js';
+import { updateJumpControl, showHitmarker } from './ui/hud.js';
 import { initSounds, startEngineSound, updateEngineSound } from './effects/sounds.js';
 import { checkCoinCollection, animateCoins } from './world/coins.js';
 import { checkPowerupCollection, animatePowerups } from './world/powerups.js';
@@ -350,11 +350,10 @@ function animate() {
         updatePowerupsUI();
         updateSpeedometer();
         updateHealthBar();
-        const jumpActionAvailable = state.bulli.powerups.jump.active;
-        setRecoveryControlVisible(
-            !state.dead && (state.bulli.canRecover || jumpActionAvailable),
-            jumpActionAvailable ? 'jump' : 'recover'
-        );
+        const jumpControlMode = state.bulli.canRecover
+            ? 'recover'
+            : (state.bulli.powerups.jump.active ? 'super-jump' : 'jump');
+        updateJumpControl(jumpControlMode, !state.dead);
 
         // Damage smoke based on health
         if (state.health < 100 && !state.dead) {

@@ -1705,7 +1705,7 @@ canvas {
     position: fixed;
     left: max(2rem, env(safe-area-inset-left, 0px));
     bottom: max(2rem, env(safe-area-inset-bottom, 0px));
-    width: clamp(360px, 28vw, 445px);
+    width: clamp(410px, 32vw, 500px);
     padding: 0.75rem 1rem;
     background: linear-gradient(145deg, rgba(31, 49, 42, 0.83), rgba(24, 32, 30, 0.72));
     border: 1px solid rgba(243, 210, 142, 0.55);
@@ -1885,9 +1885,10 @@ canvas {
     border: 2px solid rgba(185, 231, 241, 0.78);
 }
 
-#btn-flip[hidden],
-#btn-flip.is-context-hidden {
-    display: none;
+.control-btn.action:disabled {
+    opacity: 0.42;
+    pointer-events: none;
+    filter: grayscale(0.45);
 }
 
 @media (max-width: 768px), (pointer: coarse) {

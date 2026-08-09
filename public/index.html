@@ -236,7 +236,7 @@
                 <div class="preview-row">
                     <span class="preview-keys">WASD</span> <span class="preview-desc">drive</span>
                     <span class="preview-sep">&middot;</span>
-                    <span class="preview-keys">SPACE</span> <span class="preview-desc">recover</span>
+                    <span class="preview-keys">SPACE</span> <span class="preview-desc">jump</span>
                     <span class="preview-sep">&middot;</span>
                     <span class="preview-keys">F</span> <span class="preview-desc">honk</span>
                     <span class="preview-sep">&middot;</span>
@@ -262,7 +262,7 @@
                 <h3 class="modal-section-title">Controls</h3>
                 <div class="modal-controls-grid">
                     <div class="modal-control-row"><span class="modal-key">W A S D</span><span>Drive &amp; steer</span></div>
-                    <div class="modal-control-row"><span class="modal-key">SPACE</span><span>Recover when stuck</span></div>
+                    <div class="modal-control-row"><span class="modal-key">SPACE</span><span>Jump / flip; recover when stuck</span></div>
                     <div class="modal-control-row"><span class="modal-key">F</span><span>Honk horn</span></div>
                     <div class="modal-control-row"><span class="modal-key">E</span><span>Shoot projectile</span></div>
                 </div>
@@ -300,8 +300,8 @@
             <button id="btn-shoot" class="control-btn action shoot" type="button" data-key="e" aria-label="Shoot projectile">
                 <svg class="ui-icon" aria-hidden="true"><use href="#icon-target"></use></svg>
             </button>
-            <button id="btn-flip" class="control-btn action flip recovery-control is-context-hidden" type="button" data-key="space" aria-label="Recover vehicle" aria-hidden="true" hidden>
-                <svg class="ui-icon" aria-hidden="true"><use href="#icon-recover"></use></svg>
+            <button id="btn-flip" class="control-btn action flip" type="button" data-key="space" data-mode="jump" aria-label="Jump and flip vehicle">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-jump"></use></svg>
             </button>
         </div>
     </div>
@@ -334,6 +334,11 @@
                         </div>
                     </div>
                     <span class="sr-only">Drive and steer</span>
+                </div>
+                <div class="hint-row">
+                    <div class="key wide">SPACE</div>
+                    <svg class="ui-icon hint-icon" aria-hidden="true"><use href="#icon-jump"></use></svg>
+                    <span class="sr-only">Jump and flip; recover when stuck</span>
                 </div>
                 <div class="hint-row">
                     <div class="key">E</div>

@@ -254,17 +254,25 @@ function getPowerupColor(type: string) {
     }
 }
 
-/**
- * Contextual recovery control hook. The gameplay loop should call this only
- * when the local vehicle is overturned or genuinely stuck.
- */
-export function setRecoveryControlVisible(visible: boolean, mode: 'recover' | 'jump' = 'recover') {
+export type JumpControlMode = 'jump' | 'super-jump' | 'recover';
+
+/** Keep the mobile action available while changing its meaning visually when stuck. */
+export function updateJumpControl(mode: JumpControlMode, enabled: boolean) {
     const button = document.getElementById('btn-flip') as HTMLButtonElement | null;
     if (!button) return;
-    button.hidden = !visible;
-    button.classList.toggle('is-context-hidden', !visible);
-    button.setAttribute('aria-hidden', String(!visible));
-    button.setAttribute('aria-label', mode === 'jump' ? 'Use jump powerup' : 'Recover vehicle');
+
+    button.disabled = !enabled;
+    const labels: Record<JumpControlMode, string> = {
+        jump: 'Jump and flip vehicle',
+        'super-jump': 'Use super jump',
+        recover: 'Recover vehicle'
+    };
+    button.setAttribute('aria-label', labels[mode]);
+
+    if (button.dataset.mode === mode) return;
+    button.dataset.mode = mode;
+    const use = button.querySelector('use');
+    use?.setAttribute('href', mode === 'recover' ? '#icon-recover' : '#icon-jump');
 }
 
 // Health bar

@@ -133,6 +133,7 @@ export class Bulli {
     private _ghostMaterialStates = new Map<THREE.Material, GhostMaterialState>();
     private _ghostMeshStates = new Map<THREE.Mesh, GhostMeshState>();
     private _recoveryTimer: number = 0;
+    private _jumpHeightFactor: number = 8;
     shieldMesh?: THREE.Mesh;
     wheels: THREE.Group[] = [];
     nametag?: HTMLDivElement;
@@ -748,11 +749,15 @@ export class Bulli {
             this.speed *= Math.pow(this.friction, frame);
         }
 
-        const recoveryRequested = state.inputs.space;
+        const jumpRequested = state.inputs.space;
         state.inputs.space = false;
-        if (recoveryRequested && !this.isFlipping && (this.canRecover || this.powerups.jump.active)) {
+        if (jumpRequested && !this.isFlipping) {
+            const superJumpActive = this.powerups.jump.active;
             this.isFlipping = true;
-            this.flipVelocity = this.powerups.jump.active ? 0.12 : 0.25;
+            this.flipVelocity = superJumpActive ? 0.12 : 0.25;
+            // Snapshot the trajectory so a powerup expiring mid-air cannot
+            // abruptly change the vehicle's height before it lands.
+            this._jumpHeightFactor = superJumpActive ? 24 : 8;
             this.canRecover = false;
             this._recoveryTimer = 0;
             playJumpSound();
@@ -783,6 +788,7 @@ export class Bulli {
             if (this.flipGroup.rotation.x >= Math.PI * 2) {
                 this.flipGroup.rotation.x = 0;
                 this.isFlipping = false;
+                this._jumpHeightFactor = 8;
             }
         }
 
@@ -912,8 +918,7 @@ export class Bulli {
         } else {
             const normRot = this.flipGroup.rotation.x;
             const lift = Math.sin(normRot / 2);
-            const jumpHeightFactor = this.powerups.jump.active ? 24 : 8;
-            this.flipGroup.position.y = lift * jumpHeightFactor;
+            this.flipGroup.position.y = lift * this._jumpHeightFactor;
         }
 
         if (state.ws && state.ws.readyState === WebSocket.OPEN) {

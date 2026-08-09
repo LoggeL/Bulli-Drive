@@ -27,7 +27,7 @@ The game is then available at `http://localhost:8000`.
 
 ## Controls
 - **WASD:** Drive and steer
-- **SPACE:** Recover when stuck
+- **SPACE:** Jump / flip; recover when stuck
 - **E:** Shoot projectile
 - **F:** Honk
 
