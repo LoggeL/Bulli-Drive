@@ -4,7 +4,10 @@ import { CITY_LAYOUT } from '../../shared/constants.js';
 
 const MAP_SIZE = 180;
 const MAP_PADDING = 10;
-const UPDATE_INTERVAL_MS = 100;
+const RADAR_CENTER = MAP_SIZE / 2;
+const RADAR_ZOOM = 1.65;
+const RADAR_EDGE_INSET = 10;
+const UPDATE_INTERVAL_MS = 50;
 
 let canvas: HTMLCanvasElement | null = null;
 let context: CanvasRenderingContext2D | null = null;
@@ -46,16 +49,29 @@ interface MarkerPoint {
     direction: number;
 }
 
-function worldToMarker(x: number, z: number): MarkerPoint {
-    const raw = worldToMap(x, z);
-    const edgeInset = 4;
-    const min = edgeInset;
-    const max = MAP_SIZE - edgeInset;
+function worldToRadarMarker(
+    x: number,
+    z: number,
+    originX: number,
+    originZ: number,
+    heading: number
+): MarkerPoint {
+    const dx = (x - originX) * scale * RADAR_ZOOM;
+    const dz = (z - originZ) * scale * RADAR_ZOOM;
+    const cos = Math.cos(heading);
+    const sin = Math.sin(heading);
+    // Vehicle-forward is always screen-up. Its right-hand world axis maps to
+    // screen-right, so the map turns beneath the fixed player marker.
+    const rotatedX = dx * cos - dz * sin;
+    const rotatedY = -dx * sin - dz * cos;
+    const distance = Math.hypot(rotatedX, rotatedY);
+    const limit = RADAR_CENTER - RADAR_EDGE_INSET;
+    const clamp = distance > limit ? limit / distance : 1;
     return {
-        x: Math.max(min, Math.min(max, raw.x)),
-        y: Math.max(min, Math.min(max, raw.y)),
-        offMap: raw.x < min || raw.x > max || raw.y < min || raw.y > max,
-        direction: Math.atan2(raw.y - MAP_SIZE / 2, raw.x - MAP_SIZE / 2)
+        x: RADAR_CENTER + rotatedX * clamp,
+        y: RADAR_CENTER + rotatedY * clamp,
+        offMap: distance > limit,
+        direction: Math.atan2(rotatedY, rotatedX)
     };
 }
 
@@ -114,12 +130,6 @@ function drawStaticMap(city: CityData) {
     const ctx = staticLayer.getContext('2d');
     if (!ctx) return;
     ctx.scale(pixelRatio, pixelRatio);
-
-    const gradient = ctx.createLinearGradient(0, 0, 0, MAP_SIZE);
-    gradient.addColorStop(0, '#315c4b');
-    gradient.addColorStop(1, '#1e3e36');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, MAP_SIZE, MAP_SIZE);
 
     // Roads are drawn from the exact authoritative geometry rather than a
     // hardcoded grid, so the radar cannot drift away from the 3D world.
@@ -184,13 +194,145 @@ function drawStaticMap(city: CityData) {
     ctx.fillText('PLAZA', plaza.x, plaza.y + 2.5);
     ctx.fillText('PARK', park.x, park.y + 2.5);
 
-    ctx.strokeStyle = 'rgba(255, 248, 231, 0.26)';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(0.5, 0.5, MAP_SIZE - 1, MAP_SIZE - 1);
 }
 
 function colorToCss(color: number): string {
     return `#${Math.max(0, Math.min(0xffffff, color)).toString(16).padStart(6, '0')}`;
+}
+
+function drawRotatingMap(
+    ctx: CanvasRenderingContext2D,
+    originX: number,
+    originZ: number,
+    heading: number
+) {
+    if (!staticLayer) return;
+    const origin = worldToMap(originX, originZ);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(RADAR_CENTER, RADAR_CENTER, RADAR_CENTER - 1.5, 0, Math.PI * 2);
+    ctx.clip();
+
+    const backdrop = ctx.createRadialGradient(
+        RADAR_CENTER,
+        RADAR_CENTER,
+        8,
+        RADAR_CENTER,
+        RADAR_CENTER,
+        RADAR_CENTER
+    );
+    backdrop.addColorStop(0, '#315c4b');
+    backdrop.addColorStop(1, '#17342f');
+    ctx.fillStyle = backdrop;
+    ctx.fillRect(0, 0, MAP_SIZE, MAP_SIZE);
+
+    ctx.translate(RADAR_CENTER, RADAR_CENTER);
+    ctx.rotate(-heading);
+    ctx.scale(RADAR_ZOOM, RADAR_ZOOM);
+    ctx.translate(-origin.x, -origin.y);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(
+        staticLayer,
+        0,
+        0,
+        staticLayer.width,
+        staticLayer.height,
+        0,
+        0,
+        MAP_SIZE,
+        MAP_SIZE
+    );
+    ctx.restore();
+}
+
+function drawLocalBus(ctx: CanvasRenderingContext2D, color: number) {
+    ctx.save();
+    ctx.translate(RADAR_CENTER, RADAR_CENTER);
+
+    ctx.fillStyle = 'rgba(232, 69, 69, 0.2)';
+    ctx.beginPath();
+    ctx.arc(0, 0, 11, 0, Math.PI * 2);
+    ctx.fill();
+
+    drawRoundedRect(ctx, -4.8, -7.6, 9.6, 15.2, 2.4);
+    ctx.fillStyle = colorToCss(color);
+    ctx.fill();
+    ctx.strokeStyle = '#fff8e7';
+    ctx.lineWidth = 1.25;
+    ctx.stroke();
+
+    ctx.fillStyle = '#9ac7d4';
+    drawRoundedRect(ctx, -3.2, -4.9, 6.4, 4.2, 1);
+    ctx.fill();
+
+    ctx.fillStyle = '#fff8e7';
+    ctx.beginPath();
+    ctx.moveTo(0, -10.5);
+    ctx.lineTo(3.2, -7.2);
+    ctx.lineTo(-3.2, -7.2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+}
+
+function drawRadarOverlay(ctx: CanvasRenderingContext2D, heading: number) {
+    ctx.save();
+
+    ctx.strokeStyle = 'rgba(255, 248, 231, 0.14)';
+    ctx.lineWidth = 0.8;
+    for (const radius of [RADAR_CENTER * 0.34, RADAR_CENTER * 0.67]) {
+        ctx.beginPath();
+        ctx.arc(RADAR_CENTER, RADAR_CENTER, radius, 0, Math.PI * 2);
+        ctx.stroke();
+    }
+
+    const vignette = ctx.createRadialGradient(
+        RADAR_CENTER,
+        RADAR_CENTER,
+        RADAR_CENTER * 0.45,
+        RADAR_CENTER,
+        RADAR_CENTER,
+        RADAR_CENTER
+    );
+    vignette.addColorStop(0, 'rgba(4, 15, 16, 0)');
+    vignette.addColorStop(1, 'rgba(4, 15, 16, 0.38)');
+    ctx.fillStyle = vignette;
+    ctx.beginPath();
+    ctx.arc(RADAR_CENTER, RADAR_CENTER, RADAR_CENTER - 1.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // North moves around the rim while the map remains vehicle-heading-up.
+    const northX = RADAR_CENTER - Math.sin(heading) * (RADAR_CENTER - 13);
+    const northY = RADAR_CENTER - Math.cos(heading) * (RADAR_CENTER - 13);
+    ctx.fillStyle = '#e84545';
+    ctx.beginPath();
+    ctx.arc(northX, northY, 7.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 248, 231, 0.76)';
+    ctx.lineWidth = 0.9;
+    ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '700 7px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('N', northX, northY + 0.4);
+
+    ctx.strokeStyle = 'rgba(255, 248, 231, 0.38)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(RADAR_CENTER, RADAR_CENTER, RADAR_CENTER - 2, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.fillStyle = '#f3d28e';
+    ctx.beginPath();
+    ctx.moveTo(RADAR_CENTER, 2.5);
+    ctx.lineTo(RADAR_CENTER - 4, 8.5);
+    ctx.lineTo(RADAR_CENTER + 4, 8.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
 }
 
 export function initMinimap(city: CityData) {
@@ -213,58 +355,48 @@ export function updateMinimap(now: number) {
     const ctx = context;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(staticLayer, 0, 0);
     ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+
+    const originX = state.bulli?.group.position.x ?? 0;
+    const originZ = state.bulli?.group.position.z ?? 0;
+    const heading = state.bulli?.angle ?? 0;
+    drawRotatingMap(ctx, originX, originZ, heading);
 
     for (const coin of state.serverCoins ?? []) {
         if (coin.collected) continue;
-        drawMarker(ctx, worldToMarker(coin.x, coin.z), 1.15, '#f5c842');
+        const point = worldToRadarMarker(coin.x, coin.z, originX, originZ, heading);
+        if (!point.offMap) drawMarker(ctx, point, 1.45, '#f5c842');
     }
 
     for (const powerup of state.worldPowerups) {
         if (powerup.collected) continue;
-        drawMarker(
-            ctx,
-            worldToMarker(powerup.x, powerup.z),
-            1.7,
-            colorToCss(powerup.color),
-            'rgba(255,255,255,0.72)'
-        );
+        const point = worldToRadarMarker(powerup.x, powerup.z, originX, originZ, heading);
+        if (!point.offMap) {
+            drawMarker(ctx, point, 2.2, colorToCss(powerup.color), 'rgba(255,255,255,0.72)');
+        }
     }
 
     for (const id in state.remotePlayers) {
         const remote = state.remotePlayers[id];
         drawMarker(
             ctx,
-            worldToMarker(remote.group.position.x, remote.group.position.z),
-            2.4,
+            worldToRadarMarker(
+                remote.group.position.x,
+                remote.group.position.z,
+                originX,
+                originZ,
+                heading
+            ),
+            2.8,
             colorToCss(remote.colorCode),
             '#fff8e7'
         );
     }
 
     if (state.bulli) {
-        const p = worldToMarker(state.bulli.group.position.x, state.bulli.group.position.z);
-        if (p.offMap) {
-            drawMarker(ctx, p, 3.4, '#ffffff', '#e84545');
-        } else {
-            ctx.save();
-            ctx.translate(p.x, p.y);
-            ctx.rotate(state.bulli.angle || 0);
-            ctx.fillStyle = '#ffffff';
-            ctx.strokeStyle = '#e84545';
-            ctx.lineWidth = 1.2;
-            ctx.beginPath();
-            ctx.moveTo(0, -5.2);
-            ctx.lineTo(3.8, 4.1);
-            ctx.lineTo(0, 2.5);
-            ctx.lineTo(-3.8, 4.1);
-            ctx.closePath();
-            ctx.fill();
-            ctx.stroke();
-            ctx.restore();
-        }
+        drawLocalBus(ctx, state.bulli.colorCode);
     }
 
+    drawRadarOverlay(ctx, heading);
     ctx.globalAlpha = 1;
 }

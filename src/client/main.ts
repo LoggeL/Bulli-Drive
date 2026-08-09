@@ -6,26 +6,27 @@ import { initKeyboard } from './controls/keyboard.js';
 import { setupMobileControls } from './controls/mobile.js';
 import { updateParticles, spawnDriftParticle, spawnBoostFireParticle, spawnDamageSmoke } from './effects/particles.js';
 import { playCollisionSound } from './effects/sounds.js';
-import { showHitmarker } from './ui/hud.js';
+import { setRecoveryControlVisible, showHitmarker } from './ui/hud.js';
 import { initSounds, startEngineSound, updateEngineSound } from './effects/sounds.js';
 import { checkCoinCollection, animateCoins } from './world/coins.js';
 import { checkPowerupCollection, animatePowerups } from './world/powerups.js';
 import { updatePowerupsUI, updateSpeedometer, updateHealthBar } from './ui/hud.js';
 import { updateProjectiles } from './world/projectiles.js';
-import { initSplashScreen, initAboutModal, initRenameUI } from './ui/screens.js';
+import { initSplashScreen, initAboutModal } from './ui/screens.js';
 import { animateFountain } from './world/city.js';
 import { updateMinimap } from './ui/minimap.js';
+import { SPEED_BOOST_FACTOR } from '../shared/constants.js';
 
-// Reusable vectors to avoid per-frame allocations
+// Reusable chase-camera state/vectors to avoid per-frame allocations.
 const _cameraTarget = new THREE.Vector3();
-const _lookAtTarget = new THREE.Vector3();
+const _desiredLookAt = new THREE.Vector3();
+const _smoothedLookAt = new THREE.Vector3();
+const _lastCarPosition = new THREE.Vector3();
+let cameraYaw = 0;
+let cameraRigReady = false;
+let useMobileCameraEnvelope = false;
 
 let dirLight: THREE.DirectionalLight;
-
-// FPS counter
-let fpsFrames = 0;
-let fpsLastTime = performance.now();
-let fpsDisplay: HTMLElement | null = null;
 
 // Mega ram cooldown per player
 const ramCooldowns: Record<string, number> = {};
@@ -37,7 +38,13 @@ function init() {
     state.scene.fog = new THREE.Fog(0x87CEEB, 60, 300);
 
     // Camera
-    state.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    refreshCameraEnvelope();
+    state.camera = new THREE.PerspectiveCamera(
+        useMobileCameraEnvelope ? CONFIG.cameraMobileFov : CONFIG.cameraBaseFov,
+        window.innerWidth / window.innerHeight,
+        0.1,
+        1000
+    );
     state.camera.position.set(0, CONFIG.cameraHeight, CONFIG.cameraDistance);
 
     // Renderer
@@ -138,7 +145,6 @@ function init() {
     setupMobileControls();
 
     // UI modules
-    initRenameUI();
     initAboutModal();
 
     // Start Loop
@@ -147,9 +153,89 @@ function init() {
 
 function onWindowResize() {
     if (!state.camera || !state.renderer) return;
+    refreshCameraEnvelope();
     state.camera.aspect = window.innerWidth / window.innerHeight;
     state.camera.updateProjectionMatrix();
     state.renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function refreshCameraEnvelope() {
+    useMobileCameraEnvelope = typeof window.matchMedia === 'function'
+        && window.matchMedia('(max-width: 768px), (pointer: coarse)').matches;
+}
+
+function dampingFactor(rate: number, dt: number): number {
+    return 1 - Math.exp(-rate * Math.min(dt, 0.1));
+}
+
+function dampAngle(current: number, target: number, amount: number): number {
+    const shortestDelta = Math.atan2(Math.sin(target - current), Math.cos(target - current));
+    return current + shortestDelta * amount;
+}
+
+function updateChaseCamera(
+    dt: number,
+    carPos: THREE.Vector3,
+    carAngle: number,
+    carSpeed: number,
+    boostActive: boolean
+) {
+    const maxSpeed = Math.max(0.001, state.bulli.maxSpeed * (boostActive ? SPEED_BOOST_FACTOR : 1));
+    const speedRatio = Math.min(1, Math.abs(carSpeed) / maxSpeed);
+    const movedDistanceSq = cameraRigReady ? _lastCarPosition.distanceToSquared(carPos) : 0;
+    const teleportThresholdSq = CONFIG.cameraTeleportDistance * CONFIG.cameraTeleportDistance;
+    const shouldSnap = !cameraRigReady || state.cameraSnapPending || movedDistanceSq > teleportThresholdSq;
+
+    if (shouldSnap) {
+        cameraYaw = carAngle;
+    } else {
+        cameraYaw = dampAngle(cameraYaw, carAngle, dampingFactor(CONFIG.cameraYawDamping, dt));
+    }
+
+    const distanceScale = useMobileCameraEnvelope ? CONFIG.cameraMobileDistanceScale : 1;
+    const heightScale = useMobileCameraEnvelope ? CONFIG.cameraMobileHeightScale : 1;
+    const distance = CONFIG.cameraDistance * distanceScale
+        * (1 + speedRatio * 0.12 + (boostActive ? 0.06 : 0));
+    const height = CONFIG.cameraHeight * heightScale
+        * (1 + speedRatio * 0.08 + (boostActive ? 0.04 : 0));
+    const forwardX = Math.sin(cameraYaw);
+    const forwardZ = Math.cos(cameraYaw);
+    const lookAhead = CONFIG.cameraLookAhead + CONFIG.cameraSpeedLookAhead * speedRatio;
+
+    _cameraTarget.set(
+        carPos.x - forwardX * distance,
+        carPos.y + height,
+        carPos.z - forwardZ * distance
+    );
+    _desiredLookAt.set(
+        carPos.x + forwardX * lookAhead,
+        carPos.y + CONFIG.cameraLookAtY,
+        carPos.z + forwardZ * lookAhead
+    );
+
+    const baseFov = useMobileCameraEnvelope ? CONFIG.cameraMobileFov : CONFIG.cameraBaseFov;
+    const targetFov = Math.min(
+        CONFIG.cameraMaxFov,
+        baseFov + speedRatio * CONFIG.cameraSpeedFov + (boostActive ? CONFIG.cameraBoostFov : 0)
+    );
+
+    if (shouldSnap) {
+        state.camera.position.copy(_cameraTarget);
+        _smoothedLookAt.copy(_desiredLookAt);
+        state.camera.fov = targetFov;
+        cameraRigReady = true;
+        state.cameraSnapPending = false;
+    } else {
+        state.camera.position.lerp(_cameraTarget, dampingFactor(CONFIG.cameraPositionDamping, dt));
+        _smoothedLookAt.lerp(_desiredLookAt, dampingFactor(CONFIG.cameraLookDamping, dt));
+        state.camera.fov += (targetFov - state.camera.fov) * dampingFactor(CONFIG.cameraFovDamping, dt);
+    }
+
+    state.camera.lookAt(_smoothedLookAt);
+    if (shouldSnap || Math.abs(targetFov - state.camera.fov) > 0.01) {
+        state.camera.updateProjectionMatrix();
+    }
+    _lastCarPosition.copy(carPos);
 }
 
 function animate() {
@@ -161,35 +247,19 @@ function animate() {
         state.bulli.update(dt);
 
         // Update engine sound based on speed and jump height
-        const isAccelerating = state.inputs.w || state.inputs.s;
+        const isAccelerating = Math.abs(state.inputs.throttle) > 0.02;
         const turboActive = state.bulli.powerups.speed.active;
         const jumpHeight = state.bulli.flipGroup.position.y;
         updateEngineSound(state.bulli.speed, isAccelerating, turboActive, jumpHeight);
 
-        // Update Camera
+        // Update the automatic chase camera. Its yaw follows the car on the
+        // shortest arc, while position, framing and FOV use independent damping
+        // so a quick turn feels deliberate instead of whipping the view around.
         const carPos = state.bulli.group.position;
-        const carAngle = state.bulli.angle;
-        const orbitAngle = state.bulli.cameraOrbit;
+        updateChaseCamera(dt, carPos, state.bulli.angle, state.bulli.speed, state.bulli.powerups.speed.active);
 
         // Effects based on speed
         const speed = Math.abs(state.bulli.speed);
-        const fovBoost = state.bulli.powerups.speed.active ? 10 : 0;
-        state.camera.fov = 60 + (speed * 15) + fovBoost;
-        state.camera.updateProjectionMatrix();
-
-        const zoomOut = 1 + (speed * 0.15) + (state.bulli.powerups.speed.active ? 0.25 : 0);
-        const heightBoost = state.bulli.powerups.speed.active ? 1.1 : 1.0;
-
-        const camX = carPos.x - Math.sin(carAngle + orbitAngle) * CONFIG.cameraDistance * zoomOut;
-        const camZ = carPos.z - Math.cos(carAngle + orbitAngle) * CONFIG.cameraDistance * zoomOut;
-        const camY = carPos.y + CONFIG.cameraHeight * zoomOut * heightBoost;
-
-        _cameraTarget.set(camX, camY, camZ);
-        // Framerate-independent lerp: equivalent to k=0.1 at 60fps, scales smoothly otherwise
-        const camLerp = 1 - Math.pow(1 - 0.1, dt * 60);
-        state.camera.position.lerp(_cameraTarget, camLerp);
-        _lookAtTarget.set(carPos.x, carPos.y + CONFIG.cameraLookAtY, carPos.z);
-        state.camera.lookAt(_lookAtTarget);
 
         // Move shadow camera to follow the player
         dirLight.position.set(carPos.x + 50, 100, carPos.z + 50);
@@ -257,9 +327,15 @@ function animate() {
 
                 if (progress >= 1) {
                     state.respawnShield = false;
-                    state.bulli.shieldMesh.visible = false;
-                    shieldMat.opacity = 0;
-                    shieldMat.emissiveIntensity = 0;
+                    if (state.bulli.powerups.shield.active) {
+                        state.bulli.shieldMesh.visible = true;
+                        shieldMat.opacity = 0.25;
+                        shieldMat.emissiveIntensity = 0.4;
+                    } else {
+                        state.bulli.shieldMesh.visible = false;
+                        shieldMat.opacity = 0;
+                        shieldMat.emissiveIntensity = 0;
+                    }
                     if (state.ws?.readyState === WebSocket.OPEN) {
                         state.ws.send(JSON.stringify({ type: 'respawnShieldExpired' }));
                     }
@@ -274,6 +350,11 @@ function animate() {
         updatePowerupsUI();
         updateSpeedometer();
         updateHealthBar();
+        const jumpActionAvailable = state.bulli.powerups.jump.active;
+        setRecoveryControlVisible(
+            !state.dead && (state.bulli.canRecover || jumpActionAvailable),
+            jumpActionAvailable ? 'jump' : 'recover'
+        );
 
         // Damage smoke based on health
         if (state.health < 100 && !state.dead) {
@@ -375,9 +456,15 @@ function animate() {
 
                 if (progress >= 1) {
                     remote._respawnShield = false;
-                    remote.shieldMesh.visible = false;
-                    rsMat.opacity = 0;
-                    rsMat.emissiveIntensity = 0;
+                    if (remote.powerups?.shield?.active) {
+                        remote.shieldMesh.visible = true;
+                        rsMat.opacity = 0.25;
+                        rsMat.emissiveIntensity = 0.4;
+                    } else {
+                        remote.shieldMesh.visible = false;
+                        rsMat.opacity = 0;
+                        rsMat.emissiveIntensity = 0;
+                    }
                 }
             } else {
                 rsMat.opacity = 0.25 + Math.sin(nowMs * 0.005) * 0.1;
@@ -407,15 +494,6 @@ function animate() {
         state.renderer.render(state.scene, state.camera);
     }
 
-    // FPS counter
-    fpsFrames++;
-    const now = performance.now();
-    if (now - fpsLastTime >= 1000) {
-        if (!fpsDisplay) fpsDisplay = document.getElementById('fps-counter');
-        if (fpsDisplay) fpsDisplay.textContent = fpsFrames + ' FPS';
-        fpsFrames = 0;
-        fpsLastTime = now;
-    }
 }
 
 // Start the game

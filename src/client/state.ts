@@ -8,8 +8,7 @@ export const state = {
     bulli: null as any, // Local car instance
     remotePlayers: {} as Record<string, RemotePlayer>,
     inputs: {
-        w: false, a: false, s: false, d: false, e: false, f: false,
-        space: false, arrowleft: false, arrowright: false
+        throttle: 0, steer: 0, e: false, f: false, space: false
     } as Inputs,
     worldPowerups: [] as PowerupData[],
     isModalOpen: false,
@@ -26,7 +25,9 @@ export const state = {
     serverCoins: null as CoinData[] | null,
     particles: [] as any[],
     clock: new THREE.Clock(),
-    cameraAngle: 0,
+    // Set whenever the local car is spawned or teleported so the chase camera
+    // can snap into place instead of flying across the map.
+    cameraSnapPending: true,
     health: 100,
     dead: false,
     respawnTimer: 0,

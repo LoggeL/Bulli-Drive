@@ -101,15 +101,13 @@ export interface RemotePlayer {
 }
 
 export interface Inputs {
-    w: boolean;
-    a: boolean;
-    s: boolean;
-    d: boolean;
+    /** Forward/reverse request in the normalized range [-1, 1]. */
+    throttle: number;
+    /** Left/right steering request in the normalized range [-1, 1]. */
+    steer: number;
     e: boolean;
     f: boolean;
     space: boolean;
-    arrowleft: boolean;
-    arrowright: boolean;
 }
 
 export type ServerMessage =

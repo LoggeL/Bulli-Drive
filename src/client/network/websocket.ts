@@ -13,6 +13,8 @@ import { playHitSound } from '../effects/sounds.js';
 import { spawnExplosion } from '../effects/particles.js';
 import { addKillfeedEntry } from '../ui/hud.js';
 import { initMinimap } from '../ui/minimap.js';
+import { releaseKeyboardInputs } from '../controls/keyboard.js';
+import { resetMobileControls } from '../controls/mobile.js';
 
 export function initWebSocket() {
     state.ws = new WebSocket(CONFIG.serverUrl);
@@ -226,6 +228,8 @@ function handleServerMessage(data: ServerMessage) {
                 // Local player was killed - explode and show respawn
                 state.dead = true;
                 state.health = 0;
+                releaseKeyboardInputs();
+                resetMobileControls();
                 if (state.bulli) {
                     spawnExplosion(
                         state.bulli.group.position.x,
@@ -258,6 +262,8 @@ function handleServerMessage(data: ServerMessage) {
                 // Local player respawned at new location
                 state.dead = false;
                 state.health = data.health;
+                releaseKeyboardInputs();
+                resetMobileControls();
                 state.respawnShield = true;
                 state.respawnMoveStart = 0;
                 if (state.bulli) {
@@ -272,6 +278,7 @@ function handleServerMessage(data: ServerMessage) {
                     state.bulli.group.position.z = data.z;
                     state.bulli.group.position.y = getTerrainHeight(data.x, data.z);
                     state.bulli.speed = 0;
+                    state.cameraSnapPending = true;
                     state.bulli.flipGroup.visible = true;
                     state.bulli.health = data.health;
                 }
@@ -382,6 +389,7 @@ export function createLocalPlayer(color: number, name: string, spawn = { x: 0, z
     state.myCarType = savedCarType;
     state.bulli = new Bulli(color, true, savedCarType as any);
     state.bulli.group.position.set(spawn.x, getTerrainHeight(spawn.x, spawn.z), spawn.z);
+    state.cameraSnapPending = true;
     state.bulli.createNametag(name, true);
     state.scene.add(state.bulli.group);
     updateScoreboardUI();
@@ -455,11 +463,14 @@ function updateRemotePlayer(data: { id: string; x: number; z: number; y?: number
 
     // Shield visual on remote player
     if (data.shieldActive !== undefined && remote.shieldMesh) {
+        if (remote.powerups?.shield) remote.powerups.shield.active = data.shieldActive;
         const mat = remote.shieldMesh.material;
         if (data.shieldActive) {
+            remote.shieldMesh.visible = true;
             mat.opacity = 0.25 + Math.sin(Date.now() * 0.005) * 0.1;
             mat.emissiveIntensity = 0.4;
-        } else {
+        } else if (!remote._respawnShield) {
+            remote.shieldMesh.visible = false;
             mat.opacity = 0;
             mat.emissiveIntensity = 0;
         }

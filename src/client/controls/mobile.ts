@@ -1,133 +1,269 @@
 import { state } from '../state.js';
+import { releaseTouchDriveAxes, setTouchDriveAxes } from './driveInput.js';
 
-export function setupMobileControls() {
-    setupJoystick('joystick-move', (x, y) => {
-        state.inputs.w = y < -0.3;
-        state.inputs.s = y > 0.3;
-        state.inputs.a = x < -0.3;
-        state.inputs.d = x > 0.3;
-    });
+const JOYSTICK_DEADZONE = 0.12;
+const JOYSTICK_RESPONSE_CURVE = 1.15;
+const JOYSTICK_FILTER_RATE = 18;
 
-    setupJoystick('joystick-camera', (x, y) => {
-        state.inputs.arrowleft = x < -0.3;
-        state.inputs.arrowright = x > 0.3;
-    });
-
-    const honkBtn = document.getElementById('btn-honk');
-    const flipBtn = document.getElementById('btn-flip');
-    const shootBtn = document.getElementById('btn-shoot');
-
-    if (honkBtn) {
-        honkBtn.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            state.inputs.f = true;
-        });
-        honkBtn.addEventListener('touchend', (e) => {
-            e.preventDefault();
-            state.inputs.f = false;
-        });
-    }
-
-    if (flipBtn) {
-        flipBtn.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            state.inputs.space = true;
-        });
-        flipBtn.addEventListener('touchend', (e) => {
-            e.preventDefault();
-            state.inputs.space = false;
-        });
-    }
-
-    if (shootBtn) {
-        shootBtn.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            state.inputs.e = true;
-        });
-        shootBtn.addEventListener('touchend', (e) => {
-            e.preventDefault();
-            state.inputs.e = false;
-        });
-    }
-}
-
-interface JoystickHandle {
+interface ControlHandle {
+    reset(): void;
     destroy(): void;
 }
 
-const activeJoysticks: JoystickHandle[] = [];
+type ActionKey = 'e' | 'f' | 'space';
 
-export function destroyMobileControls() {
-    while (activeJoysticks.length) {
-        activeJoysticks.pop()!.destroy();
-    }
+const activeControls: ControlHandle[] = [];
+let removeLifecycleListeners: (() => void) | null = null;
+
+export function setupMobileControls() {
+    // Make setup idempotent for hot reloads/reinitialisation.
+    destroyMobileControls();
+
+    setupJoystick('joystick-move', (x, y, active) => {
+        // DOM Y grows downwards, while positive throttle means forward. The
+        // steering sign preserves the established A/left and D/right behavior.
+        setTouchDriveAxes(-y, -x, active);
+    });
+
+    setupActionButton('btn-honk', 'f');
+    setupActionButton('btn-flip', 'space');
+    setupActionButton('btn-shoot', 'e');
+
+    const resetForLifecycle = () => resetMobileControls();
+    const resetWhenHidden = () => {
+        if (document.hidden) resetMobileControls();
+    };
+    window.addEventListener('blur', resetForLifecycle);
+    window.addEventListener('pagehide', resetForLifecycle);
+    window.addEventListener('orientationchange', resetForLifecycle);
+    document.addEventListener('visibilitychange', resetWhenHidden);
+    removeLifecycleListeners = () => {
+        window.removeEventListener('blur', resetForLifecycle);
+        window.removeEventListener('pagehide', resetForLifecycle);
+        window.removeEventListener('orientationchange', resetForLifecycle);
+        document.removeEventListener('visibilitychange', resetWhenHidden);
+    };
 }
 
-function setupJoystick(containerId: string, onMove: (x: number, y: number) => void): JoystickHandle | null {
+export function resetMobileControls() {
+    activeControls.forEach(control => control.reset());
+    releaseTouchDriveAxes();
+    state.inputs.e = false;
+    state.inputs.f = false;
+    state.inputs.space = false;
+}
+
+export function destroyMobileControls() {
+    resetMobileControls();
+    while (activeControls.length) activeControls.pop()!.destroy();
+    removeLifecycleListeners?.();
+    removeLifecycleListeners = null;
+}
+
+function setupActionButton(elementId: string, key: ActionKey): ControlHandle | null {
+    const button = document.getElementById(elementId);
+    if (!button) return null;
+
+    let activePointerId: number | null = null;
+
+    const queueAction = () => {
+        if (state.isModalOpen) return;
+        // Keep the pulse set until Bulli.update consumes it. Clearing it on a
+        // fast pointerup can otherwise drop taps that happen between frames.
+        state.inputs[key] = true;
+
+        if (state.audioCtx?.state === 'suspended') {
+            void state.audioCtx.resume();
+        }
+    };
+
+    const release = (pointerId?: number) => {
+        if (activePointerId === null) return;
+        if (pointerId !== undefined && pointerId !== activePointerId) return;
+
+        const capturedPointer = activePointerId;
+        activePointerId = null;
+        if (button.hasPointerCapture(capturedPointer)) {
+            button.releasePointerCapture(capturedPointer);
+        }
+        button.classList.remove('active');
+    };
+
+    const reset = () => {
+        release();
+        state.inputs[key] = false;
+    };
+
+    const onPointerDown = (event: PointerEvent) => {
+        if (activePointerId !== null || state.isModalOpen) return;
+        event.preventDefault();
+        activePointerId = event.pointerId;
+        button.setPointerCapture(event.pointerId);
+        button.classList.add('active');
+        queueAction();
+    };
+
+    const onPointerUp = (event: PointerEvent) => release(event.pointerId);
+    const onLostCapture = (event: PointerEvent) => release(event.pointerId);
+    const onClick = (event: MouseEvent) => {
+        // Native pointer clicks have already queued the action on pointerdown.
+        // detail=0 covers keyboard, VoiceOver and switch-control activation.
+        if (event.detail === 0) queueAction();
+    };
+
+    button.addEventListener('pointerdown', onPointerDown);
+    button.addEventListener('pointerup', onPointerUp);
+    button.addEventListener('pointercancel', onPointerUp);
+    button.addEventListener('lostpointercapture', onLostCapture);
+    button.addEventListener('click', onClick);
+
+    const handle: ControlHandle = {
+        reset,
+        destroy() {
+            reset();
+            button.removeEventListener('pointerdown', onPointerDown);
+            button.removeEventListener('pointerup', onPointerUp);
+            button.removeEventListener('pointercancel', onPointerUp);
+            button.removeEventListener('lostpointercapture', onLostCapture);
+            button.removeEventListener('click', onClick);
+        }
+    };
+    activeControls.push(handle);
+    return handle;
+}
+
+function setupJoystick(
+    containerId: string,
+    onMove: (x: number, y: number, active: boolean) => void
+): ControlHandle | null {
     const container = document.getElementById(containerId);
     if (!container) return null;
-    const stick = container.querySelector('.joystick-stick') as HTMLElement;
-    if (!stick) return null;
+    const base = container.querySelector('.joystick-base') as HTMLElement | null;
+    const stick = container.querySelector('.joystick-stick') as HTMLElement | null;
+    if (!base || !stick) return null;
 
-    let activeTouchId: number | null = null;
+    let activePointerId: number | null = null;
+    let targetX = 0;
+    let targetY = 0;
+    let filteredX = 0;
+    let filteredY = 0;
+    let lastFrameTime = 0;
+    let animationFrame = 0;
 
-    const handleTouch = (touch: Touch) => {
-        const rect = container.getBoundingClientRect();
-        const centerX = rect.width / 2;
-        const centerY = rect.height / 2;
-        const maxRadius = rect.width / 2;
-
-        const dx = touch.clientX - (rect.left + centerX);
-        const dy = touch.clientY - (rect.top + centerY);
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        const angle = Math.atan2(dy, dx);
-
-        const moveRadius = Math.min(dist, maxRadius);
-        const moveX = Math.cos(angle) * moveRadius;
-        const moveY = Math.sin(angle) * moveRadius;
-
-        stick.style.transform = `translate(${moveX}px, ${moveY}px)`;
-        onMove(moveX / maxRadius, moveY / maxRadius);
+    const stopFilterLoop = () => {
+        if (animationFrame) cancelAnimationFrame(animationFrame);
+        animationFrame = 0;
+        lastFrameTime = 0;
     };
 
-    const onStart = (e: TouchEvent) => {
-        if (activeTouchId !== null) return;
-        const touch = e.changedTouches[0];
-        activeTouchId = touch.identifier;
-        handleTouch(touch);
+    const filterFrame = (now: number) => {
+        if (activePointerId === null) {
+            stopFilterLoop();
+            return;
+        }
+
+        const dt = lastFrameTime ? Math.min((now - lastFrameTime) / 1000, 1 / 15) : 1 / 60;
+        lastFrameTime = now;
+        const blend = 1 - Math.exp(-JOYSTICK_FILTER_RATE * dt);
+        filteredX += (targetX - filteredX) * blend;
+        filteredY += (targetY - filteredY) * blend;
+        onMove(filteredX, filteredY, true);
+        animationFrame = requestAnimationFrame(filterFrame);
     };
 
-    const onMoveTouch = (e: TouchEvent) => {
-        for (let i = 0; i < e.changedTouches.length; i++) {
-            if (e.changedTouches[i].identifier === activeTouchId) {
-                handleTouch(e.changedTouches[i]);
-            }
+    const updatePointer = (event: PointerEvent) => {
+        const baseRect = base.getBoundingClientRect();
+        const stickRect = stick.getBoundingClientRect();
+        const centerX = baseRect.left + baseRect.width / 2;
+        const centerY = baseRect.top + baseRect.height / 2;
+        const radius = Math.max(1, Math.min(baseRect.width, baseRect.height) / 2);
+        const dx = event.clientX - centerX;
+        const dy = event.clientY - centerY;
+        const distance = Math.hypot(dx, dy);
+        const rawMagnitude = Math.min(1, distance / radius);
+        const unitX = distance > 0 ? dx / distance : 0;
+        const unitY = distance > 0 ? dy / distance : 0;
+
+        let outputMagnitude = 0;
+        if (rawMagnitude > JOYSTICK_DEADZONE) {
+            const remapped = (rawMagnitude - JOYSTICK_DEADZONE) / (1 - JOYSTICK_DEADZONE);
+            outputMagnitude = Math.pow(remapped, JOYSTICK_RESPONSE_CURVE);
+        }
+        // Convert the circular gesture into independent drive axes. At the
+        // outer diagonal both axes can still reach 1, matching keyboard W+A
+        // instead of unintentionally cutting throttle to roughly 70%.
+        const dominantDirection = Math.max(Math.abs(unitX), Math.abs(unitY), 0.0001);
+        const axisScale = outputMagnitude / dominantDirection;
+        targetX = Math.max(-1, Math.min(1, unitX * axisScale));
+        targetY = Math.max(-1, Math.min(1, unitY * axisScale));
+
+        // Keep the visual knob inside the base even when the pointer travels
+        // beyond it; the logical axes remain clamped independently above.
+        const stickRadius = Math.max(stickRect.width, stickRect.height) / 2;
+        const visualRadius = Math.max(1, radius - stickRadius - 2);
+        const visualDistance = rawMagnitude * visualRadius;
+        stick.style.transform = `translate(${unitX * visualDistance}px, ${unitY * visualDistance}px)`;
+    };
+
+    const release = (pointerId?: number) => {
+        if (activePointerId === null) return;
+        if (pointerId !== undefined && pointerId !== activePointerId) return;
+
+        const capturedPointer = activePointerId;
+        activePointerId = null;
+        if (container.hasPointerCapture(capturedPointer)) {
+            container.releasePointerCapture(capturedPointer);
+        }
+        stopFilterLoop();
+        targetX = 0;
+        targetY = 0;
+        filteredX = 0;
+        filteredY = 0;
+        stick.style.transform = 'translate(0, 0)';
+        container.classList.remove('active');
+        onMove(0, 0, false);
+    };
+
+    const onPointerDown = (event: PointerEvent) => {
+        if (activePointerId !== null || state.isModalOpen) return;
+        event.preventDefault();
+        activePointerId = event.pointerId;
+        container.setPointerCapture(event.pointerId);
+        container.classList.add('active');
+        updatePointer(event);
+        animationFrame = requestAnimationFrame(filterFrame);
+
+        if (state.audioCtx?.state === 'suspended') {
+            void state.audioCtx.resume();
         }
     };
 
-    const onEnd = (e: TouchEvent) => {
-        for (let i = 0; i < e.changedTouches.length; i++) {
-            if (e.changedTouches[i].identifier === activeTouchId) {
-                activeTouchId = null;
-                stick.style.transform = 'translate(0, 0)';
-                onMove(0, 0);
-            }
-        }
+    const onPointerMove = (event: PointerEvent) => {
+        if (event.pointerId !== activePointerId) return;
+        event.preventDefault();
+        updatePointer(event);
     };
+    const onPointerUp = (event: PointerEvent) => release(event.pointerId);
+    const onLostCapture = (event: PointerEvent) => release(event.pointerId);
 
-    container.addEventListener('touchstart', onStart, { passive: false });
-    window.addEventListener('touchmove', onMoveTouch, { passive: false });
-    window.addEventListener('touchend', onEnd);
-    window.addEventListener('touchcancel', onEnd);
+    container.style.touchAction = 'none';
+    container.addEventListener('pointerdown', onPointerDown);
+    container.addEventListener('pointermove', onPointerMove);
+    container.addEventListener('pointerup', onPointerUp);
+    container.addEventListener('pointercancel', onPointerUp);
+    container.addEventListener('lostpointercapture', onLostCapture);
 
-    const handle: JoystickHandle = {
+    const handle: ControlHandle = {
+        reset: release,
         destroy() {
-            container.removeEventListener('touchstart', onStart);
-            window.removeEventListener('touchmove', onMoveTouch);
-            window.removeEventListener('touchend', onEnd);
-            window.removeEventListener('touchcancel', onEnd);
+            release();
+            container.removeEventListener('pointerdown', onPointerDown);
+            container.removeEventListener('pointermove', onPointerMove);
+            container.removeEventListener('pointerup', onPointerUp);
+            container.removeEventListener('pointercancel', onPointerUp);
+            container.removeEventListener('lostpointercapture', onLostCapture);
         }
     };
-    activeJoysticks.push(handle);
+    activeControls.push(handle);
     return handle;
 }

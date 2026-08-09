@@ -21,6 +21,59 @@
 </head>
 
 <body>
+    <svg class="ui-icon-sprite" width="0" height="0" aria-hidden="true" focusable="false">
+        <defs>
+            <symbol id="icon-play" viewBox="0 0 24 24">
+                <path class="icon-fill" d="M7.5 4.5 19 12 7.5 19.5z"/>
+            </symbol>
+            <symbol id="icon-score" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="9"/>
+                <path class="icon-fill" d="m12 6.5 1.65 3.35 3.7.54-2.68 2.61.63 3.69L12 14.95l-3.3 1.74.63-3.69-2.68-2.61 3.7-.54z"/>
+            </symbol>
+            <symbol id="icon-target" viewBox="0 0 24 24">
+                <circle cx="14.5" cy="9.5" r="5.5"/>
+                <circle cx="14.5" cy="9.5" r="2"/>
+                <path d="M14.5 1.5v3M14.5 14.5v3M6.5 9.5h3M19.5 9.5h3M3 21l8.2-8.2M3 17l4 4"/>
+            </symbol>
+            <symbol id="icon-horn" viewBox="0 0 24 24">
+                <path d="M4 9.5v5h4l7 4.5V5L8 9.5z"/>
+                <path d="M18 8a5 5 0 0 1 0 8M20.5 5.5a8.5 8.5 0 0 1 0 13"/>
+            </symbol>
+            <symbol id="icon-recover" viewBox="0 0 24 24">
+                <path d="M5.2 8A8 8 0 0 1 19 7l1.5 2.2M18.8 16A8 8 0 0 1 5 17l-1.5-2.2"/>
+                <path d="M20.5 4.5v4.7h-4.7M3.5 19.5v-4.7h4.7"/>
+                <path d="M8.5 12h7"/>
+            </symbol>
+            <symbol id="icon-rank" viewBox="0 0 32 24">
+                <path d="M4 20h24M6 20v-6h6v6M13 20v-9h6v9M20 20v-4h6v4"/>
+                <path d="m16 2 1.15 2.33 2.57.37-1.86 1.81.44 2.56L16 7.86l-2.3 1.21.44-2.56-1.86-1.81 2.57-.37z"/>
+            </symbol>
+            <symbol id="icon-chevron" viewBox="0 0 24 24">
+                <path d="m7 14 5-5 5 5"/>
+            </symbol>
+            <symbol id="icon-speed" viewBox="0 0 24 24">
+                <path d="m13 2-8 12h6l-1 8 9-13h-6z"/>
+            </symbol>
+            <symbol id="icon-grow" viewBox="0 0 24 24">
+                <path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5M4 9l5-5M20 9l-5-5M4 15l5 5M20 15l-5 5"/>
+            </symbol>
+            <symbol id="icon-jump" viewBox="0 0 24 24">
+                <path d="M4 18c2.5 0 3.5-2 5.5-2s3 2 5.5 2 3.5-2 5-2M12 14V4M8 8l4-4 4 4"/>
+            </symbol>
+            <symbol id="icon-shield" viewBox="0 0 24 24">
+                <path d="M12 2.5 20 6v5.5c0 5-3.2 8.2-8 10-4.8-1.8-8-5-8-10V6z"/>
+                <path d="m8.5 12 2.2 2.2 4.8-5"/>
+            </symbol>
+            <symbol id="icon-magnet" viewBox="0 0 24 24">
+                <path d="M5 3v9a7 7 0 0 0 14 0V3h-5v9a2 2 0 0 1-4 0V3zM5 7h5M14 7h5"/>
+            </symbol>
+            <symbol id="icon-ghost" viewBox="0 0 24 24">
+                <path d="M5 21V10a7 7 0 0 1 14 0v11l-3.5-2-3.5 2-3.5-2z"/>
+                <circle class="icon-fill" cx="9.5" cy="10" r="1"/>
+                <circle class="icon-fill" cx="14.5" cy="10" r="1"/>
+            </symbol>
+        </defs>
+    </svg>
     <div id="loading-screen">
         <div class="loader">
             <div class="bulli-loader">
@@ -176,14 +229,14 @@
                 </div>
             </div>
             <button id="start-btn">
-                <span class="btn-icon">&#9654;</span>
+                <svg class="ui-icon btn-icon" aria-hidden="true"><use href="#icon-play"></use></svg>
                 START ENGINE
             </button>
             <div class="splash-controls-preview">
                 <div class="preview-row">
                     <span class="preview-keys">WASD</span> <span class="preview-desc">drive</span>
                     <span class="preview-sep">&middot;</span>
-                    <span class="preview-keys">SPACE</span> <span class="preview-desc">flip</span>
+                    <span class="preview-keys">SPACE</span> <span class="preview-desc">recover</span>
                     <span class="preview-sep">&middot;</span>
                     <span class="preview-keys">F</span> <span class="preview-desc">honk</span>
                     <span class="preview-sep">&middot;</span>
@@ -209,20 +262,19 @@
                 <h3 class="modal-section-title">Controls</h3>
                 <div class="modal-controls-grid">
                     <div class="modal-control-row"><span class="modal-key">W A S D</span><span>Drive &amp; steer</span></div>
-                    <div class="modal-control-row"><span class="modal-key">SPACE</span><span>Flip car upright</span></div>
+                    <div class="modal-control-row"><span class="modal-key">SPACE</span><span>Recover when stuck</span></div>
                     <div class="modal-control-row"><span class="modal-key">F</span><span>Honk horn</span></div>
                     <div class="modal-control-row"><span class="modal-key">E</span><span>Shoot projectile</span></div>
-                    <div class="modal-control-row"><span class="modal-key">&larr; &rarr;</span><span>Rotate camera</span></div>
                 </div>
 
                 <h3 class="modal-section-title">Powerups</h3>
                 <div class="modal-powerup-list">
-                    <div class="modal-powerup-item"><span class="powerup-icon">&#9889;</span><span><strong>Speed Boost</strong> &mdash; Doubles your top speed</span></div>
-                    <div class="modal-powerup-item"><span class="powerup-icon">&#127812;</span><span><strong>Grow</strong> &mdash; Makes your car huge</span></div>
-                    <div class="modal-powerup-item"><span class="powerup-icon">&#129432;</span><span><strong>Jump</strong> &mdash; Launch into the air</span></div>
-                    <div class="modal-powerup-item"><span class="powerup-icon">&#128737;</span><span><strong>Shield</strong> &mdash; Protects from collisions</span></div>
-                    <div class="modal-powerup-item"><span class="powerup-icon">&#129522;</span><span><strong>Magnet</strong> &mdash; Attracts nearby coins</span></div>
-                    <div class="modal-powerup-item"><span class="powerup-icon">&#128123;</span><span><strong>Ghost</strong> &mdash; Pass through obstacles</span></div>
+                    <div class="modal-powerup-item"><svg class="ui-icon powerup-icon" aria-hidden="true"><use href="#icon-speed"></use></svg><span><strong>Speed Boost</strong> &mdash; Doubles your top speed</span></div>
+                    <div class="modal-powerup-item"><svg class="ui-icon powerup-icon" aria-hidden="true"><use href="#icon-grow"></use></svg><span><strong>Grow</strong> &mdash; Makes your car huge</span></div>
+                    <div class="modal-powerup-item"><svg class="ui-icon powerup-icon" aria-hidden="true"><use href="#icon-jump"></use></svg><span><strong>Jump</strong> &mdash; Launches the car into the air</span></div>
+                    <div class="modal-powerup-item"><svg class="ui-icon powerup-icon" aria-hidden="true"><use href="#icon-shield"></use></svg><span><strong>Shield</strong> &mdash; Protects from collisions</span></div>
+                    <div class="modal-powerup-item"><svg class="ui-icon powerup-icon" aria-hidden="true"><use href="#icon-magnet"></use></svg><span><strong>Magnet</strong> &mdash; Attracts nearby coins</span></div>
+                    <div class="modal-powerup-item"><svg class="ui-icon powerup-icon" aria-hidden="true"><use href="#icon-ghost"></use></svg><span><strong>Ghost</strong> &mdash; Passes through obstacles</span></div>
                 </div>
             </div>
         </div>
@@ -230,46 +282,47 @@
 
     <div id="mobile-controls">
         <div class="joystick-zone left">
-            <div class="joystick-container" id="joystick-move">
+            <div class="joystick-container" id="joystick-move" role="group" aria-label="Drive and steer">
                 <div class="joystick-base">
+                    <svg class="ui-icon joystick-direction up" aria-hidden="true"><use href="#icon-chevron"></use></svg>
+                    <svg class="ui-icon joystick-direction right" aria-hidden="true"><use href="#icon-chevron"></use></svg>
+                    <svg class="ui-icon joystick-direction down" aria-hidden="true"><use href="#icon-chevron"></use></svg>
+                    <svg class="ui-icon joystick-direction left" aria-hidden="true"><use href="#icon-chevron"></use></svg>
                     <div class="joystick-stick"></div>
                 </div>
             </div>
         </div>
 
         <div class="action-buttons">
-            <button id="btn-shoot" class="control-btn action shoot" data-key="e" aria-label="Shoot">🎯</button>
-            <button id="btn-honk" class="control-btn action honk" data-key="f" aria-label="Honk">📯</button>
-            <button id="btn-flip" class="control-btn action flip" data-key="space" aria-label="Flip">🔄</button>
-        </div>
-
-        <div class="joystick-zone right">
-            <div class="joystick-container" id="joystick-camera">
-                <div class="joystick-base small">
-                    <div class="joystick-stick small"></div>
-                </div>
-                <span class="joystick-label">CAM</span>
-            </div>
+            <button id="btn-honk" class="control-btn action honk" type="button" data-key="f" aria-label="Honk horn">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-horn"></use></svg>
+            </button>
+            <button id="btn-shoot" class="control-btn action shoot" type="button" data-key="e" aria-label="Shoot projectile">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-target"></use></svg>
+            </button>
+            <button id="btn-flip" class="control-btn action flip recovery-control is-context-hidden" type="button" data-key="space" aria-label="Recover vehicle" aria-hidden="true" hidden>
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-recover"></use></svg>
+            </button>
         </div>
     </div>
 
     <div id="ui-overlay">
-        <div id="score-container">
-            <span class="score-coin-icon">&#9733;</span>
-            <span id="score-display">0</span>
-        </div>
-
-        <div id="health-bar-container">
-            <div id="health-bar-bg">
-                <div id="health-bar-fill"></div>
+        <div id="score-container" role="group" aria-label="Driving status">
+            <div class="score-segment">
+                <svg class="ui-icon score-coin-icon" aria-hidden="true"><use href="#icon-score"></use></svg>
+                <span id="score-display" role="status" aria-live="polite" aria-label="Score: 0">0</span>
             </div>
-            <span id="health-bar-text">100</span>
+            <div id="health-bar-container" role="meter" aria-label="Vehicle health" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
+                <div id="health-bar-bg" aria-hidden="true">
+                    <div id="health-bar-fill"></div>
+                </div>
+                <span id="health-bar-text">100</span>
+            </div>
         </div>
 
         <div id="powerup-panel"></div>
 
-        <div class="controls-hint">
-            <div class="hint-title">CONTROLS</div>
+        <div class="controls-hint" role="group" aria-label="Keyboard controls">
             <div class="hint-grid">
                 <div class="hint-row">
                     <div class="key-cluster">
@@ -280,26 +333,17 @@
                             <div class="key">D</div>
                         </div>
                     </div>
-                    <span class="hint-desc">drive</span>
-                </div>
-                <div class="hint-row">
-                    <div class="key wide">SPACE</div>
-                    <span class="hint-desc">flip</span>
-                </div>
-                <div class="hint-row">
-                    <div class="key">F</div>
-                    <span class="hint-desc">honk</span>
+                    <span class="sr-only">Drive and steer</span>
                 </div>
                 <div class="hint-row">
                     <div class="key">E</div>
-                    <span class="hint-desc">shoot</span>
+                    <svg class="ui-icon hint-icon" aria-hidden="true"><use href="#icon-target"></use></svg>
+                    <span class="sr-only">Shoot projectile</span>
                 </div>
                 <div class="hint-row">
-                    <div class="key-row">
-                        <div class="key">&larr;</div>
-                        <div class="key">&rarr;</div>
-                    </div>
-                    <span class="hint-desc">camera</span>
+                    <div class="key">F</div>
+                    <svg class="ui-icon hint-icon" aria-hidden="true"><use href="#icon-horn"></use></svg>
+                    <span class="sr-only">Honk horn</span>
                 </div>
             </div>
         </div>
@@ -315,30 +359,18 @@
             <div id="speedo-turbo" class="hidden">TURBO</div>
         </div>
 
-        <div id="fps-counter">0 FPS</div>
-
-        <div id="map-panel" aria-label="City radar">
-            <div class="map-panel-header">
-                <span class="map-panel-title">CITY RADAR</span>
-                <span class="map-compass">N</span>
-            </div>
-            <canvas id="minimap-canvas" width="180" height="180" role="img" aria-label="Live map of roads, landmarks, pickups, and players"></canvas>
-            <div class="map-legend" aria-hidden="true">
-                <span><i class="legend-dot player"></i>YOU</span>
-                <span><i class="legend-dot coin"></i>COIN</span>
-                <span><i class="legend-dot powerup"></i>POWERUP</span>
-            </div>
+        <div id="map-panel" aria-label="Heading-up driving radar">
+            <canvas id="minimap-canvas" width="180" height="180" role="img" aria-label="Rotating nearby map with your bus fixed in the center"></canvas>
         </div>
 
         <div id="player-list">
-            <h3><span class="trophy-icon">&#127942;</span> Scoreboard</h3>
-            <ul id="scoreboard-list"></ul>
-            <div class="name-change">
-                <button id="name-toggle" class="name-toggle-btn" aria-label="Change name">&#9998;</button>
-                <div id="name-form" class="name-form hidden">
-                    <input type="text" id="name-input" placeholder="New name..." maxlength="20">
-                    <button id="name-submit">Set</button>
-                </div>
+            <button id="scoreboard-toggle" type="button" aria-expanded="false" aria-controls="scoreboard-panel" aria-label="Open scoreboard. Current rank 1">
+                <svg class="ui-icon rank-chip-icon" aria-hidden="true"><use href="#icon-rank"></use></svg>
+                <span id="player-rank" aria-hidden="true">#1</span>
+            </button>
+            <div id="scoreboard-panel" hidden>
+                <h3>Drivers</h3>
+                <ul id="scoreboard-list"></ul>
             </div>
         </div>
     </div>

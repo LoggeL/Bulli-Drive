@@ -10,7 +10,7 @@ city, collect coins and powerups, and shoot it out with other drivers.
 - **Combat:** Shoot projectiles at other players, score kills, climb the scoreboard.
 - **Powerups & coins:** Turbo, Mega, Super Jump, Shield, Magnet and Ghost powerups plus collectible coins, shared across all players.
 - **3D Graphics:** Built with Three.js.
-- **Sunset city:** A deterministic, connected road grid with marked crossings, palm-lined streets, a tiled fountain plaza, landscaped park, and live city radar.
+- **Sunset city:** A deterministic, connected road grid with marked crossings, palm-lined streets, a tiled fountain plaza, landscaped park, and a heading-up radar that keeps your Bulli centered.
 
 ## Getting Started
 
@@ -27,7 +27,8 @@ The game is then available at `http://localhost:8000`.
 
 ## Controls
 - **WASD:** Drive and steer
-- **SPACE:** Flip
+- **SPACE:** Recover when stuck
 - **E:** Shoot projectile
 - **F:** Honk
-- **Arrow Keys:** Rotate camera
+
+The camera automatically swings into a chase view behind the car.

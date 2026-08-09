@@ -11,7 +11,6 @@ export function showHitmarker() {
     if (!hitmarkerEl) {
         hitmarkerEl = document.createElement('div');
         hitmarkerEl.id = 'hitmarker';
-        hitmarkerEl.textContent = '\u2715';
         document.body.appendChild(hitmarkerEl);
     }
     hitmarkerEl.classList.add('visible');
@@ -71,7 +70,10 @@ export function addKillfeedEntry(killer: string, victim: string) {
 
 export function updateScoreUI() {
     const display = document.getElementById('score-display');
-    if (display) display.innerText = state.score.toString();
+    if (display) {
+        display.innerText = state.score.toString();
+        display.setAttribute('aria-label', `Score: ${state.score}`);
+    }
 }
 
 export function showInteractionPrompt(text: string) {
@@ -110,9 +112,7 @@ export function updatePowerupsUI() {
             el.className = 'powerup-indicator';
             el.dataset.type = type;
 
-            const icon = document.createElement('span');
-            icon.className = 'powerup-icon';
-            icon.innerText = getPowerupIcon(type);
+            const icon = createPowerupIcon(type);
 
             const barBg = document.createElement('div');
             barBg.className = 'powerup-bar-bg';
@@ -223,16 +223,23 @@ export function updateSpeedometer() {
     }
 }
 
-function getPowerupIcon(type: string) {
-    switch(type) {
-        case 'speed': return '\u26A1';
-        case 'size': return '\uD83C\uDF44';
-        case 'jump': return '\uD83E\uDD98';
-        case 'shield': return '\uD83D\uDEE1\uFE0F';
-        case 'magnet': return '\uD83E\uDDF2';
-        case 'ghost': return '\uD83D\uDC7B';
-        default: return '\u2753';
-    }
+function createPowerupIcon(type: string): SVGSVGElement {
+    const iconIds: Record<string, string> = {
+        speed: 'icon-speed',
+        size: 'icon-grow',
+        jump: 'icon-jump',
+        shield: 'icon-shield',
+        magnet: 'icon-magnet',
+        ghost: 'icon-ghost'
+    };
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    svg.classList.add('ui-icon', 'powerup-icon');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+    use.setAttribute('href', `#${iconIds[type] || 'icon-shield'}`);
+    svg.appendChild(use);
+    return svg;
 }
 
 function getPowerupColor(type: string) {
@@ -247,25 +254,41 @@ function getPowerupColor(type: string) {
     }
 }
 
+/**
+ * Contextual recovery control hook. The gameplay loop should call this only
+ * when the local vehicle is overturned or genuinely stuck.
+ */
+export function setRecoveryControlVisible(visible: boolean, mode: 'recover' | 'jump' = 'recover') {
+    const button = document.getElementById('btn-flip') as HTMLButtonElement | null;
+    if (!button) return;
+    button.hidden = !visible;
+    button.classList.toggle('is-context-hidden', !visible);
+    button.setAttribute('aria-hidden', String(!visible));
+    button.setAttribute('aria-label', mode === 'jump' ? 'Use jump powerup' : 'Recover vehicle');
+}
+
 // Health bar
 export function updateHealthBar() {
     const fill = document.getElementById('health-bar-fill');
     const text = document.getElementById('health-bar-text');
-    if (!fill || !text) return;
+    const meter = document.getElementById('health-bar-container');
+    if (!fill || !text || !meter) return;
 
     const hp = Math.max(0, Math.min(100, state.health));
     const pct = hp / 100;
 
     fill.style.width = (pct * 100) + '%';
     text.innerText = hp.toString();
+    meter.setAttribute('aria-valuenow', hp.toString());
+    meter.setAttribute('aria-valuetext', `${hp} percent health`);
 
-    // Green to red gradient based on health
+    // Keep the branded coral health treatment from the HUD concept while
+    // deepening the tone as health becomes critical.
     if (pct > 0.5) {
-        fill.style.background = `linear-gradient(90deg, #4CAF50, #8BC34A)`;
+        fill.style.background = `linear-gradient(90deg, #E84545, #FF6F61)`;
     } else if (pct > 0.25) {
-        fill.style.background = `linear-gradient(90deg, #FF9800, #FFC107)`;
+        fill.style.background = `linear-gradient(90deg, #D83B3B, #F05A4F)`;
     } else {
-        fill.style.background = `linear-gradient(90deg, #f44336, #E84545)`;
+        fill.style.background = `linear-gradient(90deg, #A91515, #D63031)`;
     }
 }
-

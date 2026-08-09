@@ -1,4 +1,6 @@
 import { state } from '../state.js';
+import { releaseKeyboardInputs } from '../controls/keyboard.js';
+import { resetMobileControls } from '../controls/mobile.js';
 
 /**
  * Initialize the splash screen: car selector, start button, and enter-key handler.
@@ -55,9 +57,8 @@ export function initAboutModal(): void {
             state.isModalOpen = true;
             // Drop any held keys so the car doesn't keep driving behind the modal
             // (and doesn't resume on close because a keyup was missed).
-            for (const k of Object.keys(state.inputs) as (keyof typeof state.inputs)[]) {
-                state.inputs[k] = false;
-            }
+            releaseKeyboardInputs();
+            resetMobileControls();
         }
     }
 

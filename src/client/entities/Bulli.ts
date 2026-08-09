@@ -91,6 +91,17 @@ export function randomCarType(): CarType {
     return CAR_TYPES[Math.floor(Math.random() * CAR_TYPES.length)];
 }
 
+interface GhostMaterialState {
+    opacity: number;
+    transparent: boolean;
+    depthWrite: boolean;
+}
+
+interface GhostMeshState {
+    castShadow: boolean;
+    receiveShadow: boolean;
+}
+
 export class Bulli {
     group: THREE.Group;
     flipGroup: THREE.Group;
@@ -101,11 +112,11 @@ export class Bulli {
     pitchOffset: number;
     speed: number = 0;
     angle: number = 0;
-    cameraOrbit: number = 0;
     acceleration: number = 0.015;
     maxSpeed: number = 1.0;
     friction: number = 0.96;
     isFlipping: boolean = false;
+    canRecover: boolean = false;
     flipVelocity: number = 0;
     nextHonkTime: number = 0;
     lastShootTime: number = 0;
@@ -119,6 +130,9 @@ export class Bulli {
     };
     health: number = 100;
     private _ghostVisualOn: boolean = false;
+    private _ghostMaterialStates = new Map<THREE.Material, GhostMaterialState>();
+    private _ghostMeshStates = new Map<THREE.Mesh, GhostMeshState>();
+    private _recoveryTimer: number = 0;
     shieldMesh?: THREE.Mesh;
     wheels: THREE.Group[] = [];
     nametag?: HTMLDivElement;
@@ -139,23 +153,25 @@ export class Bulli {
 
     createNametag(name: string, isLocal: boolean) {
         this.name = name;
+        // The local player is already anchored by the chase camera and HUD;
+        // hiding its duplicate label keeps the road and vehicle unobstructed.
+        if (isLocal) return;
+
         this.nametag = document.createElement('div');
-        this.nametag.className = 'nametag' + (isLocal ? ' local' : '');
+        this.nametag.className = 'nametag';
 
         const nameSpan = document.createElement('span');
         nameSpan.className = 'nametag-name';
         nameSpan.textContent = name;
         this.nametag.appendChild(nameSpan);
 
-        if (!isLocal) {
-            const hpBar = document.createElement('div');
-            hpBar.className = 'nametag-hp';
-            const hpFill = document.createElement('div');
-            hpFill.className = 'nametag-hp-fill';
-            hpBar.appendChild(hpFill);
-            this.nametag.appendChild(hpBar);
-            this.healthBarFill = hpFill;
-        }
+        const hpBar = document.createElement('div');
+        hpBar.className = 'nametag-hp';
+        const hpFill = document.createElement('div');
+        hpFill.className = 'nametag-hp-fill';
+        hpBar.appendChild(hpFill);
+        this.nametag.appendChild(hpBar);
+        this.healthBarFill = hpFill;
 
         document.body.appendChild(this.nametag);
     }
@@ -174,34 +190,56 @@ export class Bulli {
     }
 
     setGhostVisual(active: boolean) {
+        if (active === this._ghostVisualOn) return;
+        this._ghostVisualOn = active;
+
         if (active) {
             this.flipGroup.traverse((child) => {
-                if ((child as THREE.Mesh).isMesh && child !== this.shieldMesh) {
-                    const mat = (child as THREE.Mesh).material as THREE.MeshStandardMaterial;
-                    if (mat) {
-                        if (mat.userData?.originalOpacity === undefined) {
-                            mat.userData = mat.userData || {};
-                            mat.userData.originalOpacity = mat.opacity;
-                            mat.userData.wasTransparent = mat.transparent;
-                        }
-                        mat.transparent = true;
-                        mat.opacity = 0.1;
-                    }
+                const mesh = child as THREE.Mesh;
+                if (!mesh.isMesh || mesh === this.shieldMesh) return;
+
+                if (!this._ghostMeshStates.has(mesh)) {
+                    this._ghostMeshStates.set(mesh, {
+                        castShadow: mesh.castShadow,
+                        receiveShadow: mesh.receiveShadow
+                    });
                 }
+                mesh.castShadow = false;
+                mesh.receiveShadow = false;
+
+                const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+                materials.forEach((mat) => {
+                    if (!this._ghostMaterialStates.has(mat)) {
+                        this._ghostMaterialStates.set(mat, {
+                            opacity: mat.opacity,
+                            transparent: mat.transparent,
+                            depthWrite: mat.depthWrite
+                        });
+                        mat.transparent = true;
+                        // Transparent vehicle parts must not occlude one another
+                        // through the depth buffer. That was the source of the
+                        // angle-dependent "half a Bulli" artifact.
+                        mat.depthWrite = false;
+                        mat.opacity = Math.min(0.12, mat.opacity * 0.2);
+                        mat.needsUpdate = true;
+                    }
+                });
             });
             if (this.nametag) this.nametag.style.display = 'none';
         } else {
-            this.flipGroup.traverse((child) => {
-                if ((child as THREE.Mesh).isMesh && child !== this.shieldMesh) {
-                    const mat = (child as THREE.Mesh).material as THREE.MeshStandardMaterial;
-                    if (mat && mat.userData?.originalOpacity !== undefined) {
-                        mat.opacity = mat.userData.originalOpacity;
-                        mat.transparent = mat.userData.wasTransparent ?? false;
-                        delete mat.userData.originalOpacity;
-                        delete mat.userData.wasTransparent;
-                    }
-                }
+            this._ghostMaterialStates.forEach((original, mat) => {
+                mat.opacity = original.opacity;
+                mat.transparent = original.transparent;
+                mat.depthWrite = original.depthWrite;
+                mat.needsUpdate = true;
             });
+            this._ghostMaterialStates.clear();
+
+            this._ghostMeshStates.forEach((original, mesh) => {
+                mesh.castShadow = original.castShadow;
+                mesh.receiveShadow = original.receiveShadow;
+            });
+            this._ghostMeshStates.clear();
             // nametag display restored by updateNametag
         }
     }
@@ -256,10 +294,19 @@ export class Bulli {
         // Shield bubble (hidden by default)
         const shieldGeo = new THREE.SphereGeometry(3.5, 16, 12);
         const shieldMat = new THREE.MeshStandardMaterial({
-            color: 0x00BFFF, transparent: true, opacity: 0, emissive: 0x00BFFF, emissiveIntensity: 0, side: THREE.DoubleSide
+            color: 0x00BFFF,
+            transparent: true,
+            opacity: 0,
+            depthWrite: false,
+            emissive: 0x00BFFF,
+            emissiveIntensity: 0,
+            side: THREE.DoubleSide
         });
         this.shieldMesh = new THREE.Mesh(shieldGeo, shieldMat);
         this.shieldMesh.position.y = 1.5;
+        // An opacity-zero mesh still writes depth unless disabled above. Keep it
+        // out of the render list entirely until a shield effect needs it.
+        this.shieldMesh.visible = false;
         this.flipGroup.add(this.shieldMesh);
     }
 
@@ -656,7 +703,6 @@ export class Bulli {
         // Ghost transparency: apply/remove exactly once on state change instead
         // of re-traversing every frame (setGhostVisual is idempotent).
         if (this.powerups.ghost.active !== this._ghostVisualOn) {
-            this._ghostVisualOn = this.powerups.ghost.active;
             this.setGhostVisual(this.powerups.ghost.active);
         }
 
@@ -684,17 +730,31 @@ export class Bulli {
             this.group.scale.lerp(_scaleNormal, 0.1);
         }
 
-        if (state.inputs.w) {
-            this.speed += currentAccel * frame;
-        } else if (state.inputs.s) {
-            this.speed -= currentAccel * frame;
+        const throttle = Math.max(-1, Math.min(1, state.inputs.throttle));
+        if (Math.abs(throttle) > 0.001) {
+            // Analog input controls the requested road speed, not just how long
+            // it takes to eventually reach full speed. This makes half-stick a
+            // stable, useful cruising speed while preserving full-speed WASD.
+            const targetSpeed = throttle >= 0
+                ? throttle * currentMaxSpeed
+                : throttle * currentMaxSpeed * 0.5;
+            const changingDirection = Math.sign(targetSpeed) !== Math.sign(this.speed) && Math.abs(this.speed) > 0.01;
+            const slowingDown = Math.abs(targetSpeed) < Math.abs(this.speed);
+            const response = changingDirection ? 2.5 : (slowingDown ? 1.8 : 1);
+            const maxDelta = currentAccel * response * frame;
+            const delta = Math.max(-maxDelta, Math.min(maxDelta, targetSpeed - this.speed));
+            this.speed += delta;
         } else {
             this.speed *= Math.pow(this.friction, frame);
         }
 
-        if (state.inputs.space && !this.isFlipping) {
+        const recoveryRequested = state.inputs.space;
+        state.inputs.space = false;
+        if (recoveryRequested && !this.isFlipping && (this.canRecover || this.powerups.jump.active)) {
             this.isFlipping = true;
             this.flipVelocity = this.powerups.jump.active ? 0.12 : 0.25;
+            this.canRecover = false;
+            this._recoveryTimer = 0;
             playJumpSound();
         }
 
@@ -730,11 +790,14 @@ export class Bulli {
         if (Math.abs(this.speed) < 0.001) this.speed = 0;
 
         if (!this.isFlipping) {
-            // Allow turning even at a standstill (arcade feel); reverse inverts
-            // steering like backing up a real car.
+            // Keep a little steering authority at a standstill, peak around
+            // city speed, then taper it at top speed so touch steering is calm.
             const turnDir = this.speed < -0.01 ? -1 : 1;
-            if (state.inputs.a) this.angle += CONFIG.carTurnSpeed * turnDir * frame;
-            if (state.inputs.d) this.angle -= CONFIG.carTurnSpeed * turnDir * frame;
+            const steer = Math.max(-1, Math.min(1, state.inputs.steer));
+            const speedRatio = Math.min(1, Math.abs(this.speed) / Math.max(0.001, currentMaxSpeed));
+            const lowSpeedAuthority = 0.28 + 0.72 * Math.min(1, Math.abs(this.speed) / 0.35);
+            const highSpeedTaper = 1 - speedRatio * 0.35;
+            this.angle += CONFIG.carTurnSpeed * steer * turnDir * lowSpeedAuthority * highSpeedTaper * frame;
         }
 
         let nextX = this.group.position.x + Math.sin(this.angle) * this.speed * frame;
@@ -810,6 +873,15 @@ export class Bulli {
             }
         }
 
+        const isOverturned = Math.abs(this.group.rotation.x) > 1.15 || Math.abs(this.group.rotation.z) > 1.15;
+        const pushingIntoObstacle = Math.abs(throttle) > 0.55 && collided && !this.isFlipping;
+        if (isOverturned || pushingIntoObstacle) {
+            this._recoveryTimer += Math.min(dt, 0.1);
+        } else {
+            this._recoveryTimer = Math.max(0, this._recoveryTimer - Math.min(dt, 0.1) * 2);
+        }
+        this.canRecover = !this.isFlipping && (isOverturned || this._recoveryTimer >= 0.85);
+
         // Ease the car up/down to the terrain height (no per-frame snapping) and
         // tilt it to follow the slope while preserving steering yaw.
         const targetY = getTerrainHeight(this.group.position.x, this.group.position.z);
@@ -843,9 +915,6 @@ export class Bulli {
             const jumpHeightFactor = this.powerups.jump.active ? 24 : 8;
             this.flipGroup.position.y = lift * jumpHeightFactor;
         }
-
-        if (state.inputs.arrowleft) this.cameraOrbit += 0.03 * frame;
-        if (state.inputs.arrowright) this.cameraOrbit -= 0.03 * frame;
 
         if (state.ws && state.ws.readyState === WebSocket.OPEN) {
             state.ws.send(JSON.stringify({
