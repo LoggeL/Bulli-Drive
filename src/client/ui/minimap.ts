@@ -12,6 +12,11 @@ const UPDATE_INTERVAL_MS = 50;
 let canvas: HTMLCanvasElement | null = null;
 let context: CanvasRenderingContext2D | null = null;
 let staticLayer: HTMLCanvasElement | null = null;
+let backdropLayer: HTMLCanvasElement | null = null;
+let overlayLayer: HTMLCanvasElement | null = null;
+let overlayForegroundLayer: HTMLCanvasElement | null = null;
+const colorCssCache = new Map<number, string>();
+
 let pixelRatio = 1;
 let lastUpdate = -Infinity;
 
@@ -197,7 +202,13 @@ function drawStaticMap(city: CityData) {
 }
 
 function colorToCss(color: number): string {
-    return `#${Math.max(0, Math.min(0xffffff, color)).toString(16).padStart(6, '0')}`;
+    const normalized = Math.max(0, Math.min(0xffffff, color));
+    let css = colorCssCache.get(normalized);
+    if (!css) {
+        css = `#${normalized.toString(16).padStart(6, '0')}`;
+        colorCssCache.set(normalized, css);
+    }
+    return css;
 }
 
 function drawRotatingMap(
@@ -214,18 +225,19 @@ function drawRotatingMap(
     ctx.arc(RADAR_CENTER, RADAR_CENTER, RADAR_CENTER - 1.5, 0, Math.PI * 2);
     ctx.clip();
 
-    const backdrop = ctx.createRadialGradient(
-        RADAR_CENTER,
-        RADAR_CENTER,
-        8,
-        RADAR_CENTER,
-        RADAR_CENTER,
-        RADAR_CENTER
-    );
-    backdrop.addColorStop(0, '#315c4b');
-    backdrop.addColorStop(1, '#17342f');
-    ctx.fillStyle = backdrop;
-    ctx.fillRect(0, 0, MAP_SIZE, MAP_SIZE);
+    if (backdropLayer) {
+        ctx.drawImage(
+            backdropLayer,
+            0,
+            0,
+            backdropLayer.width,
+            backdropLayer.height,
+            0,
+            0,
+            MAP_SIZE,
+            MAP_SIZE
+        );
+    }
 
     ctx.translate(RADAR_CENTER, RADAR_CENTER);
     ctx.rotate(-heading);
@@ -279,29 +291,19 @@ function drawLocalBus(ctx: CanvasRenderingContext2D, color: number) {
 
 function drawRadarOverlay(ctx: CanvasRenderingContext2D, heading: number) {
     ctx.save();
-
-    ctx.strokeStyle = 'rgba(255, 248, 231, 0.14)';
-    ctx.lineWidth = 0.8;
-    for (const radius of [RADAR_CENTER * 0.34, RADAR_CENTER * 0.67]) {
-        ctx.beginPath();
-        ctx.arc(RADAR_CENTER, RADAR_CENTER, radius, 0, Math.PI * 2);
-        ctx.stroke();
+    if (overlayLayer) {
+        ctx.drawImage(
+            overlayLayer,
+            0,
+            0,
+            overlayLayer.width,
+            overlayLayer.height,
+            0,
+            0,
+            MAP_SIZE,
+            MAP_SIZE
+        );
     }
-
-    const vignette = ctx.createRadialGradient(
-        RADAR_CENTER,
-        RADAR_CENTER,
-        RADAR_CENTER * 0.45,
-        RADAR_CENTER,
-        RADAR_CENTER,
-        RADAR_CENTER
-    );
-    vignette.addColorStop(0, 'rgba(4, 15, 16, 0)');
-    vignette.addColorStop(1, 'rgba(4, 15, 16, 0.38)');
-    ctx.fillStyle = vignette;
-    ctx.beginPath();
-    ctx.arc(RADAR_CENTER, RADAR_CENTER, RADAR_CENTER - 1.5, 0, Math.PI * 2);
-    ctx.fill();
 
     // North moves around the rim while the map remains vehicle-heading-up.
     const northX = RADAR_CENTER - Math.sin(heading) * (RADAR_CENTER - 13);
@@ -318,21 +320,92 @@ function drawRadarOverlay(ctx: CanvasRenderingContext2D, heading: number) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('N', northX, northY + 0.4);
-
-    ctx.strokeStyle = 'rgba(255, 248, 231, 0.38)';
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    ctx.arc(RADAR_CENTER, RADAR_CENTER, RADAR_CENTER - 2, 0, Math.PI * 2);
-    ctx.stroke();
-
-    ctx.fillStyle = '#f3d28e';
-    ctx.beginPath();
-    ctx.moveTo(RADAR_CENTER, 2.5);
-    ctx.lineTo(RADAR_CENTER - 4, 8.5);
-    ctx.lineTo(RADAR_CENTER + 4, 8.5);
-    ctx.closePath();
-    ctx.fill();
+    if (overlayForegroundLayer) {
+        ctx.drawImage(
+            overlayForegroundLayer,
+            0,
+            0,
+            overlayForegroundLayer.width,
+            overlayForegroundLayer.height,
+            0,
+            0,
+            MAP_SIZE,
+            MAP_SIZE
+        );
+    }
     ctx.restore();
+}
+
+function buildRadarLayers() {
+    backdropLayer = document.createElement('canvas');
+    backdropLayer.width = Math.round(MAP_SIZE * pixelRatio);
+    backdropLayer.height = Math.round(MAP_SIZE * pixelRatio);
+    const backdropCtx = backdropLayer.getContext('2d');
+    if (backdropCtx) {
+        backdropCtx.scale(pixelRatio, pixelRatio);
+        const backdrop = backdropCtx.createRadialGradient(
+            RADAR_CENTER,
+            RADAR_CENTER,
+            8,
+            RADAR_CENTER,
+            RADAR_CENTER,
+            RADAR_CENTER
+        );
+        backdrop.addColorStop(0, '#315c4b');
+        backdrop.addColorStop(1, '#17342f');
+        backdropCtx.fillStyle = backdrop;
+        backdropCtx.fillRect(0, 0, MAP_SIZE, MAP_SIZE);
+    }
+
+    overlayLayer = document.createElement('canvas');
+    overlayLayer.width = Math.round(MAP_SIZE * pixelRatio);
+    overlayLayer.height = Math.round(MAP_SIZE * pixelRatio);
+    const overlayCtx = overlayLayer.getContext('2d');
+    if (!overlayCtx) return;
+    overlayCtx.scale(pixelRatio, pixelRatio);
+
+    overlayCtx.strokeStyle = 'rgba(255, 248, 231, 0.14)';
+    overlayCtx.lineWidth = 0.8;
+    for (const radius of [RADAR_CENTER * 0.34, RADAR_CENTER * 0.67]) {
+        overlayCtx.beginPath();
+        overlayCtx.arc(RADAR_CENTER, RADAR_CENTER, radius, 0, Math.PI * 2);
+        overlayCtx.stroke();
+    }
+
+    const vignette = overlayCtx.createRadialGradient(
+        RADAR_CENTER,
+        RADAR_CENTER,
+        RADAR_CENTER * 0.45,
+        RADAR_CENTER,
+        RADAR_CENTER,
+        RADAR_CENTER
+    );
+    vignette.addColorStop(0, 'rgba(4, 15, 16, 0)');
+    vignette.addColorStop(1, 'rgba(4, 15, 16, 0.38)');
+    overlayCtx.fillStyle = vignette;
+    overlayCtx.beginPath();
+    overlayCtx.arc(RADAR_CENTER, RADAR_CENTER, RADAR_CENTER - 1.5, 0, Math.PI * 2);
+    overlayCtx.fill();
+
+    overlayForegroundLayer = document.createElement('canvas');
+    overlayForegroundLayer.width = Math.round(MAP_SIZE * pixelRatio);
+    overlayForegroundLayer.height = Math.round(MAP_SIZE * pixelRatio);
+    const foregroundCtx = overlayForegroundLayer.getContext('2d');
+    if (!foregroundCtx) return;
+    foregroundCtx.scale(pixelRatio, pixelRatio);
+    foregroundCtx.strokeStyle = 'rgba(255, 248, 231, 0.38)';
+    foregroundCtx.lineWidth = 1.2;
+    foregroundCtx.beginPath();
+    foregroundCtx.arc(RADAR_CENTER, RADAR_CENTER, RADAR_CENTER - 2, 0, Math.PI * 2);
+    foregroundCtx.stroke();
+
+    foregroundCtx.fillStyle = '#f3d28e';
+    foregroundCtx.beginPath();
+    foregroundCtx.moveTo(RADAR_CENTER, 2.5);
+    foregroundCtx.lineTo(RADAR_CENTER - 4, 8.5);
+    foregroundCtx.lineTo(RADAR_CENTER + 4, 8.5);
+    foregroundCtx.closePath();
+    foregroundCtx.fill();
 }
 
 export function initMinimap(city: CityData) {
@@ -343,6 +416,7 @@ export function initMinimap(city: CityData) {
     canvas.width = Math.round(MAP_SIZE * pixelRatio);
     canvas.height = Math.round(MAP_SIZE * pixelRatio);
     context = canvas.getContext('2d');
+    buildRadarLayers();
     drawStaticMap(city);
     lastUpdate = -Infinity;
     updateMinimap(performance.now());

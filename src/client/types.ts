@@ -98,6 +98,7 @@ export interface RemotePlayer {
     powerups: { ghost: { active: boolean; timer: number }; shield: { active: boolean; timer: number } };
     updateNametag(): void;
     honk(): void;
+    dispose(): void;
 }
 
 export interface Inputs {

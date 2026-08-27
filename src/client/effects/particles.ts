@@ -1,12 +1,14 @@
 import * as THREE from 'three';
 import { state } from '../state.js';
 
-// Cached shared geometry - created once, never disposed
-const _unitBox = new THREE.BoxGeometry(1, 1, 1);
 const MAX_PARTICLES = 200;
+const EXPLOSION_COLORS = [0x333333, 0x555555, 0xFF4400, 0xFF6600];
+const FIRE_COLORS = [0xFF4500, 0xFF6600, 0xFFAA00, 0xFF2200, 0xFFDD00];
 
 interface Particle {
-    mesh: THREE.Mesh;
+    x: number;
+    y: number;
+    z: number;
     vx: number;
     vy: number;
     vz: number;
@@ -14,66 +16,147 @@ interface Particle {
     decay: number;
     initialScale: number;
     initialOpacity: number;
-    followTarget?: THREE.Object3D;
-    localOffset?: THREE.Vector3;
+    color: number;
+    followTarget: THREE.Object3D | null;
+    localX: number;
+    localY: number;
+    localZ: number;
+}
+
+let particleMesh: THREE.InstancedMesh | null = null;
+let colorAttribute: THREE.InstancedBufferAttribute | null = null;
+let opacityAttribute: THREE.InstancedBufferAttribute | null = null;
+
+const scratchMatrix = new THREE.Matrix4();
+const scratchPosition = new THREE.Vector3();
+const scratchScale = new THREE.Vector3();
+const scratchRotation = new THREE.Quaternion();
+const scratchColor = new THREE.Color();
+const scratchDriftOffset = new THREE.Vector3();
+
+function ensureParticleBatch(): THREE.InstancedMesh {
+    if (!particleMesh) {
+        const geometry = new THREE.BoxGeometry(1, 1, 1);
+        colorAttribute = new THREE.InstancedBufferAttribute(new Float32Array(MAX_PARTICLES * 3), 3);
+        opacityAttribute = new THREE.InstancedBufferAttribute(new Float32Array(MAX_PARTICLES), 1);
+        colorAttribute.setUsage(THREE.DynamicDrawUsage);
+        opacityAttribute.setUsage(THREE.DynamicDrawUsage);
+        geometry.setAttribute('particleColor', colorAttribute);
+        geometry.setAttribute('particleOpacity', opacityAttribute);
+
+        const material = new THREE.ShaderMaterial({
+            uniforms: THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
+            vertexShader: `
+                attribute vec3 particleColor;
+                attribute float particleOpacity;
+                varying vec3 vParticleColor;
+                varying float vParticleOpacity;
+                #include <fog_pars_vertex>
+
+                void main() {
+                    vParticleColor = particleColor;
+                    vParticleOpacity = particleOpacity;
+                    vec4 mvPosition = modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+                    gl_Position = projectionMatrix * mvPosition;
+                    #include <fog_vertex>
+                }
+            `,
+            fragmentShader: `
+                varying vec3 vParticleColor;
+                varying float vParticleOpacity;
+                #include <fog_pars_fragment>
+
+                void main() {
+                    gl_FragColor = vec4(vParticleColor, vParticleOpacity);
+                    #include <tonemapping_fragment>
+                    #include <colorspace_fragment>
+                    #include <fog_fragment>
+                }
+            `,
+            transparent: true,
+            fog: true
+        });
+
+        particleMesh = new THREE.InstancedMesh(geometry, material, MAX_PARTICLES);
+        particleMesh.count = 0;
+        particleMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        particleMesh.frustumCulled = false;
+    }
+
+    if (particleMesh.parent !== state.scene) state.scene.add(particleMesh);
+    return particleMesh;
+}
+
+function writeParticleInstance(index: number, particle: Particle, scale: number, opacity: number): void {
+    const mesh = ensureParticleBatch();
+    scratchPosition.set(particle.x, particle.y, particle.z);
+    scratchScale.set(scale, scale, scale);
+    scratchMatrix.compose(scratchPosition, scratchRotation, scratchScale);
+    mesh.setMatrixAt(index, scratchMatrix);
+
+    scratchColor.setHex(particle.color);
+    colorAttribute!.setXYZ(index, scratchColor.r, scratchColor.g, scratchColor.b);
+    opacityAttribute!.setX(index, opacity);
+}
+
+function addParticle(particle: Particle): void {
+    if (state.particles.length >= MAX_PARTICLES) return;
+    const index = state.particles.length;
+    state.particles.push(particle);
+    writeParticleInstance(index, particle, particle.initialScale, particle.initialOpacity);
+    particleMesh!.count = state.particles.length;
+    particleMesh!.instanceMatrix.needsUpdate = true;
+    colorAttribute!.needsUpdate = true;
+    opacityAttribute!.needsUpdate = true;
 }
 
 export function spawnParticles(x: number, y: number, z: number, color: number, count: number, size = 0.4, spread = 1.0, speed = 0.5) {
     for (let i = 0; i < count; i++) {
         if (state.particles.length >= MAX_PARTICLES) return;
-        const mat = new THREE.MeshBasicMaterial({
-            color: color,
-            transparent: true,
-            opacity: 1
-        });
-        const p = new THREE.Mesh(_unitBox, mat);
-        p.position.set(x, y, z);
-        p.scale.set(size, size, size);
 
         const vx = (Math.random() - 0.5) * spread;
         const vy = (Math.random() * 0.5 + 0.2) * speed * 2;
         const vz = (Math.random() - 0.5) * spread;
 
-        state.particles.push({
-            mesh: p,
+        addParticle({
+            x, y, z,
             vx, vy, vz,
             life: 1.0,
             decay: 0.02 + Math.random() * 0.03,
             initialScale: size,
-            initialOpacity: 1
+            initialOpacity: 1,
+            color,
+            followTarget: null,
+            localX: 0,
+            localY: 0,
+            localZ: 0
         });
-        state.scene.add(p);
     }
 }
 
 export function spawnFollowingParticle(target: THREE.Object3D, localOffset: THREE.Vector3, color: number, size: number) {
     if (state.particles.length >= MAX_PARTICLES) return;
-    const mat = new THREE.MeshBasicMaterial({
-        color: color,
-        transparent: true,
-        opacity: 0.8
-    });
 
-    const p = new THREE.Mesh(_unitBox, mat);
-    p.scale.set(size, size, size);
+    scratchPosition.copy(localOffset);
+    target.localToWorld(scratchPosition);
 
-    const worldPos = localOffset.clone();
-    target.localToWorld(worldPos);
-    p.position.copy(worldPos);
-
-    state.particles.push({
-        mesh: p,
+    addParticle({
+        x: scratchPosition.x,
+        y: scratchPosition.y,
+        z: scratchPosition.z,
         vx: (Math.random() - 0.5) * 0.1,
-        vy: (Math.random() * 0.1),
+        vy: Math.random() * 0.1,
         vz: (Math.random() - 0.5) * 0.1,
         life: 1.0,
         decay: 0.03 + Math.random() * 0.02,
         initialScale: size,
         initialOpacity: 0.8,
+        color,
         followTarget: target,
-        localOffset: localOffset.clone()
-    } as Particle);
-    state.scene.add(p);
+        localX: localOffset.x,
+        localY: localOffset.y,
+        localZ: localOffset.z
+    });
 }
 
 export function updateParticles(dt: number) {
@@ -84,74 +167,75 @@ export function updateParticles(dt: number) {
         p.life -= p.decay * frame;
 
         if (p.life <= 0) {
-            state.scene.remove(p.mesh);
-            (p.mesh.material as THREE.Material).dispose();
-            // Swap-and-pop instead of splice
             const last = state.particles.length - 1;
             if (i < last) state.particles[i] = state.particles[last];
             state.particles.pop();
             continue;
         }
 
-        if (p.followTarget && p.localOffset) {
-            const worldPos = p.localOffset.clone();
-            p.followTarget.localToWorld(worldPos);
+        if (p.followTarget) {
+            scratchPosition.set(p.localX, p.localY, p.localZ);
+            p.followTarget.localToWorld(scratchPosition);
 
-            p.localOffset.x += p.vx * frame * 0.5;
-            p.localOffset.y += p.vy * frame * 0.5;
-            p.localOffset.z += p.vz * frame * 0.5;
+            p.localX += p.vx * frame * 0.5;
+            p.localY += p.vy * frame * 0.5;
+            p.localZ += p.vz * frame * 0.5;
             p.vy += 0.005 * frame;
 
-            p.mesh.position.copy(worldPos);
+            p.x = scratchPosition.x;
+            p.y = scratchPosition.y;
+            p.z = scratchPosition.z;
         } else {
-            p.mesh.position.x += p.vx * frame;
-            p.mesh.position.y += p.vy * frame;
-            p.mesh.position.z += p.vz * frame;
+            p.x += p.vx * frame;
+            p.y += p.vy * frame;
+            p.z += p.vz * frame;
             p.vy -= 0.02 * frame;
         }
 
-        const s = p.initialScale * p.life;
-        p.mesh.scale.set(s, s, s);
-        (p.mesh.material as THREE.MeshBasicMaterial).opacity = p.initialOpacity * p.life;
-
+        writeParticleInstance(i, p, p.initialScale * p.life, p.initialOpacity * p.life);
         i++;
+    }
+
+    if (!particleMesh) return;
+    particleMesh.count = state.particles.length;
+    if (particleMesh.count > 0) {
+        particleMesh.instanceMatrix.needsUpdate = true;
+        colorAttribute!.needsUpdate = true;
+        opacityAttribute!.needsUpdate = true;
     }
 }
 
 export function spawnExplosion(x: number, y: number, z: number, color: number) {
     const count = 25;
-    const colors = [color, 0x333333, 0x555555, 0xFF4400, 0xFF6600];
 
     for (let i = 0; i < count; i++) {
         if (state.particles.length >= MAX_PARTICLES) return;
-        const c = colors[Math.floor(Math.random() * colors.length)];
-        const mat = new THREE.MeshBasicMaterial({
-            color: c,
-            transparent: true,
-            opacity: 1
-        });
+        const colorIndex = Math.floor(Math.random() * (EXPLOSION_COLORS.length + 1));
+        const particleColor = colorIndex === 0 ? color : EXPLOSION_COLORS[colorIndex - 1];
         const size = 0.3 + Math.random() * 0.5;
-        const mesh = new THREE.Mesh(_unitBox, mat);
-        mesh.position.set(
-            x + (Math.random() - 0.5) * 2,
-            y + 1 + Math.random() * 2,
-            z + (Math.random() - 0.5) * 2
-        );
-        mesh.scale.set(size, size, size);
-
+        const particleX = x + (Math.random() - 0.5) * 2;
+        const particleY = y + 1 + Math.random() * 2;
+        const particleZ = z + (Math.random() - 0.5) * 2;
         const angle = Math.random() * Math.PI * 2;
-        const speed = 0.2 + Math.random() * 0.4;
-        state.particles.push({
-            mesh,
-            vx: Math.cos(angle) * speed,
+        const particleSpeed = 0.2 + Math.random() * 0.4;
+
+        addParticle({
+            x: particleX,
+            y: particleY,
+            z: particleZ,
+            vx: Math.cos(angle) * particleSpeed,
             vy: 0.2 + Math.random() * 0.4,
-            vz: Math.sin(angle) * speed,
+            vz: Math.sin(angle) * particleSpeed,
             life: 1.0,
             decay: 0.015 + Math.random() * 0.015,
             initialScale: size,
-            initialOpacity: 1
+            initialOpacity: 1,
+            color: particleColor,
+            followTarget: null,
+            localX: 0,
+            localY: 0,
+            localZ: 0
         });
-        state.scene.add(mesh);
     }
 }
 
@@ -163,30 +247,23 @@ export function spawnDamageSmoke(x: number, y: number, z: number, health: number
     const size = 0.3 + damagePercent * 0.4;
     const startOpacity = 0.5 + damagePercent * 0.3;
 
-    const mat = new THREE.MeshBasicMaterial({
-        color,
-        transparent: true,
-        opacity: startOpacity
-    });
-    const mesh = new THREE.Mesh(_unitBox, mat);
-    mesh.position.set(
-        x + (Math.random() - 0.5) * 1.5,
-        y + 1.5 + Math.random() * 0.5,
-        z + (Math.random() - 0.5) * 1.5
-    );
-    mesh.scale.set(size, size, size);
-
-    state.particles.push({
-        mesh,
+    addParticle({
+        x: x + (Math.random() - 0.5) * 1.5,
+        y: y + 1.5 + Math.random() * 0.5,
+        z: z + (Math.random() - 0.5) * 1.5,
         vx: (Math.random() - 0.5) * 0.05,
         vy: 0.05 + Math.random() * 0.08,
         vz: (Math.random() - 0.5) * 0.05,
         life: 1.0,
         decay: 0.03 + Math.random() * 0.02,
         initialScale: size,
-        initialOpacity: startOpacity
+        initialOpacity: startOpacity,
+        color,
+        followTarget: null,
+        localX: 0,
+        localY: 0,
+        localZ: 0
     });
-    state.scene.add(mesh);
 }
 
 export function spawnBoostFireParticle() {
@@ -197,8 +274,7 @@ export function spawnBoostFireParticle() {
     const carGroup = state.bulli.group;
     const carAngle = state.bulli.angle;
 
-    const fireColors = [0xFF4500, 0xFF6600, 0xFFAA00, 0xFF2200, 0xFFDD00];
-    const color = fireColors[Math.floor(Math.random() * fireColors.length)];
+    const color = FIRE_COLORS[Math.floor(Math.random() * FIRE_COLORS.length)];
     const size = 0.3 + speed * 0.4;
 
     for (let side = -1; side <= 1; side += 2) {
@@ -212,26 +288,23 @@ export function spawnBoostFireParticle() {
         const backVx = -Math.sin(carAngle) * speed * 0.3;
         const backVz = -Math.cos(carAngle) * speed * 0.3;
 
-        const mat = new THREE.MeshBasicMaterial({
-            color,
-            transparent: true,
-            opacity: 0.9
-        });
-        const mesh = new THREE.Mesh(_unitBox, mat);
-        mesh.position.set(worldX + (Math.random() - 0.5) * 0.3, carGroup.position.y + 0.4, worldZ + (Math.random() - 0.5) * 0.3);
-        mesh.scale.set(size, size, size);
-
-        state.particles.push({
-            mesh,
+        addParticle({
+            x: worldX + (Math.random() - 0.5) * 0.3,
+            y: carGroup.position.y + 0.4,
+            z: worldZ + (Math.random() - 0.5) * 0.3,
             vx: backVx + (Math.random() - 0.5) * 0.15,
             vy: 0.05 + Math.random() * 0.08,
             vz: backVz + (Math.random() - 0.5) * 0.15,
             life: 1.0,
             decay: 0.04 + Math.random() * 0.03,
             initialScale: size,
-            initialOpacity: 0.9
+            initialOpacity: 0.9,
+            color,
+            followTarget: null,
+            localX: 0,
+            localY: 0,
+            localZ: 0
         });
-        state.scene.add(mesh);
     }
 }
 
@@ -244,15 +317,13 @@ export function spawnDriftParticle() {
     const carAngle = state.bulli.angle;
     const isJumping = state.bulli.isFlipping;
 
-    const size = 0.25 + (speed * 0.5);
-
+    const size = 0.25 + speed * 0.5;
     const offsetX = (Math.random() - 0.5) * 1.5;
     const offsetY = 0.2;
 
     if (isJumping) {
-        const flipGroup = state.bulli.flipGroup;
-        const localOffset = new THREE.Vector3(offsetX, offsetY, -2.2 + (Math.random() - 0.5) * 0.2);
-        spawnFollowingParticle(flipGroup, localOffset, 0xEEEEEE, size);
+        scratchDriftOffset.set(offsetX, offsetY, -2.2 + (Math.random() - 0.5) * 0.2);
+        spawnFollowingParticle(state.bulli.flipGroup, scratchDriftOffset, 0xEEEEEE, size);
     } else {
         const worldOffsetX = Math.sin(carAngle + Math.PI) * 2;
         const worldOffsetZ = Math.cos(carAngle + Math.PI) * 2;
