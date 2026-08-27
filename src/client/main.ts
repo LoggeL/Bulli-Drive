@@ -16,6 +16,10 @@ import { initSplashScreen, initAboutModal } from './ui/screens.js';
 import { animateFountain } from './world/city.js';
 import { updateMinimap } from './ui/minimap.js';
 import { SPEED_BOOST_FACTOR } from '../shared/constants.js';
+import { Bulli, type CarType } from './entities/Bulli.js';
+import { sendToServer } from './network/socket.js';
+import { AdaptiveRenderQuality } from './effects/renderQuality.js';
+import { updateWorldShaders } from './effects/worldShaders.js';
 
 // Reusable chase-camera state/vectors to avoid per-frame allocations.
 const _cameraTarget = new THREE.Vector3();
@@ -27,6 +31,7 @@ let cameraRigReady = false;
 let useMobileCameraEnvelope = false;
 
 let dirLight: THREE.DirectionalLight;
+let renderQuality: AdaptiveRenderQuality;
 
 // Mega ram cooldown per player
 const ramCooldowns: Record<string, number> = {};
@@ -49,8 +54,7 @@ function init() {
 
     // Renderer
     state.renderer = new THREE.WebGLRenderer({ antialias: true });
-    state.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    state.renderer.setSize(window.innerWidth, window.innerHeight);
+    renderQuality = new AdaptiveRenderQuality(state.renderer, window.innerWidth, window.innerHeight);
     state.renderer.shadowMap.enabled = true;
     state.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     document.body.appendChild(state.renderer.domElement);
@@ -84,10 +88,9 @@ function init() {
             const previousPosition = state.bulli.group.position.clone();
             const previousAngle = state.bulli.angle;
             state.scene.remove(state.bulli.group);
-            if (state.bulli.nametag) state.bulli.nametag.remove();
+            state.bulli.dispose();
 
-            const { Bulli } = await import('./entities/Bulli.js');
-            state.bulli = new Bulli(state.myColor!, true, carType as any);
+            state.bulli = new Bulli(state.myColor!, true, carType as CarType);
             state.bulli.group.position.copy(previousPosition);
             state.bulli.angle = previousAngle;
             state.bulli.group.rotation.y = previousAngle;
@@ -96,19 +99,9 @@ function init() {
         }
 
         // Notify server of name and car type
-        if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-            state.ws.send(JSON.stringify({
-                type: 'rename',
-                name: name
-            }));
-            state.ws.send(JSON.stringify({
-                type: 'setCarType',
-                carType: carType
-            }));
-            state.ws.send(JSON.stringify({
-                type: 'playerReady'
-            }));
-        }
+        sendToServer({ type: 'rename', name });
+        sendToServer({ type: 'setCarType', carType });
+        sendToServer({ type: 'playerReady' });
 
         // Hide splash screen
         if (splashScreen) {
@@ -153,7 +146,7 @@ function init() {
     initAboutModal();
 
     // Start Loop
-    animate();
+    requestAnimationFrame(animate);
 }
 
 function onWindowResize() {
@@ -161,7 +154,7 @@ function onWindowResize() {
     refreshCameraEnvelope();
     state.camera.aspect = window.innerWidth / window.innerHeight;
     state.camera.updateProjectionMatrix();
-    state.renderer.setSize(window.innerWidth, window.innerHeight);
+    renderQuality.resize(window.innerWidth, window.innerHeight);
 }
 
 function refreshCameraEnvelope() {
@@ -243,10 +236,11 @@ function updateChaseCamera(
     _lastCarPosition.copy(carPos);
 }
 
-function animate() {
+function animate(frameTime: number) {
     requestAnimationFrame(animate);
     const dt = state.clock.getDelta();
     const time = state.clock.elapsedTime;
+    const nowMs = Date.now();
 
     if (state.bulli) {
         state.bulli.update(dt);
@@ -272,7 +266,7 @@ function animate() {
         dirLight.target.updateMatrixWorld();
 
         // Drift particles
-        if (Math.abs(state.bulli.speed) > 0.1) {
+        if (speed > 0.1) {
             spawnDriftParticle();
         }
 
@@ -280,32 +274,26 @@ function animate() {
         checkPowerupCollection();
         updateProjectiles(dt);
         // Boost fire trails
-        if (state.bulli.powerups.speed.active && Math.abs(state.bulli.speed) > 0.05) {
+        if (turboActive && speed > 0.05) {
             spawnBoostFireParticle();
         }
 
         // Mega ram: collide with other players to damage them
-        if (state.bulli.powerups.size.active && Math.abs(state.bulli.speed) > 0.05 && !state.dead) {
-            const now = Date.now();
+        if (state.bulli.powerups.size.active && speed > 0.05 && !state.dead) {
             const myX = state.bulli.group.position.x;
             const myZ = state.bulli.group.position.z;
-            const ramRadius = 6;
+            const ramRadiusSquared = 36;
 
             for (const id in state.remotePlayers) {
                 const remote = state.remotePlayers[id] as any;
                 if (!remote.flipGroup.visible) continue;
                 const dx = myX - remote.group.position.x;
                 const dz = myZ - remote.group.position.z;
-                const dist = Math.sqrt(dx * dx + dz * dz);
+                const distanceSquared = dx * dx + dz * dz;
 
-                if (dist < ramRadius && (!ramCooldowns[id] || now - ramCooldowns[id] > 1000)) {
-                    ramCooldowns[id] = now;
-                    if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-                        state.ws.send(JSON.stringify({
-                            type: 'shoot',
-                            targetId: id
-                        }));
-                    }
+                if (distanceSquared < ramRadiusSquared && (!ramCooldowns[id] || nowMs - ramCooldowns[id] > 1000)) {
+                    ramCooldowns[id] = nowMs;
+                    sendToServer({ type: 'shoot', targetId: id });
                     playCollisionSound(0.5);
                     showHitmarker();
                 }
@@ -316,14 +304,14 @@ function animate() {
         if (state.respawnShield && state.bulli.shieldMesh) {
             const speed = Math.abs(state.bulli.speed);
             if (speed > 0.05 && state.respawnMoveStart === 0) {
-                state.respawnMoveStart = Date.now();
+                state.respawnMoveStart = nowMs;
             }
 
             const shieldMat = state.bulli.shieldMesh.material as any;
             state.bulli.shieldMesh.visible = true;
 
             if (state.respawnMoveStart > 0) {
-                const elapsed = Date.now() - state.respawnMoveStart;
+                const elapsed = nowMs - state.respawnMoveStart;
                 const decay = 3000;
                 const progress = Math.min(1, elapsed / decay);
                 shieldMat.opacity = 0.3 * (1 - progress);
@@ -341,13 +329,11 @@ function animate() {
                         shieldMat.opacity = 0;
                         shieldMat.emissiveIntensity = 0;
                     }
-                    if (state.ws?.readyState === WebSocket.OPEN) {
-                        state.ws.send(JSON.stringify({ type: 'respawnShieldExpired' }));
-                    }
+                    sendToServer({ type: 'respawnShieldExpired' });
                 }
             } else {
-                shieldMat.opacity = 0.25 + Math.sin(Date.now() * 0.005) * 0.1;
-                shieldMat.emissiveIntensity = 0.4 + Math.sin(Date.now() * 0.008) * 0.2;
+                shieldMat.opacity = 0.25 + Math.sin(nowMs * 0.005) * 0.1;
+                shieldMat.emissiveIntensity = 0.4 + Math.sin(nowMs * 0.008) * 0.2;
                 state.bulli.shieldMesh.rotation.y += dt * 2;
             }
         }
@@ -380,7 +366,6 @@ function animate() {
     animateFountain(time);
 
     // Update remote players (smoothness)
-    const nowMs = Date.now();
     for (const id in state.remotePlayers) {
         const remote = state.remotePlayers[id] as any;
         remote.updateNametag();
@@ -490,11 +475,19 @@ function animate() {
             }
         }
     }
+    for (const id in ramCooldowns) {
+        if (!state.remotePlayers[id] || nowMs - ramCooldowns[id] > 1000) {
+            delete ramCooldowns[id];
+        }
+    }
+
 
     updateParticles(dt);
-    updateMinimap(performance.now());
+    updateMinimap(frameTime);
 
     if (state.renderer && state.scene && state.camera) {
+        updateWorldShaders(state.clock.elapsedTime);
+        renderQuality.update(frameTime);
         state.renderer.render(state.scene, state.camera);
     }
 

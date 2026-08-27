@@ -3,6 +3,7 @@ import { state } from '../state.js';
 import { BuildingData, RoadData, CityData } from '../types.js';
 import { getTerrainHeight } from './environment.js';
 import { CITY_LAYOUT, PLAZA_PROP_LAYOUT } from '../../shared/constants.js';
+import { createWaterMaterial } from '../effects/worldShaders.js';
 
 const ROAD_COLOR = 0x282a2b;
 const INTERSECTION_COLOR = 0x242627;
@@ -63,6 +64,17 @@ const awningMatCache = new Map<number, THREE.MeshStandardMaterial>();
 const PARTICLE_COUNT = 8;
 let sharedParticleMat: THREE.MeshStandardMaterial;
 let sharedParticleGeo: THREE.SphereGeometry;
+let sharedParkTrunkGeo: THREE.CylinderGeometry;
+let sharedParkFoliageGeo: THREE.SphereGeometry;
+let sharedParkTrunkMat: THREE.MeshStandardMaterial;
+let sharedParkFoliageMat: THREE.MeshStandardMaterial;
+let sharedParkFoliageLightMat: THREE.MeshStandardMaterial;
+let sharedPalmTrunkGeo: THREE.CylinderGeometry;
+let sharedPalmLeafGeo: THREE.BoxGeometry;
+let sharedPalmCoconutGeo: THREE.SphereGeometry;
+let sharedPalmTrunkMat: THREE.MeshStandardMaterial;
+let sharedPalmLeafMats: THREE.MeshStandardMaterial[];
+let sharedPalmCoconutMat: THREE.MeshStandardMaterial;
 
 // Fountain animation state, replaced wholesale on each createPlaza (re-entrant)
 interface FountainState {
@@ -115,6 +127,22 @@ function initSharedResources() {
     sharedParticleMat = new THREE.MeshStandardMaterial({
         color: 0x88ccee, transparent: true, opacity: 0.6, roughness: 0.1
     });
+
+    // Trees use unit geometries; per-tree dimensions are object transforms.
+    sharedParkTrunkGeo = new THREE.CylinderGeometry(0.3, 0.4, 1, 8);
+    sharedParkFoliageGeo = new THREE.SphereGeometry(1, 8, 7);
+    sharedParkTrunkMat = new THREE.MeshStandardMaterial({ color: 0x5D4037 });
+    sharedParkFoliageMat = new THREE.MeshStandardMaterial({ color: 0x2E7D32, roughness: 0.85 });
+    sharedParkFoliageLightMat = new THREE.MeshStandardMaterial({ color: 0x4a9a4e, roughness: 0.85 });
+    sharedPalmTrunkGeo = new THREE.CylinderGeometry(0.22, 0.42, 1, 8);
+    sharedPalmLeafGeo = new THREE.BoxGeometry(0.48, 0.09, 4.2);
+    sharedPalmCoconutGeo = new THREE.SphereGeometry(0.24, 6, 5);
+    sharedPalmTrunkMat = new THREE.MeshStandardMaterial({ color: 0x9a6b45, roughness: 0.9 });
+    sharedPalmLeafMats = [
+        new THREE.MeshStandardMaterial({ color: 0x27734d, roughness: 0.82, side: THREE.DoubleSide }),
+        new THREE.MeshStandardMaterial({ color: 0x3f925b, roughness: 0.82, side: THREE.DoubleSide })
+    ];
+    sharedPalmCoconutMat = new THREE.MeshStandardMaterial({ color: 0x654229, roughness: 0.9 });
 }
 
 function getDoorMat(color: number): THREE.MeshStandardMaterial {
@@ -172,6 +200,35 @@ function createRoads(roads: RoadData[]) {
         roughness: 0.65
     });
 
+    const curbWidth = 1.1;
+    const curbGeo = new THREE.BoxGeometry(curbWidth, 0.15, CITY_LAYOUT.blockSize);
+    const edgeGeo = new THREE.PlaneGeometry(0.13, CITY_LAYOUT.blockSize - 1.5);
+    edgeGeo.rotateX(-Math.PI / 2);
+    const dashLength = 3;
+    const dashGap = 2;
+    const dashWidth = 0.3;
+    const dashGeo = new THREE.PlaneGeometry(dashWidth, dashLength);
+    dashGeo.rotateX(-Math.PI / 2);
+
+    const segmentInstanceCount = roads.length * CITY_LAYOUT.gridSize * 2;
+    const maxDashCount = roads.reduce(
+        (count, road) => count + Math.floor(road.length / (dashLength + dashGap)),
+        0
+    );
+    const curbs = new THREE.InstancedMesh(curbGeo, sidewalkMat, segmentInstanceCount);
+    const edges = new THREE.InstancedMesh(edgeGeo, edgeMarkingMat, segmentInstanceCount);
+    const dashes = new THREE.InstancedMesh(dashGeo, markingMat, maxDashCount);
+    curbs.receiveShadow = true;
+
+    const matrix = new THREE.Matrix4();
+    const position = new THREE.Vector3();
+    const quaternion = new THREE.Quaternion();
+    const scale = new THREE.Vector3(1, 1, 1);
+    const up = new THREE.Vector3(0, 1, 0);
+    let curbInstance = 0;
+    let edgeInstance = 0;
+    let dashInstance = 0;
+
     roads.forEach(road => {
         const terrainY = getTerrainHeight(road.x, road.z);
         const roadGroup = new THREE.Group();
@@ -186,39 +243,41 @@ function createRoads(roads: RoadData[]) {
         roadMesh.position.y = 0.05;
         roadMesh.receiveShadow = true;
         roadGroup.add(roadMesh);
+        state.scene.add(roadGroup);
 
-        // All road pieces are authored in one local coordinate system: width
-        // runs across local X and length runs along local Z. Rotating the group
-        // once keeps asphalt, curbs and markings in lockstep.
-        const curbWidth = 1.1;
-        const curbGeo = new THREE.BoxGeometry(curbWidth, 0.15, CITY_LAYOUT.blockSize);
-        const edgeGeo = new THREE.PlaneGeometry(0.13, CITY_LAYOUT.blockSize - 1.5);
-        edgeGeo.rotateX(-Math.PI / 2);
-        [-1, 1].forEach(side => {
-            const offset = (road.width / 2 + curbWidth / 2) * side;
+        quaternion.setFromAxisAngle(up, road.rotation);
+        const rotationSin = Math.sin(road.rotation);
+        const rotationCos = Math.cos(road.rotation);
+
+        // Curbs and edge lines retain the road-local authored transforms, but
+        // are composed into world-space instances to collapse their draw calls.
+        for (const side of [-1, 1]) {
+            const curbOffset = (road.width / 2 + curbWidth / 2) * side;
+            const edgeOffset = (road.width / 2 - 0.5) * side;
             for (let segment = 0; segment < CITY_LAYOUT.gridSize; segment++) {
                 const segmentOffset = -road.length / 2 + CITY_LAYOUT.roadWidth +
                     CITY_LAYOUT.blockSize / 2 + segment * (CITY_LAYOUT.blockSize + CITY_LAYOUT.roadWidth);
-                const curb = new THREE.Mesh(curbGeo, sidewalkMat);
-                curb.position.set(offset, 0.09, segmentOffset);
-                curb.receiveShadow = true;
-                roadGroup.add(curb);
 
-                const edge = new THREE.Mesh(edgeGeo, edgeMarkingMat);
-                edge.position.set((road.width / 2 - 0.5) * side, 0.072, segmentOffset);
-                roadGroup.add(edge);
+                position.set(
+                    road.x + curbOffset * rotationCos + segmentOffset * rotationSin,
+                    terrainY + 0.09,
+                    road.z - curbOffset * rotationSin + segmentOffset * rotationCos
+                );
+                matrix.compose(position, quaternion, scale);
+                curbs.setMatrixAt(curbInstance++, matrix);
+
+                position.set(
+                    road.x + edgeOffset * rotationCos + segmentOffset * rotationSin,
+                    terrainY + 0.072,
+                    road.z - edgeOffset * rotationSin + segmentOffset * rotationCos
+                );
+                matrix.compose(position, quaternion, scale);
+                edges.setMatrixAt(edgeInstance++, matrix);
             }
-        });
+        }
 
         // Lane markings (dashed center line)
-        const dashLength = 3;
-        const dashGap = 2;
-        const dashWidth = 0.3;
         const numDashes = Math.floor(road.length / (dashLength + dashGap));
-
-        const dashGeo = new THREE.PlaneGeometry(dashWidth, dashLength);
-        dashGeo.rotateX(-Math.PI / 2);
-
         for (let i = 0; i < numDashes; i++) {
             const lineOffset = -road.length / 2 + (i + 0.5) * (dashLength + dashGap);
             let insideIntersection = false;
@@ -232,13 +291,25 @@ function createRoads(roads: RoadData[]) {
             }
             if (insideIntersection) continue;
 
-            const dash = new THREE.Mesh(dashGeo, markingMat);
-            dash.position.set(0, 0.073, lineOffset);
-            roadGroup.add(dash);
+            position.set(
+                road.x + lineOffset * rotationSin,
+                terrainY + 0.073,
+                road.z + lineOffset * rotationCos
+            );
+            matrix.compose(position, quaternion, scale);
+            dashes.setMatrixAt(dashInstance++, matrix);
         }
-
-        state.scene.add(roadGroup);
     });
+
+    curbs.count = curbInstance;
+    edges.count = edgeInstance;
+    dashes.count = dashInstance;
+    curbs.instanceMatrix.needsUpdate = true;
+    edges.instanceMatrix.needsUpdate = true;
+    dashes.instanceMatrix.needsUpdate = true;
+    state.scene.add(curbs);
+    state.scene.add(edges);
+    state.scene.add(dashes);
 }
 
 function createIntersectionDetails() {
@@ -350,33 +421,6 @@ const DOOR_COLORS = [0x5D3A1A, 0x3B2510, 0x6B4226, 0x2C1810];
 const UNIFORM_W_WIDTH = 1.2;
 const UNIFORM_W_HEIGHT = 1.6;
 
-function addWindowWithFrame(
-    group: THREE.Group,
-    x: number, y: number, z: number,
-    rotY: number,
-    isLit: boolean
-) {
-    const glass = new THREE.Mesh(sharedGlassGeo, isLit ? sharedGlassLitMat : sharedGlassUnlitMat);
-    glass.position.set(x, y, z);
-    glass.rotation.y = rotY;
-    group.add(glass);
-
-    // Single frame: top and bottom bars only (2 meshes instead of 4)
-    const inset = 0.05;
-    const offsetZ = Math.cos(rotY) * inset;
-    const offsetX = Math.sin(rotY) * inset;
-
-    const topFrame = new THREE.Mesh(sharedHFrameGeo, sharedFrameMat);
-    topFrame.position.set(x + offsetX * 0.5, y + UNIFORM_W_HEIGHT / 2, z + offsetZ * 0.5);
-    topFrame.rotation.y = rotY;
-    group.add(topFrame);
-
-    const botFrame = new THREE.Mesh(sharedHFrameGeo, sharedFrameMat);
-    botFrame.position.set(x + offsetX * 0.5, y - UNIFORM_W_HEIGHT / 2, z + offsetZ * 0.5);
-    botFrame.rotation.y = rotY;
-    group.add(botFrame);
-}
-
 function addWindows(group: THREE.Group, building: BuildingData) {
     // Windows with frames and varied lighting (wider spacing = fewer windows)
     const windowSpacingH = 3.5;
@@ -384,6 +428,81 @@ function addWindows(group: THREE.Group, building: BuildingData) {
 
     const numWindowsX = Math.max(1, Math.floor((building.width - 2) / windowSpacingH));
     const numWindowsY = Math.max(1, Math.floor((building.height - 2) / windowSpacingV));
+    const numWindowsZ = Math.max(0, Math.floor((building.depth - 2) / windowSpacingH));
+    const totalWindowCount = 2 * numWindowsY * (numWindowsX + numWindowsZ);
+
+    let litGlassCount = 0;
+    for (let wx = 0; wx < numWindowsX; wx++) {
+        for (let wy = 0; wy < numWindowsY; wy++) {
+            if (seededRandom(building.x + wx, building.z + wy, 7) > 0.6) {
+                litGlassCount += 2;
+            }
+        }
+    }
+    for (let wz = 0; wz < numWindowsZ; wz++) {
+        for (let wy = 0; wy < numWindowsY; wy++) {
+            if (seededRandom(building.x + wz + 10, building.z + wy, 8) > 0.6) {
+                litGlassCount += 2;
+            }
+        }
+    }
+
+    const unlitGlassCount = totalWindowCount - litGlassCount;
+    const frameCount = totalWindowCount * 2;
+    const litGlass = litGlassCount > 0
+        ? new THREE.InstancedMesh(sharedGlassGeo, sharedGlassLitMat, litGlassCount)
+        : null;
+    const unlitGlass = unlitGlassCount > 0
+        ? new THREE.InstancedMesh(sharedGlassGeo, sharedGlassUnlitMat, unlitGlassCount)
+        : null;
+    const frames = frameCount > 0
+        ? new THREE.InstancedMesh(sharedHFrameGeo, sharedFrameMat, frameCount)
+        : null;
+
+    const matrix = new THREE.Matrix4();
+    const position = new THREE.Vector3();
+    const quaternion = new THREE.Quaternion();
+    const scale = new THREE.Vector3(1, 1, 1);
+    const up = new THREE.Vector3(0, 1, 0);
+    let litGlassInstance = 0;
+    let unlitGlassInstance = 0;
+    let frameInstance = 0;
+
+    const writeWindow = (
+        x: number,
+        y: number,
+        z: number,
+        rotY: number,
+        isLit: boolean
+    ) => {
+        quaternion.setFromAxisAngle(up, rotY);
+        position.set(x, y, z);
+        matrix.compose(position, quaternion, scale);
+        if (isLit) {
+            litGlass!.setMatrixAt(litGlassInstance++, matrix);
+        } else {
+            unlitGlass!.setMatrixAt(unlitGlassInstance++, matrix);
+        }
+
+        const inset = 0.05;
+        const offsetZ = Math.cos(rotY) * inset;
+        const offsetX = Math.sin(rotY) * inset;
+        position.set(
+            x + offsetX * 0.5,
+            y + UNIFORM_W_HEIGHT / 2,
+            z + offsetZ * 0.5
+        );
+        matrix.compose(position, quaternion, scale);
+        frames!.setMatrixAt(frameInstance++, matrix);
+
+        position.set(
+            x + offsetX * 0.5,
+            y - UNIFORM_W_HEIGHT / 2,
+            z + offsetZ * 0.5
+        );
+        matrix.compose(position, quaternion, scale);
+        frames!.setMatrixAt(frameInstance++, matrix);
+    };
 
     // Front and back windows
     for (let wx = 0; wx < numWindowsX; wx++) {
@@ -392,26 +511,37 @@ function addWindows(group: THREE.Group, building: BuildingData) {
             const yPos = 2 + wy * windowSpacingV;
             const isLit = seededRandom(building.x + wx, building.z + wy, 7) > 0.6;
 
-            // Front
-            addWindowWithFrame(group, xPos, yPos, building.depth / 2 + 0.06, 0, isLit);
-            // Back
-            addWindowWithFrame(group, xPos, yPos, -building.depth / 2 - 0.06, Math.PI, isLit);
+            writeWindow(xPos, yPos, building.depth / 2 + 0.06, 0, isLit);
+            writeWindow(xPos, yPos, -building.depth / 2 - 0.06, Math.PI, isLit);
         }
     }
 
     // Side windows
-    const numWindowsZ = Math.floor((building.depth - 2) / windowSpacingH);
     for (let wz = 0; wz < numWindowsZ; wz++) {
         for (let wy = 0; wy < numWindowsY; wy++) {
             const zPos = -building.depth / 2 + 1.5 + wz * windowSpacingH;
             const yPos = 2 + wy * windowSpacingV;
             const isLit = seededRandom(building.x + wz + 10, building.z + wy, 8) > 0.6;
 
-            // Left
-            addWindowWithFrame(group, -building.width / 2 - 0.06, yPos, zPos, -Math.PI / 2, isLit);
-            // Right
-            addWindowWithFrame(group, building.width / 2 + 0.06, yPos, zPos, Math.PI / 2, isLit);
+            writeWindow(-building.width / 2 - 0.06, yPos, zPos, -Math.PI / 2, isLit);
+            writeWindow(building.width / 2 + 0.06, yPos, zPos, Math.PI / 2, isLit);
         }
+    }
+
+    if (litGlass) {
+        litGlass.count = litGlassInstance;
+        litGlass.instanceMatrix.needsUpdate = true;
+        group.add(litGlass);
+    }
+    if (unlitGlass) {
+        unlitGlass.count = unlitGlassInstance;
+        unlitGlass.instanceMatrix.needsUpdate = true;
+        group.add(unlitGlass);
+    }
+    if (frames) {
+        frames.count = frameInstance;
+        frames.instanceMatrix.needsUpdate = true;
+        group.add(frames);
     }
 }
 
@@ -671,7 +801,7 @@ function createPark() {
     // Reflecting pond with a stone rim at the centre of Palm Park.
     const pondGeo = new THREE.CircleGeometry(5.2, 32);
     pondGeo.rotateX(-Math.PI / 2);
-    const pondMat = new THREE.MeshStandardMaterial({
+    const pondMat = createWaterMaterial({
         color: 0x3f9db0,
         emissive: 0x174d59,
         emissiveIntensity: 0.18,
@@ -774,21 +904,20 @@ function createParkTree(x: number, z: number) {
     const height = 5.5 + seededRandom(x, z, 91) * 2.5;
 
     // Trunk
-    const trunkGeo = new THREE.CylinderGeometry(0.3, 0.4, height, 8);
-    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5D4037 });
-    const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+    const trunk = new THREE.Mesh(sharedParkTrunkGeo, sharedParkTrunkMat);
+    trunk.scale.y = height;
     trunk.position.y = height / 2;
     trunk.castShadow = true;
     treeGroup.add(trunk);
 
     // Foliage (rounder for park trees)
-    const foliageMat = new THREE.MeshStandardMaterial({ color: 0x2E7D32, roughness: 0.85 });
-    const foliageLightMat = new THREE.MeshStandardMaterial({ color: 0x4a9a4e, roughness: 0.85 });
     [-1.2, 0, 1.2].forEach((offset, index) => {
+        const foliageScale = index === 1 ? 2.6 : 2.1;
         const foliage = new THREE.Mesh(
-            new THREE.SphereGeometry(index === 1 ? 2.6 : 2.1, 8, 7),
-            index === 1 ? foliageLightMat : foliageMat
+            sharedParkFoliageGeo,
+            index === 1 ? sharedParkFoliageLightMat : sharedParkFoliageMat
         );
+        foliage.scale.setScalar(foliageScale);
         foliage.position.set(offset, height + 1.2 + (index === 1 ? 0.8 : 0), (index - 1) * 0.45);
         foliage.castShadow = true;
         treeGroup.add(foliage);
@@ -803,13 +932,8 @@ function createParkTree(x: number, z: number) {
 function createPalmTree(x: number, z: number, salt: number) {
     const palm = new THREE.Group();
     const height = 6.5 + seededRandom(x, z, salt) * 2.2;
-    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x9a6b45, roughness: 0.9 });
-    const leafMats = [
-        new THREE.MeshStandardMaterial({ color: 0x27734d, roughness: 0.82, side: THREE.DoubleSide }),
-        new THREE.MeshStandardMaterial({ color: 0x3f925b, roughness: 0.82, side: THREE.DoubleSide })
-    ];
-
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.42, height, 8), trunkMat);
+    const trunk = new THREE.Mesh(sharedPalmTrunkGeo, sharedPalmTrunkMat);
+    trunk.scale.y = height;
     trunk.position.y = height / 2;
     trunk.rotation.z = (seededRandom(x, z, salt + 1) - 0.5) * 0.07;
     trunk.castShadow = true;
@@ -817,7 +941,7 @@ function createPalmTree(x: number, z: number, salt: number) {
 
     for (let i = 0; i < 7; i++) {
         const angle = (i / 7) * Math.PI * 2;
-        const leaf = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.09, 4.2), leafMats[i % 2]);
+        const leaf = new THREE.Mesh(sharedPalmLeafGeo, sharedPalmLeafMats[i % 2]);
         leaf.position.set(Math.sin(angle) * 1.45, height + 0.05, Math.cos(angle) * 1.45);
         leaf.rotation.order = 'YXZ';
         leaf.rotation.y = angle;
@@ -826,9 +950,8 @@ function createPalmTree(x: number, z: number, salt: number) {
         palm.add(leaf);
     }
 
-    const coconutMat = new THREE.MeshStandardMaterial({ color: 0x654229, roughness: 0.9 });
     for (let i = 0; i < 3; i++) {
-        const coconut = new THREE.Mesh(new THREE.SphereGeometry(0.24, 6, 5), coconutMat);
+        const coconut = new THREE.Mesh(sharedPalmCoconutGeo, sharedPalmCoconutMat);
         const angle = (i / 3) * Math.PI * 2;
         coconut.position.set(Math.cos(angle) * 0.35, height - 0.18, Math.sin(angle) * 0.35);
         palm.add(coconut);
@@ -1018,7 +1141,7 @@ function createPlaza() {
 
     // Water
     const waterGeo = new THREE.CylinderGeometry(3.5, 3.5, 0.3, 24);
-    const waterMat = new THREE.MeshStandardMaterial({
+    const waterMat = createWaterMaterial({
         color: 0x3f9fb8,
         emissive: 0x174d5b,
         emissiveIntensity: 0.2,

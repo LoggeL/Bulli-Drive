@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { state } from '../state.js';
 import { TreeData } from '../types.js';
 import { CITY_LAYOUT } from '../../shared/constants.js';
+import { createTerrainMaterial } from '../effects/worldShaders.js';
 
 const CITY_GRID_HALF_SPAN = CITY_LAYOUT.gridSize * (CITY_LAYOUT.blockSize + CITY_LAYOUT.roadWidth) / 2;
 const CITY_MIN = -CITY_GRID_HALF_SPAN;
@@ -78,6 +79,7 @@ export function createEnvironment(treeData: TreeData[]) {
     const grassLight = new THREE.Color(0x5a9c4f);
     const dirt = new THREE.Color(0x8B7355);
     const rock = new THREE.Color(0x777777);
+    const color = new THREE.Color();
 
     for (let i = 0; i < vertices.length; i += 3) {
         const x = vertices[i];
@@ -90,7 +92,6 @@ export function createEnvironment(treeData: TreeData[]) {
         const noise = Math.sin(x * 0.1) * Math.cos(z * 0.1);
         const heightFactor = Math.abs(h) / 6.0;
 
-        const color = new THREE.Color();
         if (heightFactor > 0.7) {
             color.lerpColors(dirt, rock, (heightFactor - 0.7) / 0.3);
         } else if (noise > 0.3) {
@@ -107,7 +108,7 @@ export function createEnvironment(treeData: TreeData[]) {
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geometry.computeVertexNormals();
 
-    const material = new THREE.MeshStandardMaterial({
+    const material = createTerrainMaterial({
         vertexColors: true,
         roughness: 0.9,
         metalness: 0.0
@@ -137,6 +138,9 @@ export function createEnvironment(treeData: TreeData[]) {
     const flowerGeo = new THREE.SphereGeometry(0.2, 6, 4);
     const stemGeo = new THREE.CylinderGeometry(0.02, 0.03, 0.3, 4);
     const stemMat = new THREE.MeshStandardMaterial({ color: 0x2D6B22 });
+    const treeTrunkGeo = new THREE.CylinderGeometry(0.5, 0.7, 1, 8);
+    const treeFoliageLowerGeo = new THREE.ConeGeometry(3.5, 1, 8);
+    const treeFoliageUpperGeo = new THREE.ConeGeometry(2.2, 1, 8);
 
     // Obstacles (Trees) - server-driven, keep all
     state.obstacles = [];
@@ -145,23 +149,23 @@ export function createEnvironment(treeData: TreeData[]) {
         treeGroup.position.set(t.x, getTerrainHeight(t.x, t.z), t.z);
 
         // Trunk
-        const trunkGeo = new THREE.CylinderGeometry(0.5, 0.7, t.height, 8);
-        const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+        const trunk = new THREE.Mesh(treeTrunkGeo, trunkMat);
+        trunk.scale.y = t.height;
         trunk.position.y = t.height / 2;
         trunk.castShadow = true;
         trunk.receiveShadow = true;
         treeGroup.add(trunk);
 
         // Lower foliage (wider)
-        const foliageGeo1 = new THREE.ConeGeometry(3.5, t.height * 1.0, 8);
-        const foliage1 = new THREE.Mesh(foliageGeo1, foliageMat);
+        const foliage1 = new THREE.Mesh(treeFoliageLowerGeo, foliageMat);
+        foliage1.scale.y = t.height;
         foliage1.position.y = t.height + (t.height * 0.4);
         foliage1.castShadow = true;
         treeGroup.add(foliage1);
 
         // Upper foliage (narrower, lighter)
-        const foliageGeo2 = new THREE.ConeGeometry(2.2, t.height * 0.9, 8);
-        const foliage2 = new THREE.Mesh(foliageGeo2, foliageLightMat);
+        const foliage2 = new THREE.Mesh(treeFoliageUpperGeo, foliageLightMat);
+        foliage2.scale.y = t.height * 0.9;
         foliage2.position.y = t.height + (t.height * 1.0);
         foliage2.castShadow = true;
         treeGroup.add(foliage2);

@@ -5,7 +5,8 @@ import { playJumpSound, playCollisionSound, playHonkSound, playShootSound } from
 import { createProjectile } from '../world/projectiles.js';
 import { spawnParticles } from '../effects/particles.js';
 import { getTerrainHeight } from '../world/environment.js';
-import { MEGA_SCALE, SPEED_BOOST_FACTOR } from '../../shared/constants.js';
+import { MEGA_SCALE, SPEED_BOOST_FACTOR, UPDATE_SEND_INTERVAL_MS } from '../../shared/constants.js';
+import { sendToServer } from '../network/socket.js';
 
 // Reusable vectors to avoid per-frame allocations
 const _scaleBig = new THREE.Vector3(MEGA_SCALE, MEGA_SCALE, MEGA_SCALE);
@@ -14,6 +15,10 @@ const _scaleNormal = new THREE.Vector3(1, 1, 1);
 const CAR_HALF = 1.5;
 // Muzzle distance for mega shots - just past the enlarged nose.
 const MEGA_PROJECTILE_FRONT_OFFSET = 6.5;
+const STATIONARY_UPDATE_INTERVAL_MS = 1000;
+const POWERUP_KEYS = ['speed', 'size', 'jump', 'shield', 'magnet', 'ghost'] as const;
+const _nametagPosition = new THREE.Vector3();
+
 
 // Cached VW logo texture
 let _vwLogoTexture: THREE.CanvasTexture | null = null;
@@ -138,6 +143,18 @@ export class Bulli {
     wheels: THREE.Group[] = [];
     nametag?: HTMLDivElement;
     healthBarFill?: HTMLDivElement;
+    private _ownedGeometries = new Set<THREE.BufferGeometry>();
+    private _ownedMaterials = new Set<THREE.Material>();
+    private _ownedTextures = new Set<THREE.Texture>();
+    private _disposed = false;
+    private _hasSentUpdate = false;
+    private _lastUpdateSentAt = -Infinity;
+    private _lastSentMoving = false;
+    private _lastSentIsFlipping = false;
+    private _lastSentGhostActive = false;
+    private _lastSentShieldActive = false;
+    private _lastSentMegaActive = false;
+
 
     constructor(colorCode = 0xD32F2F, isLocal = false, carType?: CarType) {
         this.group = new THREE.Group();
@@ -150,6 +167,21 @@ export class Bulli {
         this.pitchOffset = 0.8 + Math.random() * 0.7;
 
         this.buildCar();
+        this.flipGroup.traverse((child) => {
+            const mesh = child as THREE.Mesh;
+            if (!mesh.isMesh) return;
+            this._ownedGeometries.add(mesh.geometry);
+            const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+            for (const material of materials) this._ownedMaterials.add(material);
+            for (const material of materials) {
+                for (const value of Object.values(material)) {
+                    const texture = value as THREE.Texture;
+                    if (texture?.isTexture && texture !== _vwLogoTexture) {
+                        this._ownedTextures.add(texture);
+                    }
+                }
+            }
+        });
     }
 
     createNametag(name: string, isLocal: boolean) {
@@ -252,7 +284,7 @@ export class Bulli {
             return;
         }
 
-        const pos = this.group.position.clone();
+        const pos = _nametagPosition.copy(this.group.position);
         pos.y += 4;
         pos.project(state.camera);
 
@@ -676,8 +708,8 @@ export class Bulli {
     update(dt: number) {
         this.updateNametag();
 
-        Object.keys(this.powerups).forEach(key => {
-            const p = this.powerups[key as keyof typeof this.powerups];
+        for (const key of POWERUP_KEYS) {
+            const p = this.powerups[key];
             if (p.active) {
                 p.timer -= dt;
                 if (p.timer <= 0) {
@@ -686,7 +718,7 @@ export class Bulli {
                     // ghost visuals are restored centrally by the _ghostVisualOn sync below
                 }
             }
-        });
+        }
 
         // Update shield visual
         if (this.shieldMesh) {
@@ -769,11 +801,7 @@ export class Bulli {
                 const duration = this.honk();
                 this.nextHonkTime = now + (duration * 1000) + 500;
 
-                if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-                    state.ws.send(JSON.stringify({
-                        type: 'honk'
-                    }));
-                }
+                sendToServer({ type: 'honk' });
             }
             state.inputs.f = false;
         }
@@ -921,20 +949,70 @@ export class Bulli {
             this.flipGroup.position.y = lift * this._jumpHeightFactor;
         }
 
-        if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-            state.ws.send(JSON.stringify({
-                type: 'update',
-                x: this.group.position.x,
-                z: this.group.position.z,
-                y: this.flipGroup.position.y,
-                angle: this.angle,
-                flipAngle: this.flipGroup.rotation.x,
-                isFlipping: this.isFlipping,
-                scale: this.group.scale.x,
-                ghostActive: this.powerups.ghost.active,
-                shieldActive: this.powerups.shield.active,
-                megaActive: this.powerups.size.active
-            }));
-        }
+        const targetScale = this.powerups.size.active ? MEGA_SCALE : 1;
+        const moving =
+            Math.abs(this.speed) > 0.001 ||
+            Math.abs(state.inputs.steer) > 0.001 ||
+            this.isFlipping ||
+            Math.abs(this.flipGroup.position.y) > 0.001 ||
+            Math.abs(this.group.scale.x - targetScale) > 0.001;
+        this.sendMovementSnapshot(performance.now(), moving);
+    }
+
+    private sendMovementSnapshot(now: number, moving: boolean) {
+        const ghostActive = this.powerups.ghost.active;
+        const shieldActive = this.powerups.shield.active;
+        const megaActive = this.powerups.size.active;
+        const stateChanged =
+            !this._hasSentUpdate ||
+            moving !== this._lastSentMoving ||
+            this.isFlipping !== this._lastSentIsFlipping ||
+            ghostActive !== this._lastSentGhostActive ||
+            shieldActive !== this._lastSentShieldActive ||
+            megaActive !== this._lastSentMegaActive;
+        const interval = moving ? UPDATE_SEND_INTERVAL_MS : STATIONARY_UPDATE_INTERVAL_MS;
+        if (!stateChanged && now - this._lastUpdateSentAt < interval) return;
+
+        if (!sendToServer({
+            type: 'update',
+            x: this.group.position.x,
+            z: this.group.position.z,
+            y: this.flipGroup.position.y,
+            angle: this.angle,
+            flipAngle: this.flipGroup.rotation.x,
+            isFlipping: this.isFlipping,
+            scale: this.group.scale.x,
+            ghostActive,
+            shieldActive,
+            megaActive
+        })) return;
+
+        this._hasSentUpdate = true;
+        this._lastUpdateSentAt = now;
+        this._lastSentMoving = moving;
+        this._lastSentIsFlipping = this.isFlipping;
+        this._lastSentGhostActive = ghostActive;
+        this._lastSentShieldActive = shieldActive;
+        this._lastSentMegaActive = megaActive;
+    }
+
+    dispose() {
+        if (this._disposed) return;
+        this._disposed = true;
+
+        this.nametag?.remove();
+        this.nametag = undefined;
+        this.healthBarFill = undefined;
+        this._ghostMaterialStates.clear();
+        this._ghostMeshStates.clear();
+
+        for (const geometry of this._ownedGeometries) geometry.dispose();
+        for (const material of this._ownedMaterials) material.dispose();
+        for (const texture of this._ownedTextures) texture.dispose();
+        this._ownedGeometries.clear();
+        this._ownedMaterials.clear();
+        this.wheels.length = 0;
+        this._ownedTextures.clear();
+        this.group.clear();
     }
 }

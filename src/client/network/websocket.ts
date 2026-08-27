@@ -15,6 +15,10 @@ import { addKillfeedEntry } from '../ui/hud.js';
 import { initMinimap } from '../ui/minimap.js';
 import { releaseKeyboardInputs } from '../controls/keyboard.js';
 import { resetMobileControls } from '../controls/mobile.js';
+import { sendToServer } from './socket.js';
+
+let environmentInitialized = false;
+let cityInitialized = false;
 
 export function initWebSocket() {
     state.ws = new WebSocket(CONFIG.serverUrl);
@@ -51,7 +55,10 @@ export function initWebSocket() {
                 frequency3: 0.045,
                 amplitude3: 1.2
             };
-            createEnvironment([]); 
+            if (!environmentInitialized) {
+                createEnvironment([]);
+                environmentInitialized = true;
+            }
             
             const savedName = localStorage.getItem('bulli-player-name');
             createLocalPlayer(0xD32F2F, savedName || "Offline");
@@ -69,21 +76,27 @@ function handleServerMessage(data: ServerMessage) {
             const savedName = localStorage.getItem('bulli-player-name');
             if (savedName) {
                 state.myName = savedName;
-                state.ws?.send(JSON.stringify({
+                sendToServer({
                     type: 'rename',
                     name: state.myName
-                }));
+                });
             } else {
                 state.myName = data.name;
             }
 
             if (data.terrain) {
                 state.terrainConfig = data.terrain;
-                createEnvironment(data.trees);
+                if (!environmentInitialized) {
+                    createEnvironment(data.trees);
+                    environmentInitialized = true;
+                }
             }
-            
+
             if (data.city) {
-                createCity(data.city);
+                if (!cityInitialized) {
+                    createCity(data.city);
+                    cityInitialized = true;
+                }
                 initMinimap(data.city);
             }
             
@@ -414,9 +427,10 @@ export function addRemotePlayer(p: PlayerData) {
 }
 
 export function removeRemotePlayer(id: string) {
-    if (state.remotePlayers[id]) {
-        state.scene.remove(state.remotePlayers[id].group);
-        if (state.remotePlayers[id].nametag) state.remotePlayers[id].nametag!.remove();
+    const remote = state.remotePlayers[id];
+    if (remote) {
+        state.scene.remove(remote.group);
+        remote.dispose();
         delete state.remotePlayers[id];
         updateScoreboardUI();
     }

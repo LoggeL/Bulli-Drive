@@ -3,6 +3,7 @@ import { ServerMessage } from '../shared/protocol.js';
 import { players, getScoreboard } from './state.js';
 
 let wss: WebSocketServer | undefined;
+const UPDATE_BACKPRESSURE_LIMIT_BYTES = 256 * 1024;
 
 export function setWss(server: WebSocketServer) {
     wss = server;
@@ -21,8 +22,10 @@ export function broadcast(data: ServerMessage, excludeId?: string) {
     if (!wss) return;
     const msg = JSON.stringify(data);
     const excludeWs = excludeId ? players[excludeId]?.ws : undefined;
+    const isUpdate = data.type === 'update';
     wss.clients.forEach((client) => {
         if (client === excludeWs) return;
+        if (isUpdate && client.bufferedAmount > UPDATE_BACKPRESSURE_LIMIT_BYTES) return;
         safeSend(client as WebSocket, msg);
     });
 }

@@ -2,8 +2,10 @@ import { Powerup, Tree, Coin, CityData } from './types.js';
 import { POWERUP_TYPES, CITY_LAYOUT } from '../shared/constants.js';
 
 export const powerups: Powerup[] = [];
+export const powerupsById = new Map<number, Powerup>();
 export const trees: Tree[] = [];
 export const coins: Coin[] = [];
+export const coinsById = new Map<number, Coin>();
 export const cityData: CityData = { buildings: [], roads: [] };
 
 type RandomSource = () => number;
@@ -176,8 +178,10 @@ export function initWorld() {
     // initWorld is deliberately re-entrant: never append a second copy of the
     // map or retain collected state when regenerating it.
     powerups.length = 0;
+    powerupsById.clear();
     trees.length = 0;
     coins.length = 0;
+    coinsById.clear();
     cityData.buildings.length = 0;
     cityData.roads.length = 0;
 
@@ -192,7 +196,7 @@ export function initWorld() {
         const spot = placeWithRejection(300, 30, random, (x, z) =>
             (isInCityArea(x, z) && !isOnRoad(x, z)) || (x * x + z * z) > 150 * 150);
 
-        powerups.push({
+        const powerup: Powerup = {
             id: i,
             x: spot.x,
             z: spot.z,
@@ -200,7 +204,9 @@ export function initWorld() {
             color: type.color,
             label: type.label,
             collected: false
-        });
+        };
+        powerups.push(powerup);
+        powerupsById.set(powerup.id, powerup);
     }
 
     // Init Coins: spread across the playable area (within ~140 of center),
@@ -209,12 +215,14 @@ export function initWorld() {
         const spot = placeWithRejection(280, 30, random, (x, z) =>
             (Math.abs(x) < 25 && Math.abs(z) < 25) || (isInCityArea(x, z) && !isOnRoad(x, z)));
 
-        coins.push({
+        const coin: Coin = {
             id: i,
             x: spot.x,
             z: spot.z,
             collected: false
-        });
+        };
+        coins.push(coin);
+        coinsById.set(coin.id, coin);
     }
 
     // Init Trees (outside city area; skip the tree if no valid spot was found)
