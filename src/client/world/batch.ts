@@ -12,8 +12,10 @@ export interface BoxUv {
     box: number;
 }
 
-// Attributes a part keeps (cardUv: position inside a foliage card)
-const KEPT_ATTRIBUTES = new Set(['position', 'normal', 'uv', 'color', 'cardUv']);
+// Attributes a part keeps (cardUv: position inside a foliage card, wind:
+// sway weights of palms, surface: finish of street furniture). Every part of
+// one batch must carry the same set (mergeGeometries).
+const KEPT_ATTRIBUTES = new Set(['position', 'normal', 'uv', 'color', 'cardUv', 'wind', 'surface']);
 
 const _v = new THREE.Vector3();
 const _n = new THREE.Vector3();

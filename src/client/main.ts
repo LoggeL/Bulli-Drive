@@ -13,7 +13,7 @@ import { checkPowerupCollection, animatePowerups } from './world/powerups.js';
 import { updatePowerupsUI, updateSpeedometer, updateHealthBar, updateDriveHud } from './ui/hud.js';
 import { updateProjectiles } from './world/projectiles.js';
 import { initSplashScreen, initAboutModal } from './ui/screens.js';
-import { animateFountain } from './world/city.js';
+import { updatePalms } from './world/palms.js';
 import { updateMinimap } from './ui/minimap.js';
 import { SPEED_BOOST_FACTOR } from '../shared/constants.js';
 import { Bulli, type CarType } from './entities/Bulli.js';
@@ -338,7 +338,6 @@ function animate(frameTime: number) {
     // Animate world objects
     animateCoins(time);
     animatePowerups(time);
-    animateFountain(time);
 
     // Update remote players (smoothness)
     for (const id in state.remotePlayers) {
@@ -465,6 +464,8 @@ function animate(frameTime: number) {
     if (state.renderer && state.scene && state.camera && !isWebGLContextLost()) {
         updateWorldShaders(state.clock.elapsedTime);
         updateLighting();
+        // Near geometry or impostor per palm, for the final camera
+        updatePalms(state.camera);
         renderQuality.update(frameTime);
         // Counters include the shadow pass (perf overlay, e2e snapshot)
         renderFrame(state.renderer, state.scene, state.camera);

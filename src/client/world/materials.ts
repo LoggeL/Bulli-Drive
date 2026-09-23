@@ -29,8 +29,8 @@ export interface WorldMaterials {
     gravel: THREE.Material;
     storefront: THREE.Material;
     fabric: THREE.Material;
-    props: THREE.Material;
-    emissive: THREE.Material;
+    furniture: THREE.Material;
+    pavers: THREE.Material;
     terrain: THREE.Material;
     rock: THREE.Material;
     trunk: THREE.Material;
@@ -39,7 +39,17 @@ export interface WorldMaterials {
     tree: THREE.Material;
     shrub: THREE.Material;
     water: THREE.Material;
+    fountainWater: THREE.Material;
+    falls: THREE.Material;
 }
+
+/**
+ * Fountain of the plaza for the fountain water shader: x, z of its axis and
+ * the height of its foot (set by city.ts).
+ */
+export const FOUNTAIN_UNIFORMS = {
+    uFountain: { value: new THREE.Vector3() }
+};
 
 interface PatchOptions {
     // Macro color variation (strength) and its scale in meters
@@ -66,7 +76,69 @@ interface PatchOptions {
     // where the averaged alpha of the low mip levels would let the whole
     // card rectangle pass, the cut-out becomes a soft rounded crown
     cardMask?: boolean;
+    // Code after metalnessmap_fragment (metalnessFactor)
+    metal?: string;
+    // Code after emissivemap_fragment (totalEmissiveRadiance)
+    emissive?: string;
+    // Vertex shader: declarations, and code after begin_vertex (may move
+    // `transformed`, in object space before the instance matrix)
+    vertexDecl?: string;
+    vertex?: string;
+    // Palm sway and leaf flutter from the `wind` attribute (see WIND_GLSL)
+    wind?: boolean;
+    // Street furniture finish from the `surface` attribute (see SURFACE_*)
+    surface?: boolean;
 }
+
+// Wind (palms): `wind` = (bend, flutter, phase). bend (0 at the foot, 1 at the
+// crown) sways the whole palm, flutter (0 at a leaf's base, 1 at its tip)
+// moves the leaves on their own; phase decorrelates the leaves, the instance
+// position the palms. Object space (before the instance matrix), so each
+// palm sways in its own direction; meters at scale 1.
+const WIND_GLSL = /* glsl */`
+	{
+		float windPhase = 0.0;
+		#ifdef USE_INSTANCING
+		windPhase = dot( instanceMatrix[ 3 ].xz, vec2( 0.071, 0.113 ) );
+		#endif
+		float sway = sin( uTime * 0.83 + windPhase ) * 0.6 + sin( uTime * 1.37 + windPhase * 1.7 ) * 0.3 + sin( uTime * 2.9 + windPhase * 0.4 ) * 0.1;
+		transformed.xz += vec2( 0.8, 0.6 ) * ( sway * wind.x * 0.2 );
+		float flutter = sin( uTime * 3.3 + wind.z * 6.283 + windPhase ) * 0.7 + sin( uTime * 5.3 + wind.z * 11.0 ) * 0.3;
+		transformed.y += flutter * wind.y * 0.11;
+		transformed.xz += vec2( -0.6, 0.8 ) * ( flutter * wind.y * 0.05 );
+	}`;
+
+// Street furniture: `surface` = (roughness, metalness, emission, signal).
+// signal > 0 marks a traffic light lens: 1 + lamp (0 red, 1 yellow, 2 green)
+// + 3 * axis. Both axes run a 40 s cycle (16 s green, 3.5 s yellow, then
+// red), half a cycle apart, with a short all red between them.
+const SURFACE_VERTEX_DECL = 'attribute vec4 surface;\nvarying vec4 vSurface;';
+// The axis of a traffic light follows from its instance: signal heads on an
+// arm along x control the traffic along z (axis 0), and the other way round
+const SURFACE_VERTEX = /* glsl */`
+	vSurface = surface;
+	#ifdef USE_INSTANCING
+	if ( surface.w > 0.5 && abs( instanceMatrix[ 0 ].z ) > abs( instanceMatrix[ 0 ].x ) ) vSurface.w += 3.0;
+	#endif`;
+const SURFACE_FRAGMENT_DECL = 'varying vec4 vSurface;\nfloat signalLit = 1.0;';
+const SURFACE_COLOR = /* glsl */`
+	if ( vSurface.w > 0.5 ) {
+		float code = vSurface.w - 1.0;
+		float axis = floor( code / 3.0 + 0.01 );
+		float lamp = code - axis * 3.0;
+		float phase = mod( uTime + axis * 20.0, 40.0 );
+		float lit = phase < 16.0 ? 2.0 : ( phase < 19.5 ? 1.0 : 0.0 );
+		signalLit = 1.0 - step( 0.5, abs( lamp - lit ) );
+		// A dark lens is tinted glass, a lit one glows
+		diffuseColor.rgb *= mix( 0.12, 1.0, signalLit );
+	}`;
+const SURFACE_ROUGH = /* glsl */`
+	{
+		float n = texture2D( uNoise, vWPos.xz / 2.3 + vWPos.y * 0.37 ).g;
+		roughnessFactor = clamp( vSurface.x * ( 0.8 + 0.4 * n ), 0.04, 1.0 );
+	}`;
+const SURFACE_METAL = 'metalnessFactor = vSurface.y;';
+const SURFACE_EMISSIVE = 'totalEmissiveRadiance += diffuseColor.rgb * vSurface.z * signalLit;';
 
 const MACRO = (strength: number, scale: number) => /* glsl */`
 	{
@@ -81,13 +153,24 @@ const MACRO = (strength: number, scale: number) => /* glsl */`
  */
 export function patchWorldMaterial<T extends THREE.Material>(material: T, options: PatchOptions = {}): T {
     const key = 'bulli-world:' + JSON.stringify(options, (k, v) => (k === 'uniforms' ? Object.keys(v) : v));
+    const vertexDecl = [options.vertexDecl ?? ''];
+    const vertexCode = [options.vertex ?? ''];
+    if (options.wind) {
+        vertexDecl.push('attribute vec3 wind;');
+        vertexCode.push(WIND_GLSL);
+    }
+    if (options.surface) {
+        vertexDecl.push(SURFACE_VERTEX_DECL);
+        vertexCode.push(SURFACE_VERTEX);
+    }
     material.onBeforeCompile = shader => {
         Object.assign(shader.uniforms, WORLD_UNIFORMS, options.uniforms ?? {});
         shader.vertexShader = shader.vertexShader
-            .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;' + (options.cardMask
+            .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nuniform float uTime;\n' + vertexDecl.join('\n') + (options.cardMask
                 ? '\nattribute vec2 cardUv;\nvarying vec2 vCardUv;'
                 : ''))
             .replace('#include <uv_vertex>', '#include <uv_vertex>' + (options.cardMask ? '\nvCardUv = cardUv;' : ''))
+            .replace('#include <begin_vertex>', '#include <begin_vertex>\n' + vertexCode.join('\n'))
             .replace('#include <project_vertex>', /* glsl */`#include <project_vertex>
 	{
 		vec4 worldPosition4 = vec4( transformed, 1.0 );
@@ -103,10 +186,12 @@ uniform sampler2D uNoise;
 uniform float uTime;
 varying vec3 vWPos;
 ${options.cardMask ? 'varying vec2 vCardUv;' : ''}
+${options.surface ? SURFACE_FRAGMENT_DECL : ''}
 ${options.decl ?? ''}`);
         const colorBlocks: string[] = [];
         if (options.macro) colorBlocks.push(MACRO(options.macro, options.macroScale ?? 60));
         if (options.baseAO) colorBlocks.push(`diffuseColor.rgb *= mix( ${options.baseAO.toFixed(2)}, 1.0, smoothstep( 0.1, 1.4, vWPos.y ) );`);
+        if (options.surface) colorBlocks.push(SURFACE_COLOR);
         if (options.color) colorBlocks.push(options.color);
         const colorFragment = options.tintMask
             ? /* glsl */`
@@ -116,7 +201,12 @@ ${options.decl ?? ''}`);
 	diffuseColor.a = 1.0;`
             : '#include <color_fragment>';
         f = f.replace('#include <color_fragment>', colorFragment + '\n' + colorBlocks.join('\n'));
-        if (options.rough) f = f.replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n' + options.rough);
+        const rough = [options.surface ? SURFACE_ROUGH : '', options.rough ?? ''].join('\n');
+        const metal = [options.surface ? SURFACE_METAL : '', options.metal ?? ''].join('\n');
+        const emissive = [options.surface ? SURFACE_EMISSIVE : '', options.emissive ?? ''].join('\n');
+        f = f.replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n' + rough);
+        f = f.replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\n' + metal);
+        f = f.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + emissive);
         if (options.normal) f = f.replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n' + options.normal);
         if (options.alphaCoverage) {
             // Raise alpha per mip level so cards do not thin out in the
@@ -202,7 +292,11 @@ const MEAN_ALBEDO: Record<string, number> = {
 // What survives of the shader blocks on the software tier: only what the
 // look depends on (facade tint mask, foliage cut-outs)
 function leanOptions(options: PatchOptions): PatchOptions {
-    return { tintMask: options.tintMask, alphaCoverage: options.alphaCoverage, cardMask: options.cardMask };
+    return {
+        tintMask: options.tintMask, alphaCoverage: options.alphaCoverage, cardMask: options.cardMask,
+        // Traffic light lenses and lamp globes (emission only)
+        surface: options.surface
+    };
 }
 
 export function createWorldMaterials(tier: RenderTier): WorldMaterials {
@@ -223,7 +317,9 @@ export function createWorldMaterials(tier: RenderTier): WorldMaterials {
 
     // Standard material, or Lambert on the software tier (map, vertex colors,
     // emissive and alpha test carry over; the PBR maps are dropped)
-    const surface = (params: THREE.MeshStandardMaterialParameters & { normalScale?: THREE.Vector2 }): THREE.Material => {
+    const surface = (all: THREE.MeshStandardMaterialParameters & { normalScale?: THREE.Vector2 }): THREE.Material => {
+        // Unset maps of the tier stay out (three warns about undefined values)
+        const params = Object.fromEntries(Object.entries(all).filter(([, value]) => value !== undefined)) as typeof all;
         if (!software) return new THREE.MeshStandardMaterial(params);
         const lambert: THREE.MeshLambertMaterialParameters = {
             map: params.map,
@@ -240,7 +336,7 @@ export function createWorldMaterials(tier: RenderTier): WorldMaterials {
             polygonOffsetFactor: params.polygonOffsetFactor,
             polygonOffsetUnits: params.polygonOffsetUnits
         };
-        return new THREE.MeshLambertMaterial(lambert);
+        return new THREE.MeshLambertMaterial(Object.fromEntries(Object.entries(lambert).filter(([, value]) => value !== undefined)));
     };
     const withPbr = (set: PbrSet, extra: THREE.MeshStandardMaterialParameters = {}) => surface({
         map: set.map,
@@ -439,16 +535,50 @@ export function createWorldMaterials(tier: RenderTier): WorldMaterials {
         envMapIntensity: 0.6
     }), { translucency: 0.35, macro: 0.08, macroScale: 5 });
 
-    // Street furniture in vertex colors
-    M.props = patch(surface({
+    // Street furniture (instanced kinds and the merged plaza/park props):
+    // color from the vertex colors, roughness, metalness, emission and
+    // traffic light lenses from the `surface` attribute (furniture.ts).
+    // Double sided for the open visors and lathe profiles.
+    M.furniture = patch(surface({
         vertexColors: true,
-        roughness: 0.5,
+        roughness: 1,
         metalness: 0,
-        envMapIntensity: 0.9
-    }), { macro: 0.06, macroScale: 3 });
+        envMapIntensity: 1.0,
+        side: THREE.DoubleSide
+    }), { surface: true, baseAO: 0.8, macro: 0.05, macroScale: 3 });
 
-    // Lamp cores and signals (vertex colors may exceed 1)
-    M.emissive = new THREE.MeshBasicMaterial({ vertexColors: true });
+    // Plaza: Saltillo style terracotta pavers, 60 cm, in the concrete PBR set
+    // with a per tile tint and mortar joints
+    M.pavers = patch(withPbr(pbr('sidewalk'), {
+        vertexColors: true,
+        envMapIntensity: 0.6,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1
+    }), {
+        macro: 0.1,
+        macroScale: 24,
+        baseAO: 0.9,
+        decl: 'float paverJoint = 1.0;',
+        color: /* glsl */`
+	{
+		vec2 q = vWPos.xz / 0.61;
+		vec2 id = floor( q );
+		vec4 h = textureLod( uNoise, ( id + 0.5 ) / 256.0, 0.0 );
+		vec3 tile = mix( vec3( 0.66, 0.4, 0.26 ), vec3( 0.78, 0.55, 0.38 ), h.r );
+		tile = mix( tile, vec3( 0.56, 0.31, 0.18 ), smoothstep( 0.75, 0.95, h.g ) * 0.7 );
+		tile = mix( tile, vec3( 0.84, 0.68, 0.52 ), smoothstep( 0.8, 0.97, h.b ) * 0.6 );
+		vec2 fw = fwidth( q ) * 1.2;
+		vec2 gd = abs( fract( q ) - 0.5 );
+		paverJoint = 1.0 - smoothstep( 0.5 - 0.022 - fw.x, 0.5 - 0.006, max( gd.x, gd.y ) );
+		// Worn, darker edges of each tile
+		float edge = smoothstep( 0.3, 0.48, max( gd.x, gd.y ) );
+		tile *= 1.0 - 0.12 * edge;
+		diffuseColor.rgb = mix( diffuseColor.rgb * vec3( 0.93, 0.88, 0.8 ) * 0.85, diffuseColor.rgb * tile * 1.6, paverJoint );
+	}`,
+        rough: 'roughnessFactor = clamp( mix( 0.95, roughnessFactor * 0.85, paverJoint ), 0.3, 1.0 );'
+    });
+
 
     // Terrain: dry golden grass with olive chaparral patches and bare earth
     // (vertex colors carry the large scale splat), rock on steep slopes
@@ -496,7 +626,7 @@ export function createWorldMaterials(tier: RenderTier): WorldMaterials {
     }), { macro: 0.1, macroScale: 7 });
 
     // Palms and trees: cut-out cards with alpha to coverage where MSAA is on
-    const card = (name: string, extra: THREE.MeshStandardMaterialParameters, translucency: number, cardMask = false) => {
+    const card = (name: string, extra: THREE.MeshStandardMaterialParameters, translucency: number, cardMask = false, wind = false) => {
         const map = worldTexture(name, { repeat: false });
         const material = surface({
             map,
@@ -507,7 +637,7 @@ export function createWorldMaterials(tier: RenderTier): WorldMaterials {
             ...extra
         });
         material.alphaToCoverage = !software;
-        return patch(material, { translucency, alphaCoverage: true, cardMask });
+        return patch(material, { translucency, alphaCoverage: true, cardMask, wind });
     };
     M.trunk = patch(surface({
         map: worldTexture('generated/palm_trunk'),
@@ -517,9 +647,9 @@ export function createWorldMaterials(tier: RenderTier): WorldMaterials {
         roughness: 0.95,
         metalness: 0,
         envMapIntensity: 0.7
-    }), {});
-    M.fan = card('generated/fan_fronds', { alphaTest: 0.5, roughness: 0.7 }, 0.14);
-    M.frond = card('generated/palm_fronds', { alphaTest: 0.45, roughness: 0.75 }, 0.3);
+    }), { wind: true });
+    M.fan = card('generated/fan_fronds', { alphaTest: 0.5, roughness: 0.66 }, 0.3, false, true);
+    M.frond = card('generated/palm_fronds', { alphaTest: 0.45, roughness: 0.72 }, 0.34, false, true);
     M.tree = card('generated/tree_cards', { alphaTest: 0.5, roughness: 0.85, envMapIntensity: 0.5 }, 0.35, true);
     M.shrub = card('generated/shrubs', { alphaTest: 0.45, roughness: 0.8 }, 0.5, true);
 
@@ -539,6 +669,66 @@ export function createWorldMaterials(tier: RenderTier): WorldMaterials {
 		normal = normalize( ( viewMatrix * vec4( normalize( vec3( -g.x, 1.0, -g.y ) ), 0.0 ) ).xyz );
 	}`
     });
+
+    // Fountain water: rings of ripples and foam where the falling water hits
+    // the basin, the lower bowl and the top bowl (heights above the foot)
+    const FOUNTAIN_RING = /* glsl */`
+		vec2 fountainOffset = vWPos.xz - uFountain.xy;
+		float fountainR = length( fountainOffset ) + 1e-4;
+		float fountainH = vWPos.y - uFountain.z;
+		float fountainRing = fountainH < 1.5 ? 2.2 : ( fountainH < 2.9 ? 1.02 : 0.08 );`;
+    M.fountainWater = patch(surface({
+        color: new THREE.Color(0.04, 0.12, 0.13),
+        roughness: 0.06,
+        metalness: 0,
+        envMapIntensity: 1.0
+    }), {
+        uniforms: FOUNTAIN_UNIFORMS,
+        decl: 'uniform vec3 uFountain;\nfloat waterFoam = 0.0;',
+        color: /* glsl */`
+	{
+		${FOUNTAIN_RING}
+		float n = texture2D( uNoise, vWPos.xz / 0.9 + vec2( 0.0, uTime * 0.25 ) ).r;
+		waterFoam = smoothstep( 0.6, 0.0, abs( fountainR - fountainRing ) ) * ( 0.45 + 0.55 * n );
+		diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.72, 0.78, 0.78 ), waterFoam * 0.6 );
+	}`,
+        rough: 'roughnessFactor = mix( roughnessFactor, 0.45, waterFoam );',
+        normal: /* glsl */`
+	{
+		${FOUNTAIN_RING}
+		vec2 p = vWPos.xz;
+		vec2 g = vec2( cos( dot( p, vec2( 0.8, 0.6 ) ) * 2.3 + uTime * 1.7 ), cos( dot( p, vec2( -0.3, 0.95 ) ) * 3.1 + uTime * 2.3 ) ) * 0.04;
+		vec4 nz = texture2D( uNoise, p / 1.7 + vec2( uTime * 0.05, 0.0 ) ) - 0.5;
+		g += nz.gb * 0.12;
+		g += ( fountainOffset / fountainR ) * sin( ( fountainR - fountainRing ) * 11.0 - uTime * 6.5 ) * 0.2 * exp( -abs( fountainR - fountainRing ) * 1.3 );
+		normal = normalize( ( viewMatrix * vec4( normalize( vec3( -g.x, 1.0, -g.y ) ), 0.0 ) ).xyz );
+	}`
+    });
+
+    // Falling water sheets and the jet of the fountain: streaks running
+    // down, whiter and denser at the bottom (lathe UVs: y along the fall)
+    M.falls = patchWorldMaterial(surface({
+        color: new THREE.Color(0.7, 0.8, 0.84),
+        roughness: 0.06,
+        metalness: 0,
+        envMapIntensity: 1.1,
+        transparent: true,
+        side: THREE.DoubleSide
+    }), {
+        vertexDecl: 'varying vec2 vFallUv;',
+        vertex: 'vFallUv = uv;',
+        decl: 'varying vec2 vFallUv;',
+        color: /* glsl */`
+	{
+		float s1 = texture2D( uNoise, vec2( vFallUv.x * 9.0, vFallUv.y * 0.5 - uTime * 0.9 ) ).r;
+		float s2 = texture2D( uNoise, vec2( vFallUv.x * 19.0 + 0.3, vFallUv.y * 0.9 - uTime * 1.6 ) ).g;
+		float streak = smoothstep( 0.32, 0.8, s1 * 0.6 + s2 * 0.4 );
+		float foam = smoothstep( 0.55, 1.0, vFallUv.y );
+		diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.93, 0.95, 0.96 ), streak * 0.45 + foam * 0.45 );
+		diffuseColor.a = clamp( 0.08 + 0.5 * streak + 0.25 * foam, 0.0, 0.8 ) * smoothstep( 0.0, 0.05, vFallUv.y );
+	}`
+    });
+    M.falls.depthWrite = false;
 
     return M;
 }
