@@ -8,6 +8,7 @@ import { getTerrainHeight } from '../world/environment.js';
 import { LEGACY_CAR_MAX_SPEED, MEGA_SCALE, SPEED_BOOST_FACTOR, UPDATE_SEND_INTERVAL_MS } from '../../shared/constants.js';
 import { sendToServer } from '../network/socket.js';
 import { CarModel, randomCarType, type CarType } from '../vehicle/CarModel.js';
+import { Nametag } from '../vehicle/Nametag.js';
 
 // Reusable vectors to avoid per-frame allocations
 const _scaleBig = new THREE.Vector3(MEGA_SCALE, MEGA_SCALE, MEGA_SCALE);
@@ -18,7 +19,6 @@ const CAR_HALF = 1.5;
 const MEGA_PROJECTILE_FRONT_OFFSET = 6.5;
 const STATIONARY_UPDATE_INTERVAL_MS = 1000;
 const POWERUP_KEYS = ['speed', 'size', 'jump', 'shield', 'magnet', 'ghost'] as const;
-const _nametagPosition = new THREE.Vector3();
 
 
 export { randomCarType, type CarType };
@@ -57,6 +57,9 @@ export class Bulli {
     private _jumpHeightFactor: number = 8;
     shieldMesh?: THREE.Mesh;
     wheels: THREE.Group[];
+    // Remote cars only. nametag/healthBarFill are the tag's elements, kept
+    // for the code that restyles them (AFK badge, rename)
+    private tag?: Nametag;
     nametag?: HTMLDivElement;
     healthBarFill?: HTMLDivElement;
     private _disposed = false;
@@ -88,68 +91,30 @@ export class Bulli {
         // hiding its duplicate label keeps the road and vehicle unobstructed.
         if (isLocal) return;
 
-        this.nametag = document.createElement('div');
-        this.nametag.className = 'nametag';
-
-        const nameSpan = document.createElement('span');
-        nameSpan.className = 'nametag-name';
-        nameSpan.textContent = name;
-        this.nametag.appendChild(nameSpan);
-
-        const hpBar = document.createElement('div');
-        hpBar.className = 'nametag-hp';
-        const hpFill = document.createElement('div');
-        hpFill.className = 'nametag-hp-fill';
-        hpBar.appendChild(hpFill);
-        this.nametag.appendChild(hpBar);
-        this.healthBarFill = hpFill;
-
-        document.body.appendChild(this.nametag);
+        this.tag = new Nametag(name);
+        this.nametag = this.tag.element;
+        this.healthBarFill = this.tag.healthBarFill;
     }
 
     updateHealthBar() {
-        if (!this.healthBarFill) return;
-        const pct = Math.max(0, Math.min(100, this.health));
-        this.healthBarFill.style.width = pct + '%';
-        if (pct > 50) {
-            this.healthBarFill.style.background = '#4CAF50';
-        } else if (pct > 25) {
-            this.healthBarFill.style.background = '#FF9800';
-        } else {
-            this.healthBarFill.style.background = '#f44336';
-        }
+        this.tag?.updateHealth(this.health);
     }
 
     setGhostVisual(active: boolean) {
         if (active === this.model.ghostVisualOn) return;
         this.model.setGhostVisual(active);
-        if (active && this.nametag) this.nametag.style.display = 'none';
+        if (active) this.tag?.hide();
         // nametag display restored by updateNametag
     }
 
     updateNametag() {
-        if (!this.nametag || !state.camera) return;
+        if (!this.tag || !state.camera) return;
         if (this.powerups.ghost.active) {
-            this.nametag.style.display = 'none';
+            this.tag.hide();
             return;
         }
-
-        const pos = _nametagPosition.copy(this.group.position);
-        pos.y += 4;
-        pos.project(state.camera);
-
-        const x = (pos.x * .5 + .5) * window.innerWidth;
-        const y = (pos.y * -.5 + .5) * window.innerHeight;
-        // pos.z > 1 means the point is behind the camera; also guard against
-        // non-finite projections (degenerate camera / off-screen NaN).
-        if (pos.z > 1 || !Number.isFinite(x) || !Number.isFinite(y)) {
-            this.nametag.style.display = 'none';
-        } else {
-            this.nametag.style.display = 'block';
-            this.nametag.style.transform = `translate(-50%, -100%) translate(${x}px, ${y}px)`;
-        }
+        this.tag.update(this.group.position, state.camera);
     }
-
 
     honk(): number {
         return playHonkSound(this.pitchOffset);
@@ -467,7 +432,8 @@ export class Bulli {
         if (this._disposed) return;
         this._disposed = true;
 
-        this.nametag?.remove();
+        this.tag?.remove();
+        this.tag = undefined;
         this.nametag = undefined;
         this.healthBarFill = undefined;
         this.model.dispose();
