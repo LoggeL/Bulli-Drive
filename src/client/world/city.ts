@@ -6,6 +6,7 @@ import { CITY_LAYOUT, PLAZA_PROP_LAYOUT } from '../../shared/constants.js';
 import { createWaterMaterial } from '../effects/worldShaders.js';
 import { positionHash } from '../../shared/math/rng.js';
 import { blockCenter, PARK_BLOCK, PLAZA_BLOCK, roadLineCenter } from '../../shared/world/cityGen.js';
+import { COLLIDER_TOPS } from '../../shared/world/colliders.js';
 
 const ROAD_COLOR = 0x3b3e41;
 const INTERSECTION_COLOR = 0x37393c;
@@ -734,7 +735,8 @@ function createBuildings(buildings: BuildingData[]) {
             x: building.x,
             z: building.z,
             halfWidth: building.width / 2,
-            halfDepth: building.depth / 2
+            halfDepth: building.depth / 2,
+            top: COLLIDER_TOPS.building
         });
     });
 }
@@ -824,7 +826,7 @@ function createPark() {
         benchGroup.position.set(pos.x, getTerrainHeight(pos.x, pos.z), pos.z);
         benchGroup.rotation.y = Math.atan2(parkX - pos.x, parkZ - pos.z);
         state.scene.add(benchGroup);
-        state.obstacles.push({ x: pos.x, z: pos.z, radius: 1.7 });
+        state.obstacles.push({ x: pos.x, z: pos.z, radius: 1.7, top: COLLIDER_TOPS.bench });
     });
 
     const parkTreePositions = [
@@ -861,7 +863,7 @@ function createPark() {
         state.scene.add(bed);
     });
 
-    state.obstacles.push({ x: parkX, z: parkZ, radius: 5.7 });
+    state.obstacles.push({ x: parkX, z: parkZ, radius: 5.7, top: COLLIDER_TOPS.pond });
 }
 
 function createParkTree(x: number, z: number) {
@@ -891,7 +893,7 @@ function createParkTree(x: number, z: number) {
     treeGroup.position.set(x, getTerrainHeight(x, z), z);
     state.scene.add(treeGroup);
 
-    state.obstacles.push({ x, z, radius: 1 });
+    state.obstacles.push({ x, z, radius: 1, top: COLLIDER_TOPS.parkTree });
 }
 
 function createPalmTree(x: number, z: number, salt: number) {
@@ -924,7 +926,7 @@ function createPalmTree(x: number, z: number, salt: number) {
 
     palm.position.set(x, getTerrainHeight(x, z), z);
     state.scene.add(palm);
-    state.obstacles.push({ x, z, radius: 1.0 });
+    state.obstacles.push({ x, z, radius: 1.0, top: COLLIDER_TOPS.palm });
 }
 
 function createStreetDetails() {
@@ -961,7 +963,7 @@ function createStreetDetails() {
         light.position.set(x, getTerrainHeight(x, z), z);
         light.rotation.y = rotation;
         state.scene.add(light);
-        state.obstacles.push({ x, z, radius: 0.7 });
+        state.obstacles.push({ x, z, radius: 0.7, top: COLLIDER_TOPS.lamp });
     }
 
     for (let bx = 0; bx < gridSize; bx++) {
@@ -1033,7 +1035,8 @@ function createDistrictSigns() {
             state.obstacles.push({
                 x: x + Math.cos(rotation) * postX,
                 z: z - Math.sin(rotation) * postX,
-                radius: 0.35
+                radius: 0.35,
+                top: COLLIDER_TOPS.signPost
             });
         }
 
@@ -1171,7 +1174,7 @@ function createPlaza() {
         const planterZ = plazaZ + offset.z;
         planter.position.set(planterX, terrainAtFountain + 0.04, planterZ);
         state.scene.add(planter);
-        state.obstacles.push({ x: planterX, z: planterZ, radius: PLAZA_PROP_LAYOUT.planterRadius });
+        state.obstacles.push({ x: planterX, z: planterZ, radius: PLAZA_PROP_LAYOUT.planterRadius, top: COLLIDER_TOPS.planter });
 
         const parasol = new THREE.Group();
         const pole = new THREE.Mesh(
@@ -1191,11 +1194,11 @@ function createPlaza() {
         const parasolZ = plazaZ + Math.sign(offset.z) * PLAZA_PROP_LAYOUT.parasolOffset;
         parasol.position.set(parasolX, terrainAtFountain + 0.04, parasolZ);
         state.scene.add(parasol);
-        state.obstacles.push({ x: parasolX, z: parasolZ, radius: PLAZA_PROP_LAYOUT.parasolRadius });
+        state.obstacles.push({ x: parasolX, z: parasolZ, radius: PLAZA_PROP_LAYOUT.parasolRadius, top: COLLIDER_TOPS.parasol });
     });
 
     // Fountain as obstacle
-    state.obstacles.push({ x: plazaX, z: plazaZ, radius: 5 });
+    state.obstacles.push({ x: plazaX, z: plazaZ, radius: 5, top: COLLIDER_TOPS.fountain });
 }
 
 // 'time' is the elapsed time in seconds passed by main.ts; the real per-frame

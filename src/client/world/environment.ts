@@ -4,6 +4,7 @@ import type { TreeData } from '../../shared/protocol.js';
 import { mulberry32 } from '../../shared/math/rng.js';
 import { CITY_TERRAIN_AREA, getTerrainHeight as getSharedTerrainHeight } from '../../shared/world/terrain.js';
 import { createTerrainMaterial } from '../effects/worldShaders.js';
+import { COLLIDER_TOPS } from '../../shared/world/colliders.js';
 
 const SCENERY_SEED = 0x42554c4c; // "BULL"
 
@@ -133,7 +134,7 @@ export function createEnvironment(treeData: TreeData[]) {
         treeGroup.add(foliage2);
 
         state.scene.add(treeGroup);
-        state.obstacles.push({ x: t.x, z: t.z, radius: 1.5 });
+        state.obstacles.push({ x: t.x, z: t.z, radius: 1.5, top: COLLIDER_TOPS.tree });
     });
 
     // Scatter rocks across the terrain (reduced from 80 to 40)
@@ -169,7 +170,7 @@ export function createEnvironment(treeData: TreeData[]) {
 
         state.scene.add(rockGroup);
         if (rockSize > 1.2) {
-            state.obstacles.push({ x: rx, z: rz, radius: rockSize * 0.7 });
+            state.obstacles.push({ x: rx, z: rz, radius: rockSize * 0.7, top: COLLIDER_TOPS.rockPerSize * rockSize });
         }
     }
 
