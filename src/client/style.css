@@ -2379,3 +2379,32 @@ canvas {
 .context-lost-reload[hidden] {
     display: none;
 }
+
+/* ==========================================================================
+   PERF OVERLAY (?debug=perf only)
+   ========================================================================== */
+
+#perf-overlay {
+    position: fixed;
+    left: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 9500;
+    margin: 0;
+    padding: 6px 8px;
+    background: rgba(0, 0, 0, 0.65);
+    color: #9EF7A0;
+    font: 11px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    border-radius: 4px;
+    pointer-events: none;
+    white-space: pre;
+}
+
+@media (max-width: 768px), (pointer: coarse) {
+    /* Below the score pill, clear of the car in the middle of the screen */
+    #perf-overlay {
+        top: 180px;
+        transform: none;
+        font-size: 10px;
+    }
+}

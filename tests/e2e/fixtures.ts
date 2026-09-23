@@ -69,10 +69,11 @@ export function snapshot(page: Page): Promise<BulliDebugSnapshot> {
 /**
  * Walks through the real join flow: loading screen, splash screen with the
  * road name, START ENGINE. Resolves with the player's server id.
+ * extraQuery is appended to the URL, e.g. '&debug=perf'.
  */
-export async function joinGame(player: Player, name: string): Promise<string> {
+export async function joinGame(player: Player, name: string, extraQuery = ''): Promise<string> {
     const { page } = player;
-    await page.goto('/?e2e=1');
+    await page.goto(`/?e2e=1${extraQuery}`);
 
     // The loader is removed once the server's init message has built the world.
     await expect(page.locator('#loading-screen')).toHaveCount(0, { timeout: 60_000 });

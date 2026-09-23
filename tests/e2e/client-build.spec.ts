@@ -9,7 +9,7 @@ function countPageLoads(player: Player): () => number {
     return () => loads;
 }
 
-test('current build starts without reload and without the test hook', async ({ openPlayer }) => {
+test('current build starts without reload, test hook or perf overlay', async ({ openPlayer }) => {
     const player = await openPlayer('plain');
     const loads = countPageLoads(player);
     await player.page.goto('/');
@@ -22,6 +22,9 @@ test('current build starts without reload and without the test hook', async ({ o
     expect(pageVersion).toBe(serverVersion);
     expect(loads()).toBe(1);
     expect(await player.page.evaluate(() => '__bulliDebug' in window)).toBe(false);
+    // Nor the ?debug=perf overlay
+    expect(await player.page.evaluate(() => '__bulliPerf' in window)).toBe(false);
+    await expect(player.page.locator('#perf-overlay')).toHaveCount(0);
 });
 
 test('a stale page reloads exactly once, then starts', async ({ openPlayer }) => {

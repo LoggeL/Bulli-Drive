@@ -23,6 +23,7 @@ import { updateWorldShaders } from './effects/worldShaders.js';
 import { ensureCurrentBuild } from './buildVersion.js';
 import { installE2EHook } from './e2eHook.js';
 import { watchWebGLContext, isWebGLContextLost } from './ui/contextLoss.js';
+import { installPerfMonitor, type PerfMonitor } from './debug/perfMonitor.js';
 
 // Reusable chase-camera state/vectors to avoid per-frame allocations.
 const _cameraTarget = new THREE.Vector3();
@@ -35,6 +36,8 @@ let useMobileCameraEnvelope = false;
 
 let dirLight: THREE.DirectionalLight;
 let renderQuality: AdaptiveRenderQuality;
+// Only set with ?debug=perf (FPS/draw call/bandwidth overlay)
+let perfMonitor: PerfMonitor | null = null;
 
 // Mega ram cooldown per player
 const ramCooldowns: Record<string, number> = {};
@@ -152,6 +155,8 @@ function init() {
 
     // Test-only state probe, a no-op unless the page URL has ?e2e=1
     installE2EHook();
+    // Performance overlay, a no-op unless the page URL has ?debug=perf
+    perfMonitor = installPerfMonitor();
 
     // Start Loop
     requestAnimationFrame(animate);
@@ -246,6 +251,7 @@ function updateChaseCamera(
 
 function animate(frameTime: number) {
     requestAnimationFrame(animate);
+    perfMonitor?.beginFrame();
     const dt = state.clock.getDelta();
     const time = state.clock.elapsedTime;
     const nowMs = Date.now();
@@ -501,6 +507,7 @@ function animate(frameTime: number) {
         state.renderer.render(state.scene, state.camera);
     }
 
+    perfMonitor?.endFrame(frameTime);
 }
 
 // Start the game (unless this page is a stale build that is about to reload)
