@@ -5,6 +5,10 @@ import type { Obstacle } from './types.js';
 import { PHYSICS_V2 } from './flags.js';
 import type { LocalVehicle } from './vehicle/LocalVehicle.js';
 import type { VehicleInput } from '../shared/sim/types.js';
+import { models } from './assets/gameModels.js';
+import { getTerrainHeight } from './world/environment.js';
+import { getKTX2Loader } from './assets/gltfLoader.js';
+import type { ModelCacheSnapshot } from './assets/ModelCache.js';
 
 // Hook for the Playwright smoke tests (tests/e2e) and the screenshot script
 // (scripts/screenshots.ts). It is only installed when the page is opened with
@@ -71,6 +75,108 @@ export interface BulliDebugSnapshot {
     render: { frame: number; calls: number; triangles: number };
     camera: { x: number; y: number; z: number; fov: number };
     v2: V2Snapshot | null;
+    // Car model cache (assets/ModelCache.ts)
+    models: ModelCacheSnapshot;
+}
+
+// One instantiated cached model, as the e2e tests check it
+export interface ModelInfo {
+    triangles: number;
+    meshes: number;
+    nodes: string[];
+    materials: string[];
+    // Textures that came in as KTX2 (CompressedTexture) / as anything else
+    compressedTextures: number;
+    otherTextures: number;
+    hiddenNodes: string[];
+    // Bounding box of the visible opaque meshes (m)
+    size: [number, number, number];
+}
+
+// A standalone texture from public/textures, loaded through the game's KTX2Loader
+export interface TextureProbe {
+    width: number;
+    height: number;
+    compressed: boolean;
+    mipmaps: number;
+    colorSpace: string;
+}
+
+function modelInfo(id: string, lod: number): ModelInfo | null {
+    const root = models.instantiate(id, lod);
+    if (!root) return null;
+    let triangles = 0;
+    let meshes = 0;
+    const nodes: string[] = [];
+    const hiddenNodes: string[] = [];
+    const materials = new Set<string>();
+    const textures = new Set<THREE.Texture>();
+    root.traverse(child => {
+        if (child.name) nodes.push(child.name);
+        if (!child.visible) hiddenNodes.push(child.name);
+        const mesh = child as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        meshes++;
+        const index = mesh.geometry.index;
+        triangles += (index ? index.count : mesh.geometry.attributes.position.count) / 3;
+        for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+            materials.add(material.name);
+            for (const value of Object.values(material)) {
+                if ((value as THREE.Texture)?.isTexture) textures.add(value as THREE.Texture);
+            }
+        }
+    });
+    // Size of the visible opaque parts (without the glass, which also carries the ground blob)
+    const box = new THREE.Box3();
+    root.updateMatrixWorld(true);
+    root.traverseVisible(child => {
+        const mesh = child as THREE.Mesh;
+        if (!mesh.isMesh || (mesh.material as THREE.Material).transparent) return;
+        box.union(new THREE.Box3().setFromObject(mesh));
+    });
+    const size = box.getSize(new THREE.Vector3());
+    const compressed = [...textures].filter(t => (t as THREE.CompressedTexture).isCompressedTexture).length;
+    return {
+        triangles,
+        meshes,
+        nodes: nodes.sort(),
+        materials: [...materials].sort(),
+        compressedTextures: compressed,
+        otherTextures: textures.size - compressed,
+        hiddenNodes,
+        size: [size.x, size.y, size.z]
+    };
+}
+
+// Test-only instances of cached models placed in the scene (spawnModel)
+const spawnedModels: THREE.Object3D[] = [];
+
+function spawnModel(id: string, lod: number, x: number, z: number, yaw = 0): boolean {
+    const root = models.instantiate(id, lod);
+    if (!root || !state.scene) return false;
+    root.position.set(x, getTerrainHeight(x, z), z);
+    root.rotation.y = yaw;
+    state.scene.add(root);
+    spawnedModels.push(root);
+    return true;
+}
+
+function clearModels(): void {
+    for (const root of spawnedModels.splice(0)) root.removeFromParent();
+}
+
+async function loadTextureProbe(url: string): Promise<TextureProbe> {
+    const loader = await getKTX2Loader(state.renderer);
+    const texture = await loader.loadAsync(url);
+    const probe = {
+        width: texture.image.width,
+        height: texture.image.height,
+        compressed: !!(texture as THREE.CompressedTexture).isCompressedTexture,
+        mipmaps: texture.mipmaps?.length ?? 0,
+        colorSpace: texture.colorSpace
+    };
+    texture.dispose();
+    return probe;
 }
 
 function v2Snapshot(vehicle: LocalVehicle | undefined): V2Snapshot | null {
@@ -223,9 +329,24 @@ export function installE2EHook(): void {
                     z: state.camera?.position.z ?? 0,
                     fov: state.camera?.fov ?? 0
                 },
-                v2: v2Snapshot(state.bulli?.vehicle)
+                v2: v2Snapshot(state.bulli?.vehicle),
+                models: models.snapshot()
             };
         },
+        // Resolves once the model preload (and shader warmup) has finished
+        async modelsSettled(): Promise<ModelCacheSnapshot> {
+            await models.whenLoaded();
+            if (state.renderer && state.camera && state.scene) {
+                await models.warmup(state.renderer, state.camera, state.scene);
+            }
+            return models.snapshot();
+        },
+        modelInfo,
+        loadTextureProbe,
+        // Puts an instance of a cached model on the ground at (x, z) (screenshots
+        // of the models before the game uses them); false if it is not loaded
+        spawnModel,
+        clearModels,
         // Collision obstacles of the local car (buildings, trees, props)
         obstacles(): Obstacle[] {
             return state.obstacles.map(obstacle => ({ ...obstacle }));

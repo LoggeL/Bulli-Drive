@@ -25,6 +25,7 @@ import { installE2EHook } from './e2eHook.js';
 import { watchWebGLContext, isWebGLContextLost } from './ui/contextLoss.js';
 import { installPerfMonitor, type PerfMonitor } from './debug/perfMonitor.js';
 import { setupLighting, updateLighting } from './render/lighting.js';
+import { startModelPreload } from './assets/gameModels.js';
 import { ChaseCamera, LEGACY_CAMERA, RACE_CAMERA, RACE_CAMERA_SLIP_BLEND, type ChaseTarget } from './camera/ChaseCamera.js';
 import { PHYSICS_V2, SANDBOX, TUNE_PANEL } from './flags.js';
 import { gameHooks } from './game/hooks.js';
@@ -67,6 +68,10 @@ function init() {
     document.body.appendChild(state.renderer.domElement);
     // Show a notice and pause rendering if the browser drops the GL context
     watchWebGLContext(state.renderer.domElement);
+    // Car models (GLB + KTX2) load and compile while the splash screen is up;
+    // until they are there (or if they fail) the cars stay procedural
+    startModelPreload(state.renderer, state.camera, state.scene)
+        .catch(error => console.warn('Model preload failed', error));
 
     // Audio Context
     try {
