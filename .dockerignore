@@ -1,6 +1,9 @@
 node_modules
 .git
 dist
+# Pre-Vite client build output from older checkouts
+public/js
+public/build-version.txt
 *.log
 .findings.txt
 screenshots

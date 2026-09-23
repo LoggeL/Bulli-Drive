@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { defineConfig, type Plugin, type ResolvedConfig } from 'vite';
@@ -59,11 +60,36 @@ function buildVersionPlugin(): Plugin {
     };
 }
 
+/**
+ * Before phase 0 the client was compiled by tsc into public/js and the build
+ * wrote public/build-version.txt. public/ is now Vite's publicDir and is copied
+ * verbatim into dist/client, so leftovers from such a build in an older
+ * checkout would be shipped and served. Fail the build instead.
+ */
+function legacyOutputGuard(): Plugin {
+    const leftovers = ['public/js', 'public/build-version.txt'];
+    let root = process.cwd();
+    return {
+        name: 'bulli-legacy-output-guard',
+        apply: 'build',
+        configResolved(resolvedConfig) {
+            root = resolvedConfig.root;
+        },
+        buildStart() {
+            const found = leftovers.filter(file => existsSync(path.resolve(root, file)));
+            if (found.length > 0) {
+                throw new Error(`Old client build output found: ${found.join(', ')}. ` +
+                    `It would be copied into dist/client; delete it (rm -rf ${found.join(' ')}) and build again.`);
+            }
+        }
+    };
+}
+
 export default defineConfig({
     // index.html in the project root is the entry; public/ (audio, favicon)
     // is copied verbatim into the build.
     publicDir: 'public',
-    plugins: [buildVersionPlugin()],
+    plugins: [legacyOutputGuard(), buildVersionPlugin()],
     build: {
         outDir: 'dist/client',
         emptyOutDir: true,
