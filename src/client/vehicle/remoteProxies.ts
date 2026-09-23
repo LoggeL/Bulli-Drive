@@ -143,8 +143,3 @@ export function collectRemoteProxies(now: number, world: SimWorld, out: SimCar[]
         out.push(car);
     }
 }
-
-// Test/debug view of the proxies
-export function remoteProxyCount(): number {
-    return tracks.size;
-}
