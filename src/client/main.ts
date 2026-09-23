@@ -21,6 +21,7 @@ import { sendToServer } from './network/socket.js';
 import { AdaptiveRenderQuality } from './effects/renderQuality.js';
 import { updateWorldShaders } from './effects/worldShaders.js';
 import { ensureCurrentBuild } from './buildVersion.js';
+import { installE2EHook } from './e2eHook.js';
 
 // Reusable chase-camera state/vectors to avoid per-frame allocations.
 const _cameraTarget = new THREE.Vector3();
@@ -145,6 +146,9 @@ function init() {
 
     // UI modules
     initAboutModal();
+
+    // Test-only state probe, a no-op unless the page URL has ?e2e=1
+    installE2EHook();
 
     // Start Loop
     requestAnimationFrame(animate);
