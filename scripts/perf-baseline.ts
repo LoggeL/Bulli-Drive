@@ -13,6 +13,7 @@
 // clients reach at least 20 FPS (check "fps"; --gl=gpu usually does).
 
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
+import net from 'node:net';
 import fs from 'node:fs';
 import { chromium, devices, type Browser, type BrowserContextOptions, type Page } from '@playwright/test';
 import type { PerfHook, PerfRecording, WsTotals } from '../src/client/debug/perfMonitor.js';
@@ -50,10 +51,27 @@ function parseArgs(argv: string[]): Options {
 const log = (message: string) => process.stderr.write(`[perf] ${message}\n`);
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Resolves when nothing listens on the port yet. Otherwise our server would
+// die with EADDRINUSE while the other one answers the readiness check, and the
+// baseline would silently measure a foreign server and build.
+function ensurePortFree(port: number): Promise<void> {
+    return new Promise((resolve, reject) => {
+        const probe = net.createServer();
+        probe.once('error', (err: NodeJS.ErrnoException) => {
+            reject(err.code === 'EADDRINUSE'
+                ? new Error(`Port ${port} is already in use - stop that server or pass --port=<free port>`)
+                : err);
+        });
+        probe.listen(port, () => probe.close(() => resolve()));
+    });
+}
+
 async function startServer(port: number): Promise<ChildProcess> {
     if (!fs.existsSync('dist/client/index.html') || !fs.existsSync('dist/server/index.js')) {
         throw new Error('No production build in dist/ - run "npm run build" first (or use "npm run perf:baseline")');
     }
+    await ensurePortFree(port);
+    const expectedVersion = fs.readFileSync('dist/client/build-version.txt', 'utf8').trim();
     const server = spawn(process.execPath, ['dist/server/index.js'], {
         env: { ...process.env, PORT: String(port) },
         stdio: ['ignore', 'ignore', 'inherit']
@@ -61,10 +79,19 @@ async function startServer(port: number): Promise<ChildProcess> {
     const deadline = Date.now() + 30_000;
     while (Date.now() < deadline) {
         if (server.exitCode !== null) throw new Error(`Server exited with code ${server.exitCode}`);
+        let version: string | null = null;
         try {
             const response = await fetch(`http://127.0.0.1:${port}/build-version.txt`);
-            if (response.ok) return server;
+            if (response.ok) version = (await response.text()).trim();
         } catch { /* not up yet */ }
+        if (version !== null) {
+            // Make sure it is our server with our build that answered.
+            if (server.exitCode !== null || version !== expectedVersion) {
+                server.kill();
+                throw new Error(`Port ${port} is served by another server (build ${version}, expected ${expectedVersion})`);
+            }
+            return server;
+        }
         await sleep(200);
     }
     server.kill();
