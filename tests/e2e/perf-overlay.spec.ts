@@ -1,4 +1,4 @@
-import { test, expect, joinGame, distance, snapshot } from './fixtures.js';
+import { test, expect, joinGame, distance, snapshot, placeOnClearRunway } from './fixtures.js';
 import type { PerfHook, PerfRecording } from '../../src/client/debug/perfMonitor.js';
 
 test('?debug=perf shows the overlay and records frame and bandwidth stats', async ({ openPlayer }) => {
@@ -20,6 +20,9 @@ test('?debug=perf shows the overlay and records frame and bandwidth stats', asyn
     expect(totals.bytesIn).toBeGreaterThan(10_000);
     expect(totals.messagesOut).toBeGreaterThan(0);
 
+    // Drive on a free stretch of road: the random spawn can face a wall
+    // a few metres ahead.
+    await placeOnClearRunway(page);
     await page.evaluate(() => (window as unknown as { __bulliPerf: PerfHook }).__bulliPerf.startRecording());
     const start = (await snapshot(page)).local!;
     await page.keyboard.down('w');

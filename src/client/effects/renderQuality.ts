@@ -10,15 +10,27 @@ const SLOW_FRAME_MS = 20;
 const HEADROOM_FRAME_MS = 16.5;
 const MAX_SAMPLE_FRAME_MS = 250;
 
-export type RenderTier = 'desktop' | 'mobile';
+export type RenderTier = 'desktop' | 'mobile' | 'software';
+
+// Renderer names of CPU rasterizers (Chrome without a usable GPU, Mesa,
+// Windows' fallback driver)
+const SOFTWARE_RENDERER = /swiftshader|llvmpipe|softpipe|software|basic render/i;
 
 /**
  * Static device class for fixed-cost settings such as the shadow map size.
- * Phones and tablets (coarse primary pointer) get the mobile tier.
+ * Software WebGL (no GPU) gets the cheapest tier, phones and tablets (coarse
+ * primary pointer) the mobile tier.
  */
-export function detectRenderTier(): RenderTier {
+export function detectRenderTier(renderer?: WebGLRenderer): RenderTier {
+    if (renderer && SOFTWARE_RENDERER.test(rendererName(renderer))) return 'software';
     const coarse = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
     return coarse ? 'mobile' : 'desktop';
+}
+
+function rendererName(renderer: WebGLRenderer): string {
+    const gl = renderer.getContext();
+    const info = gl.getExtension('WEBGL_debug_renderer_info');
+    return String(gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER) ?? '');
 }
 
 function maximumPixelRatio(): number {
