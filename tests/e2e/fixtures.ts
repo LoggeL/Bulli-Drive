@@ -9,10 +9,16 @@ export interface Player {
     sentMessages: Array<{ type: string; [key: string]: unknown }>;
 }
 
+interface PlayerOptions {
+    // Console errors, page errors and failed requests that this test expects,
+    // matched against the problem text (which includes the URL).
+    allowedProblems?: RegExp;
+}
+
 interface Fixtures {
     // Opens the game in a fresh browser context (own storage, own WebSocket),
     // i.e. one more player. Console errors on any of them fail the test.
-    openPlayer: (label: string) => Promise<Player>;
+    openPlayer: (label: string, options?: PlayerOptions) => Promise<Player>;
 }
 
 export const test = base.extend<Fixtures>({
@@ -20,7 +26,7 @@ export const test = base.extend<Fixtures>({
         const contexts: BrowserContext[] = [];
         const problems: string[] = [];
 
-        await use(async (label: string) => {
+        await use(async (label: string, options: PlayerOptions = {}) => {
             const context = await browser.newContext({
                 baseURL, viewport, userAgent, isMobile, hasTouch, deviceScaleFactor
             });
@@ -31,12 +37,15 @@ export const test = base.extend<Fixtures>({
 
             const page = await context.newPage();
             const player: Player = { page, sentMessages: [] };
+            const report = (problem: string) => {
+                if (!options.allowedProblems?.test(problem)) problems.push(`[${label}] ${problem}`);
+            };
             page.on('console', message => {
-                if (message.type() === 'error') problems.push(`[${label}] console.error: ${message.text()}`);
+                if (message.type() === 'error') report(`console.error: ${message.text()} (${message.location().url})`);
             });
-            page.on('pageerror', error => problems.push(`[${label}] page error: ${error.message}`));
+            page.on('pageerror', error => report(`page error: ${error.message}`));
             page.on('response', response => {
-                if (response.status() >= 400) problems.push(`[${label}] HTTP ${response.status()} ${response.url()}`);
+                if (response.status() >= 400) report(`HTTP ${response.status()} ${response.url()}`);
             });
             page.on('websocket', socket => {
                 socket.on('framesent', frame => {

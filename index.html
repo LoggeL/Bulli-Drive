@@ -5,6 +5,48 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Bulli Drive — Hit the Road</title>
+    <script>
+        // Stale-client guard for missing assets. The built page loads hashed
+        // /assets files, and a server only has those of its own build. An
+        // index.html from an older deploy (deploy race, overlapping instances,
+        // restored tab) then gets 404s, no game code runs and the version check
+        // in src/client/buildVersion.ts never starts. So reload once to get the
+        // current index.html. This has to run before Vite's asset tags, which
+        // it appends to the end of <head>.
+        (function() {
+            const RELOAD_MARKER_KEY = 'bulli-asset-reload';
+            let handled = false;
+            window.addEventListener('error', (event) => {
+                const target = event.target;
+                let url = null;
+                if (target instanceof HTMLScriptElement) url = target.src;
+                else if (target instanceof HTMLLinkElement) url = target.href;
+                if (handled || !url) return;
+                const assetUrl = new URL(url, window.location.href);
+                if (assetUrl.origin !== window.location.origin || !assetUrl.pathname.startsWith('/assets/')) return;
+                const meta = document.querySelector('meta[name="bulli-build-version"]');
+                const pageVersion = meta && meta.content;
+                // Dev server pages carry no build stamp and load no /assets.
+                if (!pageVersion) return;
+                handled = true;
+
+                // Reload at most once per page build, so a broken deploy or a
+                // cache that keeps serving this page cannot cause a loop.
+                try {
+                    if (sessionStorage.getItem(RELOAD_MARKER_KEY) === pageVersion) {
+                        console.warn(`Client assets of build ${pageVersion} failed to load again, not reloading`);
+                        return;
+                    }
+                    sessionStorage.setItem(RELOAD_MARKER_KEY, pageVersion);
+                } catch (err) {
+                    console.warn('Cannot guard the asset reload, not reloading', err);
+                    return;
+                }
+                console.warn(`Client assets of build ${pageVersion} are gone, reloading`);
+                window.location.reload();
+            }, true);
+        })();
+    </script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

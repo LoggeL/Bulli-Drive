@@ -3,6 +3,8 @@
 // into index.html (<meta name="bulli-build-version">, see vite.config.ts); if
 // a page from an older deploy is still running (cached HTML, restored tab),
 // that stamp differs from the server's build-version.txt and we reload once.
+// This check lives in the hashed bundle itself; when an old page cannot even
+// load its bundle any more, the inline guard in index.html reloads instead.
 
 const RELOAD_MARKER_KEY = 'bulli-build-version-reload';
 
