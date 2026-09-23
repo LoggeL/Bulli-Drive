@@ -709,6 +709,8 @@ Jeder Schritt ist ein Commit (oder eine kleine Folge) mit grünem `npm run ci` u
 10. **FreeRoamRoom und Menü:** Room-Wahl im Splash, Wechsel im Spiel, `body.room-freeroam`, automatische Instanzen im Client sichtbar; `rooms.spec.ts`. *Merge-Punkt I.*
 11. **Bots vollständig und Budgets:** alle Bot-Modi, `npm run bots`, Integrationstest-Job in der CI, 32-Bot-Messung und Soak lokal, Werte in `docs/baseline.md`; Plan-Status und ein Abschnitt „Umsetzung: Abweichungen und Messwerte“ in diesem Dokument. *Merge-Punkt J* = Phase 1b fertig.
 
+**Stand der Umsetzung:** Schritt 3, Schritt 4 und der Room-Teil von Schritt 10 (FreeRoamRoom, Auswahl im Splash, Wechsel im Spiel) sind als ein Arbeitsschritt „Rooms und Collider“ vor Schritt 2 umgesetzt, noch auf Protokoll v1. Was dabei anders läuft als oben beschrieben, steht in Abschnitt 20.
+
 Schritt 8 ist bewusst ein einziger Merge: Zwischen 8a und 8d wäre der Party-Modus live schlechter als heute (alte Timer, lineare Interpolation). Jeder Commit in 8 bleibt trotzdem für sich lauffähig und getestet.
 
 ---
@@ -730,3 +732,40 @@ Schritt 8 ist bewusst ein einziger Merge: Zwischen 8a und 8d wäre der Party-Mod
 ## 19. Nicht Teil von 1b
 
 RaceRoom, Gates, Zeitmessung, serverseitige Bots als Mitspieler (Phase 2; die Bot-Fahrlogik aus `tools/bots` wird dort wiederverwendet), Interest-Management und Distanz-Staffelung (Phase 4, nur falls gemessen nötig), Delta-Kompression, Lag-Kompensation für Schüsse, WebTransport, persistente Scores, Umstellung der `Bulli`-Adapterfelder auf m/s, Tuning als `stepWorld`-Parameter.
+
+---
+
+## 20. Umsetzung: Abweichungen und Stand
+
+### 20.1 Rooms und Collider (Schritte 3, 4 und Room-Teil von 10)
+
+Umgesetzt in den Commits „Port the static colliders to shared world code“, „Build the client's collision world from the shared colliders“, „Split the server into sessions and room instances“ und „Let players choose between Party and Free Roam“. Das Netzmodell ist unverändert (Clients schicken weiter `update`).
+
+**Reihenfolge.** Der Arbeitsschritt fasst die Schritte 3 und 4 mit FreeRoam und Menü aus Schritt 10 zusammen und kommt **vor** dem Löschen der Legacy-Physik (Schritt 2). Folgen:
+
+- `state.obstacles` bleibt als abgeleitete Sicht (`collidersToObstacles` in `client/vehicle/simWorldClient.ts`) auf die geteilte Collider-Liste bestehen, weil `legacyPhysics.ts` und die E2E-Hilfe `placeOnClearRunway` Kreise und Rechtecke lesen. Sie entfällt mit Schritt 2. `obstaclesToColliders` ist schon gelöscht; die v2-Sim bekommt die Liste direkt (`state.worldColliders`).
+- Die Room-Wahl läuft über Protokoll v1 statt über `hello`/`roomState` (kommen in Schritt 7):
+  - Room-Art beim Verbinden als URL-Parameter `/ws?room=freeroam` (Standard `party`).
+  - `joinRoom {kind}` (C→S, valibot `picklist`), Antwort `roomJoined {room, spawn, players, powerups, coins, scoreboard}` statt `roomState` + `spawn`-Event; der Client setzt das Auto sofort an `spawn`.
+  - `init` trägt zusätzlich `room {id, kind, index}`.
+  - Alles ist additiv, `PROTOCOL_VERSION` bleibt 1: Ein Tab mit dem alten Client ignoriert die neuen Felder und landet wie bisher in der Party (`party-1`).
+- Über `MAX_CONNECTIONS` (160, ENV) wird eine Verbindung mit Close 4002 abgewiesen, ohne `reject`-Nachricht (gibt es in v1 nicht).
+- Party-Timer laufen wie in Schritt 4 vorgesehen noch mit `setTimeout`, jetzt pro Mitgliedschaft (`server/party/state.ts`) und beim Verlassen oder Schließen des Rooms gelöscht. Item-Reset-Timer gehören dem Room.
+
+**Server-Struktur.** `server/session.ts` (Verbindung, Name, Farbe, Karosse, Rate-Limits, Transport-Schnittstelle für Tests), `server/rooms/Room.ts` (Mitglieder, Slots, Join/Leave, Relay von `update`/`honk`, Broadcast nur an eigene Mitglieder), `PartyRoom.ts` (Regeln aus dem früheren `handlers.ts`, unverändert), `FreeRoamRoom.ts`, `lobby.ts` (`RoomManager`: `findOrCreate`, `switch`, `sweep`), `spawn.ts` (Abstand nur zu Autos des eigenen Rooms), `dispatch.ts` (Session-Nachrichten `rename`, `setCarType`, `joinRoom`, Rest an den Room), `maps.ts`. Gelöscht: `state.ts`, `world.ts`, `handlers.ts`, `net.ts`, `types.ts`. Slots (u8, Wiedervergabe nach 5 s) werden schon vergeben, aber noch nicht übertragen.
+
+**MapData.** `createMapData(seed)` liegt in `src/shared/world/mapData.ts` (nicht nur serverseitig), damit Client und Server dieselbe Funktion nutzen; `server/maps.ts` hält eine Instanz pro Seed. `worldHash` = FNV-1a (32 Bit, hex) über `canonicalStringify({world, colliders})` (sortierte Schlüssel, Zahlen per `String`, also auch `Infinity`). Golden: `cd1d366c`. Neu `MAP_VERSION = 2`. Der Client baut seine Collider noch aus der `init`-Welt (`buildWorldColliders({trees, city})`); die Welt aus dem Seed folgt in Schritt 7.
+
+**Collider und Props.** `src/shared/world/props.ts` enthält Park, Plaza, Laternen, Boulevard-Palmen, Schilder und Felsen als Daten, `colliderGen.ts` die Liste in der Vertragsreihenfolge. `city.ts` und `environment.ts` rendern aus denselben Daten und pushen nichts mehr.
+
+- **Felsen:** `ROCK_COLLIDER_SEED` („ROCK“) zieht pro Versuch genau drei Werte (x, z, Größe), auch für verworfene Versuche; `ROCK_VISUAL_SEED` („ROCV“) zieht pro Felsen genau sieben Werte (Material, zwei Rotationen, Höhe, ob es einen zweiten Stein gibt, dessen zwei Rotationen, auch wenn es keinen gibt). Büsche und Blumen nutzen `SCENERY_SEED` („BULL“) jetzt von Anfang an und stehen deshalb ebenfalls einmalig an anderen Stellen. Vorher 38 Felsen mit 29 Collidern, jetzt 34 mit 27. Offline (ohne Stadt) gibt es nur die Felsen-Collider.
+- **Paritätstest:** Schritt 1 (Index für Index gegen die alten `push`-Stellen, Toleranz 1e-9, Felsen nur Form und Bereich) lief im ersten Commit grün. Danach prüft `tests/e2e/collider-parity.spec.ts`, dass die Collider-Liste des Browsers bitgleich der in Node gebauten ist und dass zu jedem Collider genau ein gerendertes Objekt mit `userData.collider` an seiner Position steht (Gebäude, Bäume, Felsen, Bänke, Teich, Parkbäume, Pflanzkübel, Schirme, Brunnen, Laternen, Palmen, Schilderpfosten). Der Node-Golden-Hash über die geordnete Liste steht in `tests/shared/colliderGen.test.ts` (239 Collider: 120 Bäume, 27 Felsen, 92 Stadt).
+
+**Client.** 
+
+- Im Spiel gibt es kein Menü-Fenster (ABOUT ist nur im Splash erreichbar). Statt „Modus wechseln“ im ABOUT-Fenster zeigt ein **Room-Chip** neben dem Rang-Chip den Modus und die Instanz („PARTY“ / „ROOM 1“, zweizeilig statt „Party · 1“, damit er auf schmalen Handys neben den Rang-Chip passt) und öffnet ein kleines Menü „Game mode“ mit PARTY und FREE ROAM. Desktop: Chip unter dem Rang-Chip; Touch: links daneben.
+- Nach einem Wechsel sind die Buttons 2 s gesperrt (Server-Rate-Limit); ohne Antwort geben sie nach 5 s wieder frei.
+- `body.room-freeroam` blendet zusätzlich Killfeed, Respawn-Overlay und die HP-Balken der Nametags aus; die Taste E schießt in Free Roam nicht. `body.room-party` ist gesetzt, solange man in der Party ist.
+- Der Splash-Screen scrollt jetzt bei zu wenig Höhe (Handy quer), statt START abzuschneiden.
+- E2E: `rooms.spec.ts` (Desktop) und `rooms-mobile.spec.ts` (iPhone 13, Layout in drei Viewports).
+
