@@ -144,20 +144,18 @@ wss.on('connection', (ws: WebSocket) => {
     } as ServerMessage));
 
     ws.on('message', (message: Buffer | string) => {
-        let data: any;
+        let data: unknown;
         try {
             data = JSON.parse(message.toString());
         } catch (e) {
             console.warn('Dropping invalid JSON from', id);
             return;
         }
-        if (!data || typeof data !== 'object' || typeof data.type !== 'string') {
-            return;
-        }
+        // handleClientMessage validates the shape and drops invalid messages.
         try {
             handleClientMessage(id, data);
         } catch (e) {
-            console.error('Handler error for type', data.type, e);
+            console.error('Handler error for type', (data as { type?: unknown } | null)?.type, e);
         }
     });
 

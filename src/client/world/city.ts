@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { state } from '../state.js';
-import { BuildingData, RoadData, CityData } from '../types.js';
+import type { BuildingData, RoadData, CityData } from '../../shared/protocol.js';
 import { getTerrainHeight } from './environment.js';
 import { CITY_LAYOUT, PLAZA_PROP_LAYOUT } from '../../shared/constants.js';
 import { createWaterMaterial } from '../effects/worldShaders.js';

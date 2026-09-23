@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { state } from '../state.js';
-import { PowerupData } from '../types.js';
+import type { PowerupData } from '../../shared/protocol.js';
 import { getTerrainHeight } from './environment.js';
 import { showInteractionPrompt } from '../ui/hud.js';
 import { sendToServer } from '../network/socket.js';

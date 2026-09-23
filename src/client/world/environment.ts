@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { state } from '../state.js';
-import { TreeData } from '../types.js';
+import type { TreeData } from '../../shared/protocol.js';
 import { mulberry32 } from '../../shared/math/rng.js';
 import { CITY_TERRAIN_AREA, getTerrainHeight as getSharedTerrainHeight } from '../../shared/world/terrain.js';
 import { createTerrainMaterial } from '../effects/worldShaders.js';

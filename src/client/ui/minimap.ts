@@ -1,5 +1,5 @@
 import { state } from '../state.js';
-import { CityData } from '../types.js';
+import type { CityData } from '../../shared/protocol.js';
 import { CITY_LAYOUT } from '../../shared/constants.js';
 
 const MAP_SIZE = 180;

@@ -6,7 +6,7 @@ import { spawnParticles } from '../effects/particles.js';
 import { sendToServer } from '../network/socket.js';
 import { MAGNET_RANGE } from '../../shared/constants.js';
 import { distSq2D } from './util.js';
-import { CoinData } from '../types.js';
+import type { CoinData } from '../../shared/protocol.js';
 
 // Store base Y for bobbing animation
 const coinBaseY: Map<THREE.Mesh, number> = new Map();

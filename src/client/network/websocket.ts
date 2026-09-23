@@ -1,6 +1,6 @@
 import { state } from '../state.js';
 import { CONFIG } from '../config.js';
-import { ServerMessage, PlayerData, CityData } from '../types.js';
+import type { ServerMessage, PlayerData, CityData } from '../../shared/protocol.js';
 import { Bulli } from '../entities/Bulli.js';
 import { createEnvironment } from '../world/environment.js';
 import { createCity } from '../world/city.js';
