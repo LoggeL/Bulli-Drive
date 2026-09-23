@@ -1,6 +1,6 @@
 # Plan: Bulli Drive als Open-World-Multiplayer-Rennspiel
 
-**Stand:** 2026-09-23 · **Aktuelle Phase:** Phase 1b in Arbeit (Branch `net/phase-1b`, Spezifikation und Stand: [`phase-1b-design.md`](phase-1b-design.md)): Server-Sim, Protokoll v2 und Client-Prediction stehen, die Legacy-Physik und `?physics=legacy` sind gelöscht. Phase 1a ist live, v2 ist die einzige Physik. Phase 0 ist gemergt (PR #7, CI grün); offen ist dort nur noch die Messung auf echten Geräten (Referenz-Handy, Desktop im Browserfenster).
+**Stand:** 2026-09-24 · **Aktuelle Phase:** Phase 1b in Arbeit (Branch `net/phase-1b`, Spezifikation und Stand: [`phase-1b-design.md`](phase-1b-design.md)): Server-Sim, Protokoll v2 und Client-Prediction stehen, die Legacy-Physik und `?physics=legacy` sind gelöscht; Reconnect mit 30 s Grace, Graceful Shutdown mit Resume-Ticket, `/healthz` mit Docker-`HEALTHCHECK` und die Dev-Netsim sind da (Betrieb: [`ops.md`](ops.md)). Phase 1a ist live, v2 ist die einzige Physik. Phase 0 ist gemergt (PR #7, CI grün); offen ist dort nur noch die Messung auf echten Geräten (Referenz-Handy, Desktop im Browserfenster).
 
 ## 0. Entscheidungen (2026-09-23)
 
@@ -163,7 +163,7 @@ Verbindliche Spezifikation, Abweichungen und Messwerte: [`phase-1a-design.md`](p
   - Regel für `visibilitychange` und fehlende Inputs: Der Server wiederholt den letzten Input höchstens 250 ms lang, danach neutral mit Bremse; im Hintergrund wird das Auto zum Ghost (kein Kontakt). Das ersetzt den AFK-Hack durch ein serverseitiges Idle-Flag.
   - Graceful Shutdown: Bei SIGTERM werden Clients benachrichtigt und reconnecten nach dem Neustart
   - `/healthz` (Prozess lebt, Room-Tick läuft) als `HEALTHCHECK` im Dockerfile; der Container-Smoke in der CI prüft `/healthz` statt `/build-version.txt`
-  - Restart-Policy dokumentiert und gesetzt (`restart: unless-stopped` bzw. das Äquivalent beim Hoster, offene Frage 8), inklusive Neustart nach fehlgeschlagenem Health-Check
+  - Restart-Policy dokumentiert und gesetzt (`restart: unless-stopped` bzw. das Äquivalent beim Hoster, offene Frage 8), inklusive Neustart nach fehlgeschlagenem Health-Check (umgesetzt: Dokploy/Swarm ersetzt `unhealthy` Tasks, siehe [`ops.md`](ops.md); `SESSION_SECRET` muss in Dokploy gesetzt werden)
 - **Exit:** Bei 150 ms RTT, 30 ms Jitter und 3 % Verlust fährt sich das eigene Auto ohne sichtbares Rubberbanding (Korrektur ohne Kontakt unter 10 cm im Mittel), Remote-Autos laufen flüssig, und Rempeln fühlt sich für beide Seiten nachvollziehbar an (Playtest Desktop gegen Handy). Ein Server-Tick mit 32 Autos bleibt unter 2 ms. Ein Reconnect innerhalb von 30 s behält den Spieler. Ein Container-Neustart trennt die Spieler nur kurz, und ein Server, dessen Tick hängt, fällt über `/healthz` auf und wird von der Restart-Policy neu gestartet. Der Party-Modus ist spielbar wie vorher.
 
 **Phase 2 – Vertical Slice Rennen (ca. 3 Wochen) → Release**

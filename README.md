@@ -59,13 +59,25 @@ The Playwright tests cover driving on desktop and phone, two players bumping
 into each other, the sandbox with its dummy cars, the tuning panel and the
 golden sim scenarios in the browser, Party and Free Roam rooms, the collider
 parity between browser and server, the stale-client reload, a lost WebGL
-context and the perf overlay.
+context, the perf overlay, a lost connection and a server restart (the page
+reconnects on its own), the protocol version check, `/healthz` and the dev
+netsim.
 They need Chromium once:
 `npx playwright install chromium`.
 
 GitHub Actions (`.github/workflows/ci.yml`) runs typecheck and unit tests, the
-build, the Playwright tests and a Docker build with a container smoke test on
-every pull request and push to `main`.
+build, the Playwright tests and a Docker build with a container smoke test
+(`/healthz`, the image's health check and a graceful `docker stop`) on every
+pull request and push to `main`.
+
+### Operations
+The server runs 24/7. `GET /healthz` answers 200 while the 60 Hz tick runs
+(503 when it stalls), the Docker image has a `HEALTHCHECK` on it, and on
+`SIGTERM` the server tells every client to reconnect with a signed resume
+ticket (colour and Party score survive a deploy) before it exits. Set
+`SESSION_SECRET` in the hosting environment for that. A lost connection
+keeps the player's session and car for 30 s. Details, environment variables
+and the restart policy: [docs/ops.md](docs/ops.md).
 
 ### URL flags
 The game drives with the fixed-step v2 physics (single-track model with
@@ -78,8 +90,15 @@ drift, boost and car contact, see
   telemetry. It is loaded on demand. Online the server drives every car with
   the default tuning, so the game only shows a hint there.
 - `?debug=perf` shows a performance overlay (FPS, frame time, draw calls,
-  triangles, geometries, textures, WebSocket bytes per second and the sim
-  time per frame). Use it to measure on real devices.
+  triangles, geometries, textures, WebSocket bytes per second, JSON and
+  binary apart, and the sim time per frame), online also the netcode (tick,
+  lead, round trip, snapshots per second, corrections, the connection) and
+  the server's tick times from `/healthz`. `?debug=net` shows the same
+  overlay. Use it to measure on real devices.
+- `?netsim=RTT,JITTER,LOSS[,tcp|drop]`, e.g. `?netsim=150,30,3`, puts a
+  simulated bad network in front of this tab's connection (both
+  directions; the server has the same as `NETSIM=rtt=150,jitter=30,loss=3`
+  outside production). For playtesting the netcode.
 - `?e2e=1` installs a state hook for the Playwright tests (read-only, apart
   from placing the car on a free stretch of road, which online only a server
   started with `E2E=1` accepts) and `window.__bulliNet` with the netcode
@@ -146,7 +165,7 @@ src/shared/           Code for both sides: protocol schemas (valibot), constants
                       rules in ticks (party/)
 tests/                Vitest (shared/, server/, client/) and Playwright (e2e/)
 scripts/              perf-baseline.ts
-docs/                 Refactor plan, performance baseline, phase 1a spec and blind test guide
+docs/                 Refactor plan, performance baseline, phase 1a/1b specs, blind test guide, operations (ops.md)
 ```
 
 Server and clients build the same world from a fixed seed (the server sends
