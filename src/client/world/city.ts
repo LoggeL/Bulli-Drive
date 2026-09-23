@@ -7,8 +7,8 @@ import { createWaterMaterial } from '../effects/worldShaders.js';
 import { positionHash } from '../../shared/math/rng.js';
 import { blockCenter, PARK_BLOCK, PLAZA_BLOCK, roadLineCenter } from '../../shared/world/cityGen.js';
 
-const ROAD_COLOR = 0x282a2b;
-const INTERSECTION_COLOR = 0x242627;
+const ROAD_COLOR = 0x3b3e41;
+const INTERSECTION_COLOR = 0x37393c;
 const LANE_MARKING_COLOR = 0xf6e7ba;
 const SIDEWALK_COLOR = 0xc8c1ae;
 const PARK_COLOR = 0x4f8a48;

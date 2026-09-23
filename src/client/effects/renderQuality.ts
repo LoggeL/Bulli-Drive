@@ -10,6 +10,17 @@ const SLOW_FRAME_MS = 20;
 const HEADROOM_FRAME_MS = 16.5;
 const MAX_SAMPLE_FRAME_MS = 250;
 
+export type RenderTier = 'desktop' | 'mobile';
+
+/**
+ * Static device class for fixed-cost settings such as the shadow map size.
+ * Phones and tablets (coarse primary pointer) get the mobile tier.
+ */
+export function detectRenderTier(): RenderTier {
+    const coarse = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
+    return coarse ? 'mobile' : 'desktop';
+}
+
 function maximumPixelRatio(): number {
     return Math.max(MIN_PIXEL_RATIO, Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO));
 }
