@@ -1,7 +1,8 @@
 // Screenshot set for visual before/after comparisons: starts the production
 // server, joins with headless Chromium (?e2e=1) and captures fixed views
-// (chase camera on a street, plaza, park, street furniture, palms, fountain,
-// overview, city edge, mobile).
+// (chase camera on a street, the car up close, its rear with brake lights,
+// a showroom of all car types, plaza, park, street furniture, palms,
+// fountain, overview, city edge, mobile).
 //
 //   npm run screenshots -- --out=shots/after                 # build + capture
 //   npm run screenshots -- --out=shots/after --gl=swiftshader
@@ -203,6 +204,22 @@ async function shoot(page: Page, out: string, view: string, stats: ShotStats[], 
     log(`${view}: ${render.calls} calls (${render.shadowCalls} shadow), ${render.triangles} triangles${car}`);
 }
 
+interface SpawnSpec { type: string; color: number; x: number; z: number; yaw: number; brake?: boolean; steer?: number; surfboard?: boolean }
+
+// Game cars placed like remote players (e2e hook spawnCar), for the showroom
+async function spawnCars(page: Page, cars: SpawnSpec[]): Promise<void> {
+    await page.evaluate(cars => {
+        const debug = (window as unknown as { __bulliDebug: { spawnCar(...args: unknown[]): unknown } }).__bulliDebug;
+        for (const car of cars) {
+            debug.spawnCar(car.type, car.color, car.x, car.z, car.yaw, { brake: car.brake, steer: car.steer, surfboard: car.surfboard });
+        }
+    }, cars);
+}
+
+async function clearSpawned(page: Page): Promise<void> {
+    await page.evaluate(() => (window as unknown as { __bulliDebug: { clearModels(): void } }).__bulliDebug.clearModels());
+}
+
 // Road center lines run at -98, -46, 6, 58, 110 on both axes.
 const MID_ROAD = roadLineCenter(2, 'x');
 const MID_CROSS = roadLineCenter(2, 'z');
@@ -237,6 +254,40 @@ async function captureDesktop(browser: Browser, baseURL: string, options: Option
         await setCamera(page, { position: [MID_ROAD + 6, 3.2, -60 + 8.5], lookAt: [MID_ROAD, 1.2, -60], fov: 40 });
         await settle(page, 1200);
         await shoot(page, options.out, 'car', stats);
+        await setCamera(page, null);
+        await hideHud(page, false);
+    }
+
+    // Close-up of the car from the rear: brake lights, left blinker, the
+    // cabin through the rear window, wheel and tyre detail
+    if (want('car-rear')) {
+        await place(page, MID_ROAD, -120, 0);
+        await hideHud(page, true);
+        const x = MID_ROAD + 3, z = -72;
+        await spawnCars(page, [{ type: 'bulli', color: 0x2E6FA8, x, z, yaw: 0.35, brake: true, steer: 0.3 }]);
+        await setCamera(page, { position: [x - 4.2, 2.6, z - 7.4], lookAt: [x, 1.0, z], fov: 40 });
+        await settle(page, 1500);
+        await shoot(page, options.out, 'car-rear', stats);
+        await clearSpawned(page);
+        await setCamera(page, null);
+        await hideHud(page, false);
+    }
+
+    // Showroom: every car type side by side in fixed colours (and the Bulli
+    // with its optional surfboard), seen from the front
+    if (want('showroom')) {
+        await place(page, MID_ROAD, -120, 0);
+        await hideHud(page, true);
+        const z = -70;
+        const types = ['jeep', 'sport', 'bulli', 'beetle', 'pickup'];
+        const colors = [0x6B8E4E, 0xC0392B, 0xD9A441, 0x2E6FA8, 0x8E5B3A];
+        const cars: SpawnSpec[] = types.map((type, i) => ({ type, color: colors[i], x: MID_ROAD - 13 + i * 5.2, z, yaw: 0 }));
+        cars.push({ type: 'bulli', color: 0x3D8C7A, x: MID_ROAD + 13, z: z - 1, yaw: -0.5, surfboard: true });
+        await spawnCars(page, cars);
+        await setCamera(page, { position: [MID_ROAD + 2, 4.2, z + 17], lookAt: [MID_ROAD, 1.1, z], fov: 55 });
+        await settle(page, 1500);
+        await shoot(page, options.out, 'showroom', stats);
+        await clearSpawned(page);
         await setCamera(page, null);
         await hideHud(page, false);
     }
