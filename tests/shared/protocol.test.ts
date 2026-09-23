@@ -51,7 +51,10 @@ const REAL_CLIENT_MESSAGES: Record<string, ClientMessage> = {
     // main.ts respawn shield decay
     respawnShieldExpired: { type: 'respawnShieldExpired' },
     // main.ts Mega ram and world/projectiles.ts hits
-    shoot: { type: 'shoot', targetId: '4f1c2c7e-3a5b-4a0e-9d8e-1b2c3d4e5f60' }
+    shoot: { type: 'shoot', targetId: '4f1c2c7e-3a5b-4a0e-9d8e-1b2c3d4e5f60' },
+    // ui/roomMenu.ts (splash start and the in-game mode switch)
+    joinRoom: { type: 'joinRoom', kind: 'freeroam' },
+    joinParty: { type: 'joinRoom', kind: 'party' }
 };
 
 describe('PROTOCOL_VERSION', () => {
@@ -71,7 +74,7 @@ describe('parseClientMessage accepts every real client message', () => {
     it('covers every client message type', () => {
         const types = new Set(Object.values(REAL_CLIENT_MESSAGES).map(m => m.type));
         expect([...types].sort()).toEqual([
-            'collectCoin', 'collectPowerup', 'honk', 'playerReady', 'rename',
+            'collectCoin', 'collectPowerup', 'honk', 'joinRoom', 'playerReady', 'rename',
             'respawnShieldExpired', 'setCarType', 'shoot', 'update'
         ]);
     });
@@ -160,7 +163,10 @@ describe('parseClientMessage rejects invalid messages', () => {
         ['rename without name', { type: 'rename' }],
         ['setCarType with null', { type: 'setCarType', carType: null }],
         ['shoot without target', { type: 'shoot' }],
-        ['shoot with object target', { type: 'shoot', targetId: { id: 'x' } }]
+        ['shoot with object target', { type: 'shoot', targetId: { id: 'x' } }],
+        ['joinRoom without kind', { type: 'joinRoom' }],
+        ['joinRoom to an unknown kind', { type: 'joinRoom', kind: 'race' }],
+        ['joinRoom with a room id', { type: 'joinRoom', kind: 'party-2' }]
     ];
 
     for (const [name, value] of invalid) {

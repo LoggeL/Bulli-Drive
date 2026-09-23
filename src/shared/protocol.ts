@@ -82,6 +82,23 @@ export interface PlayerData {
     health?: number;
 }
 
+// Room types (docs/phase-1b-design.md, section 2): the Party with coins,
+// powerups, shooting and HP is the default; Free Roam only drives and bumps.
+export const ROOM_KINDS = ['party', 'freeroam'] as const;
+export type RoomKind = typeof ROOM_KINDS[number];
+export const DEFAULT_ROOM_KIND: RoomKind = 'party';
+
+export function isRoomKind(value: unknown): value is RoomKind {
+    return typeof value === 'string' && (ROOM_KINDS as readonly string[]).includes(value);
+}
+
+// The room instance a player is in: id 'party-1', kind 'party', index 1
+export interface RoomInfo {
+    id: string;
+    kind: RoomKind;
+    index: number;
+}
+
 export interface ScoreboardEntry {
     id: string;
     name: string;
@@ -129,7 +146,9 @@ export const ClientMessageSchema = v.variant('type', [
     v.object({ type: v.literal('setCarType'), carType: v.string() }),
     v.object({ type: v.literal('playerReady') }),
     v.object({ type: v.literal('respawnShieldExpired') }),
-    v.object({ type: v.literal('shoot'), targetId: v.string() })
+    v.object({ type: v.literal('shoot'), targetId: v.string() }),
+    // Moves the player into a room of that kind (the fullest one with room)
+    v.object({ type: v.literal('joinRoom'), kind: v.picklist(ROOM_KINDS) })
 ]);
 
 export type ClientMessage = v.InferOutput<typeof ClientMessageSchema>;
@@ -144,7 +163,10 @@ export function parseClientMessage(value: unknown): ClientMessage | null {
 // ---------- Server -> Client ----------
 
 export type ServerMessage =
-    | { type: 'init', id: string, color: number, name: string, spawn: { x: number; z: number }, players: Record<string, PlayerData>, powerups: PowerupData[], coins: CoinData[], terrain: TerrainConfig, trees: TreeData[], city: CityData, scoreboard: ScoreboardEntry[] }
+    | { type: 'init', id: string, color: number, name: string, room: RoomInfo, spawn: { x: number; z: number }, players: Record<string, PlayerData>, powerups: PowerupData[], coins: CoinData[], terrain: TerrainConfig, trees: TreeData[], city: CityData, scoreboard: ScoreboardEntry[] }
+    // After joinRoom: the new room's players and items (empty outside the
+    // Party) and where the car starts; the world itself stays the same
+    | { type: 'roomJoined', room: RoomInfo, spawn: { x: number; z: number }, players: Record<string, PlayerData>, powerups: PowerupData[], coins: CoinData[], scoreboard: ScoreboardEntry[] }
     | { type: 'newPlayer', player: PlayerData }
     | { type: 'update', id: string, x: number, z: number, y?: number, angle: number, flipAngle: number, isFlipping: boolean, scale?: number, ghostActive?: boolean, shieldActive?: boolean }
     | { type: 'removePlayer', id: string }

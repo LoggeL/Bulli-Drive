@@ -1,12 +1,11 @@
-import { Player } from './types.js';
-import { PlayerData, ScoreboardEntry } from '../shared/protocol.js';
-import { CITY_LAYOUT, MEGA_SCALE, PLAZA_PROP_LAYOUT } from '../shared/constants.js';
-import { cityData } from './world.js';
-import { blockCenter, PLAZA_BLOCK } from '../shared/world/cityGen.js';
+import type { CityData } from '../../shared/protocol.js';
+import { CITY_LAYOUT, PLAZA_PROP_LAYOUT } from '../../shared/constants.js';
+import { blockCenter, PLAZA_BLOCK } from '../../shared/world/cityGen.js';
 
-export const players: Record<string, Player> = {};
+// Where a car (re)spawns: a random spot on a road or the plaza that is clear
+// of buildings, the plaza props and the other players of the same room.
 
-interface SpawnPoint {
+export interface SpawnPoint {
     x: number;
     z: number;
 }
@@ -30,10 +29,10 @@ function plazaLayout(): { x: number; z: number; halfSize: number } {
     };
 }
 
-function randomRoadPoint(): SpawnPoint | null {
-    if (cityData.roads.length === 0) return null;
+function randomRoadPoint(city: CityData): SpawnPoint | null {
+    if (city.roads.length === 0) return null;
 
-    const road = cityData.roads[Math.floor(Math.random() * cityData.roads.length)];
+    const road = city.roads[Math.floor(Math.random() * city.roads.length)];
     const halfAcross = Math.max(0, road.width / 2 - SPAWN_ROAD_EDGE_MARGIN);
     const halfAlong = Math.max(0, road.length / 2 - SPAWN_ROAD_END_MARGIN);
     const acrossOffset = (Math.random() * 2 - 1) * halfAcross;
@@ -59,8 +58,8 @@ function randomPlazaPoint(): SpawnPoint {
     };
 }
 
-function clearsStaticObstacles(point: SpawnPoint): boolean {
-    for (const building of cityData.buildings) {
+export function clearsStaticObstacles(city: CityData, point: SpawnPoint): boolean {
+    for (const building of city.buildings) {
         const halfWidth = building.width / 2 + SPAWN_BUILDING_MARGIN;
         const halfDepth = building.depth / 2 + SPAWN_BUILDING_MARGIN;
         if (Math.abs(point.x - building.x) < halfWidth &&
@@ -94,31 +93,31 @@ function clearsStaticObstacles(point: SpawnPoint): boolean {
     return true;
 }
 
-function clearsPlayers(point: SpawnPoint): boolean {
+function clearsPlayers(point: SpawnPoint, others: readonly SpawnPoint[]): boolean {
     const minDistanceSq = SPAWN_PLAYER_SPACING * SPAWN_PLAYER_SPACING;
-    for (const player of Object.values(players)) {
-        const dx = point.x - player.x;
-        const dz = point.z - player.z;
+    for (const other of others) {
+        const dx = point.x - other.x;
+        const dz = point.z - other.z;
         if (dx * dx + dz * dz < minDistanceSq) return false;
     }
     return true;
 }
 
-function distanceToClosestPlayerSq(point: SpawnPoint): number {
+function distanceToClosestSq(point: SpawnPoint, others: readonly SpawnPoint[]): number {
     let closest = Number.POSITIVE_INFINITY;
-    for (const player of Object.values(players)) {
-        const dx = point.x - player.x;
-        const dz = point.z - player.z;
+    for (const other of others) {
+        const dx = point.x - other.x;
+        const dz = point.z - other.z;
         closest = Math.min(closest, dx * dx + dz * dz);
     }
     return closest;
 }
 
-function fallbackSpawn(): SpawnPoint {
+function fallbackSpawn(city: CityData, others: readonly SpawnPoint[]): SpawnPoint {
     // Road intersections are guaranteed map surfaces and maximize the number
     // of escape directions. Plaza corners add four more crowd-safe options.
-    const verticalRoads = cityData.roads.filter(road => Math.abs(Math.sin(road.rotation)) < 0.001);
-    const horizontalRoads = cityData.roads.filter(road => Math.abs(Math.cos(road.rotation)) < 0.001);
+    const verticalRoads = city.roads.filter(road => Math.abs(Math.sin(road.rotation)) < 0.001);
+    const horizontalRoads = city.roads.filter(road => Math.abs(Math.cos(road.rotation)) < 0.001);
     const candidates: SpawnPoint[] = [];
 
     for (const vertical of verticalRoads) {
@@ -138,17 +137,17 @@ function fallbackSpawn(): SpawnPoint {
         }
     }
 
-    const safeCandidates = candidates.filter(clearsStaticObstacles);
+    const safeCandidates = candidates.filter(point => clearsStaticObstacles(city, point));
     if (safeCandidates.length === 0) {
-        // Defensive pre-init fallback. The generated central plaza is always
-        // building-free, and this point is outside the fountain clearance.
+        // Defensive: the generated central plaza is always building-free,
+        // and this point is outside the fountain clearance.
         return { x: plaza.x + plaza.halfSize * 0.7, z: plaza.z + plaza.halfSize * 0.7 };
     }
 
     let best = safeCandidates[0];
-    let bestClearance = distanceToClosestPlayerSq(best);
+    let bestClearance = distanceToClosestSq(best, others);
     for (let i = 1; i < safeCandidates.length; i++) {
-        const clearance = distanceToClosestPlayerSq(safeCandidates[i]);
+        const clearance = distanceToClosestSq(safeCandidates[i], others);
         if (clearance > bestClearance) {
             best = safeCandidates[i];
             bestClearance = clearance;
@@ -157,61 +156,21 @@ function fallbackSpawn(): SpawnPoint {
     return best;
 }
 
-export function playerScale(p: Player): number {
-    return p.megaActive ? MEGA_SCALE : 1;
-}
-
-export function randomSpawn(): { x: number; z: number } {
+/**
+ * A random free spot for a car. others are the cars of the same room only:
+ * players in another room drive in their own copy of the map.
+ */
+export function randomSpawn(city: CityData, others: readonly SpawnPoint[]): SpawnPoint {
     for (let attempt = 0; attempt < SPAWN_ATTEMPTS; attempt++) {
         const point = Math.random() < SPAWN_PLAZA_CHANCE
             ? randomPlazaPoint()
-            : randomRoadPoint();
-        if (point && clearsStaticObstacles(point) && clearsPlayers(point)) {
+            : randomRoadPoint(city);
+        if (point && clearsStaticObstacles(city, point) && clearsPlayers(point, others)) {
             return point;
         }
     }
 
-    // In a crowded server, return the safe fixed candidate with the most room
+    // In a crowded room, return the safe fixed candidate with the most room
     // rather than leaking a rejected random position into a building.
-    return fallbackSpawn();
-}
-
-export function getPublicPlayer(id: string): PlayerData {
-    const p = players[id];
-    return {
-        id: p.id,
-        color: p.color,
-        name: p.name,
-        carType: p.carType,
-        x: p.x,
-        z: p.z,
-        angle: p.angle,
-        flipAngle: p.flipAngle,
-        isFlipping: p.isFlipping,
-        scale: playerScale(p),
-        score: p.score,
-        health: p.health
-    };
-}
-
-export function getPublicPlayers(): Record<string, PlayerData> {
-    const publicPlayers: Record<string, PlayerData> = {};
-    for (const id in players) {
-        if (!players[id].ready) continue;
-        publicPlayers[id] = getPublicPlayer(id);
-    }
-    return publicPlayers;
-}
-
-export function getScoreboard(): ScoreboardEntry[] {
-    return Object.values(players)
-        .filter(p => p.ready)
-        .map(p => ({
-            id: p.id,
-            name: p.name,
-            score: p.score,
-            color: p.color
-        }))
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 10);
+    return fallbackSpawn(city, others);
 }
