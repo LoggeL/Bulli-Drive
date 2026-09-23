@@ -72,10 +72,11 @@ export async function summarize(file) {
 }
 
 /** Budget violations of one packed LOD (empty = ok). */
-export function checkBudget(lod, s) {
+export function checkBudget(lod, s, id) {
     const b = BUDGETS.lods[String(lod)];
     const errors = [];
-    if (s.triangles > b.maxTriangles) errors.push(`${s.triangles} triangles > ${b.maxTriangles}`);
+    const maxTriangles = Math.min(b.maxTriangles, BUDGETS.modelTriangles?.[id]?.[String(lod)] ?? Infinity);
+    if (s.triangles > maxTriangles) errors.push(`${s.triangles} triangles > ${maxTriangles}`);
     if (s.primitives > b.maxPrimitives) errors.push(`${s.primitives} primitives > ${b.maxPrimitives}`);
     if (s.bytes > b.maxBytes) errors.push(`${s.bytes} bytes > ${b.maxBytes}`);
     for (const n of BUDGETS.requiredNodes) if (!s.nodes.includes(n)) errors.push(`missing node ${n}`);
@@ -125,7 +126,7 @@ export async function packModel(id, spec) {
             const out = path.join(PUBLIC_DIR, `${id}_lod${lod}.glb`);
             execFileSync(GLTFPACK, ['-i', mid, '-o', out, '-cc', '-kn', '-km', '-ke'], { stdio: 'pipe' });
             const s = await summarize(out);
-            const errors = checkBudget(lod, s);
+            const errors = checkBudget(lod, s, id);
             const hash = createHash('sha256').update(fs.readFileSync(out)).digest('hex').slice(0, 12);
             console.log(`  ${id} lod${lod}: ${s.bytes} B (raw ${fs.statSync(src).size} B), ${s.triangles} tris, ` +
                 `${s.primitives} primitives, ${textures.length} KTX2 textures` +

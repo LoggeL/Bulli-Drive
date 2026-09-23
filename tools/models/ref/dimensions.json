@@ -19,6 +19,7 @@
       "conceptcarz_beetle_1965": "https://www.conceptcarz.com/s12213/volkswagen-beetle-1200.aspx",
       "dewiki_kaefer": "https://de.wikipedia.org/wiki/VW_K%C3%A4fer",
       "coker_560_15": "https://cokertire.com/tires/firestone-560-15.html",
+      "dewiki_356": "https://de.wikipedia.org/wiki/Porsche_356",
       "conceptcarz_kg_1965": "https://www.conceptcarz.com/s9324/volkswagen-karmann-ghia.aspx",
       "dewiki_kg": "https://de.wikipedia.org/wiki/VW_Karmann-Ghia_Typ_14",
       "enwiki_181": "https://en.wikipedia.org/wiki/Volkswagen_Type_181",
@@ -69,16 +70,16 @@
       "tire_diameter_m": { "value": 0.666, "source": "type2_tires", "note": "26.22 in" }
     },
     "sport": {
-      "name": "VW Karmann Ghia Typ 14 Coupe, 1965",
+      "name": "Porsche 356 B T6 Coupe, MJ 1962/63 (Karmann-Ghia-Werte bis 2026-09-23 durch den 356 ersetzt, Nutzerentscheidung)",
       "blueprint": "sport_blueprint.png",
-      "length_m":        { "value": 4.140, "source": "conceptcarz_kg_1965", "note": "Wikipedia-Tabelle nennt 4210 mm (spaetere Stossstangen)" },
-      "width_m":         { "value": 1.634, "source": "conceptcarz_kg_1965", "note": "1636 mm conceptcarz, 1634 mm Wikipedia" },
-      "height_m":        { "value": 1.330, "source": "conceptcarz_kg_1965", "note": "1331 mm; Wikipedia 1330 mm" },
-      "wheelbase_m":     { "value": 2.400, "source": "conceptcarz_kg_1965" },
-      "track_front_m":   { "value": 1.306, "source": "conceptcarz_kg_1965", "note": "51.4 in; Wikipedia (spaeteres MJ) 1315 mm" },
-      "track_rear_m":    { "value": 1.288, "source": "conceptcarz_kg_1965", "note": "50.7 in; Wikipedia (spaeteres MJ) 1360 mm" },
-      "tire_size":       { "value": "5.60-15", "source": "conceptcarz_kg_1965" },
-      "tire_diameter_m": { "value": 0.655, "source": "coker_560_15", "note": "25.79 in" }
+      "length_m":        { "value": 4.010, "source": "dewiki_356", "note": "356 B T6 und 356 C: 4010 mm" },
+      "width_m":         { "value": 1.670, "source": "dewiki_356" },
+      "height_m":        { "value": 1.310, "source": "dewiki_356", "note": "Tabelle MJ 1962: 1330 mm (Hardtop 1315), 356 C 1315 mm; 1.31 = Coupe leer, passt zur Blaupause" },
+      "wheelbase_m":     { "value": 2.100, "source": "dewiki_356" },
+      "track_front_m":   { "value": 1.306, "source": "dewiki_356" },
+      "track_rear_m":    { "value": 1.272, "source": "dewiki_356" },
+      "tire_size":       { "value": "165-15 (Guertelreifen) auf 4.5J x 15", "source": "dewiki_356", "note": "alternativ 5.60-15 Sport" },
+      "tire_diameter_m": { "value": 0.652, "source": "dewiki_356", "note": "berechnet: 15 in + 2 x 165 mm x 82 % = 652 mm" }
     },
     "jeep": {
       "name": "VW Typ 181 Kurierwagen / Thing (1968-1983, Referenz ~1973)",

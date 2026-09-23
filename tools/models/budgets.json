@@ -1,9 +1,15 @@
 {
-  "_doc": "Budgets for the packed car GLBs in public/models, checked by tools/models/build-all.mjs and tests/client/modelBudgets.test.ts. Triangles and primitives include the hidden surfboard accessory. Mobile tier low (iPhone 12/13): <=150 draw calls incl. shadow pass and <=500k triangles for the whole frame, so remote cars use LOD1/LOD2 there.",
+  "_doc": "Budgets for the packed car GLBs in public/models, checked by tools/models/build-all.mjs and tests/client/modelBudgets.test.ts. Triangles and primitives include the hidden surfboard accessory. Mobile tier low (iPhone 12/13): <=150 draw calls incl. shadow pass and <=500k triangles for the whole frame, so remote cars use LOD1/LOD2 there. modelTriangles: stricter per-model triangle limits for the cars after the T1 (LOD0 20k, LOD1 7k, LOD2 2k).",
   "lods": {
     "0": { "maxTriangles": 25000, "maxPrimitives": 10, "maxBytes": 350000 },
     "1": { "maxTriangles": 8000, "maxPrimitives": 10, "maxBytes": 160000 },
     "2": { "maxTriangles": 2000, "maxPrimitives": 4, "maxBytes": 48000 }
+  },
+  "modelTriangles": {
+    "beetle": { "0": 20000, "1": 7000, "2": 2000 },
+    "pickup": { "0": 20000, "1": 7000, "2": 2000 },
+    "sport": { "0": 20000, "1": 7000, "2": 2000 },
+    "jeep": { "0": 20000, "1": 7000, "2": 2000 }
   },
   "maxBytesPerModel": 560000,
   "requiredNodes": [

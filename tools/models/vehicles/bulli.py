@@ -1853,38 +1853,44 @@ def set_paint_coat(on):
 # --------------------------------------------------------------------------
 # main
 # --------------------------------------------------------------------------
-report = {"model": MODEL_ID, "blender": bpy.app.version_string, "script_sha1": SCRIPT_HASH, "lods": {},
-          "axes": {"units": "1 u = 1 m", "forward": "three +Z (Blender -Y)", "left": "three +X", "up": "three +Y",
-                   "origin": "ground, footprint centre"},
-          "dims_used": {"length": LENGTH, "width": WIDTH, "height": HEIGHT, "wheelbase": WB, "track_f": TRACK_F,
-                        "track_r": TRACK_R, "wheel_radius": WR, "axle_f_y": AXLE_F, "axle_r_y": AXLE_R}}
-car0 = None
-for lod in LODS:
-    set_paint_coat(lod < 2)
-    root, rep = build_lod(lod)
-    rep["glb"] = export_glb(root, os.path.join(OUT, "%s_lod%d.glb" % (MODEL_ID, lod)))
-    report["lods"][lod] = rep
-    print("LOD", lod, json.dumps({k: rep[k] for k in ("triangles_total", "draw_calls_est", "size_m", "budget_ok",
-                                                         "required_nodes_ok", "shell_tris_after_cuts", "window_cuts", "timing")}))
-    print("   parts", rep["detail_parts_tris"], rep["objects"])
-    if lod == 0:
-        car0 = root
-    else:
-        delete_hierarchy(root)
-if car0 is not None:
-    set_paint_coat(True)
-    bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, "%s_lod0.blend" % MODEL_ID))
-    if "ortho" in OPT:
-        report["ortho"] = bd_lookdev.render_ortho(WORK)
-    if "icon" in OPT:
-        # car-select icon (build-all.mjs --icons); its own render scene, so before/without the views
-        bd_lookdev.wire_ao_for_render(("paint_primary", "paint_secondary", "bulli_atlas"))
-        report["icon"] = bd_lookdev.render_icon(car0, bd_lookdev.load_env("victoria_sunset_2k"), OPT["icon"])
-    elif DO_RENDER:
-        report["renders"] = bd_lookdev.render_views(
-            car0, bd_lookdev.load_env("victoria_sunset_2k"), REN, SUFFIX, VIEWS,
-            ao_materials=("paint_primary", "paint_secondary", "bulli_atlas", "bulli_atlas_lod2"))
-report["build_s"] = round(time.time() - T0, 1)
-json.dump(report, open(os.path.join(OUT, "report.json"), "w"), indent=1)
-print("DONE", report["build_s"], "s")
+def main():
+    """build, export and (optionally) render every LOD. pickup.py imports this module for the
+    T1 shell and parts without running it."""
+    report = {"model": MODEL_ID, "blender": bpy.app.version_string, "script_sha1": SCRIPT_HASH, "lods": {},
+              "axes": {"units": "1 u = 1 m", "forward": "three +Z (Blender -Y)", "left": "three +X", "up": "three +Y",
+                       "origin": "ground, footprint centre"},
+              "dims_used": {"length": LENGTH, "width": WIDTH, "height": HEIGHT, "wheelbase": WB, "track_f": TRACK_F,
+                            "track_r": TRACK_R, "wheel_radius": WR, "axle_f_y": AXLE_F, "axle_r_y": AXLE_R}}
+    car0 = None
+    for lod in LODS:
+        set_paint_coat(lod < 2)
+        root, rep = build_lod(lod)
+        rep["glb"] = export_glb(root, os.path.join(OUT, "%s_lod%d.glb" % (MODEL_ID, lod)))
+        report["lods"][lod] = rep
+        print("LOD", lod, json.dumps({k: rep[k] for k in ("triangles_total", "draw_calls_est", "size_m", "budget_ok",
+                                                             "required_nodes_ok", "shell_tris_after_cuts", "window_cuts", "timing")}))
+        print("   parts", rep["detail_parts_tris"], rep["objects"])
+        if lod == 0:
+            car0 = root
+        else:
+            delete_hierarchy(root)
+    if car0 is not None:
+        set_paint_coat(True)
+        bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, "%s_lod0.blend" % MODEL_ID))
+        if "ortho" in OPT:
+            report["ortho"] = bd_lookdev.render_ortho(WORK)
+        if "icon" in OPT:
+            # car-select icon (build-all.mjs --icons); its own render scene, so before/without the views
+            bd_lookdev.wire_ao_for_render(("paint_primary", "paint_secondary", "bulli_atlas"))
+            report["icon"] = bd_lookdev.render_icon(car0, bd_lookdev.load_env("victoria_sunset_2k"), OPT["icon"])
+        elif DO_RENDER:
+            report["renders"] = bd_lookdev.render_views(
+                car0, bd_lookdev.load_env("victoria_sunset_2k"), REN, SUFFIX, VIEWS,
+                ao_materials=("paint_primary", "paint_secondary", "bulli_atlas", "bulli_atlas_lod2"))
+    report["build_s"] = round(time.time() - T0, 1)
+    json.dump(report, open(os.path.join(OUT, "report.json"), "w"), indent=1)
+    print("DONE", report["build_s"], "s")
 
+
+if __name__ == "__main__":
+    main()

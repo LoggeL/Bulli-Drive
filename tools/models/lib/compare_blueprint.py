@@ -1,30 +1,28 @@
 # Overlays the orthographic Workbench renders (250 px/m, written by
-# tools/models/vehicles/bulli.py --ortho) with the matching views of
-# tools/models/ref/t1_blueprint.jpg, rescaled to the real dimensions.
+# tools/models/vehicles/<id>.py --ortho) with the matching views of the car's blueprint sheet
+# (tools/models/ref/blueprints.json: sheet + pixel mapping per view), rescaled to the real dimensions.
 #   blender -b --factory-startup --python tools/models/vehicles/bulli.py -- --no-render --ortho --lods=0
-#   python3 tools/models/lib/compare_blueprint.py [<work dir>]   (default tools/models/.out/bulli/work)
-# Output: <work dir>/overlay_<view>.png. The pixel mapping (VIEWS) is specific to the T1 sheet.
+#   python3 tools/models/lib/compare_blueprint.py [<work dir>] [--car=<id>]
+#   (defaults: car bulli, work dir tools/models/.out/<id>/work)
+# Output: <work dir>/overlay_<view>.png.
 # (left: blueprint, middle: render, right: 50/50 blend with blueprint edges in green).
 import os
 import numpy as np
 from PIL import Image, ImageFilter, ImageDraw
 
-import sys
+import sys, json
 MODELS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BP = Image.open(os.path.join(MODELS, "ref", "t1_blueprint.jpg")).convert("RGB")
+ARGS = [a for a in sys.argv[1:] if not a.startswith("--car=")]
+CAR = next((a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--car=")), "bulli")
+MAP = json.load(open(os.path.join(MODELS, "ref", "blueprints.json")))[CAR]
+BP = Image.open(os.path.join(MODELS, "ref", MAP["sheet"])).convert("RGB")
 PPM = 250.0                    # render px per metre
 W, H = 1200, 600               # render size, camera centre at world (0, 0.97) (top: (0, 0))
 
-# blueprint view -> world mapping: world = (bx - bx0) / sx (+ offset), z = (by0 - by) / sz
+# blueprint view -> world mapping: bx = bx0 + (u - wx0) * sx, by = by0 - v * sz
 # horizontal render axis: side = y (front left), front = x (car left on the right),
 # rear = -x, top = y (vertical axis = -x)
-VIEWS = {
-    #        crop box            bx0     sx     by0   sz     wx0 (world at bx0)   vertical centre
-    "side":  ((540, 30, 1500, 480), 552.5, 216.0, 465.0, 209.3, -2.14, 0.97),
-    "front": ((60, 30, 480, 480), 268.0, 211.0, 465.0, 211.0, 0.0, 0.97),
-    "rear":  ((60, 510, 480, 950), 268.0, 209.0, 935.0, 209.0, 0.0, 0.97),
-    "top":   ((555, 535, 1480, 905), 563.0, 211.0, 719.0, 183.0, -2.14, 0.0),
-}
+VIEWS = {v: (None,) + tuple(MAP[v]) for v in ("side", "front", "rear", "top")}
 
 
 def warp(view):
@@ -43,7 +41,7 @@ def warp(view):
     return BP.transform((W, H), Image.AFFINE, (a, 0, c0, 0, e, f0), resample=Image.BICUBIC)
 
 
-out_dir = sys.argv[1] if len(sys.argv) > 1 else os.path.join(MODELS, ".out", "bulli", "work")
+out_dir = ARGS[0] if ARGS else os.path.join(MODELS, ".out", CAR, "work")
 for v in VIEWS:
     rp = os.path.join(out_dir, "ortho_%s.png" % v)
     if not os.path.exists(rp):
