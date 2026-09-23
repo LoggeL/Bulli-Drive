@@ -47,13 +47,15 @@ export function createEnvironment(treeData: TreeData[]) {
         const h = getTerrainHeight(x, z);
         vertices[i + 1] = h;
 
-        // Color based on height + noise
+        // Color based on height + noise. Only hilltops turn rocky (valleys stay
+        // green), and the blend factor is clamped: extrapolating past the rock
+        // color produced negative channels, which rendered as cyan patches.
         const vi = (i / 3) * 3;
         const noise = Math.sin(x * 0.1) * Math.cos(z * 0.1);
-        const heightFactor = Math.abs(h) / 6.0;
+        const heightFactor = Math.max(h, 0) / 6.0;
 
         if (heightFactor > 0.7) {
-            color.lerpColors(dirt, rock, (heightFactor - 0.7) / 0.3);
+            color.lerpColors(dirt, rock, Math.min((heightFactor - 0.7) / 0.3, 1));
         } else if (noise > 0.3) {
             color.copy(dirt).lerp(grassLight, 0.5);
         } else {
