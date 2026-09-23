@@ -64,6 +64,9 @@ export interface BulliDebugSnapshot {
     remotes: Record<string, CarSnapshot & { name: string }>;
     // Combined keyboard/touch drive axes
     inputs: { throttle: number; steer: number };
+    // performance.now() at which the game loop took its last frame's dt
+    // (THREE.Clock.getDelta), in ms; the dt the physics really got
+    frameTime: number;
     // three.js counters of the last rendered frame
     render: { frame: number; calls: number; triangles: number };
     camera: { x: number; y: number; z: number; fov: number };
@@ -164,6 +167,7 @@ export function installE2EHook(): void {
                 local: state.bulli ? carSnapshot(state.bulli) : null,
                 remotes,
                 inputs: { throttle: state.inputs.throttle, steer: state.inputs.steer },
+                frameTime: state.clock.oldTime,
                 render: {
                     frame: state.renderer?.info.render.frame ?? 0,
                     calls: state.renderer?.info.render.calls ?? 0,

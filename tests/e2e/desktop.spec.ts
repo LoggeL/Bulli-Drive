@@ -13,11 +13,15 @@ interface Cruise {
 }
 
 // Runs in the page: waits until the car holds a steady speed, then records its
-// position every frame for about a second.
+// position every frame for about a second. Times come from the game's own
+// clock, not from the requestAnimationFrame timestamps: after a long frame
+// (software WebGL compiling a shader) the next rAF timestamp lies well before
+// the moment the game takes its dt, and the frames after it looked like they
+// had covered too little ground.
 async function measureCruise(): Promise<Cruise> {
     type Local = { x: number; z: number; speed: number };
     const debug = (window as unknown as {
-        __bulliDebug: { snapshot(): { local: Local } };
+        __bulliDebug: { snapshot(): { local: Local; frameTime: number } };
     }).__bulliDebug;
     const nextFrame = () => new Promise<number>(resolve => requestAnimationFrame(resolve));
 
@@ -33,8 +37,11 @@ async function measureCruise(): Promise<Cruise> {
 
     const samples: Array<Local & { time: number }> = [];
     do {
-        const time = await nextFrame();
-        samples.push({ ...debug.snapshot().local, time });
+        await nextFrame();
+        const snapshot = debug.snapshot();
+        const time = snapshot.frameTime;
+        // Only one sample per game frame
+        if (samples.length === 0 || time !== samples[samples.length - 1].time) samples.push({ ...snapshot.local, time });
     } while (samples[samples.length - 1].time - samples[0].time < 1000);
 
     const first = samples[0];
