@@ -1,6 +1,7 @@
 // Screenshot set for visual before/after comparisons: starts the production
 // server, joins with headless Chromium (?e2e=1) and captures fixed views
-// (chase camera on a street, plaza, park, overview, city edge, mobile).
+// (chase camera on a street, plaza, park, street furniture, palms, fountain,
+// overview, city edge, mobile).
 //
 //   npm run screenshots -- --out=shots/after                 # build + capture
 //   npm run screenshots -- --out=shots/after --gl=swiftshader
@@ -269,6 +270,34 @@ async function captureDesktop(browser: Browser, baseURL: string, options: Option
         await setCamera(page, { position: [park.x - 24, 10, park.z - 26], lookAt: [park.x, 1, park.z], fov: 55 });
         await settle(page, 1500);
         await shoot(page, options.out, 'park', stats);
+    }
+
+    // Street furniture at the signalized crossing next to the plaza: lamp
+    // and signal poles, hydrant, trash can (graphics G1 props)
+    if (want('props')) {
+        await place(page, MID_ROAD + 3, MID_CROSS - 30, 0);
+        await hideHud(page, true);
+        await setCamera(page, { position: [MID_ROAD - 3, 2.2, MID_CROSS - 20], lookAt: [MID_ROAD + 8.1, 2.4, MID_CROSS - 8.1], fov: 50 });
+        await settle(page, 1500);
+        await shoot(page, options.out, 'props', stats);
+    }
+
+    // Looking up at the boulevard palms (crowns against the sky)
+    if (want('palms')) {
+        await place(page, MID_ROAD, -96, 0);
+        await hideHud(page, true);
+        await setCamera(page, { position: [MID_ROAD - 4, 2.5, -40], lookAt: [MID_ROAD + 8.2, 10, -20], fov: 55 });
+        await settle(page, 1500);
+        await shoot(page, options.out, 'palms', stats);
+    }
+
+    // Close-up of the plaza fountain (water shader)
+    if (want('fountain')) {
+        await place(page, plaza.x + 2, plaza.z + 22, Math.PI);
+        await hideHud(page, true);
+        await setCamera(page, { position: [plaza.x + 1.5, 3.2, plaza.z + 10.5], lookAt: [plaza.x, 1.3, plaza.z], fov: 50 });
+        await settle(page, 1500);
+        await shoot(page, options.out, 'fountain', stats);
     }
 
     // High overview of the whole city and the terrain around it
