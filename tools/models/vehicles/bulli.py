@@ -6,7 +6,7 @@
 #
 #   blender -b --factory-startup --python tools/models/vehicles/bulli.py -- \
 #       [--out=<dir>] [--lods=2,1,0] [--no-render] [--views=front34,side] [--ortho] \
-#       [--skylights=4] [--no-ao]
+#       [--skylights=4] [--no-ao] [--icon=<png>]
 #
 # Normally run through tools/models/build-all.mjs, which also packs the GLBs (meshopt +
 # KTX2) into public/models. Default output: tools/models/.out/bulli/.
@@ -73,7 +73,9 @@ AXLE_F = -LENGTH / 2 + 0.945
 AXLE_R = AXLE_F + WB
 BELT = 1.262          # colour split red/cream, top edge of the belt swage
 V_TIP_Z = 0.57        # tip of the cream "V" on the front
-V_X = 0.705           # where the V arms meet the belt (front corners)
+V_TIP_R = 0.035       # v3: rounded tip (hyperbolic blend, radius-like, m)
+V_SLOPE = 1.05        # rise of the straight part of the V arms (dz/dx)
+V_X = 0.78            # v3: the arms run tangentially into the belt swage here (front corners)
 ARCH_R, ARCH_ZC = 0.40, 0.35
 
 
@@ -87,7 +89,8 @@ MAT_SPECS = {
     "paint_primary":   dict(col="#7A1418", rough=0.35, coat=1.0, coat_rough=0.03, spec=0.2),
     "paint_secondary": dict(col="#D6CBB2", rough=0.35, coat=1.0, coat_rough=0.03, spec=0.2),
     "chrome":          dict(col="#EDEDEF", rough=0.05, metal=1.0),
-    "glass":           dict(col="#141B20", rough=0.02, alpha=0.34),    # transparent (BLEND), no transmission
+    # v3: lighter, less dense tint (critique: rear window read as a black slab in the chase view)
+    "glass":           dict(col="#1C252C", rough=0.02, alpha=0.24),    # transparent (BLEND), no transmission
     "glass_dark":      dict(col="#0B0F13", rough=0.04),                # opaque: skylights, LOD2
     "rubber":          dict(col="#141414", rough=0.86),
     "tread":           dict(col="#171717", rough=0.92, region="tread"),
@@ -100,10 +103,12 @@ MAT_SPECS = {
     "canvas":          dict(col="#4F4338", rough=0.95),
     "plate":           dict(col="#FFFFFF", rough=0.45, region="plate"),
     "hubcap":          dict(col="#EDEDEF", rough=0.05, metal=1.0, region="hubcap"),
-    "interior":        dict(col="#7E7464", rough=0.8),
-    "headliner":       dict(col="#E6DFCC", rough=0.9),
-    "floor":           dict(col="#2E2A26", rough=0.95),
-    "seat":            dict(col="#C6BA9F", rough=0.55),
+    # v3: lighter cabin + a faint emissive "bounce" (the cabin only gets light through the glass;
+    # in the game it sits in the body's shadow and read as a dark hole through the rear window)
+    "interior":        dict(col="#A69A86", rough=0.8, emit="#A69A86", estr=0.10),
+    "headliner":       dict(col="#EFE8D6", rough=0.9, emit="#EFE8D6", estr=0.16),
+    "floor":           dict(col="#4E473F", rough=0.95),
+    "seat":            dict(col="#CFC2A4", rough=0.55, emit="#CFC2A4", estr=0.10),
     "ivory":           dict(col="#ECE4CE", rough=0.3),
     "surf_board":      dict(col="#EFE6CF", rough=0.28),
     "surf_stripe":     dict(col="#1D7686", rough=0.28),
@@ -500,16 +505,50 @@ def roof_ring(t):
     return (z, A, F, R, s["bF"], s["nF"], s["bR"], s["nR"])
 
 
-V_PTS = [(0.0, V_TIP_Z), (0.40, 0.99), (0.60, 1.18), (V_X, BELT)]
+def _v_tip(x):
+    return V_TIP_Z + V_SLOPE * (math.sqrt(x * x + V_TIP_R * V_TIP_R) - V_TIP_R)
+
+
+def _v_straight_end():
+    """x where the straight arm hands over to the ease into the belt (the ease is a parabola that
+    starts with the arm's slope and ends horizontal at (V_X, BELT))"""
+    lo, hi = 0.0, V_X
+    for _ in range(60):
+        xa = (lo + hi) / 2
+        if _v_tip(xa) + V_SLOPE * (V_X - xa) / 2 > BELT:
+            hi = xa
+        else:
+            lo = xa
+    return (lo + hi) / 2
+
+
+V_XA = _v_straight_end()
 
 
 def z_v(x):
-    """height of the V boundary on the front at lateral position x (blueprint front view)"""
+    """height of the V boundary on the front at lateral position x (v3: rounded tip, straight arms,
+    tangential run into the belt swage like the real T1; v2 was a 4-point polyline with a sharp tip
+    and a kink at the belt)"""
     x = abs(x)
-    for (x0, z0), (x1, z1) in zip(V_PTS, V_PTS[1:]):
-        if x <= x1:
-            return z0 + (z1 - z0) * (x - x0) / (x1 - x0)
-    return BELT
+    if x >= V_X:
+        return BELT
+    if x <= V_XA:
+        return _v_tip(x)
+    d = x - V_XA
+    return _v_tip(V_XA) + V_SLOPE * d - V_SLOPE * d * d / (2 * (V_X - V_XA))
+
+
+def v_pts(n):
+    """n + 1 points along one V arm for the planar bisect cuts: denser at the rounded tip and in
+    the ease into the belt, where the curve bends"""
+    xs = [0.0, V_TIP_R * 0.6, V_TIP_R * 1.6]
+    m = max(1, n - 5)
+    for k in range(1, m + 1):
+        xs.append(V_TIP_R * 1.6 + (V_XA - V_TIP_R * 1.6) * k / m)
+    xs += [V_XA + (V_X - V_XA) * t for t in (0.4, 0.75, 1.0)]
+    if n <= 4:
+        xs = [0.0, V_TIP_R * 1.6, V_XA, V_XA + (V_X - V_XA) * 0.55, V_X]
+    return [(x, z_v(x)) for x in xs]
 
 
 def build_shell(q):
@@ -540,6 +579,7 @@ def build_shell(q):
     bm = mb.bm
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     # cream V on the front: bisect along the two V arms, recolour above
+    V_PTS = v_pts(q["v_n"])
     for side in (1, -1):
         for (x0, z0), (x1, z1) in zip(V_PTS, V_PTS[1:]):
             sub = []
@@ -1222,24 +1262,20 @@ def build_details(S, q, specs):
 
     # ---------------- V swage bead + chrome belt loop ----------------
     if q["strips"]:
-        na = q["strip_arm"]
-        arm = []
-        for i in range(na + 1):
-            x = V_X * i / na
-            z = z_v(x) if i < na else 1.2535
-            arm.append(Vector((x, -3, z)))
-        BEAD = 0.0055
+        arm = [Vector((x, -3, z)) for (x, z) in v_pts(q["strip_arm"])]
+        arm[-1] = Vector((V_X, -3, 1.2535))
+        BEAD = 0.0075                                     # v3: taller, crisper swage (was 5.5 mm)
         if q["bead"]:
             for sgn in (1, -1):
                 pts, nrms = [], []
-                for p in arm[:-1] + [Vector((V_X + 0.01, -3, BELT - 0.004))]:
+                for p in arm[:-1] + [Vector((V_X, -3, BELT - 0.004))]:
                     loc, n = S.ray(Vector((p.x * sgn, -4, p.z - 0.004)), (0, 1, 0))
                     pts.append(loc)
                     nrms.append(n)
                 n0 = mb.nfaces()
-                prof = [(-0.030, -0.0015), (-0.019, 0.0022), (-0.009, 0.0048), (0.0, BEAD), (0.009, 0.0048),
-                        (0.019, 0.0022), (0.030, -0.0015)] if q["bead"] == "hi" else \
-                       [(-0.026, -0.0015), (-0.010, 0.0045), (0.0, BEAD), (0.010, 0.0045), (0.026, -0.0015)]
+                prof = [(-0.032, -0.0015), (-0.019, 0.0026), (-0.008, 0.0064), (0.0, BEAD), (0.008, 0.0064),
+                        (0.019, 0.0026), (0.032, -0.0015)] if q["bead"] == "hi" else \
+                       [(-0.028, -0.0015), (-0.010, 0.0058), (0.0, BEAD), (0.010, 0.0058), (0.028, -0.0015)]
                 strip(mb, pts, nrms, prof, "paint_primary")
                 iS = mb.mi("paint_secondary")
                 for fc in mb.faces_since(n0):
@@ -1563,7 +1599,7 @@ Q = {
     # the 4 wheels); LOD0/1 get window openings + a cabin, LOD2 keeps opaque glass and merges the wheels.
     0: dict(nqF=14, nqR=12, nS=6, rows=None, roof=[0.08, 0.17, 0.27, 0.38, 0.5, 0.62, 0.74, 0.87, 1.0],
             crown=[(0.72, 0.0135), (0.40, 0.019)], seal=3, glass_rings=2, nc=3, maxseg=0.28, sky_nc=1,
-            skylights=True, sky_curved=True, strips=True, strip_nq=12, strip_arm=10, arch_n=18, lamp=28, logo_seg=32,
+            skylights=True, sky_curved=True, strips=True, strip_nq=12, strip_arm=14, v_n=12, arch_n=18, lamp=28, logo_seg=32,
             logo_strokes=True, rear_logo=True, wheel_segs=48, tire="hi", seams=True, louvers="hi",
             bumper_n=16, tube=8, mirrors=True, wipers=True, handles=True, sunroof="hi", under=True, plate=True,
             surf_n=12, holes=True, vent_bar=6, bead="hi", interior=True, blob=True, arch_segs=48,
@@ -1572,8 +1608,8 @@ Q = {
             merge_wheels=False),
     1: dict(nqF=6, nqR=5, nS=2, rows=[0, 2, 4, 7, 11, 13, 14, 15, 17, 19, 21], roof=[0.25, 0.55, 1.0],
             crown=[(0.5, 0.017)], seal=1, glass_rings=0, nc=2, maxseg=0.9, sky_nc=1,
-            skylights=True, sky_curved=False, strips=True, strip_nq=6, strip_arm=5, arch_n=12, lamp=20, logo_seg=20,
-            logo_strokes=True, rear_logo=False, wheel_segs=24, tire="mid", seams="rear", louvers="lo",
+            skylights=True, sky_curved=False, strips=True, strip_nq=6, strip_arm=7, v_n=7, arch_n=12, lamp=20, logo_seg=20,
+            logo_strokes=True, rear_logo=False, wheel_segs=22, tire="mid", seams="rear", louvers="lo",
             bumper_n=10, tube=6, mirrors=True, wipers=False, handles=False, sunroof="lo", under="lo", plate=True,
             surf_n=6, holes=True, vent_bar=0, bead="lo", interior=True, blob=True, arch_segs=32,
             corner_seg=0.25, corner_rings=1, cut_nc=1, cut_maxseg=2.0,
@@ -1581,7 +1617,7 @@ Q = {
             merge_wheels=False),
     2: dict(nqF=4, nqR=3, nS=1, rows=[0, 2, 6, 10, 13, 14, 17, 21], roof=[0.4, 1.0], crown=[],
             seal=0, glass_rings=1, nc=1, maxseg=2.0, sky_nc=1,
-            skylights=False, sky_curved=False, strips=False, strip_nq=4, strip_arm=2, arch_n=4, lamp=8, logo_seg=8,
+            skylights=False, sky_curved=False, strips=False, strip_nq=4, strip_arm=2, v_n=4, arch_n=4, lamp=8, logo_seg=8,
             logo_strokes=False, rear_logo=False, wheel_segs=10, tire="lo", seams=False, louvers=False,
             bumper_n=6, tube=4, mirrors=False, wipers=False, handles=False, sunroof=None, under=False, plate=False,
             surf_n=5, holes=False, vent_bar=0, bead=False, interior=False, blob=False, arch_segs=12,
@@ -1790,7 +1826,7 @@ def build_lod(lod):
     if lod < 2 and "no-ao" not in OPT:
         wheel_geos = [o for o in root.children_recursive if o.name.endswith("_geo") and o.type == "MESH"]
         rep["ao_body"] = bake_ao(shell, [shell] + wheel_geos, samples=32 if lod == 0 else 20,
-                                 skip=GLASSY, interior_mats=INTERIOR_MATS)
+                                 skip=GLASSY, interior_mats=INTERIOR_MATS, interior_strength=0.25)
         if wheel_geos:
             w0 = wheel_geos[0]
             rep["ao_wheel"] = bake_ao(w0, [w0], samples=24 if lod == 0 else 16, dist=0.10, strength=0.8,
@@ -1840,7 +1876,11 @@ if car0 is not None:
     bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, "%s_lod0.blend" % MODEL_ID))
     if "ortho" in OPT:
         report["ortho"] = bd_lookdev.render_ortho(WORK)
-    if DO_RENDER:
+    if "icon" in OPT:
+        # car-select icon (build-all.mjs --icons); its own render scene, so before/without the views
+        bd_lookdev.wire_ao_for_render(("paint_primary", "paint_secondary", "bulli_atlas"))
+        report["icon"] = bd_lookdev.render_icon(car0, bd_lookdev.load_env("victoria_sunset_2k"), OPT["icon"])
+    elif DO_RENDER:
         report["renders"] = bd_lookdev.render_views(
             car0, bd_lookdev.load_env("victoria_sunset_2k"), REN, SUFFIX, VIEWS,
             ao_materials=("paint_primary", "paint_secondary", "bulli_atlas", "bulli_atlas_lod2"))

@@ -266,3 +266,40 @@ def render_ortho(out_dir):
     return res
 
 
+
+
+def render_icon(car_root, info, path, size=(480, 300)):
+    """Car-select icon of the start screen: the car alone on a transparent background, seen from the
+    front left like a product shot, lit by the sun-clamped HDRI and a warm key light. build-all.mjs
+    trims it and writes public/icons/car-<id>.webp."""
+    scene = bpy.context.scene
+    col = scene.collection
+    so, mp, info = setup_render_scene(info)
+    for o in list(col.objects):
+        if o.name.startswith(("ground", "line")):
+            o.hide_render = True
+    r = scene.render
+    r.resolution_x, r.resolution_y = size
+    r.film_transparent = True
+    r.image_settings.file_format = "PNG"
+    r.image_settings.color_mode = "RGBA"
+    scene.view_settings.exposure = -0.1
+    # key light from the front left, a little above the car
+    rel = math.radians(70)
+    el = math.radians(28)
+    sdir = Vector((math.sin(rel) * math.cos(el), -math.cos(rel) * math.cos(el), math.sin(el)))
+    so.rotation_euler = (-sdir).to_track_quat("-Z", "Y").to_euler()
+    for o in car_root.children_recursive:
+        if o.name == "accessory_surfboard":
+            o.hide_render = True
+    cd = bpy.data.cameras.new("icon")
+    cd.lens = 85
+    co = bpy.data.objects.new("cam_icon", cd)
+    col.objects.link(co)
+    aim(co, (7.6, -9.8, 2.4), (0.0, 0.05, 0.92))
+    scene.camera = co
+    r.filepath = path
+    bpy.ops.render.render(write_still=True)
+    r.film_transparent = False
+    print("ICON", path)
+    return path

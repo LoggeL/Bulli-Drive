@@ -23,6 +23,10 @@ tools/models/
   src/                 small inputs of the builds (licence plate decal)
 ```
 
+The car-select icon of the start screen (`public/icons/car-<id>.webp`) is an
+Eevee render of LOD0 (`bd_lookdev.render_icon`, transparent film), trimmed
+and fitted into 156 x 96 px by `build-all.mjs --icons`.
+
 ## Running it
 
 ```bash
@@ -31,6 +35,7 @@ npm --prefix tools run models                  # all cars: Blender build + pack 
 node tools/models/build-all.mjs --only=bulli   # one car
 node tools/models/build-all.mjs --skip-blender # re-pack tools/models/.out without Blender
 node tools/models/build-all.mjs --render       # also Eevee stills (needs the look-dev inputs below)
+node tools/models/build-all.mjs --only=bulli --icons  # also the car-select icon -> public/icons/car-bulli.webp
 ```
 
 Blender 5.2 LTS (`$BLENDER`, else `/opt/homebrew/bin/blender`,
@@ -82,6 +87,12 @@ python3 tools/models/lib/compare_blueprint.py  # -> .out/bulli/work/overlay_*.pn
 - **No eyes** on any car; the real VW logo stays (user decision).
 - **Defaults of the Bulli:** 4 skylights per side, closed canvas sunroof,
   chrome bumpers.
+- **In the game** (`src/client/vehicle/GltfCarBody.ts`, see `docs/cars.md`):
+  uniform scale per car (`MODEL_SCALE`, Bulli 1.15 to fill the sim hull),
+  LOD by camera distance (0-25 / 25-70 / >70 m), every material cloned per
+  car, the glass blob discarded (the game draws its own contact shadow), the
+  tail (red) and amber cells of the atlas emissive map lit as brake lights
+  and blinkers, so keep lamp colours clearly red / amber / white.
 
 ## Budgets
 
@@ -94,8 +105,8 @@ python3 tools/models/lib/compare_blueprint.py  # -> .out/bulli/work/overlay_*.pn
 | 1 | 8 000 | 10 | 160 KB | mid distance, own car on weak phones |
 | 2 | 2 000 | 4 | 48 KB | far cars |
 
-All LODs of one car together: at most 560 KB. The Bulli is at 205 / 111 /
-23 KB with 24 415 / 7 995 / 1 942 triangles. The mobile frame budget (tier
+All LODs of one car together: at most 560 KB. The Bulli is at 206 / 111 /
+24 KB with 24 719 / 7 965 / 1 960 triangles. The mobile frame budget (tier
 low, iPhone 12/13: at most 150 draw calls including the shadow pass, 500k
 triangles) is why other cars use LOD1/LOD2 on phones.
 

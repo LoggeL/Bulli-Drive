@@ -49,7 +49,7 @@ test('car models load, decode and warm up during the splash screen', async ({ op
     const info = await player.page.evaluate(() =>
         (window as unknown as { __bulliDebug: ModelHook }).__bulliDebug.modelInfo('bulli', 1));
     expect(info).not.toBeNull();
-    expect(info!.triangles).toBe(7995);
+    expect(info!.triangles).toBe(7965);
     for (const node of ['body', 'wheel_fl', 'wheel_fr', 'wheel_rl', 'wheel_rr', 'wheel_fl_geo', 'socket_nametag', 'accessory_surfboard']) {
         expect(info!.nodes).toContain(node);
     }

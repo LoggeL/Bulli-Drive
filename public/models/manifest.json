@@ -14,25 +14,25 @@
         {
           "lod": 0,
           "file": "bulli_lod0.glb",
-          "hash": "f203d17f4e38",
-          "bytes": 204764,
-          "triangles": 24415,
+          "hash": "6d27819e7da6",
+          "bytes": 206400,
+          "triangles": 24719,
           "primitives": 9
         },
         {
           "lod": 1,
           "file": "bulli_lod1.glb",
-          "hash": "c5d30bcc58e0",
-          "bytes": 110528,
-          "triangles": 7995,
+          "hash": "74bb81796462",
+          "bytes": 111236,
+          "triangles": 7965,
           "primitives": 9
         },
         {
           "lod": 2,
           "file": "bulli_lod2.glb",
-          "hash": "e8a1e6bca548",
-          "bytes": 23360,
-          "triangles": 1942,
+          "hash": "4d22befc261c",
+          "bytes": 23504,
+          "triangles": 1960,
           "primitives": 4
         }
       ]
