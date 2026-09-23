@@ -14,8 +14,8 @@ Die Spielwelt ist vom Low-Poly-Stil mit Einzel-Meshes auf einen realistischen Lo
 | Straßen | Flächen in einer Farbe | PBR-Asphalt (Poly Haven) mit Radspuren, Ölspur, Rinnstein-Schmutz und Flicken. Markierungen abgefahren (gelbe Mittellinie, weiße Randlinien, Continental-Zebrastreifen, Haltelinien, rote Bordsteine an den Ecken) |
 | Gehwege, Blöcke | einfarbig | Besenstrich-Beton mit 1,5-m-Fugenraster, Bordsteine, Gassen in Asphalt |
 | Gebäude | Box + Einzel-Mesh-Fenster, Rahmen, Türen, Schilder | Stuckfassaden aus dem Geschoss-Atlas (Fenster, Balkone, Türen und Läden im Atlas statt als Meshes), getönt nach der Server-Farbe (auf ruhige Pastelltöne abgebildet), Gurtgesims, Kranzgesims, Walmdach mit Ziegeln oder Flachdach mit Kiesbelag, Brüstung, Terrakotta-Abdeckung und Ziegel-Vordach. Dazu gestreifte Markisen und Ladenfronten (Diner, Surf-Shop, Tankstelle) |
-| Plaza, Park | Einzel-Meshes | Terrakotta-Creme-Pflaster, Steinbrunnen mit Wasser-Shader, Pflanzkübel, Sonnenschirme. Rasen (PBR), Sandwege, Teich, Eichen, Bougainvillea-Beete |
-| Straßenmöbel | Kugel-Laternen | Schwanenhals-Laternen der Probe, Fächerpalmen (Washingtonia) und Dattelpalmen aus der Probe |
+| Plaza, Park | Einzel-Meshes | Terrakotta-Platten (Shader), profilierter Steinbrunnen mit zwei Schalen, fallendem Wasser und Wasser-Shader, Terrakotta-Töpfe, Marktschirme. Rasen (PBR), Wege mit Beton-Kante, Teich mit Steinrand, Kanarische Dattelpalmen, Bänke, Bougainvillea-Beete (Details unten) |
+| Straßenmöbel | Kugel-Laternen | instanziert: Schwanenhals-Laternen, Ampel-Auslegermasten mit Straßenleuchte, Hydranten, Mülleimer, Parkbänke. Palmen instanziert mit Wind und Fern-Impostor (Details unten) |
 | Gelände | grüne Vertexfarben, Kegelbäume | trockenes goldenes Gras (PBR) mit Chaparral-Flecken, Erde und Fels an steilen Hängen. Eichen und Zypressen als Kreuzkarten, Felsen, Büsche. Außerhalb der Spielfläche steigt eine Hügelkette zum Horizont an (nur Optik) |
 
 ## Draw Calls
@@ -33,6 +33,45 @@ Gemessen mit `npm run screenshots` auf dem M5-GPU, **einschließlich Schatten-Pa
 | Mobil hoch (iPhone 13, Tier low) | 571 | 101 |
 
 Die ganze statische Stadt besteht aus je einem Mesh pro Material, etwa 16 Draw Calls plus Schatten. Den Rest der Calls verursachen Spielobjekte, die dieser Schritt nicht anfasst: 30 Münzen, 25 Powerups mit je zwei Meshes und das prozedurale Auto mit rund 25 Meshes. Die Dreiecke steigen von etwa 100 k auf etwa 200 k (Desktop) bzw. 150 k (Mobil), vor allem durch das größere Gelände mit Hügelkette. Das Budget für Tier low liegt bei ≤ 500 k.
+
+## Palmen und Straßenmöbel (Schritt palms-props)
+
+Palmen, Straßenmöbel, Plaza und Park sind in einem zweiten Schritt realistischer geworden. Positionen und Collider sind unverändert: `obstacles.json` der Screenshot-Läufe ist vorher und nachher byte-gleich, der E2E-Test pinnt weiter den SHA-1.
+
+**Palmen** (`src/client/world/palms.ts`)
+- Washingtonia robusta am Boulevard mit dichterer, grünerer Krone: 5 Blattringe statt 4, fast nur die grünen Zellen des Fächer-Atlas, stärkere Transluzenz im Gegenlicht, kurzer Rock aus toten Blättern. Kanarische Dattelpalmen mit dickem Stamm und rund 60 Wedeln.
+- Instanziert: pro Art ein Stamm- und ein Wedel-Mesh für alle nahen Palmen.
+- Wind: Jeder Vertex trägt `wind` = (Biegung, Flattern, Phase). Der Vertex-Shader (`WIND_GLSL` in `materials.ts`) lässt die Palme schwanken und die Blätter flattern. Der Schatten-Pass nutzt dasselbe über ein `customDepthMaterial`, die Schatten schwanken also mit. Im software-Tier ist der Wind aus.
+- Fern-LOD: Ab 170 m (Handy 110 m, software 80 m, Hysterese 8 m) wird eine Palme zur Impostor-Karte. Die Karte dreht sich um die Hochachse zur Kamera und wird mit gerundeten Normalen beleuchtet. Ihr Bild wird zur Laufzeit aus derselben Geometrie und denselben Texturen in einen Atlas gerendert, sobald die Texturen geladen sind. Nach einem Kontextverlust wird es neu gerendert, bis dahin sind alle Palmen nah. Alle fernen Palmen zusammen kosten einen Draw Call.
+- Der Park („Palm Park“) hat statt der vier Eichen-Karten Dattelpalmen auf denselben Plätzen mit denselben Collidern.
+
+**Straßenmöbel** (`src/client/world/furniture.ts`, Platzierung in `streetLayout.ts`)
+- Pro Art ein `InstancedMesh`: Schwanenhals-Laterne (Gusseisen, Milchglas-Kugel), Ampelmast (verzinkter Mast, 7-m-Ausleger mit zwei Signalköpfen über den Fahrspuren, ein Kopf am Mast, Straßenleuchte obendrauf), kalifornischer Hydrant, Mülleimer aus Stahllamellen und Parkbank (Gusseisen und Holz).
+- Materialien: ein gemeinsames Material. Das Vertex-Attribut `surface` trägt Rauheit, Metallizität, Emission und Ampel-Linse, dazu Rauschen in der Rauheit und Schmutz am Boden. Verzinkter Stahl ist metallisch und spiegelt die Environment-Map.
+- Ampeln: An den fünf Kreuzungen mit einem Mast an jeder Ecke werden alle vier Laternen zu Ampelmasten. Jeder Ausleger reicht über die Spuren des Verkehrs, der von gegenüber kommt (Rechtsverkehr, fernes rechtes Eck). Die Lichter schalten im Shader in einem 40-s-Zyklus (16 s grün, 3,5 s gelb, kurzes Allrot). Die beiden Achsen sind um einen halben Zyklus versetzt.
+- Hydranten und Mülleimer stehen nur innerhalb bestehender Collider: neben einem Mast (Collider 0,7 m) oder am Ende einer Bank (1,7 m). Es gibt also keine neuen Hindernisse, und das Auto fährt nie durch einen Hydranten. `tests/client/streetLayout.test.ts` prüft, dass jedes Teil im Collider seines Wirts steht und dessen Fuß nicht schneidet.
+- Bestand: 12 Laternen, 20 Ampelmasten, 6 Hydranten, 7 Mülleimer, 4 Bänke.
+
+**Plaza und Park**
+- Plaza: Terrakotta-Platten (60 cm) als Shader auf dem Beton-PBR (`M.pavers`) mit Farbe pro Platte und Mörtelfugen. Terrakotta-Töpfe mit Wulstrand, Marktschirme mit achteckigem Dach, Rippen, Volant, Holzstiel und gusseisernem Fuß.
+- Brunnen (`src/client/world/fountain.ts`): profiliertes Steinbecken, Säule mit zwei Schalen und Spitze. Wasserflächen mit Wellenringen und Schaum dort, wo das Wasser auftrifft (`M.fountainWater`). Fallende Wasserschleier von beiden Schalenrändern und eine Wasserglocke über der Spitze mit nach unten laufenden Schlieren (`M.falls`). Nur `uTime` animiert, die Kugel-Partikel auf der CPU sind weg.
+- Park: Bänke zum Teich gedreht, Teich mit profiliertem Steinrand, Wege mit Beton-Kante, Beete mit Steinrand.
+
+**Draw Calls und Dreiecke** (M5-GPU, einschließlich Schatten, vorher → nachher)
+
+| Ansicht | Calls | Dreiecke |
+|---|---|---|
+| Straße (street) | 132 → 146 | 197 k → 296 k |
+| Plaza | 87 → 98 | 183 k → 280 k |
+| Park | 68 → 78 | 176 k → 279 k |
+| Überblick (overview) | 165 → 171 | 208 k → 269 k |
+| Fahrt (drive) | 136 → 150 | 199 k → 293 k |
+| Mobil quer (iPhone 13, Tier low) | 129 → 137 | 157 k → 195 k |
+| Mobil hoch (iPhone 13, Tier low) | 101 → 106 | 148 k → 183 k |
+
+SwiftShader (software-Tier, fester Punkt, je zwei Läufe): Straße 12,7 → 10,6 FPS, Plaza 16,7 → 14,3 FPS, Park 18,8 → 16,0 FPS (die Werte schwanken zwischen Läufen um bis zu 2 FPS). Dort werfen die Möbel keine Schatten, der Wind ist aus, Palmen haben 40 % weniger Blätter und werden ab 80 m zu Impostors. Die E2E-Fahrtests laufen unverändert durch.
+
+Tier low bleibt unter 150 Draw Calls und weit unter 500 k Dreiecken. Der E2E-Test mit `?tier=low` prüft beides und dazu, dass ferne Palmen Impostors sind. Die Mehrkosten entstehen so: fünf Möbel-Arten (je ein Call plus Schatten; auf dem Handy werfen Hydranten und Mülleimer keine Schatten), Plaza-Platten, Wasserschleier und Impostors. Dafür entfallen das Emissive-Mesh der Laternen und die Eichen-Karten. Die zusätzlichen Dreiecke auf dem Desktop stammen vor allem von den 20 Ampelmasten im Schatten-Pass.
 
 ## Qualitäts-Tiers
 
@@ -72,7 +111,11 @@ Nach `webglcontextrestored` baut `sky.ts` die PMREM-Environment-Map neu. Texture
 - **Gebäude ohne eingesetzte Fensterlaibungen:** Die Probe setzte Fenster nah an der Kamera 14 cm tief ein. Im Spiel fährt die Kamera überall hin, deshalb nur der flache Atlas (weniger Dreiecke, gleiche Draw Calls).
 - **Keine zusätzlichen Palmen oder Bäume auf Spielfläche mit Kollision:** Neue Kollisionsobjekte hätten das Gameplay verändert. Dekorative Vegetation ohne Kollision gibt es auf der Spielfläche nur als niedriges Buschwerk (wie die bisherigen Büsche). Bäume ohne Kollision stehen nur außerhalb von `WORLD_BOUND`.
 - **Hügelkette nur optisch:** Innerhalb der Spielfläche folgt der Boden exakt `getTerrainHeight()`. Erst ab 590 m vom Stadtzentrum wachsen Hügel dazu. Deshalb liegt die Far-Plane der Kamera jetzt bei 2 600 m statt 1 000 m.
-- **Ferne Laubkarten:** Auf den kleinsten Mip-Stufen würde das gemittelte Alpha das ganze Karten-Rechteck durchlassen. Dort wird der Ausschnitt deshalb zu einer Silhouette aus Krone und Stamm (`cardMask`). Aus großer Höhe (Überblick) wirken ferne Bäume dadurch etwas vereinfacht. Echte Impostors wären ein späterer Schritt.
+- **Ferne Laubkarten:** Auf den kleinsten Mip-Stufen würde das gemittelte Alpha das ganze Karten-Rechteck durchlassen. Dort wird der Ausschnitt deshalb zu einer Silhouette aus Krone und Stamm (`cardMask`). Aus großer Höhe (Überblick) wirken ferne Bäume dadurch etwas vereinfacht. Palmen haben seit palms-props echte Impostors, die Bäume im Gelände noch nicht.
+- **Impostors zur Laufzeit gerendert statt als Datei:** Der Atlas entsteht aus genau der Geometrie des Tiers, braucht kein Build-Werkzeug und keine Bytes im Repo. Gerendert wird nur die Albedo, das Licht kommt zur Laufzeit dazu. Deshalb passen Impostor und Palme bei jeder Sonne zusammen. Die Seitenansicht wirkt aus der Nähe flach (`palms-lod` im Screenshot-Satz erzwingt Impostors ab 12 m). Ab 170 m fällt das nicht auf.
+- **Ampeln statt Laternen an vollen Kreuzungen:** Nur Kreuzungen, an denen schon an jeder Ecke ein Laternen-Collider stand, bekommen Ampeln. So bleibt jeder Collider, wo er war. Ausleger und Signalköpfe hängen in 4,9–6,5 m Höhe über der Fahrbahn und haben keinen eigenen Collider. Bei sehr hohen Sprüngen kann ein Auto durch einen Ausleger fliegen.
+- **Instanzen statt zusammengeführter Batches:** Instanzen kosten pro Art einen Call (plus Schatten), der frühere Laternen-Batch war ein einziger. Dafür teilen sich alle Masten eine Geometrie im Speicher, und jede Art lässt sich einzeln budgetieren und abschalten (z. B. Schatten der Kleinteile auf dem Handy).
+- **Kein neues Textur-Asset:** Plaza-Platten, Wasser und Möbel-Oberflächen kommen aus dem vorhandenen Beton-PBR, dem Welt-Rauschen und Vertex-Attributen.
 - **Kollisionen:** Ein E2E-Test pinnt den SHA-1 der 241 Hindernisse des Clients auf den Stand vor diesem Schritt.
 
 ## Dateien
@@ -84,5 +127,8 @@ Nach `webglcontextrestored` baut `sky.ts` die PMREM-Environment-Map neu. Texture
 - `src/client/world/textures.ts`: KTX2-Welttexturen
 - `src/client/world/materials.ts`: Materialien und Shader-Blöcke
 - `src/client/world/batch.ts`: Geometrie pro Material zusammenführen
-- `src/client/world/vegetation.ts`: Palmen, Baum- und Buschkarten
+- `src/client/world/vegetation.ts`: Baum- und Buschkarten
+- `src/client/world/palms.ts`: Palmen, Wind, Impostors
+- `src/client/world/furniture.ts`, `streetLayout.ts`: Straßenmöbel und ihre Plätze
+- `src/client/world/fountain.ts`: Plaza-Brunnen und Teichrand
 - `src/client/world/city.ts`, `environment.ts`: Stadt und Gelände
