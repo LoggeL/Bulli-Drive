@@ -74,5 +74,12 @@ describe('src/shared stays platform neutral', () => {
                 expect(new RegExp(`\\b${name}\\s*[.(\\[]`).test(source), `${name} used`).toBe(false);
             }
         });
+
+        // World generation and the simulation must come out the same on
+        // every machine and in every replay
+        it(`${relative} uses no unseeded randomness or wall-clock time`, () => {
+            expect(/\bMath\.random\b/.test(source), 'Math.random used').toBe(false);
+            expect(/\bDate\.now\b|\bnew\s+Date\b/.test(source), 'wall-clock time used').toBe(false);
+        });
     }
 });
