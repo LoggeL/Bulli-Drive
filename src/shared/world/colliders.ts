@@ -20,6 +20,18 @@ export type ColliderInput =
 // to height at the front edge, where cars take off
 export interface RampDef { x: number; z: number; yaw: number; width: number; length: number; height: number }
 
+// Straight roads a reset puts the car back onto (the city's road grid):
+// centre lines x = const running from minZ to maxZ and z = const running
+// from minX to maxX. A car farther than snapRange from every line is reset
+// where it is.
+export interface RoadGrid {
+    xLines: number[];
+    zLines: number[];
+    minX: number; maxX: number;
+    minZ: number; maxZ: number;
+    snapRange: number;
+}
+
 // Collider heights (top) of the obstacle sources in client/world/city.ts and
 // environment.ts (section 7.1). Infinity = cannot be jumped over.
 export const COLLIDER_TOPS = {
@@ -126,6 +138,7 @@ export interface SimWorld {
     colliders: Collider[];       // index = deterministic order
     grid: SpatialGrid;
     ramps: RampDef[];
+    roads: RoadGrid | null;      // reset target, null = reset in place
     bound: number;               // terrain.size/2 - 2 = 498 (as the legacy clamp)
     groundHeight(x: number, z: number): number;   // max(getTerrainHeight, ramps)
     // Scratch buffer for grid queries of the collision code
@@ -142,7 +155,12 @@ function rampHeight(ramp: RampDef, rampBase: number, x: number, z: number): numb
     return rampBase + ramp.height * (along / ramp.length + 0.5);
 }
 
-export function createSimWorld(terrain: TerrainConfig, colliders: readonly ColliderInput[], ramps: readonly RampDef[] = []): SimWorld {
+export function createSimWorld(
+    terrain: TerrainConfig,
+    colliders: readonly ColliderInput[],
+    ramps: readonly RampDef[] = [],
+    roads: RoadGrid | null = null
+): SimWorld {
     const rampList = ramps.map(ramp => ({ ...ramp }));
     // Ramps sit on the terrain height under their centre
     const rampBases = rampList.map(ramp => getTerrainHeight(terrain, ramp.x, ramp.z));
@@ -160,6 +178,7 @@ export function createSimWorld(terrain: TerrainConfig, colliders: readonly Colli
         colliders: list,
         grid: new SpatialGrid(list),
         ramps: rampList,
+        roads,
         bound: terrain.size / 2 - 2,
         groundHeight,
         queryBuffer: new Int32Array(list.length)
