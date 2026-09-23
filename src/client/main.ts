@@ -26,7 +26,7 @@ import { watchWebGLContext, isWebGLContextLost } from './ui/contextLoss.js';
 import { installPerfMonitor, type PerfMonitor } from './debug/perfMonitor.js';
 import { setupLighting, updateLighting } from './render/lighting.js';
 import { ChaseCamera, LEGACY_CAMERA, RACE_CAMERA, RACE_CAMERA_SLIP_BLEND, type ChaseTarget } from './camera/ChaseCamera.js';
-import { PHYSICS_V2, SANDBOX } from './flags.js';
+import { PHYSICS_V2, SANDBOX, TUNE_PANEL } from './flags.js';
 import { gameHooks } from './game/hooks.js';
 import type { LocalVehicle } from './vehicle/LocalVehicle.js';
 
@@ -144,6 +144,12 @@ function init() {
     installE2EHook();
     // Performance overlay, a no-op unless the page URL has ?debug=perf
     perfMonitor = installPerfMonitor();
+    // lil-gui tuning panel of the v2 physics, only loaded with ?tune=1
+    if (TUNE_PANEL) {
+        import('./debug/tuningPanel.js')
+            .then(panel => panel.installTuningPanel())
+            .catch(error => console.error('Tuning panel failed to load', error));
+    }
 
     // Start Loop
     requestAnimationFrame(animate);

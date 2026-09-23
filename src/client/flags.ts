@@ -15,3 +15,6 @@ export const SANDBOX = queryFlag('sandbox') === '1';
 // exactly as before.
 export const PHYSICS_V2 = queryFlag('physics') === 'v2' || SANDBOX;
 
+// ?tune=1 loads the lil-gui tuning panel with live telemetry (section 13).
+// Only together with the v2 physics; the panel is its own lazy chunk.
+export const TUNE_PANEL = queryFlag('tune') === '1' && PHYSICS_V2;

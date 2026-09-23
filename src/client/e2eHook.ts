@@ -43,6 +43,8 @@ export interface V2Snapshot {
     scale: number;
     classId: string;
     profile: 'standard' | 'touch';
+    // Effective top speed of the sim params (m/s), tuning and Turbo included
+    topSpeed: number;
     input: VehicleInput;
     // Counters since the car was created
     ticks: number;
@@ -90,6 +92,7 @@ function v2Snapshot(vehicle: LocalVehicle | undefined): V2Snapshot | null {
         scale: s.scale,
         classId: vehicle.classId,
         profile: vehicle.profile,
+        topSpeed: vehicle.car.params.topSpeed,
         input: { ...vehicle.car.input },
         ticks: vehicle.ticks,
         jumps: vehicle.jumps,
