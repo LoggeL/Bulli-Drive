@@ -3077,9 +3077,21 @@ body.room-freeroam .nametag-hp {
     }
 }
 
+/* Phones upright: the boost meter sits top centre, so the room chip goes
+   below the rank chip, and the killfeed below the score pill */
 @media (max-width: 600px) and (orientation: portrait) {
+    #player-list {
+        flex-direction: column;
+        align-items: flex-end;
+    }
+
     #room-chip {
+        min-width: 68px;
         min-height: 44px;
+    }
+
+    #killfeed {
+        top: max(10.8rem, calc(env(safe-area-inset-top, 0px) + 10rem));
     }
 }
 

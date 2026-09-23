@@ -763,7 +763,7 @@ Umgesetzt in den Commits „Port the static colliders to shared world code“, �
 
 **Client.** 
 
-- Im Spiel gibt es kein Menü-Fenster (ABOUT ist nur im Splash erreichbar). Statt „Modus wechseln“ im ABOUT-Fenster zeigt ein **Room-Chip** neben dem Rang-Chip den Modus und die Instanz („PARTY“ / „ROOM 1“, zweizeilig statt „Party · 1“, damit er auf schmalen Handys neben den Rang-Chip passt) und öffnet ein kleines Menü „Game mode“ mit PARTY und FREE ROAM. Desktop: Chip unter dem Rang-Chip; Touch: links daneben.
+- Im Spiel gibt es kein Menü-Fenster (ABOUT ist nur im Splash erreichbar). Statt „Modus wechseln“ im ABOUT-Fenster zeigt ein **Room-Chip** neben dem Rang-Chip den Modus und die Instanz („PARTY“ / „ROOM 1“, zweizeilig statt „Party · 1“, damit er auf schmalen Handys neben den Rang-Chip passt) und öffnet ein kleines Menü „Game mode“ mit PARTY und FREE ROAM. Desktop und Handy hochkant: Chip unter dem Rang-Chip (hochkant sitzt oben mittig die Boost-Anzeige, der Killfeed rückt unter die Score-Pille); übrige Touch-Layouts: links daneben.
 - Nach einem Wechsel sind die Buttons 2 s gesperrt (Server-Rate-Limit); ohne Antwort geben sie nach 5 s wieder frei.
 - `body.room-freeroam` blendet zusätzlich Killfeed, Respawn-Overlay und die HP-Balken der Nametags aus; die Taste E schießt in Free Roam nicht. `body.room-party` ist gesetzt, solange man in der Party ist.
 - Der Splash-Screen scrollt jetzt bei zu wenig Höhe (Handy quer), statt START abzuschneiden.
