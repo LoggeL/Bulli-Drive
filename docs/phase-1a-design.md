@@ -101,11 +101,12 @@ Pflicht-Unit-Tests vor allem anderen (Abschnitt 14.1): Links lenken lässt yaw s
 | `sim/tire.ts` | Reifenkennlinie `tireCurve(alpha, peak, slide)` |
 | `sim/vehicleClasses.ts` | Die 5 Parametersätze (`VEHICLE_CLASSES: Record<CarClassId, VehicleParams>`), Assist-Profile |
 | `sim/modifiers.ts` | `applyModifiers(base, mods, scale, out)` ohne Allokation |
-| `sim/vehicle.ts` | `integrateForces` (Tick-Schritte 0–3), `finishTick` (Schritte 5–6), `resetVehicle`, Hilfsfunktion `stepVehicle` für ein einzelnes Auto |
+| `sim/vehicle.ts` | `integrateForces` (Tick-Schritte 0–3), `finishTick` (Schritte 5–6), `resetVehicle`, `createSimCar`, `placeVehicle` |
 | `sim/collision.ts` | Auto gegen Welt (zwei Kreise gegen Kreise/AABBs/Weltrand), Impulsantwort |
 | `sim/contact.ts` | Auto gegen Auto (Kreispaare, Impuls, Positionskorrektur) |
-| `sim/world.ts` | `stepWorld(cars, world)`: Reihenfolge, Substeps, Events |
-| `world/colliders.ts` | `Collider`, `RampDef`, `SpatialGrid` (CSR), `SimWorld`, `createSimWorld` |
+| `sim/world.ts` | `stepWorld(cars, world)`: Sortierung, Reihenfolge, Substeps, Events; `stepVehicle` für ein einzelnes Auto (hier statt in `vehicle.ts`, sonst Importzyklus) |
+| `sim/scenarios.ts` | Golden-Szenarien (Input-Skripte), `runScenario`, `recordScenario`; gemeinsam für Node-Tests und später die Sandbox im Browser |
+| `world/colliders.ts` | `Collider`, `ColliderInput`, `COLLIDER_TOPS` (Tabelle 7.1), `RampDef`, `SpatialGrid` (CSR), `SimWorld`, `createSimWorld` |
 
 `src/shared/sim/*` darf `world/terrain.ts` importieren (`getTerrainHeight`), aber nichts aus `client`.
 
@@ -254,13 +255,15 @@ export interface SimCar {
     kinematic: boolean;          // 1a: Remote-Proxy; Pose/Geschwindigkeit extern gesetzt
     contactScale: number;        // 1 für echte Autos; 1a-Proxies: Impuls nur auf den Partner
     events: StepEvents;
+    contactDv: number;           // Akkumulatoren der Kontakt-Kappen (Σ|Δv|, Σ|Δω|), von stepWorld pro Tick genullt
+    contactDw: number;
 }
 ```
 
 ```ts
 // src/shared/sim/vehicle.ts / world.ts
-export function stepWorld(cars: SimCar[] /* nach id aufsteigend sortiert */, world: SimWorld): void;
-export function stepVehicle(car: SimCar, world: SimWorld): void; // = stepWorld([car], world)
+export function stepWorld(cars: SimCar[] /* wird in place nach id sortiert */, world: SimWorld): void;
+export function stepVehicle(car: SimCar, world: SimWorld): void; // = stepWorld([car], world), in world.ts
 export function resetVehicle(s: VehicleState, p: VehicleParams, world: SimWorld): void;
 ```
 
@@ -311,8 +314,9 @@ Linear bis zum Peak, danach leichter Abfall bis 2·α_peak, dann konstant. Kein 
 ### 6.3 `stepWorld(cars, world)`
 
 ```
+sortiere cars in place nach id (Insertion-Sort mit <)
 für jedes car (Reihenfolge = aufsteigende id):
-    resetStepEvents(car.events)
+    resetStepEvents(car.events); contactDv = contactDw = 0
     applyModifiers(car.base, car.mods, car.state.scale, car.params)
     wenn !car.kinematic: integrateForces(car, world)           // Schritte 0–3
 
@@ -363,8 +367,10 @@ für jedes nicht-kinematische car: finishTick(car, world)        // Schritte 5�
                       aDrive −= br·(REV_ACCEL·(1 − max(0, −u)/REV_TOP) + drag)
                   sonst aBrake = br·brakeDecel
        sonst reverseHold = 0
-       wenn boosting && u > 0: aDrive += BOOST_ACCEL·clamp((vtopE + BOOST_ADD − u)/10, 0, 1)
        vRef = boosting ? min(vtopE + BOOST_ADD, V_ABS) : vtopE
+       wenn boosting && u > 0: aDrive += BOOST_ACCEL·clamp((vRef − u)/10, 0, 1) + (xs ≥ 1 && u < vRef ? drag : 0)
+                // Umsetzung: Ziel vRef statt vtopE + BOOST_ADD und Widerstandsausgleich über vtop (Abschnitt 19)
+       wenn th > 0 && u < −0,5: aBrake += th·brakeDecel           // Gas beim Rückwärtsrollen bremst (Abschnitt 19)
        aResist = drag + (th == 0 && br == 0 ? ENGINE_BRAKE : 0) + max(0, |u| − vRef)·OVERSPEED
        rearGrip = HB ? max(hbGrip, rearGrip − DT/0,08) : min(1, rearGrip + DT/0,35)
        wenn HB && th < 0,1: aBrake += HB_DECEL
@@ -402,7 +408,8 @@ für jedes nicht-kinematische car: finishTick(car, world)        // Schritte 5�
        vy −= G_AIR·DT
        yawRate += (st·AIR_YAW − yawRate)·min(1, 3·DT)
        v_xz ·= 1 − C_AIR·|v|·DT
-       wenn boosting: v_xz += f·BOOST_ACCEL·0,5·DT
+       wenn boosting: v_xz += f·BOOST_ACCEL·0,5·DT·clamp((vRef − u)/10, 0, 1)
+       betaPrev = β; rearGrip wie in 2c (Abschnitt 19)
        airTicks++
 ```
 
@@ -506,7 +513,7 @@ export function createSimWorld(terrain: TerrainConfig, colliders: ColliderInput[
 - `Obstacle` in `client/types.ts` bekommt ein optionales Feld `top`. Die `push`-Stellen in `city.ts` und `environment.ts` setzen es nach der Tabelle. Legacy ignoriert das Feld (verhaltensneutral).
 - `client/vehicle/simWorldClient.ts` baut nach dem Weltaufbau (`init`) einmal `createSimWorld(state.terrainConfig, obstaclesToColliders(state.obstacles), [])`.
 - In 1b braucht der Server dieselben Collider. Die Platzierung ist schon deterministisch (cityGen, `mulberry32(SCENERY_SEED)`, `positionHash`) und wird dann nach `shared/world` verschoben, abgesichert durch einen Paritätstest gegen `window.__bulliDebug.obstacles()`. **Nicht Teil von 1a.**
-- Rampen gibt es nur in der Sandbox. Seiten und Rückseite jeder Rampe bekommen Box-Collider mit `top` = Rampenhöhe an dieser Kante, damit man nicht von hinten „hochpoppt“.
+- Rampen gibt es nur in der Sandbox. Seiten und Rückseite jeder Rampe bekommen Box-Collider mit `top` = Rampenhöhe an dieser Kante, damit man nicht von hinten „hochpoppt“. **Offen für den Sandbox-Schritt:** Der Überflug-Test nutzt eine Höhe für das ganze Auto (Unterkante am Schwerpunkt); ein Rückseiten-Collider direkt an der Absprungkante würde abspringende Autos streifen. `createSimWorld` liefert deshalb bisher nur die Rampenfläche in `groundHeight`, die Kanten-Collider kommen mit der Sandbox.
 
 ### 7.3 SpatialGrid und Auflösung
 
@@ -585,7 +592,7 @@ Pro Substep: erst alle Weltkollisionen in ID-Reihenfolge, dann alle Paare in (i,
 
 ### 8.4 Plausibilitätsbeispiele (Bulli 1500 kg, rg 1,35 m → I = 2734 kg·m²)
 
-- **Frontal**, beide 50 m/s: vn = −100 → beide stoppen und prallen mit je ~2 m/s zurück.
+- **Frontal**, beide 50 m/s: vn = −100 → beide stoppen und prallen mit je ~2 m/s zurück. Weil jedes Auto 52 m/s Δv braucht, verteilt die Σ\|Δv\|-Kappe (30 m/s) das auf zwei Ticks (gemessen: 50 → 20 → −2 m/s).
 - **Auffahren** 45 gegen 40 m/s: bounce 1,25 → der Vordere wird ~3,1 m/s schneller.
 - **PIT** am Heck mit 1,5 m Hebel: Der Getroffene bekommt ≤ 2,5 rad/s Drehung und bricht aus; Spin Guard und Gegenlenk-Hilfe fangen ihn in ~1 s wieder, wenn der Spieler mitlenkt.
 - **Pickup (2000 kg) gegen Käfer (900 kg)**: Verhältnis 2,2 → gedeckelt auf 1,8. Schwere Klassen schieben mehr, aber nicht beliebig.
@@ -817,14 +824,14 @@ Je Szenario Input-Skript pro Tick, 180 Ticks, Endzustand und Zustand alle 30 Tic
 4. Streifschuss 10° an Wand bei 50 m/s
 5. Kontakt frontal (2 × bulli, je 50 m/s)
 6. Kontakt seitlich/T-Bone (pickup in stehenden beetle)
-7. Kontakt Heck/PIT (sport trifft bulli am Heck, 1,5 m Versatz)
-8. Drei Autos in Reihe (Auffahrkette 45 → 40 → 35 m/s)
+7. Kontakt Heck/PIT (sport trifft bulli mit 36 gegen 30 m/s unter 20° am rechten hinteren Viertel; ein gerader Auffahrer mit 1,5 m Versatz drückt fast durch den Schwerpunkt und dreht kaum, siehe Abschnitt 19)
+8. Drei Autos in Reihe (Auffahrkette 45 → 40 → 35 m/s; das hintere Paar berührt sich zuerst)
 9. Mega gegen Käfer
 10. Ghost fährt durch Auto und Wand; Ghost endet im Gebäude
 
 Node vergleicht exakt mit dem JSON. Der Browser (`tests/e2e/sim-golden.spec.ts`, Sandbox mit `?e2e=1`, `__bulliSim.runGolden(name)`) vergleicht mit Toleranz 1 mm bzw. 1e-4 rad.
 
-Zusätzliche Aussagen zu den Kontakt-Szenarien: frontal → beide \|v\| ≤ 4 m/s nach dem Stoß; Heck-Auffahren → Vorderer schneller; PIT → \|Δω\| ≤ 2,5 rad/s und Getroffener nach 90 Ticks mit Gegenlenken wieder |β| < 10°; drei Autos → nach 10 Ticks keine Überlappung > 5 cm; nie `vy ≠ 0` durch Kontakt; Summe der Impulse zweier dynamischer Autos ≈ 0 (Impulserhaltung bis auf Rückprall-Kappe).
+Zusätzliche Aussagen zu den Kontakt-Szenarien: frontal → beide \|v\| ≤ 4 m/s nach dem Stoß (wegen der Σ\|Δv\|-Kappe von 30 m/s nach zwei Ticks); Heck-Auffahren → Vorderer schneller; PIT → \|Δω\| ≤ 2,5 rad/s und Getroffener nach 90 Ticks mit Gegenlenken wieder |β| < 10°; drei Autos → nach 10 Ticks keine Überlappung > 5 cm; nie `vy ≠ 0` durch Kontakt; Summe der Impulse zweier dynamischer Autos ≈ 0 (Impulserhaltung bis auf Rückprall-Kappe).
 
 ### 14.5 Tunneling
 
@@ -906,3 +913,21 @@ Kleine Commits, jeweils mit grünen Tests:
 - Snapshot pro Auto: Pose und Geschwindigkeit (x, y, z, yaw, vx, vy, vz, yawRate), Filter (steerAngle, loadX, rearGrip, betaPrev), Flags (grounded, boosting, driftTicks > 0) als Bitfeld, Gameplay (boostMeter, flipAngle, flipRate, scale, ghostTicks, ghostExit, reverseHold, resetHold, jumpCooldown, airTicks, prevButtons), letzter Input und Mods.
 - Assist-Profil und Klasse verändern die Sim; sie gehören in die serverseitig bekannten Spieler-Settings.
 - `sin/cos/atan2/exp/sqrt/pow` können zwischen V8 und JSC im letzten Ulp abweichen; die Reconciliation fängt das ab (Plan Abschnitt 6).
+
+## 19. Umsetzung des Sim-Kerns: Abweichungen und Messwerte
+
+Stand nach dem Schritt „sim-core“ (`src/shared/sim/*`, `src/shared/world/colliders.ts`, Tests unter `tests/shared/sim/`). Die Werte aus 1.2 werden exakt reproduziert (0–100 km/h, vtop, Bremsweg, Radius, Handbremsen-Kick je Klasse). Begründete Abweichungen von den Abschnitten oben:
+
+1. **Boost erreicht sein Ziel.** Mit der Formel aus 6.4 lag das Boost-Gleichgewicht bei ~67 m/s (Bulli) statt der vom Nutzer gewünschten ~70 m/s, weil über vtop niemand den Luftwiderstand ausgleicht. Der Boost übernimmt das jetzt oberhalb vtop (analog zum Antrieb darunter) und zielt auf `vRef = min(vtop + BOOST_ADD, V_ABS)`. Gemessen: Bulli 67 m/s nach 2,2 s, Ziel 70 m/s; Turbo + Boost nähert sich 85 m/s von unten und überschreitet es nie; mit der Zielformel aus 6.4 (`vtopE + BOOST_ADD` im Boost-Term) lag Sport mit Turbo + Boost bei ~86 m/s, also über `V_ABS`. Der Luft-Boost ist ebenso auf `vRef` begrenzt.
+2. **Gas beim Rückwärtsrollen bremst** mit `th·brakeDecel`, spiegelbildlich zur Bremse vorwärts. Vorher bremste nur der Rollwiderstand (0,4 m/s²), der Wechsel von rückwärts auf vorwärts dauerte Sekunden.
+3. **Handbremsen-Blend (`rearGrip`) und `betaPrev` laufen auch in der Luft.** Eine über die Landung gehaltene Handbremse startet so einen Drift, und die β-Dämpfung bekommt bei der Landung keinen Sprung in `(β − betaPrev)/DT`.
+4. **Drift-Füllung nur am Boden;** in der Luft gilt nur `AIR_FILL`.
+5. **Stillstand am Hang:** Der Snap `|u'| < 0,05 → 0` aus 2f lässt ein stehendes Auto an Hängen bis etwa 0,5 Steigung stehen (die Hangbeschleunigung pro Tick bleibt unter der Schwelle); rollende Autos werden bergab korrekt schneller. Die Stadt ist flach, das Gelände hat höchstens ~0,2 Steigung. Bewusst so belassen.
+6. **Wandkontakt:** `wallTicks = 0` bei jeder Überlappung, nicht nur bei Impuls (`vn < 0`), damit Schrubben mit anliegendem Auto die Drift-Füllung sicher sperrt. Beim Weltrand bleiben die Kreise innerhalb von ±498 (Legacy klemmte den Mittelpunkt).
+7. **Kontaktpunkt Auto–Auto** ist die Mitte der Überlappung auf der Verbindungslinie. Gegen einen kinematischen Proxy gilt `e = 0`; die Stärke ist das Produkt der `contactScale` beider Autos.
+8. **Zähler sättigen** (`airTicks`, `reverseHold`, `wallTicks` bei 255, `driftTicks` bei 65535, `resetHold` bei `RESET_HOLD_TICKS + 1`), damit der 1b-Snapshot kompakte Felder bekommt.
+9. **Szenarien:** PIT-Geometrie geändert (14.4, Punkt 7): Beim geraden Auffahren mit 1,5 m Versatz dreht die Reibung den Impuls fast durch den Schwerpunkt des Bulli (gemessen Δω 0,004 rad/s), das ist kein PIT. Unter 20° am hinteren Viertel: Δω ≈ 2,3 rad/s, β max 18°, nach 90 Ticks mit Gegenlenken wieder < 10°.
+10. **Collider-Platzierung** bleibt wie in 7.2 und 17 festgelegt im Client (Portierung nach `shared/world` in 1b). Der Sim-Kern nimmt `ColliderInput[]` entgegen; die `top`-Werte der Tabelle 7.1 stehen als `COLLIDER_TOPS` in `shared/world/colliders.ts`, damit Client-Adapter und spätere Server-Portierung dieselben Zahlen nutzen.
+11. **Kein Swept-Test:** Die Tunneling-Matrix aus 14.5 (alle Klassen, normal und Mega, 85 und 90 m/s, Pfosten r 0,35, Wand mit halber Dicke 0,25, Gebäudeecke, Versätze in 0,1-m-Schritten, 0–80°) und Auto gegen Auto (2 × Käfer frontal mit je 85 m/s, 0–30°, T-Bone mit 85 m/s) laufen mit den 3 festen Substeps ohne Durchtunneln. Die Prüfungen wurden gegengetestet: Mit abgeschalteter Kollision schlagen sie an.
+
+**Messwerte:** 32 Autos × `stepWorld` in Node ≈ 0,17 ms pro Tick (Ziel < 2 ms). Störungsabbau (1 m/s quer + 0,8 rad/s) bei 10–85 m/s in allen Klassen, beiden Assist-Profilen und `gripScale` 1,0/1,5: \|r\| nach 3 s < 0,05 rad/s, keine wachsende Amplitude. Beim gehaltenen Handbremsen-Drift mit Vollgas und Volleinschlag verliert Sport bei `gripScale` 1,5 in 3 s fast alles Tempo (β ~60°), dreht sich aber nicht; das ist das Risiko „Drift verliert viel Tempo bei hohem `gripScale`“ aus Abschnitt 16.
