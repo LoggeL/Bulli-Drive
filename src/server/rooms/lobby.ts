@@ -19,6 +19,8 @@ export interface RoomManagerOptions {
 export class RoomManager {
     private readonly rooms = new Map<string, Room>();
     private readonly now: () => number;
+    // Idle kick (5.4); server/index.ts closes the socket
+    onIdleKick: (session: Session) => void = () => { /* set by the server */ };
 
     constructor(readonly map: MapData, readonly options: RoomManagerOptions) {
         this.now = options.now ?? Date.now;
@@ -38,6 +40,8 @@ export class RoomManager {
             ? new PartyRoom(index, this.map, this.now)
             : new FreeRoamRoom(index, this.map, this.now);
         this.rooms.set(room.id, room);
+        this.orderedCache = null;
+        room.onIdleKick = member => this.onIdleKick(member.session);
         console.log(`Room ${room.id} opened`);
         return room;
     }
@@ -75,9 +79,25 @@ export class RoomManager {
         return this.findOrCreate(kind).join(session, { ready: wasReady });
     }
 
-    /** The session disconnected. */
-    leave(session: Session): void {
-        if (session.room && session.member) session.room.leave(session.member, 'disconnect');
+    /** The session disconnected (or was kicked). */
+    leave(session: Session, reason: 'disconnect' | 'kicked' = 'disconnect'): void {
+        if (session.room && session.member) session.room.leave(session.member, reason);
+    }
+
+    /** One scheduler tick: every room with members, in id order (5.1). */
+    stepAll(nowMs: number): void {
+        for (const room of this.ordered()) {
+            if (room.size > 0) room.step(nowMs);
+        }
+    }
+
+    private orderedCache: Room[] | null = null;
+
+    private ordered(): Room[] {
+        if (!this.orderedCache) {
+            this.orderedCache = [...this.rooms.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+        }
+        return this.orderedCache;
     }
 
     /** Closes the extra instances that have been empty for emptyRoomTtlMs. */
@@ -88,6 +108,7 @@ export class RoomManager {
             if (room.size > 0 || now - room.emptySinceMs < this.options.emptyRoomTtlMs) continue;
             room.dispose();
             this.rooms.delete(room.id);
+            this.orderedCache = null;
             console.log(`Room ${room.id} closed`);
         }
     }

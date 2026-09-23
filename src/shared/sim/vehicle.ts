@@ -107,6 +107,21 @@ export function placeVehicle(s: VehicleState, world: SimWorld, x: number, z: num
     s.airTicks = 0;
 }
 
+const FRESH_STATE = createVehicleState();
+
+/**
+ * A fresh car at (x, z) facing yaw, at rest on the ground, as the server
+ * spawns and respawns cars (docs/phase-1b-design.md, 5.5): every filter,
+ * counter and the boost start over, the contact ghost of a reset keeps it
+ * from knocking a car away that stands there. Client and server call it
+ * for the same tick, so the prediction starts from the server's state.
+ */
+export function spawnVehicle(s: VehicleState, world: SimWorld, x: number, z: number, yaw: number): void {
+    Object.assign(s, FRESH_STATE);
+    placeVehicle(s, world, x, z, yaw);
+    s.ghostTicks = T.RESET_GHOST_TICKS;
+}
+
 // Moves a car that is reset near the road grid onto the nearest road
 // centre line, facing along the road in the direction closest to its yaw
 export function moveToRoad(s: VehicleState, roads: RoadGrid): boolean {

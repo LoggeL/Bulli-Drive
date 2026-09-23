@@ -81,7 +81,8 @@ async function startServer(port: number): Promise<ChildProcess> {
     await ensurePortFree(port);
     const expectedVersion = fs.readFileSync('dist/client/build-version.txt', 'utf8').trim();
     const server = spawn(process.execPath, ['dist/server/index.js'], {
-        env: { ...process.env, PORT: String(port) },
+        // E2E=1: the server takes debugPlace (placeLocalCar)
+        env: { ...process.env, PORT: String(port), E2E: '1' },
         stdio: ['ignore', 'ignore', 'inherit']
     });
     const deadline = Date.now() + 30_000;

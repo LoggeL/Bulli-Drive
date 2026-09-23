@@ -224,7 +224,7 @@ describe('v2 contact rules', () => {
         const local = spawnCar(world, 'a', 'bulli', 0, 0, 0, 20);
         const proxy = spawnCar(world, 'b', 'bulli', 0, 3.5, 0);
         proxy.kinematic = true;
-        proxy.contactScale = SIM_TUNING.PROXY_CONTACT_SCALE;
+        proxy.contactScale = 0.7;
         const proxyBefore = copyVehicleState(createVehicleState(), proxy.state);
         resolveContact(local, proxy);
         expect(proxy.state).toStrictEqual(proxyBefore);

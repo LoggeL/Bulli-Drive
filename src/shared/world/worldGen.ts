@@ -1,6 +1,6 @@
-// Deterministic generation of the complete world payload (city, powerups,
-// coins, trees). The server runs this once at startup and sends the result
-// in 'init'; tests pin its output with golden hashes.
+// Deterministic generation of the complete world (city, powerups, coins,
+// trees). Server and client both run it from the seed (roomState.world
+// carries only the seed and a hash); tests pin its output with golden hashes.
 
 import { POWERUP_TYPES } from '../constants.js';
 import type { CityData, CoinData, PowerupData, TreeData } from '../protocol.js';

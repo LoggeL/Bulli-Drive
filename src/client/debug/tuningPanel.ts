@@ -71,7 +71,7 @@ const FOLDERS: [string, Knob[]][] = [
     ['Kollision', [
         c('restitutionWall', 0, 0.5, 0.01), g('WALL_FRICTION', 0, 0.5, 0.01),
         g('CAR_RESTITUTION', 0, 0.6, 0.01), g('CAR_FRICTION', 0, 0.6, 0.01), c('massRatioCap', 1, 4, 0.05),
-        g('PROXY_CONTACT_SCALE', 0, 1, 0.01), g('CONTACT_DOMEGA_CAP', 0.5, 6, 0.1)
+        g('CONTACT_DOMEGA_CAP', 0.5, 6, 0.1)
     ]],
     ['Sprung', [c('jumpSpeed', 6, 16, 0.1), g('JUMP_COOLDOWN', 0, 60, 1)]],
     ['Fahrwerk', [

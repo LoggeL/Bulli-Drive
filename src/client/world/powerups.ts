@@ -3,18 +3,12 @@ import { state } from '../state.js';
 import type { PowerupData } from '../../shared/protocol.js';
 import { getTerrainHeight } from './environment.js';
 import { showInteractionPrompt } from '../ui/hud.js';
-import { sendToServer } from '../network/socket.js';
 import { POWERUP_DURATIONS_MS } from '../../shared/constants.js';
-import { distSq2D } from './util.js';
 
 // Store base Y for bobbing animation
 const powerupBaseY: Map<THREE.Mesh, number> = new Map();
 // Marker meshes/materials keyed by server powerup id (no more (p as any) stuffing)
 const powerupMarkers = new Map<PowerupData['id'], { mesh: THREE.Mesh; iconMat: THREE.MeshStandardMaterial }>();
-// Powerups we already sent a collectPowerup for (until confirmed/reset)
-const pendingCollects = new Set<number>();
-
-const COLLECT_RADIUS = 5;
 
 export function createPowerupMarker(p: PowerupData) {
     const geo = new THREE.TorusGeometry(1.5, 0.2, 16, 32);
@@ -74,13 +68,11 @@ export function clearPowerupMarkers() {
     }
     powerupMarkers.clear();
     powerupBaseY.clear();
-    pendingCollects.clear();
     state.worldPowerups = [];
 }
 
 // Dim/restore the marker visuals when a powerup is collected/reset (called from websocket.ts)
 export function setPowerupCollectedVisual(id: PowerupData['id'], collected: boolean): void {
-    pendingCollects.delete(id);
     const entry = powerupMarkers.get(id);
     if (!entry) return;
     const opacity = collected ? 0.2 : 0.8;
@@ -106,33 +98,16 @@ export function animatePowerups(time: number) {
     });
 }
 
-export function checkPowerupCollection() {
-    if (!state.bulli) return;
-    const carPos = state.bulli.group.position;
-    const collectRadiusSq = COLLECT_RADIUS * COLLECT_RADIUS;
-    state.worldPowerups.forEach(p => {
-        if (p.collected) return;
-        if (distSq2D(carPos.x, carPos.z, p.x, p.z) < collectRadiusSq) {
-            requestPowerupCollection(p);
-        }
-    });
-}
-
-export function requestPowerupCollection(p: PowerupData) {
-    // Only ask once per powerup until the server confirms or resets it
-    if (pendingCollects.has(p.id)) return;
-    if (sendToServer({ type: 'collectPowerup', powerupId: p.id })) {
-        pendingCollects.add(p.id);
-    }
-}
-
+// The server gave the local car this powerup (its window drives the sim
+// and the HUD, net/netDriver.ts); offline the car counts the timer itself
 export function applyPowerupEffect(p: PowerupData) {
     if (!state.bulli) return;
     // Guard against unknown/unsupported powerup types from the server
     if (!(p.type in state.bulli.powerups)) return;
-    const key = p.type as keyof typeof state.bulli.powerups;
-    state.bulli.powerups[key].active = true;
-    state.bulli.powerups[key].timer = (POWERUP_DURATIONS_MS[p.type] ?? 5000) / 1000;
-
+    if (!state.ws) {
+        const key = p.type as keyof typeof state.bulli.powerups;
+        state.bulli.powerups[key].active = true;
+        state.bulli.powerups[key].timer = (POWERUP_DURATIONS_MS[p.type] ?? 5000) / 1000;
+    }
     showInteractionPrompt(`${p.label.toUpperCase()} ACTIVATED!`);
 }

@@ -50,7 +50,8 @@ export default defineConfig({
     ],
     webServer: {
         command: 'node dist/server/index.js',
-        env: { PORT: String(PORT) },
+        // E2E=1: the server takes debugPlace (placeLocalCar in the tests)
+        env: { PORT: String(PORT), E2E: '1' },
         url: `${BASE_URL}/build-version.txt`,
         reuseExistingServer: false,
         timeout: 30_000,

@@ -12,7 +12,7 @@ import {
 } from '../../shared/world/props.js';
 import { markCollider } from './colliderTags.js';
 
-// Height of the terrain the server configured (flat 0 before 'init').
+// Height of the terrain of the map (flat 0 before the world is built).
 export function getTerrainHeight(x: number, z: number) {
     if (!state.terrainConfig) return 0;
     return getSharedTerrainHeight(state.terrainConfig, x, z);

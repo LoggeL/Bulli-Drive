@@ -1,78 +1,59 @@
-import type { CoinData, PowerupData, ScoreboardEntry, ServerMessage } from '../../shared/protocol.js';
+import type { CoinData, PowerupData, RoomStateItems, ScoreboardEntry } from '../../shared/protocol.js';
+import { CAR_RESPAWN_SHIELD, CAR_SHIELD } from '../../shared/net/codec.js';
 import {
-    AFK_THRESHOLD_MS,
-    BASE_SHOT_DAMAGE,
-    COIN_ACCEPT_RADIUS,
-    COIN_RESPAWN_DELAY_MS,
-    COIN_VALUE,
-    KILL_REWARD,
-    MAX_HEALTH,
-    MAX_SHOT_RANGE,
-    MEGA_DAMAGE_REDUCTION,
-    MEGA_SCALE,
-    POWERUP_ACCEPT_RADIUS,
-    POWERUP_DURATIONS_MS,
-    POWERUP_RESPAWN_DELAY_MS,
-    RESPAWN_DELAY_MS,
-    RESPAWN_SHIELD_MAX_MS,
-    SHOT_COOLDOWN_MS
-} from '../../shared/constants.js';
+    COIN_MAGNET_PICKUP_RADIUS, COIN_PICKUP_RADIUS, COIN_RESET_TICKS, COIN_VALUE, KILL_REWARD, MAX_HEALTH,
+    POWERUP_PICKUP_RADIUS, POWERUP_RESET_TICKS, POWERUP_TICKS, RAM_PAIR_COOLDOWN_TICKS, RESPAWN_SHIELD_DRIVE_TICKS,
+    RESPAWN_SHIELD_MAX_TICKS, RESPAWN_SHIELD_MOVE_SPEED, RESPAWN_TICKS, SHOT_COOLDOWN_TICKS, SHOT_RANGE,
+    isPowerupType, ramDamage, shotDamage
+} from '../../shared/party/rules.js';
+import { spawnVehicle } from '../../shared/sim/vehicle.js';
 import type { MapData } from '../../shared/world/mapData.js';
-import {
-    clearEffectTimers,
-    clearPartyTimers,
-    createPartyState,
-    type PartyMemberState,
-    type PowerupEffectFlag
-} from '../party/state.js';
+import { clearPowerups, createPartyState, powerupActive, type PartyMemberState } from '../party/state.js';
 import { Room, type LeaveReason, type RoomMember, type RoomMessage } from './Room.js';
-import { randomSpawn } from './spawn.js';
+import { randomSpawnPose } from './spawn.js';
 
-// The Party (docs/phase-1b-design.md, 2.2): coins, powerups, shooting, HP
-// and the scoreboard, the default room. The rules are those of the former
-// server/handlers.ts, now per room instance; each room has its own items.
+// The Party (docs/phase-1b-design.md, 2.2 and 5.5): coins, powerups,
+// shooting, the Mega ram, HP and the scoreboard, the default room. Every
+// rule runs in the room tick against the server's cars; each room has its
+// own items.
 
 type Msg<T extends RoomMessage['type']> = Extract<RoomMessage, { type: T }>;
-type Timer = ReturnType<typeof setTimeout>;
 
-// Powerup types with a server-tracked effect flag (speed/jump/magnet are client-side only)
-const POWERUP_EFFECTS: Record<string, PowerupEffectFlag> = {
-    shield: 'shieldActive',
-    ghost: 'ghostActive',
-    size: 'megaActive'
-};
+interface Item<T> {
+    data: T;
+    // Tick the item comes back, -1 while it is there
+    resetTick: number;
+}
 
 export class PartyRoom extends Room {
     readonly powerups: PowerupData[];
     readonly coins: CoinData[];
-    private readonly powerupsById = new Map<number, PowerupData>();
-    private readonly coinsById = new Map<number, CoinData>();
+    private readonly powerupItems: Item<PowerupData>[];
+    private readonly coinItems: Item<CoinData>[];
     private readonly party = new Map<string, PartyMemberState>();
-    private readonly itemTimers = new Set<Timer>();
 
     constructor(index: number, map: MapData, now: () => number = Date.now) {
         super('party', index, map, now);
         // Fresh copies: collecting in one room leaves the others untouched
         this.powerups = map.world.powerups.map(p => ({ ...p, collected: false }));
         this.coins = map.world.coins.map(c => ({ ...c, collected: false }));
-        for (const p of this.powerups) this.powerupsById.set(p.id, p);
-        for (const c of this.coins) this.coinsById.set(c.id, c);
+        this.powerupItems = this.powerups.map(data => ({ data, resetTick: -1 }));
+        this.coinItems = this.coins.map(data => ({ data, resetTick: -1 }));
     }
 
     partyState(id: string): PartyMemberState | undefined {
         return this.party.get(id);
     }
 
-    powerupList(): PowerupData[] {
-        return this.powerups;
-    }
-
-    coinList(): CoinData[] {
-        return this.coins;
+    roomStateItems(): RoomStateItems {
+        return {
+            powerups: this.powerups.map(p => ({ id: p.id, collected: p.collected })),
+            coins: this.coins.map(c => ({ id: c.id, collected: c.collected }))
+        };
     }
 
     scoreboard(): ScoreboardEntry[] {
-        return [...this.members.values()]
+        return this.orderedMembers
             .filter(m => m.ready)
             .map(m => ({
                 id: m.id,
@@ -84,243 +65,221 @@ export class PartyRoom extends Room {
             .slice(0, 10);
     }
 
-    broadcastScoreboard(): void {
-        this.broadcast({ type: 'scoreboard', scoreboard: this.scoreboard() });
+    protected healthOf(member: RoomMember): number {
+        return this.party.get(member.id)?.health ?? MAX_HEALTH;
     }
 
-    dispose(): void {
-        super.dispose();
-        for (const timer of this.itemTimers) clearTimeout(timer);
-        this.itemTimers.clear();
+    protected carFlags(m: RoomMember): number {
+        const state = this.party.get(m.id);
+        let flags = super.carFlags(m) & ~CAR_SHIELD;
+        if (state && powerupActive(state, 'shield', this.tick)) flags |= CAR_SHIELD;
+        if (state?.respawnShield) flags |= CAR_RESPAWN_SHIELD;
+        return flags;
     }
 
     // ---- Membership ----
 
     protected onJoin(member: RoomMember): void {
-        const state = createPartyState();
-        this.party.set(member.id, state);
-        this.applySpawnState(member, state, member.x, member.z);
+        this.party.set(member.id, createPartyState());
     }
 
     protected onLeave(member: RoomMember, _reason: LeaveReason): void {
-        const state = this.party.get(member.id);
-        if (state) clearPartyTimers(state);
         this.party.delete(member.id);
+        for (const state of this.party.values()) state.rammedBy.delete(member.id);
     }
 
-    protected membersChanged(): void {
-        this.broadcastScoreboard();
-    }
-
-    protected stateFlags(member: RoomMember) {
-        const state = this.party.get(member.id);
-        return {
-            scale: state?.megaActive ? MEGA_SCALE : 1,
-            score: state?.score ?? 0,
-            health: state?.health ?? MAX_HEALTH,
-            ghostActive: state?.ghostActive ?? false,
-            shieldActive: state?.shieldActive ?? false
-        };
-    }
-
-    // ---- Messages ----
-
-    protected onGameMessage(member: RoomMember, msg: RoomMessage): void {
+    protected onSpawned(member: RoomMember, tick: number): void {
         const state = this.party.get(member.id);
         if (!state) return;
-        switch (msg.type) {
-            case 'collectPowerup': return this.handleCollectPowerup(member, msg);
-            case 'collectCoin': return this.handleCollectCoin(member, state, msg);
-            case 'shoot': return this.handleShoot(member, state, msg);
-            case 'respawnShieldExpired': return this.handleRespawnShieldExpired(state);
-            default: return;
+        this.resetForSpawn(state, tick);
+    }
+
+    private resetForSpawn(state: PartyMemberState, tick: number): void {
+        state.health = MAX_HEALTH;
+        state.deadUntil = -1;
+        clearPowerups(state);
+        state.respawnShield = true;
+        state.spawnTick = tick;
+        state.movedTick = -1;
+    }
+
+    // ---- The tick ----
+
+    protected beforeStep(tick: number): void {
+        for (const m of this.orderedMembers) {
+            const car = m.car;
+            const state = this.party.get(m.id);
+            if (!car || !m.alive || !state) continue;
+            const mods = car.mods;
+            mods.turbo = powerupActive(state, 'speed', tick);
+            mods.mega = powerupActive(state, 'size', tick);
+            mods.superJump = powerupActive(state, 'jump', tick);
+            mods.ghost = powerupActive(state, 'ghost', tick);
+            mods.shield = powerupActive(state, 'shield', tick) || state.respawnShield;
         }
     }
 
-    private handleCollectPowerup(member: RoomMember, msg: Msg<'collectPowerup'>): void {
-        if (!member.ready) return;
-        const powerup = this.powerupsById.get(msg.powerupId);
-        if (!powerup) return;
-
-        const accepted = this.collectItem(member, powerup, POWERUP_ACCEPT_RADIUS, POWERUP_RESPAWN_DELAY_MS,
-            itemId => ({ type: 'powerupCollected', powerupId: itemId, playerId: member.id }),
-            itemId => ({ type: 'powerupReset', powerupId: itemId }));
-        if (!accepted) return;
-
-        console.log(`[${this.id}] ${member.session.name} collected powerup ${powerup.id} (${powerup.type})`);
-        this.activatePowerup(member, powerup.type);
+    protected afterStep(tick: number): void {
+        this.ramDamage(tick);
+        this.pickups(tick);
+        this.itemResets(tick);
+        this.shieldsAndRespawns(tick);
     }
 
-    private handleCollectCoin(member: RoomMember, state: PartyMemberState, msg: Msg<'collectCoin'>): void {
-        if (!member.ready) return;
-        const coin = this.coinsById.get(msg.coinId);
-        if (!coin) return;
-
-        const accepted = this.collectItem(member, coin, COIN_ACCEPT_RADIUS, COIN_RESPAWN_DELAY_MS,
-            itemId => ({ type: 'coinCollected', coinId: itemId, playerId: member.id }),
-            itemId => ({ type: 'coinReset', coinId: itemId }));
-        if (!accepted) return;
-
-        state.score += COIN_VALUE;
-        this.broadcastScoreboard();
-    }
-
-    private handleRespawnShieldExpired(state: PartyMemberState): void {
-        // Client hint that the shield visual ended early; the server cap timer
-        // (RESPAWN_SHIELD_MAX_MS) stays authoritative otherwise.
-        state.respawnShield = false;
-        if (state.respawnShieldTimer) {
-            clearTimeout(state.respawnShieldTimer);
-            state.respawnShieldTimer = undefined;
+    // Mega ram (5.5): damage from the impulse the rammed car took
+    private ramDamage(tick: number): void {
+        for (const target of this.orderedMembers) {
+            const car = target.car;
+            const targetState = this.party.get(target.id);
+            if (!car || !target.alive || !targetState) continue;
+            const ev = car.events;
+            if (ev.carImpactId === '') continue;
+            const attacker = this.members.get(ev.carImpactId);
+            const attackerState = attacker && this.party.get(attacker.id);
+            if (!attacker || !attackerState || !attacker.alive || !attacker.car?.mods.mega || attacker.idle) continue;
+            const damage = ramDamage(ev.carImpact, car.mods.mega);
+            if (damage <= 0) continue;
+            const last = targetState.rammedBy.get(attacker.id);
+            if (last !== undefined && tick - last < RAM_PAIR_COOLDOWN_TICKS) continue;
+            targetState.rammedBy.set(attacker.id, tick);
+            if (!this.vulnerable(target, targetState, tick)) continue;
+            this.damage(attacker, attackerState, target, targetState, damage, 'ram', tick);
         }
     }
 
-    private handleShoot(member: RoomMember, state: PartyMemberState, msg: Msg<'shoot'>): void {
-        if (!member.ready) return;
+    private pickups(tick: number): void {
+        for (const m of this.orderedMembers) {
+            const car = m.car;
+            const state = this.party.get(m.id);
+            if (!car || !m.alive || !state) continue;
+            const x = car.state.x, z = car.state.z;
+            for (const item of this.powerupItems) {
+                const p = item.data;
+                if (p.collected || !isPowerupType(p.type)) continue;
+                const dx = x - p.x, dz = z - p.z;
+                if (dx * dx + dz * dz >= POWERUP_PICKUP_RADIUS * POWERUP_PICKUP_RADIUS) continue;
+                p.collected = true;
+                item.resetTick = tick + POWERUP_RESET_TICKS;
+                // Effective from the next tick; again extends to now + duration
+                const window = state.powerups[p.type];
+                const active = window.start <= tick + 1 && tick + 1 < window.end;
+                if (!active) window.start = tick + 1;
+                window.end = tick + 1 + POWERUP_TICKS[p.type];
+                this.emit({
+                    type: 'pickup', kind: 'powerup', itemId: p.id, playerId: m.id,
+                    powerupType: p.type, startTick: window.start, endTick: window.end
+                });
+            }
+            const magnet = powerupActive(state, 'magnet', tick);
+            const radius = magnet ? COIN_MAGNET_PICKUP_RADIUS : COIN_PICKUP_RADIUS;
+            for (const item of this.coinItems) {
+                const c = item.data;
+                if (c.collected) continue;
+                const dx = x - c.x, dz = z - c.z;
+                if (dx * dx + dz * dz >= radius * radius) continue;
+                c.collected = true;
+                item.resetTick = tick + COIN_RESET_TICKS;
+                state.score += COIN_VALUE;
+                this.markScoreboardDirty();
+                this.emit({ type: 'pickup', kind: 'coin', itemId: c.id, playerId: m.id });
+            }
+        }
+    }
+
+    private itemResets(tick: number): void {
+        for (const item of this.powerupItems) {
+            if (item.resetTick >= 0 && item.resetTick <= tick) {
+                item.resetTick = -1;
+                item.data.collected = false;
+                this.emit({ type: 'itemReset', kind: 'powerup', itemId: item.data.id });
+            }
+        }
+        for (const item of this.coinItems) {
+            if (item.resetTick >= 0 && item.resetTick <= tick) {
+                item.resetTick = -1;
+                item.data.collected = false;
+                this.emit({ type: 'itemReset', kind: 'coin', itemId: item.data.id });
+            }
+        }
+    }
+
+    private shieldsAndRespawns(tick: number): void {
+        for (const m of this.orderedMembers) {
+            const state = this.party.get(m.id);
+            if (!state || !m.car) continue;
+            if (!m.alive) {
+                if (state.deadUntil >= 0 && tick >= state.deadUntil) this.respawn(m, state, tick);
+                continue;
+            }
+            if (!state.respawnShield) continue;
+            const s = m.car.state;
+            if (state.movedTick < 0 && Math.hypot(s.vx, s.vz) > RESPAWN_SHIELD_MOVE_SPEED) state.movedTick = tick;
+            if ((state.movedTick >= 0 && tick - state.movedTick >= RESPAWN_SHIELD_DRIVE_TICKS)
+                || tick - state.spawnTick >= RESPAWN_SHIELD_MAX_TICKS) {
+                state.respawnShield = false;
+            }
+        }
+    }
+
+    // Back at a free spot of this room, whole and without powerups
+    private respawn(m: RoomMember, state: PartyMemberState, tick: number): void {
+        const pose = randomSpawnPose(this.map.world.city, this.carPositions(m));
+        spawnVehicle(m.car!.state, this.map.simWorld, pose.x, pose.z, pose.yaw);
+        m.alive = true;
+        this.resetForSpawn(state, tick);
+        this.emit({ type: 'respawn', id: m.id, tick, x: pose.x, z: pose.z, yaw: pose.yaw, health: state.health });
+    }
+
+    // ---- Shooting ----
+
+    protected onGameMessage(member: RoomMember, msg: RoomMessage): void {
+        if (msg.type === 'shoot') this.handleShoot(member, msg);
+    }
+
+    // Shields, ghost, idle and the respawn shield block all damage
+    private vulnerable(target: RoomMember, state: PartyMemberState, tick: number): boolean {
+        return target.alive && !target.idle && !state.respawnShield
+            && !powerupActive(state, 'ghost', tick) && !powerupActive(state, 'shield', tick);
+    }
+
+    private handleShoot(member: RoomMember, msg: Msg<'shoot'>): void {
+        const state = this.party.get(member.id);
+        if (!state || !member.ready || !member.alive || !member.car || member.idle) return;
         if (msg.targetId === member.id) return;
-
-        const now = this.now();
-        if (state.health <= 0) return;
-        // Shooter must have sent updates recently (no shooting while AFK)
-        if (now - member.lastActivity > AFK_THRESHOLD_MS) return;
-        if (now - state.lastShotAt < SHOT_COOLDOWN_MS) return;
+        const tick = this.tick;
+        if (tick - state.lastShotTick < SHOT_COOLDOWN_TICKS) return;
 
         // Only players of this room can be hit
         const target = this.members.get(msg.targetId);
         const targetState = this.party.get(msg.targetId);
-        if (!target || !targetState || !target.ready || targetState.health <= 0) return;
+        if (!target || !targetState || !target.ready || !target.alive || !target.car) return;
+        const dx = member.car.state.x - target.car.state.x;
+        const dz = member.car.state.z - target.car.state.z;
+        if (dx * dx + dz * dz > SHOT_RANGE * SHOT_RANGE) return;
 
-        const dx = member.x - target.x;
-        const dz = member.z - target.z;
-        if (dx * dx + dz * dz > MAX_SHOT_RANGE * MAX_SHOT_RANGE) return;
+        state.lastShotTick = tick;
+        if (!this.vulnerable(target, targetState, tick)) return;
+        this.damage(member, state, target, targetState, shotDamage(target.car.mods.mega), 'shot', tick);
+    }
 
-        state.lastShotAt = now;
-
-        // AFK targets (no update for 3+ seconds) are invulnerable
-        if (now - target.lastActivity > AFK_THRESHOLD_MS) return;
-        // Respawn shield, ghost and the shield powerup block all damage for
-        // their whole duration (the shield is not consumed per hit)
-        if (targetState.respawnShield || targetState.ghostActive || targetState.shieldActive) return;
-
-        const damage = targetState.megaActive
-            ? Math.round(BASE_SHOT_DAMAGE * MEGA_DAMAGE_REDUCTION)
-            : BASE_SHOT_DAMAGE;
+    private damage(
+        source: RoomMember, sourceState: PartyMemberState,
+        target: RoomMember, targetState: PartyMemberState,
+        damage: number, cause: 'shot' | 'ram', tick: number
+    ): void {
         targetState.health = Math.max(0, targetState.health - damage);
-
-        this.broadcast({
-            type: 'playerHit',
-            targetId: target.id,
-            shooterId: member.id,
-            newHealth: targetState.health,
-            damage
+        this.emit({ type: 'hit', target: target.id, source: source.id, damage, health: targetState.health, cause });
+        if (targetState.health > 0) return;
+        // The car leaves the sim until the respawn
+        target.alive = false;
+        targetState.deadUntil = tick + RESPAWN_TICKS;
+        clearPowerups(targetState);
+        targetState.respawnShield = false;
+        this.emit({
+            type: 'killed', target: target.id, killer: source.id,
+            killerName: source.session.name, targetName: target.session.name, cause
         });
-
-        if (targetState.health <= 0) {
-            this.broadcast({
-                type: 'playerKilled',
-                targetId: target.id,
-                killerId: member.id,
-                killerName: member.session.name,
-                targetName: target.session.name
-            });
-            state.score += KILL_REWARD;
-            this.broadcastScoreboard();
-            this.scheduleRespawn(target, targetState);
-        }
-    }
-
-    // ---- Rules ----
-
-    // Proximity check, atomic check-and-set, collected broadcast and the
-    // scheduled reset. Returns true if the collect was accepted.
-    private collectItem(
-        member: RoomMember,
-        item: { id: number; x: number; z: number; collected: boolean },
-        acceptRadius: number,
-        respawnDelayMs: number,
-        collectedMsg: (itemId: number) => ServerMessage,
-        resetMsg: (itemId: number) => ServerMessage
-    ): boolean {
-        if (item.collected) return false;
-        const dx = member.x - item.x;
-        const dz = member.z - item.z;
-        if (dx * dx + dz * dz > acceptRadius * acceptRadius) return false;
-        item.collected = true;
-
-        this.broadcast(collectedMsg(item.id));
-        const timer = setTimeout(() => {
-            this.itemTimers.delete(timer);
-            item.collected = false;
-            this.broadcast(resetMsg(item.id));
-        }, respawnDelayMs);
-        this.itemTimers.add(timer);
-        return true;
-    }
-
-    private activatePowerup(member: RoomMember, powerupType: string): void {
-        const flag = POWERUP_EFFECTS[powerupType];
-        const durationMs = POWERUP_DURATIONS_MS[powerupType];
-        const state = this.party.get(member.id);
-        if (!flag || !durationMs || !state) return;
-
-        state[flag] = true;
-        clearTimeout(state.effectTimers[flag]);
-        this.broadcastPlayerState(member);
-
-        state.effectTimers[flag] = setTimeout(() => {
-            // The member may have left in the meantime
-            if (this.party.get(member.id) !== state) return;
-            state[flag] = false;
-            delete state.effectTimers[flag];
-            this.broadcastPlayerState(member);
-        }, durationMs);
-    }
-
-    // Arms the respawn invulnerability and its server-side hard-cap expiry timer.
-    private startRespawnShield(state: PartyMemberState): void {
-        state.respawnShield = true;
-        clearTimeout(state.respawnShieldTimer);
-        state.respawnShieldTimer = setTimeout(() => {
-            state.respawnShield = false;
-            state.respawnShieldTimer = undefined;
-        }, RESPAWN_SHIELD_MAX_MS);
-    }
-
-    // Shared spawn-state reset for both the first spawn and a respawn
-    private applySpawnState(member: RoomMember, state: PartyMemberState, x: number, z: number): void {
-        member.x = x;
-        member.y = 0;
-        member.z = z;
-        member.lastActivity = this.now();
-        state.health = MAX_HEALTH;
-        state.shieldActive = false;
-        state.ghostActive = false;
-        state.megaActive = false;
-        clearEffectTimers(state);
-        this.startRespawnShield(state);
-    }
-
-    private scheduleRespawn(target: RoomMember, state: PartyMemberState): void {
-        clearTimeout(state.respawnTimer);
-        state.respawnTimer = setTimeout(() => {
-            // Not if the player left (the timers are cleared then anyway)
-            if (this.party.get(target.id) !== state) return;
-            state.respawnTimer = undefined;
-            const others = [...this.members.values()]
-                .filter(m => m !== target)
-                .map(m => ({ x: m.x, z: m.z }));
-            const spawn = randomSpawn(this.map.world.city, others);
-            this.applySpawnState(target, state, spawn.x, spawn.z);
-
-            this.broadcast({
-                type: 'playerRespawn',
-                playerId: target.id,
-                health: state.health,
-                x: spawn.x,
-                z: spawn.z,
-                y: target.y,
-                angle: target.angle
-            });
-        }, RESPAWN_DELAY_MS);
+        sourceState.score += KILL_REWARD;
+        this.markScoreboardDirty();
     }
 }

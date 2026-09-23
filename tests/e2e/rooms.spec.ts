@@ -16,7 +16,7 @@ test('Free Roam from the splash, then back to the Party from the room menu', asy
     // The switch went out before the car was shown
     const types = roamer.sentMessages.map(message => message.type);
     expect(types.indexOf('joinRoom')).toBeGreaterThanOrEqual(0);
-    expect(types.indexOf('joinRoom')).toBeLessThan(types.indexOf('playerReady'));
+    expect(types.indexOf('joinRoom')).toBeLessThan(types.indexOf('ready'));
     expect(roamer.sentMessages.find(message => message.type === 'joinRoom')).toEqual({ type: 'joinRoom', kind: 'freeroam' });
 
     // Free Roam: no score, HP, scoreboard, shooting or items

@@ -4,11 +4,10 @@ import { initWebSocket } from './network/websocket.js';
 import { initKeyboard } from './controls/keyboard.js';
 import { setupMobileControls } from './controls/mobile.js';
 import { updateParticles, spawnDriftParticle, spawnBoostFireParticle, spawnDamageSmoke } from './effects/particles.js';
-import { playCollisionSound } from './effects/sounds.js';
-import { updateJumpControl, showHitmarker, showInteractionPrompt } from './ui/hud.js';
+import { updateJumpControl, showInteractionPrompt } from './ui/hud.js';
 import { initSounds, startEngineSound, updateEngineSound } from './effects/sounds.js';
 import { checkCoinCollection, animateCoins } from './world/coins.js';
-import { checkPowerupCollection, animatePowerups } from './world/powerups.js';
+import { animatePowerups } from './world/powerups.js';
 import { updatePowerupsUI, updateSpeedometer, updateHealthBar, updateDriveHud } from './ui/hud.js';
 import { updateProjectiles } from './world/projectiles.js';
 import { initSplashScreen, initAboutModal } from './ui/screens.js';
@@ -27,7 +26,9 @@ import { setupLighting, updateLighting } from './render/lighting.js';
 import { ChaseCamera, RACE_CAMERA, RACE_CAMERA_SLIP_BLEND, type ChaseTarget } from './camera/ChaseCamera.js';
 import { SANDBOX, TUNE_PANEL, TUNE_REQUESTED } from './flags.js';
 import { gameHooks } from './game/hooks.js';
-import type { LocalVehicle } from './vehicle/LocalVehicle.js';
+import { assistProfileForDevice, type LocalVehicle } from './vehicle/LocalVehicle.js';
+import { updateRemoteCars } from './net/remotes.js';
+import type { ProfileId } from '../shared/protocol.js';
 
 const chaseCamera = new ChaseCamera(RACE_CAMERA);
 const _chaseTarget: ChaseTarget = { position: new THREE.Vector3(), yaw: 0, speedRatio: 0, boost: false };
@@ -35,9 +36,6 @@ const _chaseTarget: ChaseTarget = { position: new THREE.Vector3(), yaw: 0, speed
 let renderQuality: AdaptiveRenderQuality;
 // Only set with ?debug=perf (FPS/draw call/bandwidth overlay)
 let perfMonitor: PerfMonitor | null = null;
-
-// Mega ram cooldown per player
-const ramCooldowns: Record<string, number> = {};
 
 function init() {
     // Scene
@@ -102,11 +100,11 @@ function init() {
         }
 
         // Notify server of name and car type, move to the chosen mode
-        // (Party or Free Roam) and show the car
+        // (Party or Free Roam), then the car spawns
         sendToServer({ type: 'rename', name });
-        sendToServer({ type: 'setCarType', carType });
+        sendToServer({ type: 'setCar', carType, profile: assistProfileForDevice() as ProfileId });
         applySplashChoice();
-        sendToServer({ type: 'playerReady' });
+        sendToServer({ type: 'ready' });
 
         // Hide splash screen
         if (splashScreen) {
@@ -184,7 +182,6 @@ function animate(frameTime: number) {
     perfMonitor?.beginFrame();
     const dt = state.clock.getDelta();
     const time = state.clock.elapsedTime;
-    const nowMs = Date.now();
 
     if (state.bulli) {
         state.bulli.update(dt);
@@ -213,71 +210,10 @@ function animate(frameTime: number) {
         }
 
         checkCoinCollection();
-        checkPowerupCollection();
         updateProjectiles(dt);
         // Boost fire trails
         if (boostActive && speed > 0.05) {
             spawnBoostFireParticle();
-        }
-
-        // Mega ram: collide with other players to damage them
-        if (state.bulli.powerups.size.active && speed > 0.05 && !state.dead) {
-            const myX = state.bulli.group.position.x;
-            const myZ = state.bulli.group.position.z;
-            const ramRadiusSquared = 36;
-
-            for (const id in state.remotePlayers) {
-                const remote = state.remotePlayers[id] as any;
-                if (!remote.flipGroup.visible) continue;
-                const dx = myX - remote.group.position.x;
-                const dz = myZ - remote.group.position.z;
-                const distanceSquared = dx * dx + dz * dz;
-
-                if (distanceSquared < ramRadiusSquared && (!ramCooldowns[id] || nowMs - ramCooldowns[id] > 1000)) {
-                    ramCooldowns[id] = nowMs;
-                    sendToServer({ type: 'shoot', targetId: id });
-                    playCollisionSound(0.5);
-                    showHitmarker();
-                }
-            }
-        }
-
-        // Respawn shield decay
-        if (state.respawnShield && state.bulli.shieldMesh) {
-            const speed = Math.abs(state.bulli.speed);
-            if (speed > 0.05 && state.respawnMoveStart === 0) {
-                state.respawnMoveStart = nowMs;
-            }
-
-            const shieldMat = state.bulli.shieldMesh.material as any;
-            state.bulli.shieldMesh.visible = true;
-
-            if (state.respawnMoveStart > 0) {
-                const elapsed = nowMs - state.respawnMoveStart;
-                const decay = 3000;
-                const progress = Math.min(1, elapsed / decay);
-                shieldMat.opacity = 0.3 * (1 - progress);
-                shieldMat.emissiveIntensity = 0.4 * (1 - progress);
-                state.bulli.shieldMesh.rotation.y += dt * 2;
-
-                if (progress >= 1) {
-                    state.respawnShield = false;
-                    if (state.bulli.powerups.shield.active) {
-                        state.bulli.shieldMesh.visible = true;
-                        shieldMat.opacity = 0.25;
-                        shieldMat.emissiveIntensity = 0.4;
-                    } else {
-                        state.bulli.shieldMesh.visible = false;
-                        shieldMat.opacity = 0;
-                        shieldMat.emissiveIntensity = 0;
-                    }
-                    sendToServer({ type: 'respawnShieldExpired' });
-                }
-            } else {
-                shieldMat.opacity = 0.25 + Math.sin(nowMs * 0.005) * 0.1;
-                shieldMat.emissiveIntensity = 0.4 + Math.sin(nowMs * 0.008) * 0.2;
-                state.bulli.shieldMesh.rotation.y += dt * 2;
-            }
         }
 
         updatePowerupsUI();
@@ -311,105 +247,14 @@ function animate(frameTime: number) {
     animatePowerups(time);
     animateFountain(time);
 
-    // Update remote players (smoothness)
+    // Remote cars: interpolated snapshots, the contact set predicted
+    // (net/remotes.ts), idle ones grey
+    updateRemoteCars(dt, performance.now(), state.bulli?.vehicle?.alpha ?? 0);
     for (const id in state.remotePlayers) {
         const remote = state.remotePlayers[id] as any;
-        remote.updateNametag();
-
-        // AFK detection: track last position change
-        const px = remote.group.position.x;
-        const pz = remote.group.position.z;
-        if (remote._lastPx !== px || remote._lastPz !== pz) {
-            remote._lastPx = px;
-            remote._lastPz = pz;
-            remote._lastMoveTime = nowMs;
-        }
-        const isAfk = remote._lastMoveTime && (nowMs - remote._lastMoveTime > 3000);
-
-        // AFK visualization: gray out + show ZZZ
-        if (isAfk && !remote._afkApplied) {
-            remote._afkApplied = true;
-            remote.flipGroup.traverse((child: any) => {
-                if (child.isMesh) {
-                    const mat = child.material;
-                    if (mat) {
-                        mat.userData = mat.userData || {};
-                        if (mat.userData._origColor === undefined) {
-                            mat.userData._origColor = mat.color.getHex();
-                        }
-                        mat.color.setHex(0x888888);
-                    }
-                }
-            });
-            if (remote.nametag) {
-                remote.nametag.style.opacity = '0.4';
-                const nameEl = remote.nametag.querySelector('.nametag-name');
-                if (nameEl && !remote.nametag.querySelector('.afk-badge')) {
-                    const badge = document.createElement('span');
-                    badge.className = 'afk-badge';
-                    badge.textContent = ' ZZZ';
-                    nameEl.appendChild(badge);
-                }
-            }
-        } else if (!isAfk && remote._afkApplied) {
-            remote._afkApplied = false;
-            remote.flipGroup.traverse((child: any) => {
-                if (child.isMesh) {
-                    const mat = child.material;
-                    if (mat?.userData?._origColor !== undefined) {
-                        mat.color.setHex(mat.userData._origColor);
-                        delete mat.userData._origColor;
-                    }
-                }
-            });
-            if (remote.nametag) {
-                remote.nametag.style.opacity = '';
-                const badge = remote.nametag.querySelector('.afk-badge');
-                if (badge) badge.remove();
-            }
-        }
-
-        // Respawn shield decay for remote players
-        if (remote._respawnShield && remote.shieldMesh) {
-            const hasMoved = remote._lastPx !== undefined &&
-                (remote._lastPx !== remote.group.position.x || remote._lastPz !== remote.group.position.z);
-
-            if (hasMoved && remote._respawnMoveStart === 0) {
-                remote._respawnMoveStart = nowMs;
-            }
-
-            const rsMat = remote.shieldMesh.material as any;
-            remote.shieldMesh.visible = true;
-
-            if (remote._respawnMoveStart > 0) {
-                const elapsed = nowMs - remote._respawnMoveStart;
-                const decay = 3000;
-                const progress = Math.min(1, elapsed / decay);
-                rsMat.opacity = 0.3 * (1 - progress);
-                rsMat.emissiveIntensity = 0.4 * (1 - progress);
-                remote.shieldMesh.rotation.y += dt * 2;
-
-                if (progress >= 1) {
-                    remote._respawnShield = false;
-                    if (remote.powerups?.shield?.active) {
-                        remote.shieldMesh.visible = true;
-                        rsMat.opacity = 0.25;
-                        rsMat.emissiveIntensity = 0.4;
-                    } else {
-                        remote.shieldMesh.visible = false;
-                        rsMat.opacity = 0;
-                        rsMat.emissiveIntensity = 0;
-                    }
-                }
-            } else {
-                rsMat.opacity = 0.25 + Math.sin(nowMs * 0.005) * 0.1;
-                rsMat.emissiveIntensity = 0.4 + Math.sin(nowMs * 0.008) * 0.2;
-                remote.shieldMesh.rotation.y += dt * 2;
-            }
-        }
-
+        remote.update(dt);
         // Damage smoke for remote players
-        if (remote.health < 100 && remote.flipGroup.visible && !isAfk) {
+        if (remote.health < 100 && remote.flipGroup.visible) {
             const damagePercent = 1 - remote.health / 100;
             if (Math.random() < damagePercent * 0.15) {
                 spawnDamageSmoke(
@@ -421,12 +266,6 @@ function animate(frameTime: number) {
             }
         }
     }
-    for (const id in ramCooldowns) {
-        if (!state.remotePlayers[id] || nowMs - ramCooldowns[id] > 1000) {
-            delete ramCooldowns[id];
-        }
-    }
-
 
     updateParticles(dt);
     updateMinimap(frameTime);

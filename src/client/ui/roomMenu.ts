@@ -9,7 +9,7 @@ import { state } from '../state.js';
 const STORAGE_KEY = 'bulli-room-kind';
 // The server takes one room switch per two seconds
 const SWITCH_COOLDOWN_MS = 2000;
-// Give up waiting for 'roomJoined' after this long (the buttons unlock)
+// Give up waiting for 'roomState' after this long (the buttons unlock)
 const SWITCH_TIMEOUT_MS = 5000;
 
 const LABELS: Record<RoomKind, string> = { party: 'PARTY', freeroam: 'FREE ROAM' };
@@ -74,7 +74,7 @@ export function initModeSelector(): void {
 
 /**
  * START on the splash: moves to the chosen mode first if the connection
- * joined another one (the server handles joinRoom before playerReady).
+ * joined another one (the server handles joinRoom before ready).
  */
 export function applySplashChoice(): void {
     rememberRoomKind(splashChoice);
@@ -144,7 +144,7 @@ export function initRoomMenu(): void {
     renderRoomUi();
 }
 
-/** Asks the server for a room of that kind (the answer is 'roomJoined'). */
+/** Asks the server for a room of that kind (the answer is 'roomState'). */
 export function requestRoom(kind: RoomKind): void {
     if (!state.room || state.room.kind === kind || pendingKind) return;
     if (performance.now() < lockedUntil) return;
@@ -159,7 +159,7 @@ export function requestRoom(kind: RoomKind): void {
     renderRoomUi();
 }
 
-/** The server put this client into a room ('init' or 'roomJoined'). */
+/** The server put this client into a room ('roomState'). */
 export function setCurrentRoom(room: RoomInfo): void {
     state.room = room;
     if (pendingKind) {

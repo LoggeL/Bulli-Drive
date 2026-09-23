@@ -1,5 +1,11 @@
+import * as v from 'valibot';
 import { describe, expect, it } from 'vitest';
-import { ClientMessage, parseClientMessage, PROTOCOL_VERSION } from '../../src/shared/protocol.js';
+import {
+    ClientMessage, HelloSchema, InputPacketSchema, parseClientMessage, PROTOCOL_VERSION
+} from '../../src/shared/protocol.js';
+
+// Protocol v2 (docs/phase-1b-design.md, 3): the JSON messages of the client
+// and the schema of the decoded binary input packet.
 
 // What actually reaches the server: the object after a JSON round trip.
 function overTheWire(message: unknown): unknown {
@@ -8,59 +14,41 @@ function overTheWire(message: unknown): unknown {
 
 // One sample per client send site (src/client/**, all via sendToServer).
 const REAL_CLIENT_MESSAGES: Record<string, ClientMessage> = {
-    // entities/Bulli.ts sendMovementSnapshot
-    update: {
-        type: 'update',
-        x: 12.345,
-        z: -67.89,
-        y: 0.031,
-        angle: 1.5707963267948966,
-        flipAngle: 0,
-        isFlipping: false,
-        scale: 1,
-        ghostActive: false,
-        shieldActive: true,
-        megaActive: false
+    // network/websocket.ts on open
+    hello: {
+        type: 'hello', protocolVersion: PROTOCOL_VERSION, build: '0123456789abcdef', connId: 'k2x9q1',
+        name: 'SurfKing42', carType: 'bulli', profile: 'standard', room: 'party'
     },
-    // entities/Bulli.ts mid-flip with Mega active
-    updateFlipping: {
-        type: 'update',
-        x: -499,
-        z: 550,
-        y: 23.9,
-        angle: -12.5,
-        flipAngle: 4.2,
-        isFlipping: true,
-        scale: 2.5,
-        ghostActive: true,
-        shieldActive: false,
-        megaActive: true
+    // Vite dev server: no build stamp; a phone that played Free Roam last
+    helloDev: {
+        type: 'hello', protocolVersion: PROTOCOL_VERSION, build: null, connId: 'z',
+        name: '', carType: 'jeep', profile: 'touch', room: 'freeroam'
     },
-    // world/powerups.ts
-    collectPowerup: { type: 'collectPowerup', powerupId: 7 },
-    // world/coins.ts
-    collectCoin: { type: 'collectCoin', coinId: 0 },
+    // main.ts start
+    ready: { type: 'ready' },
+    // network/websocket.ts clock sync
+    ping: { type: 'ping', t: 1234.5678 },
     // entities/Bulli.ts (F key / horn button)
     honk: { type: 'honk' },
-    // main.ts start, network/websocket.ts init, ui/screens.ts rename form
+    // main.ts start, ui/screens.ts rename form
     rename: { type: 'rename', name: 'SurfKing42' },
     renameUnicode: { type: 'rename', name: 'Jürgen 🚐' },
     // main.ts start
-    setCarType: { type: 'setCarType', carType: 'beetle' },
-    playerReady: { type: 'playerReady' },
-    // main.ts respawn shield decay
-    respawnShieldExpired: { type: 'respawnShieldExpired' },
-    // main.ts Mega ram and world/projectiles.ts hits
+    setCar: { type: 'setCar', carType: 'beetle', profile: 'touch' },
+    // world/projectiles.ts hits
     shoot: { type: 'shoot', targetId: '4f1c2c7e-3a5b-4a0e-9d8e-1b2c3d4e5f60' },
     // ui/roomMenu.ts (splash start and the in-game mode switch)
     joinRoom: { type: 'joinRoom', kind: 'freeroam' },
-    joinParty: { type: 'joinRoom', kind: 'party' }
+    joinParty: { type: 'joinRoom', kind: 'party' },
+    // network/websocket.ts visibilitychange
+    visibility: { type: 'visibility', hidden: true },
+    // e2eHook.ts placeLocalCar (E2E server only)
+    debugPlace: { type: 'debugPlace', x: 6, z: -98, yaw: 0 }
 };
 
 describe('PROTOCOL_VERSION', () => {
-    it('is a positive integer', () => {
-        expect(Number.isInteger(PROTOCOL_VERSION)).toBe(true);
-        expect(PROTOCOL_VERSION).toBeGreaterThan(0);
+    it('is 2 since the server simulates', () => {
+        expect(PROTOCOL_VERSION).toBe(2);
     });
 });
 
@@ -74,73 +62,28 @@ describe('parseClientMessage accepts every real client message', () => {
     it('covers every client message type', () => {
         const types = new Set(Object.values(REAL_CLIENT_MESSAGES).map(m => m.type));
         expect([...types].sort()).toEqual([
-            'collectCoin', 'collectPowerup', 'honk', 'joinRoom', 'playerReady', 'rename',
-            'respawnShieldExpired', 'setCarType', 'shoot', 'update'
+            'debugPlace', 'hello', 'honk', 'joinRoom', 'ping', 'ready', 'rename', 'setCar', 'shoot', 'visibility'
         ]);
-    });
-
-    it('accepts an update without the optional fields', () => {
-        const minimal = { type: 'update', x: 0, z: 0, angle: 0, flipAngle: 0, isFlipping: false };
-        expect(parseClientMessage(minimal)).toEqual(minimal);
-    });
-
-    it('accepts an update whose y became null (NaN on the wire)', () => {
-        const message = { ...REAL_CLIENT_MESSAGES.update, y: NaN };
-        const parsed = parseClientMessage(overTheWire(message));
-        expect(parsed).toMatchObject({ type: 'update', x: 12.345 });
-        // Dropped; the server then falls back to y = 0.
-        expect((parsed as { y?: unknown }).y).toBeUndefined();
     });
 
     it('accepts values the server clamps or cleans up itself', () => {
         expect(parseClientMessage({ type: 'rename', name: '   ' })).not.toBeNull();
-        expect(parseClientMessage({ type: 'rename', name: 'x'.repeat(500) })).not.toBeNull();
-        expect(parseClientMessage({ type: 'setCarType', carType: 'tank' })).not.toBeNull();
-        expect(parseClientMessage({ ...REAL_CLIENT_MESSAGES.update, x: 1e9 })).not.toBeNull();
+        expect(parseClientMessage({ type: 'setCar', carType: 'tank', profile: 'standard' })).not.toBeNull();
+        // An old or future version still parses as hello; the server rejects it by the number
+        expect(v.safeParse(HelloSchema, { ...REAL_CLIENT_MESSAGES.hello, protocolVersion: 1 }).success).toBe(true);
     });
 
     it('strips unknown keys', () => {
         const parsed = parseClientMessage(overTheWire({ type: 'honk', damage: 9999, admin: true }));
         expect(parsed).toEqual({ type: 'honk' });
-        const parsedProto = parseClientMessage(JSON.parse('{"type":"playerReady","__proto__":{"polluted":true}}'));
-        expect(parsedProto).toEqual({ type: 'playerReady' });
+        const parsedProto = parseClientMessage(JSON.parse('{"type":"ready","__proto__":{"polluted":true}}'));
+        expect(parsedProto).toEqual({ type: 'ready' });
         expect(({} as Record<string, unknown>).polluted).toBeUndefined();
     });
 });
 
-// Only x, z, angle and flipAngle make an update invalid. The pre-valibot
-// handler on main (1d39c07) still applied the position when the other fields
-// were off: isFlipping became !!value, y fell back to 0, the hints were never
-// read. The schema keeps that, so such an update is normalized, not dropped.
-describe('parseClientMessage normalizes the lenient update fields like main', () => {
-    const update = REAL_CLIENT_MESSAGES.update as Extract<ClientMessage, { type: 'update' }>;
-    const position = { type: 'update', x: update.x, z: update.z, angle: update.angle, flipAngle: update.flipAngle };
-    const cases: [string, unknown, Record<string, unknown>][] = [
-        ['update without isFlipping', { ...update, isFlipping: undefined }, { isFlipping: false }],
-        ['update with numeric isFlipping', { ...update, isFlipping: 1 }, { isFlipping: true }],
-        ['update with string isFlipping', { ...update, isFlipping: 'no' }, { isFlipping: true }],
-        ['update with string y', { ...update, y: '3' }, { y: undefined }],
-        ['update with null y (NaN on the wire)', overTheWire({ ...update, y: NaN }), { y: undefined }],
-        ['update with string scale', { ...update, scale: '2.5' }, { scale: undefined }],
-        ['update with null scale (NaN on the wire)', overTheWire({ ...update, scale: NaN }), { scale: undefined }],
-        ['update with string ghostActive', { ...update, ghostActive: 'yes' }, { ghostActive: undefined }],
-        ['update with null megaActive', { ...update, megaActive: null }, { megaActive: undefined }]
-    ];
-
-    for (const [name, value, expected] of cases) {
-        it(name, () => {
-            const parsed = parseClientMessage(value) as Record<string, unknown> | null;
-            expect(parsed).not.toBeNull();
-            expect(parsed).toMatchObject(position);
-            for (const [key, expectedValue] of Object.entries(expected)) {
-                expect(parsed![key], key).toBe(expectedValue);
-            }
-        });
-    }
-});
-
 describe('parseClientMessage rejects invalid messages', () => {
-    const { update } = REAL_CLIENT_MESSAGES;
+    const { hello, ping, debugPlace } = REAL_CLIENT_MESSAGES;
     const invalid: [string, unknown][] = [
         ['null', null],
         ['undefined', undefined],
@@ -150,28 +93,57 @@ describe('parseClientMessage rejects invalid messages', () => {
         ['empty object', {}],
         ['unknown type', { type: 'teleport', x: 0, z: 0 }],
         ['non-string type', { type: 7 }],
+        // v1 messages are gone: positions, client-side pickups, the old names
+        ['v1 update', { type: 'update', x: 0, z: 0, angle: 0, flipAngle: 0, isFlipping: false }],
+        ['v1 collectCoin', { type: 'collectCoin', coinId: 3 }],
+        ['v1 collectPowerup', { type: 'collectPowerup', powerupId: 3 }],
+        ['v1 playerReady', { type: 'playerReady' }],
+        ['v1 setCarType', { type: 'setCarType', carType: 'jeep' }],
+        ['v1 respawnShieldExpired', { type: 'respawnShieldExpired' }],
         ['removed scoreUpdate', { type: 'scoreUpdate', score: 1e6 }],
-        ['update without x', { ...update, x: undefined }],
-        ['update with string x', { ...update, x: '12' }],
-        ['update with null z (NaN on the wire)', overTheWire({ ...update, z: NaN })],
-        ['update with Infinity angle', { ...update, angle: Infinity }],
-        ['update without flipAngle', { ...update, flipAngle: undefined }],
-        ['collectPowerup without id', { type: 'collectPowerup' }],
-        ['collectPowerup with string id', { type: 'collectPowerup', powerupId: '3' }],
-        ['collectCoin with null id', { type: 'collectCoin', coinId: null }],
+        ['hello without version', { ...hello, protocolVersion: undefined }],
+        ['hello with fractional version', { ...hello, protocolVersion: 2.5 }],
+        ['hello with unknown profile', { ...hello, profile: 'pro' }],
+        ['hello with unknown room', { ...hello, room: 'race' }],
+        ['hello with a huge name', { ...hello, name: 'x'.repeat(201) }],
+        ['ping with NaN (null on the wire)', overTheWire({ ...ping, t: NaN })],
+        ['ping with Infinity', { ...ping, t: Infinity }],
+        ['ping with a string', { ...ping, t: '1' }],
+        ['debugPlace with NaN', overTheWire({ ...debugPlace, x: NaN })],
         ['rename with number', { type: 'rename', name: 5 }],
-        ['rename without name', { type: 'rename' }],
-        ['setCarType with null', { type: 'setCarType', carType: null }],
+        ['setCar without profile', { type: 'setCar', carType: 'jeep' }],
         ['shoot without target', { type: 'shoot' }],
         ['shoot with object target', { type: 'shoot', targetId: { id: 'x' } }],
+        ['visibility with a string', { type: 'visibility', hidden: 'yes' }],
         ['joinRoom without kind', { type: 'joinRoom' }],
-        ['joinRoom to an unknown kind', { type: 'joinRoom', kind: 'race' }],
-        ['joinRoom with a room id', { type: 'joinRoom', kind: 'party-2' }]
+        ['joinRoom to an unknown kind', { type: 'joinRoom', kind: 'race' }]
     ];
 
     for (const [name, value] of invalid) {
         it(name, () => {
             expect(parseClientMessage(value)).toBeNull();
+        });
+    }
+});
+
+describe('InputPacketSchema', () => {
+    const packet = { flags: 0, seq: 12, tick: 900, inputs: [{ steer: -127, throttle: 255, brake: 0, buttons: 3 }] };
+
+    it('accepts a decoded packet', () => {
+        expect(v.safeParse(InputPacketSchema, packet).success).toBe(true);
+        expect(v.safeParse(InputPacketSchema, { ...packet, seq: 0xffffffff }).success).toBe(true);
+    });
+
+    for (const [name, value] of [
+        ['no inputs', { ...packet, inputs: [] }],
+        ['nine inputs', { ...packet, inputs: Array(9).fill(packet.inputs[0]) }],
+        ['fractional steer', { ...packet, inputs: [{ ...packet.inputs[0], steer: 0.5 }] }],
+        ['NaN throttle', { ...packet, inputs: [{ ...packet.inputs[0], throttle: NaN }] }],
+        ['negative tick', { ...packet, tick: -1 }],
+        ['flags beyond a byte', { ...packet, flags: 256 }]
+    ] as const) {
+        it(`rejects ${name}`, () => {
+            expect(v.safeParse(InputPacketSchema, value).success).toBe(false);
         });
     }
 });

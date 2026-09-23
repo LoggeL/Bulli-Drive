@@ -1,5 +1,5 @@
 import { test as base, expect, type BrowserContext, type Page } from '@playwright/test';
-import type { BulliDebugSnapshot, V2Snapshot } from '../../src/client/e2eHook.js';
+import type { BulliDebugSnapshot, NetDebugSnapshot, V2Snapshot } from '../../src/client/e2eHook.js';
 import type { ColliderInput } from '../../src/shared/world/colliders.js';
 import { CITY_BOUNDS, CITY_CONFIG, roadLineCenter } from '../../src/shared/world/cityGen.js';
 import { MEGA_SCALE } from '../../src/shared/constants.js';
@@ -8,8 +8,11 @@ export { expect };
 
 export interface Player {
     page: Page;
-    // Client -> server messages this page sent over the game WebSocket
+    // Client -> server JSON messages this page sent over the game WebSocket
     sentMessages: Array<{ type: string; [key: string]: unknown }>;
+    // Binary frames it sent (input packets) and received (snapshots)
+    binarySent: number;
+    binaryReceived: number;
 }
 
 interface PlayerOptions {
@@ -39,7 +42,7 @@ export const test = base.extend<Fixtures>({
                 route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
 
             const page = await context.newPage();
-            const player: Player = { page, sentMessages: [] };
+            const player: Player = { page, sentMessages: [], binarySent: 0, binaryReceived: 0 };
             const report = (problem: string) => {
                 if (!options.allowedProblems?.test(problem)) problems.push(`[${label}] ${problem}`);
             };
@@ -52,9 +55,16 @@ export const test = base.extend<Fixtures>({
             });
             page.on('websocket', socket => {
                 socket.on('framesent', frame => {
+                    if (typeof frame.payload !== 'string') {
+                        player.binarySent++;
+                        return;
+                    }
                     try {
-                        player.sentMessages.push(JSON.parse(String(frame.payload)));
+                        player.sentMessages.push(JSON.parse(frame.payload));
                     } catch { /* not JSON, not ours */ }
+                });
+                socket.on('framereceived', frame => {
+                    if (typeof frame.payload !== 'string') player.binaryReceived++;
                 });
             });
 
@@ -76,6 +86,13 @@ export function snapshot(page: Page): Promise<BulliDebugSnapshot> {
     return page.evaluate(() => (window as unknown as {
         __bulliDebug: { snapshot(): BulliDebugSnapshot };
     }).__bulliDebug.snapshot());
+}
+
+// The netcode numbers of the page (window.__bulliNet)
+export function netState(page: Page): Promise<NetDebugSnapshot> {
+    return page.evaluate(() => (window as unknown as {
+        __bulliNet: { snapshot(): NetDebugSnapshot };
+    }).__bulliNet.snapshot());
 }
 
 // The local sim car (created with the car's first frame)
@@ -117,7 +134,12 @@ export async function joinGame(player: Player, name: string, extraQuery = '', mo
         const state = await snapshot(page);
         return state.connected && !!state.local && state.myId;
     }).toBeTruthy();
-    expect(player.sentMessages.map(message => message.type)).toContain('playerReady');
+    expect(player.sentMessages.map(message => message.type)).toContain('ready');
+    // The server spawned the car and the prediction runs
+    await expect.poll(async () => {
+        const net = await netState(page);
+        return net.spawned && net.tick >= 0;
+    }).toBe(true);
     if (mode) await expect.poll(async () => (await snapshot(page)).room?.kind).toBe(mode);
 
     return (await snapshot(page)).myId!;

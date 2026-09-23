@@ -9,11 +9,15 @@ import { state } from '../state.js';
 import { isWebGLContextLost } from '../ui/contextLoss.js';
 import { showInteractionPrompt } from '../ui/hud.js';
 import { LocalVehicle } from './LocalVehicle.js';
+import { netDriver } from '../net/netDriver.js';
+import { POWERUP_TYPE_IDS } from '../../shared/party/rules.js';
+import { TICK_RATE } from '../../shared/net/constants.js';
 import { simWorldFor } from './simWorldClient.js';
 
 // The frame of the local car on the v2 physics (docs/phase-1a-design.md,
 // 12.3): gamepad poll, fixed-step ticks, pose, sounds and particles from
-// the sim events, then the unchanged position update to the server.
+// the sim events. Online the ticks run through the prediction
+// (net/netDriver.ts), which also sends the inputs.
 
 // Wall hits louder than these play a sound / throw sparks (section 7.3)
 const WALL_SOUND_FROM = 7.5;
@@ -46,21 +50,40 @@ inputManager.onAction = (action) => {
 export function driveLocalCar(car: Bulli, dt: number): void {
     // The sandbox brings its own world (game/hooks.ts)
     const world = gameHooks.world ?? simWorldFor(state.terrainConfig ?? DEFAULT_TERRAIN_CONFIG, state.worldColliders);
-    if (!car.vehicle) car.vehicle = LocalVehicle.forHost(car, world);
+    const online = !gameHooks.world && netDriver.prediction !== null;
+    if (!car.vehicle) {
+        car.vehicle = LocalVehicle.forHost(car, world);
+        if (online) {
+            car.vehicle.net = netDriver;
+            netDriver.bindCar(car.vehicle.car);
+        }
+    }
     const vehicle = car.vehicle;
     vehicle.world = world;
 
-    // Frozen while a modal is open, while dead and
-    // while the GL context is gone; the powerup timers keep running
-    if (state.isModalOpen || state.dead || isWebGLContextLost()) {
-        vehicle.loop.reset();
-        vehicle.countPowerups(car, dt);
-        return;
+    if (online) {
+        // Online the client keeps ticking with stop inputs while frozen
+        // (docs/phase-1b-design.md, 5.4); dead, the car is just not in the sim
+        inputManager.touchUi = touchUiActive();
+        pollGamepad();
+        vehicle.update(dt, car, performance.now());
+        if (netDriver.cameraSnap) {
+            netDriver.cameraSnap = false;
+            state.cameraSnapPending = true;
+        }
+        showPowerupWindows(car);
+    } else {
+        // Frozen while a modal is open, while dead and
+        // while the GL context is gone; the powerup timers keep running
+        if (state.isModalOpen || state.dead || isWebGLContextLost()) {
+            vehicle.loop.reset();
+            vehicle.countPowerups(car, dt);
+            return;
+        }
+        inputManager.touchUi = touchUiActive();
+        pollGamepad();
+        vehicle.update(dt, car, performance.now());
     }
-
-    inputManager.touchUi = touchUiActive();
-    pollGamepad();
-    vehicle.update(dt, car, performance.now());
 
     // Mirror of the drive axes for the engine sound, the HUD and the e2e hook
     const axes = inputManager.lastAxes;
@@ -69,7 +92,34 @@ export function driveLocalCar(car: Bulli, dt: number): void {
 
     car.handleActions();
     playEventEffects(vehicle);
-    car.sendMovementSnapshot(performance.now(), vehicle.moving);
+    vehicle.endFrame();
+}
+
+// Online the prediction also ticks between frames: a slow renderer (a
+// weak phone, software WebGL) must not delay the inputs to the server
+// (docs/phase-1b-design.md, 20.2)
+let pumpTimer = 0;
+export function startNetPump(): void {
+    if (pumpTimer) return;
+    const pump = () => {
+        const car = state.bulli as Bulli | null;
+        const vehicle = car?.vehicle;
+        if (car && vehicle?.net) vehicle.pumpNet(car, performance.now());
+        pumpTimer = window.setTimeout(pump, 4);
+    };
+    pumpTimer = window.setTimeout(pump, 4);
+}
+
+// The HUD's powerup bars and the shield bubble from the server's windows
+function showPowerupWindows(car: Bulli): void {
+    const tick = netDriver.tick;
+    for (const type of POWERUP_TYPE_IDS) {
+        const window = netDriver.windows[type];
+        const active = tick >= 0 && window.start <= tick && tick < window.end;
+        car.powerups[type].active = active;
+        car.powerups[type].timer = active ? (window.end - tick) / TICK_RATE : 0;
+    }
+    state.respawnShield = netDriver.respawnShieldNow;
 }
 
 function playEventEffects(vehicle: LocalVehicle): void {

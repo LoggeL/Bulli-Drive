@@ -1,58 +1,55 @@
-import { MAX_HEALTH } from '../../shared/constants.js';
+import { MAX_HEALTH, POWERUP_TYPE_IDS, type PowerupType } from '../../shared/party/rules.js';
 
 // What a player has in the Party and loses when leaving it
-// (docs/phase-1b-design.md, 2.1): HP, score, powerup effects, the respawn
-// shield and the timers behind them. Until the server ticks (phase 1b,
-// step 8c) the timers are still setTimeout handles.
+// (docs/phase-1b-design.md, 2.1 and 5.5): HP, score, the powerup windows,
+// the respawn shield and the cooldowns. Everything counts in room ticks.
 
-type Timer = ReturnType<typeof setTimeout>;
-
-export type PowerupEffectFlag = 'shieldActive' | 'ghostActive' | 'megaActive';
+export interface PowerupWindow {
+    // Active for start <= tick < end
+    start: number;
+    end: number;
+}
 
 export interface PartyMemberState {
     score: number;
     health: number;
-    shieldActive: boolean;
-    ghostActive: boolean;
-    megaActive: boolean;
-    // Invulnerable after (re)spawning until the car drives off (client
-    // hint) or RESPAWN_SHIELD_MAX_MS passed
+    powerups: Record<PowerupType, PowerupWindow>;
+    // Invulnerable after (re)spawning until a while after driving off
     respawnShield: boolean;
-    lastShotAt: number;
-    effectTimers: Partial<Record<PowerupEffectFlag, Timer>>;
-    respawnShieldTimer?: Timer;
-    respawnTimer?: Timer;
+    spawnTick: number;
+    // First tick the car drove faster than the shield's move speed, -1 = not yet
+    movedTick: number;
+    // Dead until this tick (respawn), -1 = alive
+    deadUntil: number;
+    lastShotTick: number;
+    // Last tick each attacker's Mega rammed this player
+    readonly rammedBy: Map<string, number>;
 }
 
 export function createPartyState(): PartyMemberState {
+    const powerups = {} as Record<PowerupType, PowerupWindow>;
+    for (const type of POWERUP_TYPE_IDS) powerups[type] = { start: 0, end: 0 };
     return {
         score: 0,
         health: MAX_HEALTH,
-        shieldActive: false,
-        ghostActive: false,
-        megaActive: false,
+        powerups,
         respawnShield: false,
-        lastShotAt: 0,
-        effectTimers: {}
+        spawnTick: 0,
+        movedTick: -1,
+        deadUntil: -1,
+        lastShotTick: -Infinity,
+        rammedBy: new Map()
     };
 }
 
-export function clearEffectTimers(state: PartyMemberState): void {
-    for (const flag of Object.keys(state.effectTimers) as PowerupEffectFlag[]) {
-        clearTimeout(state.effectTimers[flag]);
-        delete state.effectTimers[flag];
-    }
+export function powerupActive(state: PartyMemberState, type: PowerupType, tick: number): boolean {
+    const window = state.powerups[type];
+    return window.start <= tick && tick < window.end;
 }
 
-// Every timer of the membership; must run when the player leaves the Party
-export function clearPartyTimers(state: PartyMemberState): void {
-    clearEffectTimers(state);
-    if (state.respawnShieldTimer) {
-        clearTimeout(state.respawnShieldTimer);
-        state.respawnShieldTimer = undefined;
-    }
-    if (state.respawnTimer) {
-        clearTimeout(state.respawnTimer);
-        state.respawnTimer = undefined;
+export function clearPowerups(state: PartyMemberState): void {
+    for (const type of POWERUP_TYPE_IDS) {
+        state.powerups[type].start = 0;
+        state.powerups[type].end = 0;
     }
 }

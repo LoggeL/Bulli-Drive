@@ -3,8 +3,8 @@ import { state } from '../state.js';
 import { getTerrainHeight } from './environment.js';
 import { playCollectSound } from '../effects/sounds.js';
 import { spawnParticles } from '../effects/particles.js';
-import { sendToServer } from '../network/socket.js';
 import { MAGNET_RANGE } from '../../shared/constants.js';
+import { CLIENT_COIN_CONFIRM_MS, CLIENT_COIN_MAGNET_RADIUS, CLIENT_COIN_RADIUS } from '../../shared/party/rules.js';
 import { distSq2D } from './util.js';
 import type { CoinData } from '../../shared/protocol.js';
 
@@ -12,8 +12,9 @@ import type { CoinData } from '../../shared/protocol.js';
 const coinBaseY: Map<THREE.Mesh, number> = new Map();
 // Map coin server ID to mesh
 const coinMeshes: Map<number, THREE.Mesh> = new Map();
-// Coins we already sent a collectCoin for (until server confirms/resets)
-const pendingCollects = new Set<number>();
+// Coins the local car took before the server confirmed them (8.7): the
+// time they were taken; without a pickup event they come back
+const pendingCollects = new Map<number, number>();
 
 const coinGeo = new THREE.CylinderGeometry(0.8, 0.8, 0.2, 16);
 const coinMat = new THREE.MeshStandardMaterial({
@@ -54,8 +55,32 @@ export function clearCoins() {
     state.coins.length = 0;
 }
 
+function markCollected(coinId: number, collected: boolean) {
+    const data = state.serverCoins?.find((c: CoinData) => c.id === coinId);
+    if (data) data.collected = collected;
+}
+
+// Another player took the coin
 export function removeCoinById(coinId: number) {
     pendingCollects.delete(coinId);
+    markCollected(coinId, true);
+    removeCoinMesh(coinId);
+}
+
+/** The server confirmed the local car's pickup; if it was not taken here yet it goes now. */
+export function confirmCoinPickup(coinId: number) {
+    markCollected(coinId, true);
+    const wasPending = pendingCollects.delete(coinId);
+    if (!wasPending && coinMeshes.has(coinId)) {
+        const coin = coinMeshes.get(coinId)!;
+        collectCoin(coin, coinId);
+        pendingCollects.delete(coinId);
+        const idx = state.coins.indexOf(coin);
+        if (idx !== -1) state.coins.splice(idx, 1);
+    }
+}
+
+function removeCoinMesh(coinId: number) {
     const coin = coinMeshes.get(coinId);
     if (coin) {
         state.scene.remove(coin);
@@ -68,6 +93,11 @@ export function removeCoinById(coinId: number) {
 
 export function resetCoinById(coinId: number) {
     pendingCollects.delete(coinId);
+    markCollected(coinId, false);
+    showCoinAgain(coinId);
+}
+
+function showCoinAgain(coinId: number) {
     if (coinMeshes.has(coinId)) return; // already visible, nothing to recreate
     // Find original position from server data stored in state
     const cd = state.serverCoins?.find((c: CoinData) => c.id === coinId);
@@ -112,10 +142,18 @@ export function animateCoins(time: number) {
 }
 
 export function checkCoinCollection() {
-    if (!state.bulli) return;
+    // Taken coins the server did not confirm come back
+    const now = performance.now();
+    for (const [coinId, takenAt] of pendingCollects) {
+        if (now - takenAt < CLIENT_COIN_CONFIRM_MS) continue;
+        pendingCollects.delete(coinId);
+        const data = state.serverCoins?.find((c: CoinData) => c.id === coinId);
+        if (data && !data.collected) showCoinAgain(coinId);
+    }
+    if (!state.bulli || state.dead) return;
     const carPos = state.bulli.group.position;
     const magnetActive = state.bulli.powerups.magnet.active;
-    const collectRadius = magnetActive ? 6 : 3;
+    const collectRadius = magnetActive ? CLIENT_COIN_MAGNET_RADIUS : CLIENT_COIN_RADIUS;
     const collectRadiusSq = collectRadius * collectRadius;
     for (let i = state.coins.length - 1; i >= 0; i--) {
         const coin = state.coins[i];
@@ -136,9 +174,6 @@ export function collectCoin(coin: THREE.Mesh, coinId: number) {
     playCollectSound();
     spawnParticles(coin.position.x, coin.position.y, coin.position.z, 0xFFD700, 15, 0.4, 1.5, 0.6);
 
-    // Notify server about coin collection (once per coin until confirmed/reset)
-    if (!pendingCollects.has(coinId)) {
-        pendingCollects.add(coinId);
-        sendToServer({ type: 'collectCoin', coinId: coinId });
-    }
+    // The server decides with its own car; this waits for its pickup event
+    pendingCollects.set(coinId, performance.now());
 }

@@ -17,7 +17,9 @@ export const METERS_PER_UNIT = 1;
 // Multiply a speed in m/s by this to get km/h
 export const MS_TO_KMH = 3.6;
 
-// Powerup effect durations (ms): shield/ghost last longer than the rest
+// Powerup effect durations (ms): shield/ghost last longer than the rest.
+// Online the server's windows in ticks rule (shared/party/rules.ts); the
+// offline car counts these down itself
 export const POWERUP_DURATIONS_MS: Record<string, number> = {
     speed: 5000,
     size: 5000,
@@ -27,26 +29,10 @@ export const POWERUP_DURATIONS_MS: Record<string, number> = {
     ghost: 8000
 };
 
-export const RESPAWN_DELAY_MS = 3000;
-// Server-side hard cap on the post-respawn invulnerability shield
-export const RESPAWN_SHIELD_MAX_MS = 8000;
-
-// Players with no 'update' for this long are considered AFK (invulnerable)
-export const AFK_THRESHOLD_MS = 3000;
-export const SHOT_COOLDOWN_MS = 400;
+// Shot reach (m) against the server's car positions
 export const MAX_SHOT_RANGE = 150;
-
-// Server-side acceptance radii for collect messages (2D distance player -> item)
-export const COIN_ACCEPT_RADIUS = 35;
-export const POWERUP_ACCEPT_RADIUS = 15;
+// The magnet pulls coins within this range (the look on the client)
 export const MAGNET_RANGE = 25;
-
-// Item respawn delays after collection
-export const POWERUP_RESPAWN_DELAY_MS = 20000;
-export const COIN_RESPAWN_DELAY_MS = 15000;
-
-// Client sends position updates at most every 50ms (20 Hz)
-export const UPDATE_SEND_INTERVAL_MS = 50;
 
 export const MAX_NAME_LENGTH = 20;
 

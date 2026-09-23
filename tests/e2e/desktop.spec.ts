@@ -38,13 +38,15 @@ test('loads, joins and drives on desktop', async ({ openPlayer }) => {
     await expect.poll(async () => Number(await page.locator('#speedo-value').textContent())).toBeGreaterThan(10);
     await expect.poll(async () => distance(start, (await snapshot(page)).local!)).toBeGreaterThan(2);
     // The HUD shows the sim's forward speed in km/h (1 u = 1 m). Read both in
-    // the same task; the dial redraws at most 30 times a second.
+    // the same task.
     const reading = await page.evaluate(() => ({
         shown: Number(document.getElementById('speedo-value')!.textContent),
-        u: (window as unknown as { __bulliDebug: { snapshot(): { v2: { u: number } } } })
-            .__bulliDebug.snapshot().v2.u
+        // The speed the last frame showed (u / 60 per tick): online the sim
+        // also ticks between frames, so the live state may be ahead of it
+        u: (window as unknown as { __bulliDebug: { snapshot(): { local: { speed: number } } } })
+            .__bulliDebug.snapshot().local.speed * 60
     }));
-    expect(Math.abs(reading.shown - Math.abs(reading.u) * 3.6)).toBeLessThanOrEqual(4);
+    expect(Math.abs(reading.shown - Math.abs(reading.u) * 3.6)).toBeLessThanOrEqual(1);
     await page.keyboard.up('w');
 
     // Letting go of W releases the throttle and the car slows down.

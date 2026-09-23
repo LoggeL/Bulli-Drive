@@ -6,6 +6,10 @@ import type { VehicleInput } from '../shared/sim/types.js';
 import type { RoomInfo } from '../shared/protocol.js';
 import type { ColliderInput } from '../shared/world/colliders.js';
 import { listTaggedColliders, type TaggedCollider } from './world/colliderTags.js';
+import { sendToServer } from './network/socket.js';
+import { netDriver } from './net/netDriver.js';
+import type { NetStats } from '../shared/net/client.js';
+import { remoteFlags } from './net/remotes.js';
 
 // Hook for the Playwright smoke tests (tests/e2e) and the screenshot script
 // (scripts/screenshots.ts). It is only installed when the page is opened with
@@ -197,8 +201,51 @@ function carSnapshot(car: any): CarSnapshot {
     };
 }
 
+// Netcode numbers for tests (docs/phase-1b-design.md, 12)
+export interface NetDebugSnapshot {
+    tick: number;
+    serverTick: number;
+    lead: number;
+    rate: number;
+    leadTicks: number;
+    leadError: number;
+    rtt: number;
+    jitter: number;
+    bufferTarget: number;
+    selfFlags: number;
+    spawned: boolean;
+    contactSet: number;
+    offset: number;
+    // Car flags of the other players from their latest snapshot
+    remoteFlags: Record<string, number>;
+    stats: NetStats;
+}
+
+function netSnapshot(): NetDebugSnapshot {
+    const p = netDriver.prediction;
+    const o = netDriver.offset;
+    return {
+        tick: p?.tick ?? -1,
+        serverTick: p?.lastSnapshotTick ?? -1,
+        lead: p?.lead ?? 0,
+        rate: netDriver.lead.rate,
+        leadTicks: netDriver.lead.lead,
+        leadError: netDriver.lead.lastError,
+        rtt: netDriver.clock.rtt,
+        jitter: netDriver.clock.jitter,
+        bufferTarget: netDriver.bufferTarget,
+        selfFlags: netDriver.selfFlags,
+        spawned: p?.spawned ?? false,
+        contactSet: p?.remotes.size ?? 0,
+        offset: Math.hypot(o.x, o.y, o.z),
+        remoteFlags: Object.fromEntries(Object.keys(state.remotePlayers).map(id => [id, remoteFlags(id)])),
+        stats: { ...netDriver.stats }
+    };
+}
+
 export function installE2EHook(): void {
     if (new URLSearchParams(window.location.search).get('e2e') !== '1') return;
+    (window as unknown as { __bulliNet: { snapshot(): NetDebugSnapshot } }).__bulliNet = { snapshot: netSnapshot };
 
     (window as unknown as { __bulliDebug: unknown }).__bulliDebug = {
         snapshot(): BulliDebugSnapshot {
@@ -238,11 +285,16 @@ export function installE2EHook(): void {
         colliderProps(): TaggedCollider[] {
             return state.scene ? listTaggedColliders(state.scene) : [];
         },
-        // Puts the local car at rest at (x, z), facing angle. Like any move it
-        // reaches the server with the car's next position update.
+        // Puts the local car at rest at (x, z), facing angle. Online the
+        // server places it (debugPlace, only with E2E=1) and the next
+        // snapshot brings it there; offline and in the sandbox right away.
         placeLocalCar(x: number, z: number, angle: number): void {
             const car = state.bulli;
             if (!car) throw new Error('No local car yet');
+            if (netDriver.prediction && state.ws) {
+                sendToServer({ type: 'debugPlace', x, z, yaw: angle });
+                return;
+            }
             car.group.position.x = x;
             car.group.position.z = z;
             car.angle = angle;

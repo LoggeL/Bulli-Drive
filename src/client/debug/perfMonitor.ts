@@ -74,7 +74,7 @@ export interface PerfRecording {
 }
 
 export interface PerfHook {
-    // Payload totals since the page loaded (includes the big init message)
+    // Payload totals since the page loaded
     wsTotals(): WsTotals;
     // WebGL renderer string, e.g. SwiftShader in headless Chromium
     gpu(): string;

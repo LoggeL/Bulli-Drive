@@ -94,8 +94,7 @@ export const SIM_TUNING = {
     CONTACT_DV_CAP: 30,         // Σ|Δv| per car and tick
     CONTACT_SLOP: 0.01,
     CONTACT_CORRECTION: 0.8,
-    CONTACT_MAX_CORRECTION: 0.5,
-    PROXY_CONTACT_SCALE: 0.7    // strength of 1a contacts against remote proxies
+    CONTACT_MAX_CORRECTION: 0.5
 };
 
 export type SimTuning = typeof SIM_TUNING;

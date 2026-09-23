@@ -3102,3 +3102,44 @@ body.room-freeroam .nametag-hp {
         display: none;
     }
 }
+
+/* ==========================================================================
+   CONNECTION NOTICE: the server closed the connection or turned it away
+   (network/websocket.ts). Reconnecting comes with phase 1b step 9
+   ========================================================================== */
+#net-notice {
+    position: fixed;
+    top: max(1rem, env(safe-area-inset-top, 0px));
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    max-width: calc(100vw - 2rem);
+    padding: 0.6rem 0.7rem 0.6rem 1.2rem;
+    border-radius: var(--radius-pill);
+    background: rgba(20, 20, 20, 0.85);
+    border: 1px solid var(--glass-border);
+    color: var(--text);
+    font-family: var(--font-display);
+    font-size: 0.95rem;
+    letter-spacing: 0.5px;
+    z-index: 400;
+    pointer-events: auto;
+}
+
+#net-notice[hidden] {
+    display: none;
+}
+
+.net-notice-reload {
+    min-height: 44px;
+    padding: 0 1.1rem;
+    border: none;
+    border-radius: var(--radius-pill);
+    background: linear-gradient(135deg, var(--sunset-red), #D63031);
+    color: white;
+    font-family: var(--font-display);
+    font-size: 0.9rem;
+    cursor: pointer;
+}

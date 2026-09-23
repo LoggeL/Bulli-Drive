@@ -28,10 +28,14 @@ test('the v2 physics drives, steers, jumps, drifts and resets', async ({ openPla
     await expect.poll(async () => distance(start, (await snapshot(page)).local!)).toBeGreaterThan(10);
     const reading = await page.evaluate(() => ({
         shown: Number(document.getElementById('speedo-value')!.textContent),
-        u: (window as unknown as { __bulliDebug: { snapshot(): { v2: { u: number } } } }).__bulliDebug.snapshot().v2.u
+        // The speed the last frame showed (u / 60 per tick): online the sim
+        // also ticks between frames, so the live state may be ahead of it
+        u: (window as unknown as { __bulliDebug: { snapshot(): { local: { speed: number } } } }).__bulliDebug.snapshot().local.speed * 60
     }));
-    expect(Math.abs(reading.shown - reading.u * 3.6)).toBeLessThanOrEqual(3);
-    expect(player.sentMessages.some(message => message.type === 'update')).toBe(true);
+    expect(Math.abs(reading.shown - reading.u * 3.6)).toBeLessThanOrEqual(1);
+    // Online the car sends inputs (binary), never positions
+    expect(player.binarySent).toBeGreaterThan(0);
+    expect(player.sentMessages.some(message => message.type === 'update')).toBe(false);
 
     // Handbrake (Space) plus A at speed: the tail steps out, the car slides
     // with a slip angle and turns left (yaw grows)
@@ -80,7 +84,6 @@ test('the v2 physics drives, steers, jumps, drifts and resets', async ({ openPla
     await page.keyboard.press('q');
     await expect.poll(async () => (await v2(page)).jumps).toBe(jumpsBefore + 1);
     await expect.poll(async () => (await v2(page)).grounded).toBe(true);
-    expect(player.sentMessages.some(message => message.type === 'update' && message.isFlipping === true)).toBe(true);
 
     // Holding R resets the car (onto the nearest road, with a short contact ghost)
     const resetsBefore = (await v2(page)).resets;

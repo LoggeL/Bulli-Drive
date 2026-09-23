@@ -14,3 +14,16 @@ export function sendToServer(msg: ClientMessage): boolean {
         return false;
     }
 }
+
+// Binary frames (input packets, shared/net/codec.ts)
+export function sendBinary(bytes: Uint8Array): boolean {
+    const ws = state.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+    try {
+        ws.send(bytes);
+        return true;
+    } catch (err) {
+        console.warn('sendBinary failed', err);
+        return false;
+    }
+}

@@ -10,6 +10,11 @@ export interface SpawnPoint {
     z: number;
 }
 
+// Where a car spawns and which way it faces
+export interface SpawnPose extends SpawnPoint {
+    yaw: number;
+}
+
 const SPAWN_ATTEMPTS = 80;
 const SPAWN_PLAZA_CHANCE = 0.2;
 const SPAWN_BUILDING_MARGIN = 4;
@@ -173,4 +178,30 @@ export function randomSpawn(city: CityData, others: readonly SpawnPoint[]): Spaw
     // In a crowded room, return the safe fixed candidate with the most room
     // rather than leaking a rejected random position into a building.
     return fallbackSpawn(city, others);
+}
+
+/**
+ * A heading along the road under the point (either way), or one of the
+ * four axes on the plaza and on crossings. Forward is (sin yaw, cos yaw).
+ */
+export function spawnYaw(city: CityData, point: SpawnPoint): number {
+    const flip = Math.random() < 0.5 ? 0 : Math.PI;
+    let inRoads = 0, along = 0;
+    for (const road of city.roads) {
+        const dx = point.x - road.x, dz = point.z - road.z;
+        const across = dx * Math.cos(road.rotation) + dz * Math.sin(road.rotation);
+        const alongRoad = dx * Math.sin(road.rotation) + dz * Math.cos(road.rotation);
+        if (Math.abs(across) <= road.width / 2 && Math.abs(alongRoad) <= road.length / 2) {
+            inRoads++;
+            along = road.rotation;
+        }
+    }
+    if (inRoads === 1) return along + flip;
+    return Math.floor(Math.random() * 4) * (Math.PI / 2);
+}
+
+/** randomSpawn with a heading. */
+export function randomSpawnPose(city: CityData, others: readonly SpawnPoint[]): SpawnPose {
+    const point = randomSpawn(city, others);
+    return { ...point, yaw: spawnYaw(city, point) };
 }

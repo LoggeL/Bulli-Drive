@@ -6,7 +6,7 @@
 import type { TerrainConfig } from '../protocol.js';
 import { createSimWorld, type ColliderInput, type RampDef, type SimWorld } from '../world/colliders.js';
 import { MEGA_SCALE } from '../constants.js';
-import { BTN_BOOST, BTN_HANDBRAKE, BTN_JUMP, BTN_RESET, DEG, SIM_TUNING } from './constants.js';
+import { BTN_BOOST, BTN_HANDBRAKE, BTN_JUMP, BTN_RESET, DEG } from './constants.js';
 import { copyVehicleState, createVehicleState, type AssistProfile, type CarClassId, type SimCar, type VehicleState } from './types.js';
 import { CAR_CLASS_IDS } from './vehicleClasses.js';
 import { createSimCar, placeVehicle } from './vehicle.js';
@@ -314,12 +314,13 @@ export const SIM_SCENARIOS: SimScenario[] = [
         name: 'proxy-bump-sport',
         ticks: 180,
         create() {
-            // A remote player's 1a proxy (client/vehicle/remoteProxies.ts):
-            // kinematic, and it pushes with the proxy contact strength
+            // A kinematic car with a soft contact, like a remote car the
+            // prediction extrapolates at constant speed (phase-1b-design.md
+            // 8.5); in 1a this was the remote player's proxy with strength 0.7
             const world = createFlatWorld();
             const proxy = spawnCar(world, 'proxy', 'bulli', 0, -200, 0, 25);
             proxy.kinematic = true;
-            proxy.contactScale = SIM_TUNING.PROXY_CONTACT_SCALE;
+            proxy.contactScale = 0.7;
             return { world, cars: [proxy, spawnCar(world, 'sport', 'sport', 2.8, -206, -20 * DEG, 33)] };
         },
         drive(_tick, run) {

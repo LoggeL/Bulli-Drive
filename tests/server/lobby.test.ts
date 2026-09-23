@@ -6,7 +6,7 @@ import { PartyRoom } from '../../src/server/rooms/PartyRoom.js';
 import { SLOT_REUSE_DELAY_MS } from '../../src/server/rooms/Room.js';
 import { generateWorld } from '../../src/shared/world/worldGen.js';
 import { sha256, stableStringify } from '../helpers.js';
-import { fakeClock, fakeSession } from './helpers.js';
+import { fakeClock, fakeSession, ready, steps } from './helpers.js';
 
 // Rooms, instances, joining, leaving and switching
 // (docs/phase-1b-design.md, 2.3 and 15.1).
@@ -16,10 +16,6 @@ let lobby: RoomManager;
 
 function makeLobby(maxPlayersPerRoom = 32) {
     return new RoomManager(mapFor(), { maxPlayersPerRoom, emptyRoomTtlMs: 60_000, now: clock.now });
-}
-
-function ready(session: ReturnType<typeof fakeSession>) {
-    handleClientMessage(lobby, session, { type: 'playerReady' }, clock.now());
 }
 
 beforeEach(() => {
@@ -129,6 +125,51 @@ describe('instances', () => {
         lobby.join(d, 'party');
         expect(d.member!.slot).toBe(0);
     });
+
+    it('ticks only rooms with members, in id order', () => {
+        const a = fakeSession();
+        lobby.join(a, 'freeroam');
+        lobby.stepAll(0);
+        lobby.stepAll(0);
+        expect(lobby.get('freeroam-1')!.tick).toBe(2);
+        expect(lobby.get('party-1')!.tick).toBe(0);
+    });
+});
+
+describe('joining', () => {
+    it('sends the room state: world by seed and hash, members with slots, items', () => {
+        const alice = fakeSession('Alice');
+        lobby.join(alice, 'party');
+        const [state] = alice.transport.of('roomState');
+        const map = mapFor();
+        expect(state.room).toEqual({ id: 'party-1', kind: 'party', index: 1 });
+        expect(state.world).toEqual({ seed: map.seed, mapVersion: map.mapVersion, worldHash: map.worldHash });
+        expect(state.members).toEqual([expect.objectContaining({ id: alice.id, slot: 0, name: 'Alice', ready: false })]);
+        expect(state.items!.coins).toHaveLength(30);
+        expect(state.items!.powerups).toHaveLength(25);
+        expect(state.health[alice.id]).toBe(100);
+        // The world itself is not sent (the client builds it from the seed)
+        expect(JSON.stringify(state).length).toBeLessThan(4000);
+    });
+
+    it('spawns the car at the tick after ready and announces it', () => {
+        const alice = fakeSession('Alice'), bob = fakeSession('Bob');
+        lobby.join(alice, 'party');
+        lobby.join(bob, 'party');
+        ready(lobby, bob);
+        bob.transport.clear();
+        ready(lobby, alice);
+        expect(bob.transport.of('playerJoined')).toEqual([{ type: 'playerJoined', member: expect.objectContaining({ id: alice.id, slot: 0, ready: true }) }]);
+        const room = alice.room!;
+        steps(room, 3);
+        const spawn = bob.transport.events('spawn').find(e => e.id === alice.id)!;
+        expect(spawn.tick).toBe(1);
+        expect(alice.member!.car!.state.x).toBe(spawn.x);
+        expect(alice.member!.car!.state.z).toBe(spawn.z);
+        // The snapshot has Alice's car for Bob and her own self block for her
+        expect(bob.transport.lastSnapshot!.cars.map(c => c.slot)).toContain(0);
+        expect(alice.transport.lastSnapshot!.self!.slot).toBe(0);
+    });
 });
 
 describe('leaving', () => {
@@ -136,19 +177,23 @@ describe('leaving', () => {
         const alice = fakeSession('Alice'), bob = fakeSession('Bob');
         lobby.join(alice, 'party');
         lobby.join(bob, 'party');
-        ready(alice);
-        ready(bob);
+        ready(lobby, alice);
+        ready(lobby, bob);
+        const room = bob.room!;
+        steps(room, 3);
         bob.transport.clear();
         lobby.leave(alice);
-        expect(bob.transport.of('removePlayer')).toEqual([{ type: 'removePlayer', id: alice.id }]);
+        expect(bob.transport.of('playerLeft')).toEqual([{ type: 'playerLeft', id: alice.id, reason: 'disconnect' }]);
+        steps(room, 3);
         expect(bob.transport.of('scoreboard').at(-1)!.scoreboard.map(e => e.name)).toEqual(['Bob']);
+        expect(bob.transport.lastSnapshot!.cars).toEqual([]);
     });
 
     it('announces nobody who never got past the splash screen', () => {
         const alice = fakeSession(), bob = fakeSession();
         lobby.join(alice, 'party');
         lobby.join(bob, 'party');
-        ready(bob);
+        ready(lobby, bob);
         bob.transport.clear();
         lobby.leave(alice);
         expect(bob.transport.sent).toEqual([]);
@@ -161,108 +206,107 @@ describe('switching rooms', () => {
         lobby.join(alice, 'party');
         lobby.join(bob, 'party');
         lobby.join(carol, 'freeroam');
-        for (const s of [alice, bob, carol]) ready(s);
-        handleClientMessage(lobby, alice, { type: 'setCarType', carType: 'jeep' }, clock.now());
+        for (const s of [alice, bob, carol]) ready(lobby, s);
+        handleClientMessage(lobby, alice, { type: 'setCar', carType: 'jeep', profile: 'touch' }, clock.now());
         (lobby.get('party-1') as PartyRoom).partyState(alice.id)!.score = 70;
-        bob.transport.clear();
-        carol.transport.clear();
-        alice.transport.clear();
+        for (const s of [alice, bob, carol]) s.transport.clear();
 
         handleClientMessage(lobby, alice, { type: 'joinRoom', kind: 'freeroam' }, clock.now());
 
         expect(alice.room?.id).toBe('freeroam-1');
         expect(alice.member?.ready).toBe(true);
-        expect([alice.name, alice.carType]).toEqual(['Alice', 'jeep']);
-        const joined = alice.transport.of('roomJoined');
-        expect(joined).toHaveLength(1);
-        expect(joined[0].room).toEqual({ id: 'freeroam-1', kind: 'freeroam', index: 1 });
-        expect(Object.keys(joined[0].players).sort()).toEqual([alice.id, carol.id].sort());
-        expect([joined[0].powerups, joined[0].coins, joined[0].scoreboard]).toEqual([[], [], []]);
-        expect(joined[0].spawn).toEqual({ x: alice.member!.x, z: alice.member!.z });
+        expect([alice.name, alice.carType, alice.profile]).toEqual(['Alice', 'jeep', 'touch']);
+        const [state] = alice.transport.of('roomState');
+        expect(state.room).toEqual({ id: 'freeroam-1', kind: 'freeroam', index: 1 });
+        expect(state.members.map(m => m.id).sort()).toEqual([alice.id, carol.id].sort());
+        expect([state.items, state.scoreboard]).toEqual([null, []]);
 
-        // The old room lost her, the new one sees her arrive
-        expect(bob.transport.of('removePlayer')).toEqual([{ type: 'removePlayer', id: alice.id }]);
-        expect(carol.transport.of('newPlayer')).toEqual([
-            { type: 'newPlayer', player: expect.objectContaining({ id: alice.id, name: 'Alice', carType: 'jeep', score: 0, health: 100 }) }
+        // The old room lost her, the new one sees her arrive and spawn
+        expect(bob.transport.of('playerLeft')).toEqual([{ type: 'playerLeft', id: alice.id, reason: 'switch' }]);
+        expect(carol.transport.of('playerJoined')).toEqual([
+            { type: 'playerJoined', member: expect.objectContaining({ id: alice.id, name: 'Alice', carType: 'jeep', profile: 'touch' }) }
         ]);
         expect(lobby.get('party-1')!.members.has(alice.id)).toBe(false);
+        steps(alice.room!, 3);
+        expect(carol.transport.events('spawn').map(e => e.id)).toContain(alice.id);
+        expect(alice.member!.car!.base.mass).toBe(1750);
     });
 
     it('drops the Party score and starts fresh on the way back', () => {
         const alice = fakeSession('Alice');
         lobby.join(alice, 'party');
-        ready(alice);
+        ready(lobby, alice);
         const party = lobby.get('party-1') as PartyRoom;
         party.partyState(alice.id)!.score = 120;
         handleClientMessage(lobby, alice, { type: 'joinRoom', kind: 'freeroam' }, clock.now());
         expect(party.partyState(alice.id)).toBeUndefined();
         clock.advance(2_000);
-        handleClientMessage(lobby, alice, { type: 'joinRoom', kind: 'party' }, clock.now());
+        handleClientMessage(lobby, alice, { type: 'joinRoom', kind: 'party' }, clock.now() + 2_000);
         expect(alice.room?.id).toBe('party-1');
         expect(party.partyState(alice.id)!.score).toBe(0);
-        const joined = alice.transport.of('roomJoined').at(-1)!;
-        expect(joined.powerups).toHaveLength(25);
-        expect(joined.coins).toHaveLength(30);
-        expect(joined.scoreboard.map(e => e.name)).toEqual(['Alice']);
+        const state = alice.transport.of('roomState').at(-1)!;
+        expect(state.items!.powerups).toHaveLength(25);
+        expect(state.items!.coins).toHaveLength(30);
+        expect(state.scoreboard.map(e => e.name)).toEqual(['Alice']);
     });
 
     it('allows one switch per two seconds and ignores a switch to the same kind', () => {
         const alice = fakeSession();
         lobby.join(alice, 'party');
-        handleClientMessage(lobby, alice, { type: 'joinRoom', kind: 'party' }, clock.now());
-        expect(alice.transport.of('roomJoined')).toEqual([]);
-        clock.advance(2_000);
-        handleClientMessage(lobby, alice, { type: 'joinRoom', kind: 'freeroam' }, clock.now());
-        clock.advance(1_000);
-        handleClientMessage(lobby, alice, { type: 'joinRoom', kind: 'party' }, clock.now());
+        alice.transport.clear();
+        handleClientMessage(lobby, alice, { type: 'joinRoom', kind: 'party' }, 10_000);
+        expect(alice.transport.of('roomState')).toEqual([]);
+        handleClientMessage(lobby, alice, { type: 'joinRoom', kind: 'freeroam' }, 12_000);
+        handleClientMessage(lobby, alice, { type: 'joinRoom', kind: 'party' }, 13_000);
         expect(alice.room?.id).toBe('freeroam-1');
-        clock.advance(1_000);
-        handleClientMessage(lobby, alice, { type: 'joinRoom', kind: 'party' }, clock.now());
+        handleClientMessage(lobby, alice, { type: 'joinRoom', kind: 'party' }, 14_000);
         expect(alice.room?.id).toBe('party-1');
     });
 
     it('switches before the splash screen without showing the car', () => {
         const alice = fakeSession(), bob = fakeSession();
         lobby.join(bob, 'freeroam');
-        ready(bob);
+        ready(lobby, bob);
         lobby.join(alice, 'party');
         bob.transport.clear();
         handleClientMessage(lobby, alice, { type: 'joinRoom', kind: 'freeroam' }, clock.now());
         expect(alice.member?.ready).toBe(false);
         expect(bob.transport.sent).toEqual([]);
-        ready(alice);
-        expect(bob.transport.of('newPlayer').map(m => m.player.id)).toEqual([alice.id]);
+        ready(lobby, alice);
+        expect(bob.transport.of('playerJoined').map(m => m.member.id)).toEqual([alice.id]);
     });
 });
 
 describe('Free Roam', () => {
-    it('ignores items and shots and has no scoreboard', () => {
+    it('ignores shots and has no items and no scoreboard', () => {
         const alice = fakeSession(), bob = fakeSession();
         lobby.join(alice, 'freeroam');
         lobby.join(bob, 'freeroam');
-        ready(alice);
-        ready(bob);
+        ready(lobby, alice);
+        ready(lobby, bob);
         const room = alice.room!;
-        alice.member!.x = bob.member!.x + 5;
-        alice.member!.z = bob.member!.z;
+        steps(room, 3);
         bob.transport.clear();
         handleClientMessage(lobby, alice, { type: 'shoot', targetId: bob.id }, clock.now());
-        handleClientMessage(lobby, alice, { type: 'collectCoin', coinId: 0 }, clock.now());
-        handleClientMessage(lobby, alice, { type: 'collectPowerup', powerupId: 0 }, clock.now());
-        expect(bob.transport.sent).toEqual([]);
+        steps(room, 3);
+        expect(bob.transport.of('events')).toEqual([]);
         expect(room.scoreboard()).toEqual([]);
-        expect(room.publicPlayer(bob.member!)).toEqual(expect.objectContaining({ health: 100, score: 0, scale: 1 }));
+        expect(room.roomStateItems()).toBeNull();
     });
 
-    it('relays driving and honking', () => {
+    it('relays honking to the others only', () => {
         const alice = fakeSession(), bob = fakeSession();
         lobby.join(alice, 'freeroam');
         lobby.join(bob, 'freeroam');
-        ready(alice);
-        ready(bob);
+        ready(lobby, alice);
+        ready(lobby, bob);
+        const room = alice.room!;
+        steps(room, 3);
+        alice.transport.clear();
         bob.transport.clear();
-        handleClientMessage(lobby, alice, { type: 'update', x: 5, z: 6, angle: 0, flipAngle: 0, isFlipping: false }, clock.now());
         handleClientMessage(lobby, alice, { type: 'honk' }, clock.now());
-        expect(bob.transport.sent.map(m => m.type)).toEqual(['update', 'honk']);
+        steps(room, 3);
+        expect(bob.transport.events('honk')).toEqual([{ type: 'honk', id: alice.id }]);
+        expect(alice.transport.events('honk')).toEqual([]);
     });
 });
