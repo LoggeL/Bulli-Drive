@@ -46,7 +46,7 @@ Der Grund für den inkrementellen Weg ist das Tempo des Projekts. Es wird im Hob
 | Protokoll | JSON + valibot-Schemas, eine einzige Quelle, `PROTOCOL_VERSION` | Laufzeitvalidierung ohne Drift; Binärformat bzw. Quantisierung erst nach Messung |
 | UI | Imperatives DOM + Screen-State-Machine + typisierter Event-Bus | Das hud.ts-Muster funktioniert; Preact erst, wenn die Menüs zu groß werden |
 | Tests | Vitest (shared/Server), Bot-Integrationstest, Playwright-Smoke mit 2 Browsern **Desktop und Mobile (Touch-Emulation)** ab Phase 0 | Heute gibt es null Sicherheitsnetz; Mobile ist gleichwertig |
-| Qualität | Lint-Regel `no-restricted-imports` (three/DOM in `src/shared` verboten), Draw-Call-Budget über `renderer.info` in der CI | Die Sim muss serverfähig bleiben; die Performance muss messbar sein |
+| Qualität | Vitest-Scan `tests/shared/purity.test.ts` (in `src/shared` nur relative Imports und valibot, kein three, keine DOM- oder Node-Globals), Draw-Call-Budget über `renderer.info` in der CI | Die Sim muss serverfähig bleiben; die Performance muss messbar sein |
 | Persistenz | SQLite (better-sqlite3, WAL) auf einem persistenten Docker-Volume, ab Phase 4 | Reicht für einen Prozess; ein Repository-Interface hält Postgres offen |
 | Deploy | Bestehendes Multi-Stage-Dockerfile, 24/7-Betrieb mit Restart-Policy, `/healthz`, Graceful Shutdown (SIGTERM), gehashte Assets mit `immutable` | Minimaler Umbau; Deploys und Neustarts dürfen Spieler nur kurz trennen, nicht verlieren |
 
@@ -114,7 +114,7 @@ Die Dauer ist in Wochen fokussierter Arbeit angegeben, im Kalender wird es läng
   - [x] `webglcontextlost`-Handler — `src/client/ui/contextLoss.ts`: `preventDefault`, Hinweis „Graphics paused“, Rendern pausiert, gehaltene Eingaben losgelassen; nach `webglcontextrestored` rendert three.js weiter, nach 5 s ohne Restore erscheint „Reload game“ (E2E-Test mit `WEBGL_lose_context`)
   - [x] Baseline-Messung (FPS, Draw Calls, Bandbreite) headless — Overlay mit `?debug=perf`, `npm run perf:baseline` (2 Clients, 20 s, SwiftShader oder `--gl=gpu`), Ergebnisse in [`docs/baseline.md`](baseline.md)
   - [ ] Baseline auf einem **Referenz-Handy** und einem Desktop mit echter GPU im Browserfenster (Gerät noch festlegen; Messung per `?debug=perf`, Werte in `docs/baseline.md` ergänzen)
-  - [x] **Maßstab festlegen:** 1 u = 1 m (`METERS_PER_UNIT`, `MS_TO_KMH` in `src/shared/constants.ts`), Tacho zeigt echte km/h (Topspeed heute 60 m/s = 216 km/h, mit Turbo 108 m/s ≈ 389 km/h; Skala bis 400 km/h). Die Fahrphysik ist unverändert.
+  - [x] **Maßstab festlegen:** 1 u = 1 m (`METERS_PER_UNIT`, `MS_TO_KMH` in `src/shared/constants.ts`), Tacho zeigt echte km/h (Topspeed heute 60 m/s = 216 km/h, mit Turbo 108 m/s ≈ 389 km/h; Skala bis 400 km/h). Die Fahrphysik ist unverändert. Einschränkung: Das gilt ab 30 FPS. Darunter klemmt die Legacy-Physik den Frame auf 1/30 s (`Bulli.ts:750`), das Auto fährt also langsamer, als der Tacho zeigt (bei 20 FPS 2/3). Der E2E-Test misst die zurückgelegte Strecke und rechnet diese Klemmung ein; behoben wird das erst mit der v2-Physik mit festem Tick (Phase 1a).
   - [ ] **Ziel-Topspeed** für die v2-Physik: offene Entscheidung 2, wirksam erst in Phase 1a
 - Kampf, Coins, Powerups und Sprung bleiben in Phase 0 unverändert im Spiel.
 - **Exit:** Das Spiel verhält sich auf Desktop und Mobile identisch zu `1d39c07` (bis auf den Tacho), der Stale-Client-Reload funktioniert, und die CI ist grün.
@@ -148,7 +148,9 @@ Die Dauer ist in Wochen fokussierter Arbeit angegeben, im Kalender wird es läng
   - Dev-Netsim (Latenz, Jitter, Verlust)
   - Regel für `visibilitychange` und fehlende Inputs: Der Server wiederholt den letzten Input höchstens 250 ms lang, danach neutral mit Bremse; im Hintergrund wird das Auto zum Ghost (kein Kontakt). Das ersetzt den AFK-Hack durch ein serverseitiges Idle-Flag.
   - Graceful Shutdown: Bei SIGTERM werden Clients benachrichtigt und reconnecten nach dem Neustart
-- **Exit:** Bei 150 ms RTT, 30 ms Jitter und 3 % Verlust fährt sich das eigene Auto ohne sichtbares Rubberbanding (Korrektur ohne Kontakt unter 10 cm im Mittel), Remote-Autos laufen flüssig, und Rempeln fühlt sich für beide Seiten nachvollziehbar an (Playtest Desktop gegen Handy). Ein Server-Tick mit 32 Autos bleibt unter 2 ms. Ein Reconnect innerhalb von 30 s behält den Spieler. Der Party-Modus ist spielbar wie vorher.
+  - `/healthz` (Prozess lebt, Room-Tick läuft) als `HEALTHCHECK` im Dockerfile; der Container-Smoke in der CI prüft `/healthz` statt `/build-version.txt`
+  - Restart-Policy dokumentiert und gesetzt (`restart: unless-stopped` bzw. das Äquivalent beim Hoster, offene Frage 8), inklusive Neustart nach fehlgeschlagenem Health-Check
+- **Exit:** Bei 150 ms RTT, 30 ms Jitter und 3 % Verlust fährt sich das eigene Auto ohne sichtbares Rubberbanding (Korrektur ohne Kontakt unter 10 cm im Mittel), Remote-Autos laufen flüssig, und Rempeln fühlt sich für beide Seiten nachvollziehbar an (Playtest Desktop gegen Handy). Ein Server-Tick mit 32 Autos bleibt unter 2 ms. Ein Reconnect innerhalb von 30 s behält den Spieler. Ein Container-Neustart trennt die Spieler nur kurz, und ein Server, dessen Tick hängt, fällt über `/healthz` auf und wird von der Restart-Policy neu gestartet. Der Party-Modus ist spielbar wie vorher.
 
 **Phase 2 – Vertical Slice Rennen (ca. 3 Wochen) → Release**
 - **Deliverables:**

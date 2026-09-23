@@ -6,7 +6,8 @@ import {
     SPEED_BOOST_FACTOR
 } from '../../shared/constants.js';
 
-// Real speed of the legacy car (units per 1/60 s tick, see constants.ts) in km/h.
+// Real speed of the legacy car (units per 1/60 s tick, see constants.ts) in
+// km/h. Below 30 FPS the car covers less ground than this, see constants.ts.
 export function carSpeedToKmh(speedPerTick: number): number {
     return Math.abs(speedPerTick) * LEGACY_SPEED_TICKS_PER_SECOND * METERS_PER_UNIT * MS_TO_KMH;
 }
