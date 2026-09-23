@@ -37,9 +37,11 @@ test('pauses on a lost WebGL context and resumes once it is restored', async ({ 
     await page.evaluate(() => (window as LoseContextWindow).__loseContext!.restoreContext());
 
     // three.js rebuilds its GL state, the notice goes away and the full scene
-    // is drawn again.
+    // is drawn again. It also starts fresh info counters on the restored
+    // context (the frame count drops below pausedAt), so count from here on.
     await expect(notice).toBeHidden();
-    await expect.poll(async () => (await snapshot(page)).render.frame).toBeGreaterThan(pausedAt + 5);
+    const restoredAt = (await snapshot(page)).render.frame;
+    await expect.poll(async () => (await snapshot(page)).render.frame).toBeGreaterThan(restoredAt + 5);
     await expect.poll(async () => (await snapshot(page)).render.calls).toBeGreaterThan(10);
     expect((await snapshot(page)).connected).toBe(true);
 });
