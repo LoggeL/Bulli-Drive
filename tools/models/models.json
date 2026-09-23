@@ -1,10 +1,50 @@
 {
-  "_doc": "Car models built by tools/models/build-all.mjs. id = CarType in src/client/vehicle/CarModel.ts; script = Blender build under tools/models/vehicles. The other car types (beetle, pickup, sport, jeep) get added here once their build scripts exist; until then the game keeps their procedural models.",
+  "_doc": "Car models built by tools/models/build-all.mjs. id = CarType in src/client/vehicle/CarModel.ts; script = Blender build under tools/models/vehicles (bulli.py on its own, the others on lib/bd_car.py; pickup.py imports the T1 shell from bulli.py).",
   "models": {
     "bulli": {
       "name": "VW T1 Samba (1963, 23 windows)",
       "script": "vehicles/bulli.py",
-      "lods": [0, 1, 2]
+      "lods": [
+        0,
+        1,
+        2
+      ]
+    },
+    "beetle": {
+      "name": "VW 1200 Kaefer (1963)",
+      "script": "vehicles/beetle.py",
+      "lods": [
+        0,
+        1,
+        2
+      ]
+    },
+    "pickup": {
+      "name": "VW T1 Pritsche (1963)",
+      "script": "vehicles/pickup.py",
+      "lods": [
+        0,
+        1,
+        2
+      ]
+    },
+    "sport": {
+      "name": "Porsche 356 B T6 Coupe (1963)",
+      "script": "vehicles/sport.py",
+      "lods": [
+        0,
+        1,
+        2
+      ]
+    },
+    "jeep": {
+      "name": "VW Typ 181 (1973)",
+      "script": "vehicles/jeep.py",
+      "lods": [
+        0,
+        1,
+        2
+      ]
     }
   }
 }

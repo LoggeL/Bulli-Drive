@@ -86,6 +86,13 @@ describe('car models (public/models)', () => {
         for (const id of ids) expect(CAR_TYPES).toContain(id);
     });
 
+    it('has a Blender model for every car type, with the stricter budgets for the cars after the T1', () => {
+        expect(ids.sort()).toEqual([...CAR_TYPES].sort());
+        for (const id of ['beetle', 'pickup', 'sport', 'jeep']) {
+            expect(budgets.modelTriangles[id]).toEqual({ 0: 20000, 1: 7000, 2: 2000 });
+        }
+    });
+
     it('has exactly the GLBs the manifest names', () => {
         const listed = ids.flatMap(id => manifest.models[id].lods.map((l: { file: string }) => l.file)).sort();
         const onDisk = fs.readdirSync(MODELS_DIR).filter(f => f.endsWith('.glb')).sort();
@@ -122,6 +129,9 @@ describe('car models (public/models)', () => {
                 it('stays within the triangle, draw call and size budget', () => {
                     const { triangles, primitives } = countGeometry(gltf);
                     expect(triangles).toBeLessThanOrEqual(budget.maxTriangles);
+                    // Stricter per-model limits (the cars after the T1: 20k / 7k / 2k)
+                    const modelLimit = budgets.modelTriangles?.[id]?.[String(lodEntry.lod)];
+                    if (modelLimit !== undefined) expect(triangles).toBeLessThanOrEqual(modelLimit);
                     expect(primitives).toBeLessThanOrEqual(budget.maxPrimitives);
                     expect(fs.statSync(file).size).toBeLessThanOrEqual(budget.maxBytes);
                 });
