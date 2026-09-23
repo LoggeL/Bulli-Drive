@@ -101,3 +101,54 @@ test('v2 touch controls: auto-gas, steering, drift, jump and reset', async ({ op
     await page.waitForTimeout(300);
     expect((await v2(page)).jumps).toBe(jumpsBefore + 1);
 });
+
+// Touch HUD elements that must never cover each other, with the reset and
+// powerup prompt shown: it appears exactly when the player is stuck
+const HUD = [
+    '#btn-drift', '#btn-boost', '#btn-autogas', '#btn-flip', '#btn-shoot', '#btn-honk',
+    '#joystick-move', '#interaction-prompt', '#drive-meter', '#map-panel', '#score-container', '#player-list'
+];
+const VIEWPORTS = [
+    { name: 'iPhone 13', width: 390, height: 664 },
+    { name: 'iPhone SE', width: 320, height: 568 },
+    { name: 'Galaxy S9+', width: 320, height: 658 },
+    { name: 'Android 360', width: 360, height: 640 },
+    { name: 'iPhone 13 landscape', width: 750, height: 342 },
+    { name: 'iPhone SE landscape', width: 568, height: 320 },
+    { name: 'iPad portrait', width: 768, height: 1024 },
+    { name: 'iPad landscape', width: 1024, height: 768 }
+];
+
+test('v2 touch HUD: nothing overlaps on narrow phones and in landscape, prompt included', async ({ openPlayer }) => {
+    const player = await openPlayer('phone-v2-layout');
+    const { page } = player;
+    await joinGame(player, 'E2E Phone Layout', '&physics=v2');
+    await page.evaluate(() => {
+        const prompt = document.getElementById('interaction-prompt')!;
+        prompt.textContent = 'HOLD JUMP TO RESET';
+        prompt.style.transition = 'none';
+        prompt.classList.remove('hidden');
+    });
+    // All problems of all viewports at once in the message
+    const problems: string[] = [];
+    for (const viewport of VIEWPORTS) {
+        await page.setViewportSize({ width: viewport.width, height: viewport.height });
+        await page.waitForTimeout(100);
+        const boxes = await Promise.all(HUD.map(async selector => ({ selector, box: await page.locator(selector).boundingBox() })));
+        const round = (box: { x: number; y: number; width: number; height: number }) =>
+            `[${Math.round(box.x)}..${Math.round(box.x + box.width)}]x[${Math.round(box.y)}..${Math.round(box.y + box.height)}]`;
+        for (const { selector, box } of boxes) {
+            if (!box) problems.push(`${viewport.name}: ${selector} not shown`);
+            else if (box.x < 0 || box.x + box.width > viewport.width) problems.push(`${viewport.name}: ${selector} off screen ${round(box)}`);
+        }
+        for (let i = 0; i < boxes.length; i++) {
+            for (let j = i + 1; j < boxes.length; j++) {
+                const a = boxes[i].box, b = boxes[j].box;
+                if (!a || !b) continue;
+                const overlaps = a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+                if (overlaps) problems.push(`${viewport.name}: ${boxes[i].selector} ${round(a)} overlaps ${boxes[j].selector} ${round(b)}`);
+            }
+        }
+    }
+    expect(problems).toEqual([]);
+});

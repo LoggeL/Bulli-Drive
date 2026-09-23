@@ -2621,6 +2621,76 @@ body.physics-v2 .hint-row {
     }
 }
 
+/* 320 px phones: a smaller stick and DRIFT, so DRIFT stays clear of the
+   stick, and a narrower meter clear of the minimap */
+@media (max-width: 340px) and (orientation: portrait) {
+    body.physics-v2 .joystick-base {
+        width: 104px;
+        height: 104px;
+    }
+
+    body.physics-v2 .joystick-stick {
+        width: 46px;
+        height: 46px;
+    }
+
+    .drive-buttons {
+        right: calc(max(1.1rem, env(safe-area-inset-right, 0px)) + 90px);
+        gap: 8px;
+    }
+
+    .control-btn.drive.drift {
+        width: 76px;
+        height: 76px;
+        font-size: 0.9rem;
+    }
+
+    .control-btn.drive.boost {
+        width: 52px;
+        height: 52px;
+    }
+
+    #drive-meter {
+        width: 96px;
+    }
+}
+
+/* Touch: the reset and powerup prompt moves above the drive buttons, which
+   stand where it was at the bottom centre. On one line: it shows exactly
+   when the player is stuck ("HOLD JUMP TO RESET") */
+@media (max-width: 768px), (pointer: coarse) {
+    body.physics-v2 #interaction-prompt {
+        bottom: calc(max(1.1rem, env(safe-area-inset-bottom, 0px)) + 236px);
+        max-width: calc(100vw - 2rem);
+        white-space: nowrap;
+    }
+}
+
+/* Landscape phones have no room above the buttons (the meter is there):
+   the prompt stays at the bottom, between the stick (108 px) and DRIFT,
+   and wraps where that gap is narrow */
+@media (max-width: 900px) and (orientation: landscape) {
+    body.physics-v2 #interaction-prompt {
+        left: auto;
+        right: calc(max(0.75rem, env(safe-area-inset-right, 0px)) + 248px);
+        bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+        max-width: calc(100vw - max(0.75rem, env(safe-area-inset-right, 0px)) - max(10px, env(safe-area-inset-left, 0px)) - 380px);
+        transform: none;
+        white-space: normal;
+        text-align: center;
+    }
+
+    body.physics-v2 #interaction-prompt.hidden {
+        transform: translateY(80px);
+    }
+}
+
+@media (max-width: 600px) and (orientation: portrait) {
+    body.physics-v2 #interaction-prompt {
+        bottom: calc(max(1.1rem, env(safe-area-inset-bottom, 0px)) + 222px);
+    }
+}
+
 /* ==========================================================================
    SANDBOX (?sandbox=1): offline test pad of the v2 physics
    ========================================================================== */
