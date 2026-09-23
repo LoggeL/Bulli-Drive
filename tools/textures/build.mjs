@@ -109,6 +109,8 @@ for (const entry of SPEC.polyhaven) {
         authors: src?.authors ?? [],
         license: 'CC0-1.0'
     };
+    // publish: [] = fetched for the offline tools only (Blender look-dev)
+    if (!publish.length) continue;
     for (const map of publish) {
         const kind = map === 'albedo' ? 'color' : map === 'normal' ? 'normal' : 'data';
         const key = `pbr/${entry.role}_${map}`;

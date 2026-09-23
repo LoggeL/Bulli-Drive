@@ -1,8 +1,8 @@
 {
-  "_doc": "Texture sources for tools/textures/fetch.mjs (download, md5-checked) and build.mjs (KTX2 encode into public/textures). maxSize = longest side in the game. publish=false: only fetched for the offline tools (Blender look-dev). See tools/textures/README.md and docs/assets.md.",
+  "_doc": "Texture sources for tools/textures/fetch.mjs (download, md5-checked) and build.mjs (KTX2 encode into public/textures). maxSize = longest side in the game. publish=[]: only fetched for the offline tools (Blender look-dev). See tools/textures/README.md and docs/assets.md.",
   "polyhaven": [
     { "role": "asphalt", "id": "asphalt_02", "maps": { "albedo": 1024, "normal": 512, "arm": 1024 } },
-    { "role": "asphalt_clean", "id": "clean_asphalt", "maps": { "albedo": 512, "normal": 512, "arm": 512, "roughness": 0 }, "publish": ["albedo", "normal", "arm"] },
+    { "role": "asphalt_clean", "id": "clean_asphalt", "maps": { "albedo": 512, "normal": 512, "arm": 512, "roughness": 0 }, "publish": [], "note": "Blender look-dev ground only (tools/models/lib/bd_lookdev.py)" },
     { "role": "sidewalk", "id": "concrete_floor_03", "maps": { "albedo": 512, "normal": 512, "arm": 512 } },
     { "role": "stucco", "id": "white_stucco", "maps": { "albedo": 512, "normal": 512, "arm": 512 } },
     { "role": "roof_tiles", "id": "clay_roof_tiles_02", "maps": { "albedo": 512, "normal": 512, "arm": 512 } },
@@ -21,7 +21,6 @@
     { "name": "facade_emissive", "source": "facade_emissive_512.jpg", "kind": "color", "maxSize": 256 },
     { "name": "storefront_atlas", "source": "storefront_atlas_2k.jpg", "kind": "color", "maxSize": 1024, "note": "diner, surf shop, gas station fronts" },
     { "name": "storefront_emissive", "source": "storefront_emissive_1k.jpg", "kind": "color", "maxSize": 512 },
-    { "name": "diner_interior", "source": "diner_interior.jpg", "kind": "color", "maxSize": 512 },
     { "name": "rock_albedo", "source": "rock_albedo_1k.jpg", "kind": "color", "maxSize": 512 },
     { "name": "rock_normal", "source": "rock_normal_1k.jpg", "kind": "normal", "maxSize": 512 },
     { "name": "palm_trunk", "source": "palm_trunk.jpg", "kind": "color", "maxSize": 256 },
@@ -30,7 +29,6 @@
     { "name": "fan_fronds", "source": "fan_fronds.png", "kind": "color", "maxSize": 1024, "note": "2x2 atlas, alpha cut-out" },
     { "name": "tree_cards", "source": "tree_cards.png", "kind": "color", "maxSize": 1024, "sidecar": "tree_cards.json", "note": "oak + cypress cards, UV rects in the sidecar" },
     { "name": "shrubs", "source": "shrubs.png", "kind": "color", "maxSize": 512 },
-    { "name": "street_signs", "source": "street_signs_atlas_1k.png", "kind": "color", "maxSize": 1024, "sidecar": "street_signs_atlas_1k.json", "note": "8 signs, pixel rects + UVs in the sidecar" },
     { "name": "world_noise", "source": "world_noise_256.png", "kind": "data", "maxSize": 256, "note": "tileable macro variation noise" }
   ]
 }

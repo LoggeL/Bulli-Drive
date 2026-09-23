@@ -3,17 +3,6 @@
  "_doc": "Written by tools/textures/build.mjs. KTX2 files are encoded with flipY (sample like TextureLoader JPG/PNG). kind: color = sRGB, data/normal = linear.",
  "flipY": true,
  "textures": {
-  "generated/diner_interior": {
-   "file": "generated/diner_interior.ktx2",
-   "kind": "color",
-   "width": 512,
-   "height": 256,
-   "encoding": "etc1s",
-   "bytes": 46065,
-   "hash": "e02f2c8357bcb61c",
-   "sourceHash": "2100e7c834fb5916",
-   "settings": "1:color:512"
-  },
   "generated/facade_albedo_tint": {
    "file": "generated/facade_albedo_tint.ktx2",
    "kind": "color",
@@ -146,17 +135,6 @@
    "sourceHash": "a26d03c7b330e0b6",
    "settings": "1:color:512"
   },
-  "generated/street_signs": {
-   "file": "generated/street_signs.ktx2",
-   "kind": "color",
-   "width": 1024,
-   "height": 1024,
-   "encoding": "etc1s",
-   "bytes": 231530,
-   "hash": "84064ba7b63a4daa",
-   "sourceHash": "3c0d84db988dcf1c",
-   "settings": "1:color:1024"
-  },
   "generated/tree_cards": {
    "file": "generated/tree_cards.ktx2",
    "kind": "color",
@@ -200,39 +178,6 @@
    "hash": "a475723be0e410ed",
    "sourceHash": "56bd8e591a3db579",
    "settings": "1:data:1024"
-  },
-  "pbr/asphalt_clean_albedo": {
-   "file": "pbr/asphalt_clean_albedo.ktx2",
-   "kind": "color",
-   "width": 512,
-   "height": 512,
-   "encoding": "etc1s",
-   "bytes": 55378,
-   "hash": "9e8472926bb72ced",
-   "sourceHash": "ddf9224e9cfa3eb2",
-   "settings": "1:color:512"
-  },
-  "pbr/asphalt_clean_arm": {
-   "file": "pbr/asphalt_clean_arm.ktx2",
-   "kind": "data",
-   "width": 512,
-   "height": 512,
-   "encoding": "etc1s",
-   "bytes": 55332,
-   "hash": "527156d6b1251917",
-   "sourceHash": "dedb9a28ebadd284",
-   "settings": "1:data:512"
-  },
-  "pbr/asphalt_clean_normal": {
-   "file": "pbr/asphalt_clean_normal.ktx2",
-   "kind": "normal",
-   "width": 512,
-   "height": 512,
-   "encoding": "uastc",
-   "bytes": 178100,
-   "hash": "046511d6dd63a68d",
-   "sourceHash": "99cdf6b6f0b8a319",
-   "settings": "1:normal:512"
   },
   "pbr/asphalt_normal": {
    "file": "pbr/asphalt_normal.ktx2",
@@ -489,17 +434,6 @@
    "normal": "pbr/asphalt_normal",
    "arm": "pbr/asphalt_arm"
   },
-  "asphalt_clean": {
-   "tileMeters": 2.1,
-   "source": "https://polyhaven.com/a/clean_asphalt",
-   "authors": [
-    "Dimitrios Savva"
-   ],
-   "license": "CC0-1.0",
-   "albedo": "pbr/asphalt_clean_albedo",
-   "normal": "pbr/asphalt_clean_normal",
-   "arm": "pbr/asphalt_clean_arm"
-  },
   "sidewalk": {
    "tileMeters": 2.5,
    "source": "https://polyhaven.com/a/concrete_floor_03",
@@ -623,10 +557,6 @@
    "texture": "generated/storefront_emissive",
    "note": null
   },
-  "diner_interior": {
-   "texture": "generated/diner_interior",
-   "note": null
-  },
   "rock_albedo": {
    "texture": "generated/rock_albedo",
    "note": null
@@ -659,11 +589,6 @@
   "shrubs": {
    "texture": "generated/shrubs",
    "note": null
-  },
-  "street_signs": {
-   "texture": "generated/street_signs",
-   "note": "8 signs, pixel rects + UVs in the sidecar",
-   "sidecar": "generated/street_signs_atlas_1k.json"
   },
   "world_noise": {
    "texture": "generated/world_noise",

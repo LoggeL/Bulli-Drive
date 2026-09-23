@@ -12,7 +12,8 @@ tools/textures/
   fetch.mjs       downloads the CC0 sources into .cache (skips files that are there)
   build.mjs       KTX2-encodes into public/textures + manifest.json (incremental)
   generated/      how the AI textures were made: prompts/, gen.sh (Codex imagegen),
-                  prep/ (keying, seamless wrap, atlas packing; Python + Pillow)
+                  prep/ (keying, seamless wrap, atlas packing; Python + Pillow),
+                  sources.mjs + sources.json (archive of the raw images)
 ../lib/ktx2.mjs   the KTX2 encoder settings shared with tools/models
 ```
 
@@ -25,17 +26,23 @@ node tools/textures/build.mjs --force    # re-encode everything
 ## Output
 
 - `public/textures/pbr/<material>_<albedo|normal|arm>.ktx2`: asphalt,
-  asphalt_clean, sidewalk, stucco, roof_tiles, roof_gravel, grass, grass_dry,
-  sand. Real tile size per material in the manifest (`tileMeters`).
-- `public/textures/generated/*.ktx2` (+ JSON sidecars with atlas rects):
-  facade bands with a tint mask in alpha, storefront atlas (diner, surf shop,
-  gas station) with emissive map, diner interior, rock, palm trunk and fronds,
-  fan palm fronds, tree cards (oak, cypress), shrubs, street sign atlas,
-  macro noise.
+  sidewalk, stucco, roof_tiles, roof_gravel, grass, grass_dry, sand. Real
+  tile size per material in the manifest (`tileMeters`). `asphalt_clean` is
+  fetched for the Blender look-dev only (`"publish": []`).
+- `public/textures/generated/*.ktx2` (+ the tree card sidecar with the atlas
+  rects, which `tests/client/worldTextures.test.ts` holds against
+  `TREE_UV` in `vegetation.ts`): facade bands with a tint mask in alpha,
+  storefront atlas (diner, surf shop, gas station) with emissive map, rock,
+  palm trunk and fronds, fan palm fronds, tree cards (oak, cypress), shrubs,
+  macro noise. The same test fails when a shipped texture is not requested
+  by the client or a requested one is missing (the street sign atlas and the
+  diner interior were dropped for that reason).
 - `public/textures/hdri/*.hdr`: Victoria Sunset (IBL/reflections) and
   Qwantani Sunset Pure Sky (sky), both 1k Radiance files; three r160's
   KTX2Loader cannot read UASTC HDR. `fetch.mjs` also downloads Victoria at 2k
-  for the Blender look-dev renders.
+  for the Blender look-dev renders. The game server sends them Brotli or
+  gzip compressed with a content ETag (`src/server/staticAssets.ts`); the
+  hashed KTX2 and GLB URLs (`?v=<hash>`) are cached for a year.
 - `public/textures/manifest.json`: per texture file, kind, size, encoding,
   bytes, hashes; per PBR material its maps, tile size, authors and source.
 
@@ -56,13 +63,31 @@ textures cannot be flipped at upload time. Load them with the page's single
 ## Generated textures
 
 The AI textures (Codex CLI, imagegen skill with OpenAI's `image_gen`) have no
-public source to download again. Their KTX2 files in
-`public/textures/generated` are the canonical copies; `build.mjs` keeps them
-when the prepared source is not in `.cache/generated/`. To change one:
-generate a new raw image with `generated/gen.sh <prompt> <out.png>`, prepare
-it with the script in `generated/prep/` (set `BD_GEN_ROOT` to a work tree
-with the layout `assets/gen/raw`, `assets/facade`, `assets/decals`,
-`world/gen/raw`, `world/tex`), then
-`node tools/textures/build.mjs --import-generated=<work tree>/world/tex`.
+public source to download again, and a new generation never gives the same
+image. Their KTX2 files in `public/textures/generated` are the canonical
+copies; `build.mjs` keeps them when the prepared source is not in
+`.cache/generated/`.
+
+The raw generations and the prepared sources (55 files, 71 MB: too large for
+git) are kept in one tar archive outside the repository.
+`generated/sources.json` (in git) lists every file with its SHA-256:
+
+```bash
+# where the archive lies: ~/.cache/bulli-drive/generated-sources-v1.tar on the
+# machine that built G1 (archive sha256 9217a3cb…a85f). Copy it to durable
+# storage (e.g. a GitHub release asset) and point BD_GEN_SOURCES at it.
+node tools/textures/generated/sources.mjs unpack <archive.tar | https URL>
+#   -> tools/textures/.cache/gen-work, verified file by file; that is the
+#      prep scripts' default BD_GEN_ROOT
+node tools/textures/generated/sources.mjs pack <gen-root> <out.tar>
+#   after new generations: rewrites sources.json and the archive
+```
+
+To change one texture: unpack the archive, generate a new raw image with
+`generated/gen.sh <prompt> <out.png>` into the work tree, prepare it with the
+script in `generated/prep/` (layout `assets/gen/raw`, `assets/facade`,
+`assets/decals`, `world/gen/raw`, `world/tex`), then
+`node tools/textures/build.mjs --import-generated=tools/textures/.cache/gen-work/world/tex`
+and pack a new archive version.
 Licensing and the brand rules (invented shop names only) are in
 [docs/assets.md](../../docs/assets.md).

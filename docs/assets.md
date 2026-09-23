@@ -26,7 +26,7 @@ Quelltexturen in voller Auflösung liegen nicht im Repo. `npm --prefix tools run
 - **Käfer 1963, T1-Pritsche, Porsche 356 B T6 und Typ 181** (`beetle`, `pickup`, `sport`, `jeep`, je `_lod{0,1,2}.glb`): ebenso vollständig prozedural aus `tools/models/vehicles/<id>.py` auf der gemeinsamen Bibliothek `tools/models/lib/bd_car.py`. Die Pritsche nutzt die T1-Karosserie aus `bulli.py`. Maße in `tools/models/ref/dimensions.json`; für den 356 ersetzen die Werte der de.wikipedia (356 B T6: 4,01 × 1,67 × 1,31 m, Radstand 2,10 m) die bisherigen Karmann-Ghia-Werte des Eintrags `sport`.
 - **Blaupausen:** `tools/models/ref/*_blueprint.jpg` sind KI-generierte orthografische Referenzbögen (Codex-imagegen). `sport_blueprint.jpg` zeigt seit diesem Schritt den Porsche 356 B T6 (vorher Karmann Ghia); der Prompt steht in `tools/models/README.md`. Die Pixel-Zuordnung der Ansichten steht in `tools/models/ref/blueprints.json`.
 - **VW-Logo:** das echte VW-Rundzeichen als Geometrie (Front, Heck) und als Normal-Map-Prägung auf den Radkappen. Käfer (Haube, Radkappen), Pritsche (Front, Radkappen) und Typ 181 (Frontblech, Nabenkappen) tragen es ebenso.
-- **Porsche 356:** kein fotografisches oder originalgetreues Markenlogo. Auf der Haube sitzt ein stilisiertes Wappen, das `bd_car.crest_pixels` prozedural in den Atlas malt (goldener Schild, rot-schwarze Streifen, schwarze Geweihstangen, ohne Schriftzug und ohne Pferd). Die Radkappen haben nur eine gepresste Ringsicke. Das ist eine bewusste Nutzerentscheidung für dieses private Projekt (Plan, Entscheidung 5). Die Marke gehört der Volkswagen AG.
+- **Porsche 356:** kein fotografisches oder originalgetreues Markenlogo. Auf der Haube sitzt ein stilisiertes Wappen, das `bd_car.crest_pixels` prozedural in den Atlas malt (goldener Schild, rot-schwarze Streifen, schwarze Geweihstangen, ohne Schriftzug und ohne Pferd). Die Radkappen haben nur eine gepresste Ringsicke. Das ist eine bewusste Nutzerentscheidung für dieses private Projekt (Plan, Entscheidung 5). Das Porsche-Wappen ist eine Marke der Dr. Ing. h.c. F. Porsche AG; die stilisierte Anlehnung wird im privaten Fanprojekt bewusst genutzt.
 - **Nummernschilder:** kalifornische Schilder im Stil 1963–69 mit erfundenen Kennzeichen: „BULLI“, „KAEFER“, „PICKUP“, „356 B“ und „THING“ (KI-generiert, siehe Abschnitt 4).
 - **Surfbrett:** Teil jedes Modells, standardmäßig ausgeblendet (freischaltbares Zubehör).
 - **Im Spiel** seit Schritt „Bulli T1“: Maßstab 1,15 (passend zur Sim-Hülle), LOD nach Entfernung, Lampen und Material-Klone pro Auto. Details in [`docs/cars.md`](cars.md).
@@ -40,7 +40,7 @@ Alle Dateien von [polyhaven.com](https://polyhaven.com), Lizenz [CC0 1.0](https:
 | Rolle | Poly-Haven-Asset | Autoren | Kachel | Im Spiel |
 |---|---|---|---|---|
 | `asphalt` | [Asphalt 02](https://polyhaven.com/a/asphalt_02) | Rob Tuytel | 3,0 m | Albedo/ARM 1024, Normal 512 |
-| `asphalt_clean` | [Clean Asphalt](https://polyhaven.com/a/clean_asphalt) | Dimitrios Savva | 2,1 m | 512 (ruhige Rennlinie) |
+| `asphalt_clean` | [Clean Asphalt](https://polyhaven.com/a/clean_asphalt) | Dimitrios Savva | 2,1 m | nicht im Spiel, nur Boden der Blender-Look-dev-Renders (`publish: []`) |
 | `sidewalk` | [Concrete Floor 03](https://polyhaven.com/a/concrete_floor_03) | Rob Tuytel, Matterfield | 2,5 m | 512 |
 | `stucco` | [White Stucco](https://polyhaven.com/a/white_stucco) | Amal Kumar | 2,0 m | 512 (per Vertex-Farbe getönt) |
 | `roof_tiles` | [Clay Roof Tiles 02](https://polyhaven.com/a/clay_roof_tiles_02) | Amal Kumar | 2,5 m | 512 |
@@ -65,16 +65,16 @@ Die Sonnenhöhe beider HDRIs liegt bei 4–6°. Das DirectionalLight des Spiels 
 |---|---|---|
 | `facade_albedo_tint`, `facade_arm`, `facade_emissive` | Fassaden-Atlas, 4 Geschoss-Bänder, Alpha = Tönungsmaske für den Stuck | `facade_atlas` |
 | `storefront_atlas`, `storefront_emissive` | Ladenfronten Diner, Surfshop, Tankstelle; Neon/Innenlicht | `diner_front`, `surfshop_front_v2`, `gas_station_front_v2` |
-| `diner_interior` | Innenraum hinter den Diner-Scheiben | `diner_interior` |
 | `rock_albedo`, `rock_normal` | Klippenfels | `rock_cliff` |
 | `palm_trunk`, `palm_trunk_normal`, `palm_fronds`, `fan_fronds` | Palmen (Stamm kachelbar, Wedel freigestellt) | `palm_trunk_v2`, `palm_fronds`, `fan_fronds` |
 | `tree_cards` (+ `tree_cards.json`), `shrubs` | Baum-Karten (Eiche, Zypresse), Büsche | `tree_cards`, `shrub_card` |
-| `street_signs` (+ `street_signs_atlas_1k.json`) | 8 Schilder: STOP, 35 mph, Kurve, ONE WAY, OCEAN AVE, PCH, Chevron, CA-1 | `street_signs` |
 | `world_noise` | kachelbares Makro-Rauschen (prozedural erzeugt, keine KI) | – |
 | `tools/models/src/license_plate_bulli_512.png` | Nummernschild „BULLI“ | `license_plate` |
 | `tools/models/src/license_plate_{beetle,pickup,sport,jeep}_512.png` | Nummernschilder „KAEFER“, „PICKUP“, „356 B“, „THING“ | `license_plate` mit ersetztem Kennzeichen; Zuschnitt `tools/textures/generated/prep/plates.py` |
 
-Die KTX2-Dateien sind die kanonischen Kopien. Die aufbereiteten Quellen (1–2 MB je Bild) sind nicht im Repo; wer eine Textur ändert, erzeugt sie neu (siehe `tools/textures/README.md`).
+Nicht mehr ausgeliefert (G1-Nacharbeit): der Straßenschilder-Atlas (`street_signs`, die Schilder in `city.ts` sind prozedural) und der Diner-Innenraum (`diner_interior`). Beide wurden nie geladen. Prompts und Prep-Schritte bleiben in `tools/textures/generated/`, die Rohbilder im Quellen-Archiv.
+
+Die KTX2-Dateien sind die kanonischen Kopien. Die Rohbilder und aufbereiteten Quellen (55 Dateien, 71 MB) sind nicht im Repo, sondern in einem Tar-Archiv außerhalb davon; `tools/textures/generated/sources.json` listet jede Datei mit SHA-256, `sources.mjs unpack` stellt den Arbeitsbaum für die Prep-Skripte wieder her (siehe `tools/textures/README.md`).
 
 ## 5. Entscheidungen zur Pipeline
 
