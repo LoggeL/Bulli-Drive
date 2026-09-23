@@ -1,0 +1,83 @@
+import { test, expect, joinGame, snapshot, distance, placeOnClearRunway, v2 } from './fixtures.js';
+
+// ?physics=v2 on the desktop: the fixed-step sim drives, steers, jumps,
+// drifts and resets the local car (docs/phase-1a-design.md, 14.8).
+
+test('the v2 physics drives, steers, jumps, drifts and resets', async ({ openPlayer }) => {
+    const player = await openPlayer('desktop-v2');
+    const { page } = player;
+    await joinGame(player, 'E2E V2', '&physics=v2');
+
+    const initial = await snapshot(page);
+    expect(initial.physics).toBe('v2');
+    expect(initial.v2?.classId).toBeTruthy();
+    expect(initial.v2?.profile).toBe('standard');
+    // The race camera sits low and close behind the car (legacy: 23 m up)
+    await expect.poll(async () => {
+        const { camera, local } = await snapshot(page);
+        return Math.hypot(camera.x - local!.x, camera.z - local!.z);
+    }).toBeLessThan(15);
+    const { camera, local } = await snapshot(page);
+    expect(camera.y - local!.y).toBeLessThan(10);
+
+    // W: the car speeds up, the speedometer follows the sim speed (u in km/h)
+    await placeOnClearRunway(page);
+    const start = (await snapshot(page)).local!;
+    await page.keyboard.down('w');
+    await expect.poll(async () => (await v2(page)).u).toBeGreaterThan(12);
+    await expect.poll(async () => distance(start, (await snapshot(page)).local!)).toBeGreaterThan(10);
+    const reading = await page.evaluate(() => ({
+        shown: Number(document.getElementById('speedo-value')!.textContent),
+        u: (window as unknown as { __bulliDebug: { snapshot(): { v2: { u: number } } } }).__bulliDebug.snapshot().v2.u
+    }));
+    expect(Math.abs(reading.shown - reading.u * 3.6)).toBeLessThanOrEqual(3);
+    expect(player.sentMessages.some(message => message.type === 'update')).toBe(true);
+
+    // Handbrake (Space) plus A at speed: the tail steps out, the car slides
+    // with a slip angle and turns left (yaw grows)
+    const beforeDrift = await v2(page);
+    await page.keyboard.down('Space');
+    await page.keyboard.down('a');
+    const peak = await page.evaluate(async () => {
+        const debug = (window as unknown as { __bulliDebug: { snapshot(): { v2: { beta: number; yaw: number } } } }).__bulliDebug;
+        let maxBeta = 0;
+        const until = performance.now() + 1500;
+        while (performance.now() < until) {
+            await new Promise(resolve => requestAnimationFrame(resolve));
+            maxBeta = Math.max(maxBeta, Math.abs(debug.snapshot().v2.beta));
+        }
+        return { maxBeta, yaw: debug.snapshot().v2.yaw };
+    });
+    await page.keyboard.up('a');
+    await page.keyboard.up('Space');
+    await page.keyboard.up('w');
+    test.info().annotations.push({ type: 'drift', description: `peak slip angle ${(peak.maxBeta * 180 / Math.PI).toFixed(1)}°` });
+    expect(peak.maxBeta).toBeGreaterThan(5 * Math.PI / 180);
+    expect(peak.yaw).toBeGreaterThan(beforeDrift.yaw + 0.1);
+
+    // Brake to a stop with S
+    await page.keyboard.down('s');
+    await expect.poll(async () => Math.abs((await v2(page)).u)).toBeLessThan(1);
+    await page.keyboard.up('s');
+
+    // Q jumps: the car leaves the ground and comes back down
+    const jumpsBefore = (await v2(page)).jumps;
+    await page.keyboard.press('q');
+    await expect.poll(async () => (await v2(page)).jumps).toBe(jumpsBefore + 1);
+    await expect.poll(async () => (await v2(page)).grounded).toBe(true);
+    expect(player.sentMessages.some(message => message.type === 'update' && message.isFlipping === true)).toBe(true);
+
+    // Holding R resets the car (onto the nearest road, with a short contact ghost)
+    const resetsBefore = (await v2(page)).resets;
+    await page.keyboard.down('r');
+    await expect.poll(async () => (await v2(page)).resets).toBe(resetsBefore + 1);
+    await page.keyboard.up('r');
+    const afterReset = await v2(page);
+    expect(Math.abs(afterReset.u)).toBeLessThan(0.5);
+    expect(afterReset.ghostTicks).toBeGreaterThan(0);
+
+    // A quick tap of R does nothing
+    await page.keyboard.press('r');
+    await page.waitForTimeout(300);
+    expect((await v2(page)).resets).toBe(resetsBefore + 1);
+});

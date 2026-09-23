@@ -1,5 +1,5 @@
 import { test as base, expect, type BrowserContext, type Page } from '@playwright/test';
-import type { BulliDebugSnapshot } from '../../src/client/e2eHook.js';
+import type { BulliDebugSnapshot, V2Snapshot } from '../../src/client/e2eHook.js';
 import type { Obstacle } from '../../src/client/types.js';
 import { CITY_BOUNDS, CITY_CONFIG, roadLineCenter } from '../../src/shared/world/cityGen.js';
 import { MEGA_SCALE } from '../../src/shared/constants.js';
@@ -76,6 +76,17 @@ export function snapshot(page: Page): Promise<BulliDebugSnapshot> {
     return page.evaluate(() => (window as unknown as {
         __bulliDebug: { snapshot(): BulliDebugSnapshot };
     }).__bulliDebug.snapshot());
+}
+
+// The local v2 sim car (created with the car's first frame); fails when the
+// page runs the legacy physics
+export async function v2(page: Page): Promise<V2Snapshot> {
+    let state = await snapshot(page);
+    if (!state.v2) {
+        expect(state.physics, 'the page runs the legacy physics (no ?physics=v2)').toBe('v2');
+        await expect.poll(async () => (state = await snapshot(page)).v2).not.toBeNull();
+    }
+    return state.v2!;
 }
 
 /**
