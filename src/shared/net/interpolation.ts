@@ -1,11 +1,14 @@
 // Remote cars outside the contact set (docs/phase-1b-design.md, 8.6): a
 // short buffer of snapshot samples per car, shown a little in the past
 // with cubic Hermite interpolation (the velocities are the tangents), a
-// short linear extrapolation when the samples run out, then a hold.
+// short linear extrapolation when the samples run out, then a hold. When a
+// sample arrives after the pose ran past the newest one, the difference to
+// what was shown fades out as a render offset instead of a jump.
 
 import { DT } from '../sim/constants.js';
 import { CAR_GROUNDED, type CompactCar } from './codec.js';
 import { EXTRAPOLATE_MAX_TICKS, INTERP_DELAY_MAX_TICKS, INTERP_DELAY_TICKS } from './constants.js';
+import { RenderOffset } from './renderOffset.js';
 
 const BUFFER = 8;
 const TWO_PI = Math.PI * 2;
@@ -46,6 +49,13 @@ export class RemoteTrack {
     private readonly samples: RemoteSample[] = [];
     // Set when the last sample jumped (teleport, respawn): show it at once
     teleported = false;
+    // Difference between the extrapolated pose shown and the one the late
+    // sample gives, fading out (decay per frame)
+    readonly offset = new RenderOffset();
+    // Render time of the last sample() call, -Infinity before one
+    private lastR = -Infinity;
+    private readonly before = createRemotePose();
+    private readonly after = createRemotePose();
 
     get newest(): RemoteSample | null {
         return this.samples.length ? this.samples[this.samples.length - 1] : null;
@@ -53,6 +63,8 @@ export class RemoteTrack {
 
     clear(): void {
         this.samples.length = 0;
+        this.offset.clear();
+        this.lastR = -Infinity;
     }
 
     push(tick: number, car: CompactCar): void {
@@ -60,14 +72,38 @@ export class RemoteTrack {
         if (last && tick <= last.tick) return;
         if (last && Math.hypot(car.x - last.car.x, car.z - last.car.z) > TELEPORT_DISTANCE) {
             this.samples.length = 0;
+            this.offset.clear();
             this.teleported = true;
+        }
+        // The last frame ran past the newest sample: keep its picture
+        const extrapolated = last !== null && this.samples.length > 0 && this.lastR > last.tick;
+        if (extrapolated) {
+            this.rawSample(this.lastR, this.before);
+            this.offset.applyTo(this.before);
         }
         this.samples.push({ tick, car });
         if (this.samples.length > BUFFER) this.samples.shift();
+        if (extrapolated) {
+            this.rawSample(this.lastR, this.after);
+            this.offset.correct(this.before, this.after, false, 0);
+        }
     }
 
-    /** The pose at server tick r (with fraction); false before the first sample. */
+    /** Fades the offset of a late sample for a frame of dtMs. */
+    decay(dtMs: number): void {
+        this.offset.decay(dtMs, 0);
+    }
+
+    /** The pose at server tick r (with fraction) plus the offset; false before the first sample. */
     sample(r: number, out: RemotePose): boolean {
+        if (!this.rawSample(r, out)) return false;
+        this.lastR = r;
+        this.offset.applyTo(out);
+        return true;
+    }
+
+    // The pose from the samples alone
+    private rawSample(r: number, out: RemotePose): boolean {
         const samples = this.samples;
         if (samples.length === 0) return false;
         const newest = samples[samples.length - 1];

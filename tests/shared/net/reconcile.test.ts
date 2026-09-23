@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mulberry32 } from '../../../src/shared/math/rng.js';
-import { TICK_MS } from '../../../src/shared/net/constants.js';
+import { CONTACT_SMOOTH_MAX_MS, SMOOTH_TAU_MAX_MS, SNAP_DISTANCE, TICK_MS } from '../../../src/shared/net/constants.js';
 import { statesEqual } from '../../../src/shared/net/prediction.js';
 import { copyVehicleState, createVehicleState, type VehicleState } from '../../../src/shared/sim/types.js';
 import { createSimCar } from '../../../src/shared/sim/vehicle.js';
 import { stepWorld } from '../../../src/shared/sim/world.js';
 import { mapFor } from '../../../src/server/maps.js';
-import { input, run, TestClient, TestServer, type LinkOptions } from './harness.js';
+import { FrameProbe, input, run, TestClient, TestServer, type LinkOptions } from './harness.js';
 
 // Reconciliation with simulated latency (docs/phase-1b-design.md, 15.1):
 // the real rooms and the shared client code, messages delayed in a seeded
@@ -203,5 +203,110 @@ describe('bumping with latency', () => {
             }
         }
         expect(statesEqual(offA.state, aCar.state)).toBe(true);
+    });
+});
+
+// What the player sees (8.4, 8.6): a correction moves the sim at once, the
+// picture fades over to it. A frame never moves the picture further than
+// one frame's fade of the largest offset that is smoothed (4 m at tau
+// 200 ms); larger corrections are snaps, rare and counted.
+const FRAME_MS = 1000 / 60;
+const JUMP_LIMIT = SNAP_DISTANCE * (1 - Math.exp(-FRAME_MS / SMOOTH_TAU_MAX_MS)) + 1e-3;
+
+describe('smoothing on screen', () => {
+    it('at the exit criterion no frame jumps, and it converges to exact once the net is clean', () => {
+        let rawMax = 0;
+        for (const seed of [3, 44]) {
+            server?.dispose();
+            server = new TestServer();
+            const net = { latencyMs: 75, jitterMs: 30, loss: 0.03 };
+            const client = new TestClient(server, 'smooth', 'sport', net, seed);
+            start(client, 300, 300, 0.3);
+            client.script = tick => slalom(tick);
+            run(server, [client], 5000);
+            const probe = new FrameProbe(client);
+            run(server, [client], 30_000, 4, () => probe.update(server.time));
+            expect(probe.jumps.length).toBeGreaterThan(1700);
+            expect(Math.max(...probe.jumps)).toBeLessThanOrEqual(JUMP_LIMIT);
+            expect(probe.snaps).toBeLessThanOrEqual(Math.ceil(probe.jumps.length * 0.01));
+            rawMax = Math.max(rawMax, ...probe.rawJumps);
+
+            // The net gets clean: the offset fades out, the prediction is exact again
+            net.jitterMs = 0;
+            net.loss = 0;
+            run(server, [client], 2000, 4, () => probe.update(server.time));
+            const from = client.session.room!.tick;
+            const jumpsFrom = probe.jumps.length;
+            run(server, [client], 2000, 4, () => probe.update(server.time));
+            expect(errorsAfter(client, from).every(e => e === 0)).toBe(true);
+            expect(client.net.offset.active).toBe(false);
+            expect(Math.max(...probe.jumps.slice(jumpsFrom))).toBeLessThan(1e-9);
+        }
+        // Without the offset the picture would have jumped by metres
+        expect(rawMax).toBeGreaterThan(1);
+    });
+
+    it('a car of the contact set that steers unpredictably moves smoother than its corrections', () => {
+        server = new TestServer();
+        const net = { latencyMs: 75, jitterMs: 30, loss: 0 };
+        const a = new TestClient(server, 'a', 'bulli', net, 21);
+        const b = new TestClient(server, 'b', 'bulli', net, 22);
+        a.sendJson({ type: 'ready' });
+        b.sendJson({ type: 'ready' });
+        run(server, [a, b], 600);
+        // Side by side, 10 m apart; b weaves every 12 ticks
+        a.sendJson({ type: 'debugPlace', x: 300, z: 240, yaw: 0 });
+        b.sendJson({ type: 'debugPlace', x: 310, z: 240, yaw: 0 });
+        run(server, [a, b], 2500);
+        a.script = () => input(200);
+        b.script = tick => input(200, Math.floor(tick / 12) % 2 === 0 ? 80 : -80);
+        const probe = new FrameProbe(a);
+        run(server, [a, b], 5000, 4, () => probe.update(server.time));
+        // b stayed in a's contact set nearly all the time
+        expect(probe.remoteJumps.length).toBeGreaterThan(250);
+        const p99 = (values: number[]) => [...values].sort((x, y) => x - y)[Math.floor(0.99 * (values.length - 1))];
+        expect(p99(probe.remoteJumps)).toBeLessThan(0.5 * p99(probe.remoteRawJumps));
+        expect(Math.max(...probe.remoteJumps)).toBeLessThanOrEqual(JUMP_LIMIT);
+    });
+
+    it('after a bump the offset is gone within 300 ms, and neither car jumps on screen', () => {
+        server = new TestServer();
+        const net = { latencyMs: 75, jitterMs: 30, loss: 0 };
+        const a = new TestClient(server, 'a', 'bulli', net, 21);
+        const b = new TestClient(server, 'b', 'pickup', net, 22);
+        a.sendJson({ type: 'ready' });
+        b.sendJson({ type: 'ready' });
+        run(server, [a, b], 600);
+        a.sendJson({ type: 'debugPlace', x: 300, z: 240, yaw: 0 });
+        b.sendJson({ type: 'debugPlace', x: 300.5, z: 300, yaw: Math.PI });
+        run(server, [a, b], 2500);
+        a.script = () => input(255);
+        b.script = () => input(255);
+        const probes = [new FrameProbe(a), new FrameProbe(b)];
+        const contactAt: number[][] = [[], []];
+        const seen = [0, 0];
+        run(server, [a, b], 5000, 4, () => {
+            [a, b].forEach((client, i) => {
+                probes[i].update(server.time);
+                for (; seen[i] < client.results.length; seen[i]++) {
+                    if (client.results[seen[i]].result.contact) contactAt[i].push(server.time);
+                }
+            });
+        });
+        for (const i of [0, 1]) {
+            const probe = probes[i];
+            // Both predicted the hit and corrected with contact
+            expect(contactAt[i].length).toBeGreaterThan(0);
+            // The first frame of the probe may carry the snap of the placement
+            expect(probe.snaps).toBeLessThanOrEqual(1);
+            expect(Math.max(...probe.jumps)).toBeLessThanOrEqual(JUMP_LIMIT);
+            expect(Math.max(0, ...probe.remoteJumps)).toBeLessThanOrEqual(JUMP_LIMIT);
+            // 300 ms after each contact correction the offset of that
+            // correction is gone (a newer one may have started meanwhile)
+            const last = contactAt[i].at(-1)!;
+            probe.times.forEach((t, k) => {
+                if (t > last + CONTACT_SMOOTH_MAX_MS + FRAME_MS) expect(probe.offsets[k]).toBe(0);
+            });
+        }
     });
 });

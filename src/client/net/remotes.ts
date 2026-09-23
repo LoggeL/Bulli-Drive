@@ -13,6 +13,7 @@ import { netDriver } from './netDriver.js';
 // their snapshots 100 ms in the past (Hermite, a short extrapolation), the
 // ones in the contact set show their predicted pose, so a bump looks the
 // way it feels. Entering and leaving the contact set blends over 300 ms.
+// Corrections of either fade out as render offsets (shared/net).
 // Idle cars turn grey with "ZZZ" (the flag replaces the old AFK guess).
 
 const BLEND_MS = 300;
@@ -133,6 +134,7 @@ export function updateRemoteCars(dt: number, now: number, alpha: number): void {
         const newestTick = view.track.newest.tick;
         const missing = netDriver.prediction ? netDriver.prediction.lastSnapshotTick - newestTick : 0;
         remote.flipGroup.visible = missing < MISSING_HIDE_TICKS;
+        view.track.decay(dt * 1000);
         if (!view.track.sample(renderTick, pose)) continue;
         if (pose.extrapolated) anyExtrapolated = true;
 
@@ -148,11 +150,12 @@ export function updateRemoteCars(dt: number, now: number, alpha: number): void {
         let scale = pose.car?.scale ?? 1;
         let speed = pose.speed;
         if (predicted && view.blend > 0) {
-            const a = predicted.prev, b = predicted.car.state, w = view.blend;
-            const px = a.x + (b.x - a.x) * alpha;
-            const py = a.y + (b.y - a.y) * alpha;
-            const pz = a.z + (b.z - a.z) * alpha;
-            const pyaw = a.yaw + wrapAngle(b.yaw - a.yaw) * alpha;
+            // The predicted pose plus its own offset from the snapshots
+            const a = predicted.prev, b = predicted.car.state, w = view.blend, o = predicted.offset;
+            const px = a.x + (b.x - a.x) * alpha + o.x;
+            const py = a.y + (b.y - a.y) * alpha + o.y;
+            const pz = a.z + (b.z - a.z) * alpha + o.z;
+            const pyaw = a.yaw + wrapAngle(b.yaw - a.yaw) * alpha + o.yaw;
             x += (px - x) * w;
             y += (py - y) * w;
             z += (pz - z) * w;

@@ -9,7 +9,8 @@ import { ClockSync } from './clock.js';
 import { CAR_RESPAWN_SHIELD, encodeInputPacket, type Snapshot } from './codec.js';
 import { BUFFER_TARGET_MIN, INPUT_MAX_PER_PACKET, INPUT_REDUNDANCY, TICK_MS } from './constants.js';
 import { LeadControl } from './leadControl.js';
-import { Prediction, type ReconcileResult, type SlotInfo } from './prediction.js';
+import { Prediction, type PredictedRemote, type ReconcileResult, type SlotInfo } from './prediction.js';
+import { createPose, interpolatePose, RenderOffset, type Pose } from './renderOffset.js';
 import { isPowerupType, POWERUP_TYPE_IDS, RESPAWN_SHIELD_MAX_TICKS, type PowerupType } from '../party/rules.js';
 import type { GameEvent, MemberInfo } from '../protocol.js';
 import type { SimCar, VehicleInput } from '../sim/types.js';
@@ -40,13 +41,18 @@ export interface NetStats {
     lastSlack: number;
     frames: number;
     bytesOut: number;
+    // Largest render offset a correction left (m); corrections too large
+    // to smooth (a snap of the picture)
+    offsetMax: number;
+    renderSnaps: number;
 }
 
 export function createNetStats(): NetStats {
     return {
         snapshots: 0, corrections: 0, correctionSum: 0, correctionMax: 0,
         contactCorrections: 0, contactCorrectionSum: 0, snaps: 0, replayedTicks: 0,
-        lostInputs: 0, resyncs: 0, exactMatches: 0, missedInputs: 0, lastSlack: 0, frames: 0, bytesOut: 0
+        lostInputs: 0, resyncs: 0, exactMatches: 0, missedInputs: 0, lastSlack: 0, frames: 0, bytesOut: 0,
+        offsetMax: 0, renderSnaps: 0
     };
 }
 
@@ -70,6 +76,15 @@ export class NetClient {
     selfFlagsTick = -1;
     readonly stats: NetStats = createNetStats();
     lastResult: ReconcileResult | null = null;
+    // Render offset of the own car: a correction fades out instead of
+    // jumping (8.4); the remote cars of the contact set carry their own
+    readonly offset = new RenderOffset();
+    // Set on every correction too large to smooth: the camera jumps along
+    cameraSnap = false;
+    private readonly shownBefore = createPose();
+    private readonly poseAfter = createPose();
+    private readonly remoteShown = new Map<PredictedRemote, Pose>();
+    private readonly posePool: Pose[] = [];
     // The last tick whose input went out
     protected sentTick = -1;
     // Server tick at local time 0 as the clock said at the last (re)start.
@@ -108,6 +123,7 @@ export class NetClient {
         this.selfFlagsTick = -1;
         this.sentTick = -1;
         this.lead.start(0, BUFFER_TARGET_MIN);
+        this.offset.clear();
     }
 
     setMember(member: MemberInfo): void {
@@ -269,10 +285,84 @@ export class NetClient {
 
     // ---- Snapshots and events ----
 
-    /** Lead control and the reconciliation of the own car for one snapshot. */
-    reconcileSnapshot(snap: Snapshot, now: number): ReconcileResult | null {
+    /**
+     * Lead control and the reconciliation of the own car for one snapshot,
+     * and the render offsets that keep the picture of the own car and of
+     * the contact set where it was (8.4, 8.6). alpha: the render
+     * interpolation the last frame showed (default: the one for now).
+     */
+    reconcileSnapshot(snap: Snapshot, now: number, alpha = this.renderAlpha(now)): ReconcileResult | null {
         const p = this.prediction;
         if (!p) return null;
+        // What is on screen before the correction
+        const ownShown = p.spawned && p.tick >= 0 ? this.ownPose(alpha, true, this.shownBefore) : null;
+        this.remoteShown.clear();
+        let pooled = 0;
+        for (const remote of p.remotes.values()) {
+            if (pooled === this.posePool.length) this.posePool.push(createPose());
+            const pose = interpolatePose(remote.prev, remote.car.state, alpha, this.posePool[pooled++]);
+            this.remoteShown.set(remote, remote.offset.applyTo(pose));
+        }
+        const result = this.reconcileOnly(snap, now);
+        this.smoothRemotes(alpha, now, result?.contact ?? false);
+        if (!result || result.matched || !ownShown) return result;
+        this.afterReplay();
+        if (result.snapped) {
+            this.offset.clear();
+            this.cameraSnap = true;
+            return result;
+        }
+        if (!this.offset.correct(ownShown, this.ownPose(alpha, false, this.poseAfter), result.contact, now)) {
+            this.stats.renderSnaps++;
+            this.cameraSnap = true;
+        }
+        this.stats.offsetMax = Math.max(this.stats.offsetMax, this.offset.size);
+        return result;
+    }
+
+    // The contact set after a snapshot: a car that stayed in it keeps its
+    // picture (offset), one that just came in blends in on the client
+    private smoothRemotes(alpha: number, now: number, contact: boolean): void {
+        const p = this.prediction;
+        if (!p) return;
+        for (const remote of p.remotes.values()) {
+            const shown = this.remoteShown.get(remote);
+            if (!shown) continue;
+            remote.offset.correct(shown, interpolatePose(remote.prev, remote.car.state, alpha, this.poseAfter), contact, now);
+        }
+        this.remoteShown.clear();
+    }
+
+    /**
+     * The own car's pose on screen at render interpolation alpha, with or
+     * without the offset. The browser uses the LocalVehicle's pair instead.
+     */
+    protected ownPose(alpha: number, withOffset: boolean, out: Pose): Pose {
+        const p = this.prediction!;
+        interpolatePose(p.prev, p.car.state, alpha, out);
+        return withOffset ? this.offset.applyTo(out) : out;
+    }
+
+    /** After a replay changed the own car (the browser syncs its render pair). */
+    protected afterReplay(): void { /* headless: the prediction's own pair is used */ }
+
+    /** Fades the render offsets for a frame of dtMs at time now. */
+    decayOffsets(dtMs: number, now: number): void {
+        this.offset.decay(dtMs, now);
+        const p = this.prediction;
+        if (p) for (const remote of p.remotes.values()) remote.offset.decay(dtMs, now);
+    }
+
+    /** The pose on screen for the own car at time now (headless clients, tests). */
+    shownPose(now: number, out: Pose): Pose | null {
+        const p = this.prediction;
+        if (!p || !p.spawned || p.tick < 0) return null;
+        return this.ownPose(this.renderAlpha(now), true, out);
+    }
+
+    // The reconciliation proper, without the picture
+    private reconcileOnly(snap: Snapshot, now: number): ReconcileResult | null {
+        const p = this.prediction!;
         this.stats.snapshots++;
         this.stats.missedInputs += snap.missedInputs;
         if (snap.inputSlack !== null) this.stats.lastSlack = snap.inputSlack;
@@ -309,11 +399,14 @@ export class NetClient {
         this.clearWindows();
         this.spawnTick = tick;
         p.spawnAt(tick, x, z, yaw);
+        this.offset.clear();
+        this.cameraSnap = true;
     }
 
     despawnOwn(): void {
         this.prediction?.despawn();
         this.clearWindows();
+        this.offset.clear();
     }
 
     /**

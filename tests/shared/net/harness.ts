@@ -7,9 +7,10 @@ import { NetClient } from '../../../src/shared/net/client.js';
 import { decodeInputPacket, decodeSnapshot } from '../../../src/shared/net/codec.js';
 import { CLOCK_BURST_PINGS, TICK_MS } from '../../../src/shared/net/constants.js';
 import type { ReconcileResult } from '../../../src/shared/net/prediction.js';
+import { createPose, interpolatePose, type Pose } from '../../../src/shared/net/renderOffset.js';
 import { mulberry32 } from '../../../src/shared/math/rng.js';
 import type { ClientMessage, RoomKind, ServerMessage } from '../../../src/shared/protocol.js';
-import { createVehicleInput, type CarClassId, type SimCar, type VehicleInput } from '../../../src/shared/sim/types.js';
+import { createVehicleInput, createVehicleState, type CarClassId, type SimCar, type VehicleInput } from '../../../src/shared/sim/types.js';
 import { createSimCar } from '../../../src/shared/sim/vehicle.js';
 
 // A whole game without sockets and without a browser: the real server
@@ -213,4 +214,109 @@ export function run(server: TestServer, clients: TestClient[], ms: number, stepM
 
 export function input(throttle: number, steer = 0, brake = 0, buttons = 0): VehicleInput {
     return { steer, throttle, brake, buttons };
+}
+
+/**
+ * Renders a client's own car at 60 fps in simulated time, as the browser
+ * would: the prediction's pose plus the render offset, which fades each
+ * frame. Per frame it measures the jump: how far the picture moved beyond
+ * the car's own motion on the (possibly corrected) predicted path. Without
+ * the offset a correction would show up here as a jump of its full size.
+ */
+export class FrameProbe {
+    readonly frameMs = 1000 / 60;
+    private nextFrame = 0;
+    private last: { tick: number; alpha: number; shown: Pose; raw: Pose } | null = null;
+    // Jump of every frame (m), frames right after a snap left out
+    readonly jumps: number[] = [];
+    // The jump the same frames would have shown without the offset (m)
+    readonly rawJumps: number[] = [];
+    // Frames with a hard snap (camera jump) and the time of each frame
+    snaps = 0;
+    readonly times: number[] = [];
+    readonly offsets: number[] = [];
+    // Remote cars of the contact set: how far their picture moved in a
+    // frame beyond what their speed explains (m)
+    readonly remoteJumps: number[] = [];
+    readonly remoteRawJumps: number[] = [];
+    private readonly remoteLast = new Map<string, { shown: Pose; raw: Pose; speed: number }>();
+    private readonly shown = createPose();
+    private readonly a = createPose();
+    private readonly b = createPose();
+    private readonly s0 = createVehicleState();
+    private readonly s1 = createVehicleState();
+
+    constructor(readonly client: TestClient) {}
+
+    /** Renders the frames due by now (ms). */
+    update(now: number): void {
+        if (this.nextFrame === 0) this.nextFrame = now;
+        while (this.nextFrame <= now) {
+            this.frame(this.nextFrame);
+            this.nextFrame += this.frameMs;
+        }
+    }
+
+    // The pose on the current predicted path at an earlier frame's (tick, alpha)
+    private pathPose(tick: number, alpha: number, out: Pose): Pose | null {
+        const p = this.client.net.prediction!;
+        if (!p.stateAt(tick - 1, this.s0) || !p.stateAt(tick, this.s1)) return null;
+        return interpolatePose(this.s0, this.s1, alpha, out);
+    }
+
+    private remoteFrame(alpha: number): void {
+        const p = this.client.net.prediction!;
+        const seen = new Set<string>();
+        for (const remote of p.remotes.values()) {
+            seen.add(remote.id);
+            const raw = interpolatePose(remote.prev, remote.car.state, alpha, createPose());
+            const shown = remote.offset.applyTo({ ...raw });
+            const last = this.remoteLast.get(remote.id);
+            const a = remote.prev, b = remote.car.state;
+            // The frame spans parts of two ticks: the fastest of the speeds involved
+            const speed = Math.max(Math.hypot(a.vx, a.vz), Math.hypot(b.vx, b.vz));
+            if (last) {
+                const reach = Math.max(speed, last.speed) * this.frameMs / 1000;
+                this.remoteJumps.push(Math.max(0, Math.hypot(shown.x - last.shown.x, shown.z - last.shown.z) - reach));
+                this.remoteRawJumps.push(Math.max(0, Math.hypot(raw.x - last.raw.x, raw.z - last.raw.z) - reach));
+            }
+            this.remoteLast.set(remote.id, { shown, raw, speed });
+        }
+        for (const id of [...this.remoteLast.keys()]) if (!seen.has(id)) this.remoteLast.delete(id);
+    }
+
+    private frame(now: number): void {
+        const net = this.client.net;
+        net.decayOffsets(this.frameMs, now);
+        const p = net.prediction;
+        if (!p || !p.spawned || p.tick < 0 || !net.shownPose(now, this.shown)) {
+            this.last = null;
+            return;
+        }
+        const tick = p.tick, alpha = net.renderAlpha(now);
+        this.remoteFrame(alpha);
+        const snapped = net.cameraSnap;
+        net.cameraSnap = false;
+        if (snapped) this.snaps++;
+        const last = this.last;
+        if (last && !snapped) {
+            const before = this.pathPose(last.tick, last.alpha, this.a);
+            const nowPose = this.pathPose(tick, alpha, this.b);
+            if (before && nowPose) {
+                const jx = (this.shown.x - last.shown.x) - (nowPose.x - before.x);
+                const jz = (this.shown.z - last.shown.z) - (nowPose.z - before.z);
+                this.jumps.push(Math.hypot(jx, jz));
+                // Without an offset the picture would jump from the old
+                // path to the new one
+                this.rawJumps.push(Math.hypot(before.x - last.raw.x, before.z - last.raw.z));
+                this.times.push(now);
+                this.offsets.push(net.offset.size);
+            }
+        }
+        const o = net.offset;
+        this.last = {
+            tick, alpha, shown: { ...this.shown },
+            raw: { x: this.shown.x - o.x, y: this.shown.y - o.y, z: this.shown.z - o.z, yaw: this.shown.yaw - o.yaw }
+        };
+    }
 }

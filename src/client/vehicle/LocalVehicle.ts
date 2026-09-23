@@ -205,7 +205,7 @@ export class LocalVehicle {
             // the frame events are cleared after they played (endFrame)
             this.pumpNet(host, now);
             this.alpha = this.net.renderAlpha(now);
-            this.net.decayOffset(dt * 1000, now);
+            this.net.decayOffsets(dt * 1000, now);
         } else {
             this.endFrame();
             const start = performance.now();

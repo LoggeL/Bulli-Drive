@@ -26,6 +26,7 @@ import {
     MATCH_POSITION, MATCH_VELOCITY, MATCH_YAW, SNAP_DISTANCE, SNAP_YAW,
     SOFT_CONTACT_FROM, SOFT_CONTACT_SCALE, SOFT_CONTACT_TO, TICK_RATE
 } from './constants.js';
+import { RenderOffset } from './renderOffset.js';
 
 const HISTORY_MASK = HISTORY_TICKS - 1;
 const TWO_PI = Math.PI * 2;
@@ -59,6 +60,8 @@ export interface PredictedRemote {
     baseTick: number;
     // Tick the car has been predicted to
     tick: number;
+    // Render offset of its predicted pose (corrections by the snapshots, 8.6)
+    offset: RenderOffset;
 }
 
 export interface ReconcileResult {
@@ -394,8 +397,10 @@ export class Prediction {
                     : {
                         slot: record.slot, id: info.id, classId: info.classId, profile: info.profile,
                         car: createSimCar(info.id, info.classId, info.profile),
-                        prev: createVehicleState(), flags: 0, baseTick: Ts, tick: Ts
+                        prev: createVehicleState(), flags: 0, baseTick: Ts, tick: Ts, offset: new RenderOffset()
                     };
+                // Entering the set blends in (client): no offset from an old stay
+                remote.offset.clear();
                 remote.slot = record.slot;
                 this.remotes.set(record.slot, remote);
             }
