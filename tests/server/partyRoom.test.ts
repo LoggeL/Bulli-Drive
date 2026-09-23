@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mulberry32 } from '../../src/shared/math/rng.js';
 import { handleClientMessage } from '../../src/server/dispatch.js';
 import { mapFor } from '../../src/server/maps.js';
 import { RoomManager } from '../../src/server/rooms/lobby.js';
@@ -55,6 +56,8 @@ function partyOf(session: Session) {
 }
 
 beforeEach(() => {
+    // Spawn points are random: the same ones in every run
+    vi.spyOn(Math, 'random').mockImplementation(mulberry32(1234));
     lobby = new RoomManager(mapFor(), { maxPlayersPerRoom: 32, emptyRoomTtlMs: 60_000 });
     room = lobby.get('party-1') as PartyRoom;
 });
@@ -62,6 +65,7 @@ beforeEach(() => {
 afterEach(() => {
     for (const r of lobby.list()) r.dispose();
     roomOptions.allowDebugPlace = false;
+    vi.restoreAllMocks();
 });
 
 describe('message validation', () => {

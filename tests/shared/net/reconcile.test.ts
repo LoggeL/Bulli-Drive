@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mulberry32 } from '../../../src/shared/math/rng.js';
 import { TICK_MS } from '../../../src/shared/net/constants.js';
 import { statesEqual } from '../../../src/shared/net/prediction.js';
 import { copyVehicleState, createVehicleState, type VehicleState } from '../../../src/shared/sim/types.js';
@@ -14,7 +15,15 @@ import { input, run, TestClient, TestServer, type LinkOptions } from './harness.
 
 let server: TestServer;
 
-afterEach(() => server?.dispose());
+// Spawn points are random: the same ones in every run
+beforeEach(() => {
+    vi.spyOn(Math, 'random').mockImplementation(mulberry32(99));
+});
+
+afterEach(() => {
+    server?.dispose();
+    vi.restoreAllMocks();
+});
 
 // Drives around on the open terrain north of the city: gas, a slow slalom,
 // a handbrake flick and a boost now and then
