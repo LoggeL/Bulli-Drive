@@ -1,7 +1,8 @@
 // Screenshot set for visual before/after comparisons: starts the production
 // server, joins with headless Chromium (?e2e=1) and captures fixed views
 // (chase camera on a street, the car up close, its rear with brake lights,
-// a showroom of all car types, plaza, park, street furniture, palms,
+// a showroom of all car types from the front and the rear, close-ups of
+// the Kaefer, Pritsche, 356 and 181, plaza, park, street furniture, palms,
 // fountain, overview, city edge, mobile).
 //
 //   npm run screenshots -- --out=shots/after                 # build + capture
@@ -287,6 +288,36 @@ async function captureDesktop(browser: Browser, baseURL: string, options: Option
         await setCamera(page, { position: [MID_ROAD + 2, 4.2, z + 17], lookAt: [MID_ROAD, 1.1, z], fov: 55 });
         await settle(page, 1500);
         await shoot(page, options.out, 'showroom', stats);
+        await clearSpawned(page);
+        await setCamera(page, null);
+        await hideHud(page, false);
+    }
+
+    // Close-ups of the other four Blender cars (front three-quarter, braking,
+    // steering left) and the showroom row from behind
+    for (const [type, color] of [['beetle', 0x2E6FA8], ['pickup', 0x6B8E4E], ['sport', 0xC0392B], ['jeep', 0xD9A441]] as const) {
+        if (!want(`car-${type}`)) continue;
+        await place(page, MID_ROAD, -120, 0);
+        await hideHud(page, true);
+        const x = MID_ROAD + 3, z = -72;
+        await spawnCars(page, [{ type, color, x, z, yaw: -0.35, brake: true, steer: 0.25 }]);
+        await setCamera(page, { position: [x + 5.2, 2.4, z + 6.4], lookAt: [x, 0.9, z], fov: 40 });
+        await settle(page, 1500);
+        await shoot(page, options.out, `car-${type}`, stats);
+        await clearSpawned(page);
+        await setCamera(page, null);
+        await hideHud(page, false);
+    }
+    if (want('showroom-rear')) {
+        await place(page, MID_ROAD, -120, 0);
+        await hideHud(page, true);
+        const z = -70;
+        const types = ['jeep', 'sport', 'bulli', 'beetle', 'pickup'];
+        const colors = [0x6B8E4E, 0xC0392B, 0xD9A441, 0x2E6FA8, 0x8E5B3A];
+        await spawnCars(page, types.map((type, i) => ({ type, color: colors[i], x: MID_ROAD - 13 + i * 5.2, z, yaw: 0, brake: true })));
+        await setCamera(page, { position: [MID_ROAD - 2, 4.2, z - 17], lookAt: [MID_ROAD, 1.1, z], fov: 55 });
+        await settle(page, 1500);
+        await shoot(page, options.out, 'showroom-rear', stats);
         await clearSpawned(page);
         await setCamera(page, null);
         await hideHud(page, false);
