@@ -7,8 +7,9 @@ import type { TerrainConfig } from '../protocol.js';
 import { CITY_BOUNDS } from './cityGen.js';
 
 // The city footprint is square and sits slightly off the origin (the grid
-// ends with an extra road on the + side), so one center serves both axes.
-const CITY_CENTER = (CITY_BOUNDS.minX + CITY_BOUNDS.maxX) / 2;
+// ends with an extra road on the + side), so both axes share one half extent.
+const CITY_CENTER_X = (CITY_BOUNDS.minX + CITY_BOUNDS.maxX) / 2;
+const CITY_CENTER_Z = (CITY_BOUNDS.minZ + CITY_BOUNDS.maxZ) / 2;
 const CITY_HALF_EXTENT = (CITY_BOUNDS.maxX - CITY_BOUNDS.minX) / 2;
 const CITY_CLEARANCE = CITY_LAYOUT.roadWidth / 2;
 // Circle that encloses the footprint plus half a road of clearance
@@ -18,7 +19,8 @@ const CITY_BLEND_RADIUS = 40;
 
 // Flattened city area, e.g. for keeping procedural scenery out of the city.
 export const CITY_TERRAIN_AREA = {
-    center: CITY_CENTER,
+    centerX: CITY_CENTER_X,
+    centerZ: CITY_CENTER_Z,
     // Half side length of the footprint including the clearance
     halfExtent: CITY_HALF_EXTENT + CITY_CLEARANCE,
     flatRadius: CITY_FLAT_RADIUS,
@@ -33,7 +35,7 @@ export function getTerrainHeight(config: TerrainConfig, x: number, z: number): n
 
     // Flatten the full city footprint plus half a road of clearance. Both the
     // footprint and its slightly offset center come from the shared layout.
-    const distFromCenter = Math.hypot(x - CITY_CENTER, z - CITY_CENTER);
+    const distFromCenter = Math.hypot(x - CITY_CENTER_X, z - CITY_CENTER_Z);
     let flattenFactor = 1.0;
     if (distFromCenter < CITY_FLAT_RADIUS) {
         flattenFactor = 0.0;

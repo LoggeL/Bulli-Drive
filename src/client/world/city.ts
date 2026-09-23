@@ -315,8 +315,8 @@ function createIntersectionDetails() {
 
     for (let ix = 0; ix <= gridSize; ix++) {
         for (let iz = 0; iz <= gridSize; iz++) {
-            const x = roadLineCenter(ix);
-            const z = roadLineCenter(iz);
+            const x = roadLineCenter(ix, 'x');
+            const z = roadLineCenter(iz, 'z');
             const y = getTerrainHeight(x, z);
 
             quaternion.identity();
@@ -990,7 +990,7 @@ function createStreetDetails() {
 
     // A palm-lined central boulevard anchors the California identity and is
     // visible from most blocks, making orientation much easier at speed.
-    const boulevardX = roadLineCenter(Math.floor(gridSize / 2));
+    const boulevardX = roadLineCenter(Math.floor(gridSize / 2), 'x');
     for (let bz = 0; bz < gridSize; bz++) {
         const z = blockCenter(0, bz).z;
         createPalmTree(boulevardX - roadWidth / 2 - 2.2, z, 200 + bz);

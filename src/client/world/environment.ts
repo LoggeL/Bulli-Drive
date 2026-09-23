@@ -8,8 +8,8 @@ import { createTerrainMaterial } from '../effects/worldShaders.js';
 const SCENERY_SEED = 0x42554c4c; // "BULL"
 
 function isInsideCitySceneryExclusion(x: number, z: number): boolean {
-    return Math.abs(x - CITY_TERRAIN_AREA.center) < CITY_TERRAIN_AREA.halfExtent &&
-        Math.abs(z - CITY_TERRAIN_AREA.center) < CITY_TERRAIN_AREA.halfExtent;
+    return Math.abs(x - CITY_TERRAIN_AREA.centerX) < CITY_TERRAIN_AREA.halfExtent &&
+        Math.abs(z - CITY_TERRAIN_AREA.centerZ) < CITY_TERRAIN_AREA.halfExtent;
 }
 
 // Height of the terrain the server configured (flat 0 before 'init').

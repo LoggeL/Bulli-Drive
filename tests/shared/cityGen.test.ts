@@ -17,7 +17,8 @@ import { WORLD_SEED } from '../../src/shared/world/worldGen.js';
 
 describe('city layout', () => {
     it('places the road lines on the golden grid', () => {
-        expect([0, 1, 2, 3, 4].map(roadLineCenter)).toEqual([-98, -46, 6, 58, 110]);
+        expect([0, 1, 2, 3, 4].map(i => roadLineCenter(i, 'x'))).toEqual([-98, -46, 6, 58, 110]);
+        expect([0, 1, 2, 3, 4].map(i => roadLineCenter(i, 'z'))).toEqual([-98, -46, 6, 58, 110]);
     });
 
     it('places block centers on the golden grid', () => {
@@ -38,8 +39,8 @@ describe('city layout', () => {
         expect(isInCityArea(116, -104)).toBe(true);
         expect(isInCityArea(116.01, 0)).toBe(false);
         expect(isInCityArea(0, -104.01)).toBe(false);
-        expect(isOnRoad(roadLineCenter(1), blockCenter(0, 0).z)).toBe(true);
-        expect(isOnRoad(blockCenter(0, 0).x, roadLineCenter(3))).toBe(true);
+        expect(isOnRoad(roadLineCenter(1, 'x'), blockCenter(0, 0).z)).toBe(true);
+        expect(isOnRoad(blockCenter(0, 0).x, roadLineCenter(3, 'z'))).toBe(true);
         expect(isOnRoad(blockCenter(2, 2).x, blockCenter(2, 2).z)).toBe(false);
     });
 });

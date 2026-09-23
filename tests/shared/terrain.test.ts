@@ -42,7 +42,8 @@ describe('getTerrainHeight', () => {
     });
 
     it('keeps the golden city flattening area', () => {
-        expect(CITY_TERRAIN_AREA.center).toBe(6);
+        expect(CITY_TERRAIN_AREA.centerX).toBe(6);
+        expect(CITY_TERRAIN_AREA.centerZ).toBe(6);
         expect(CITY_TERRAIN_AREA.flatRadius).toBe(164.04877323527904);
         expect(CITY_TERRAIN_AREA.halfExtent).toBe(116);
     });

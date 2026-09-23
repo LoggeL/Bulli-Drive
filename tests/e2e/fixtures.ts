@@ -164,7 +164,7 @@ export async function placeOnClearRunway(page: Page, minLength = 120): Promise<{
     const laneOffset = CITY_CONFIG.roadWidth / 4;
     for (let line = 0; line <= CITY_CONFIG.gridSize; line++) {
         for (const lane of [-laneOffset, 0, laneOffset]) {
-            const x = roadLineCenter(line) + lane;
+            const x = roadLineCenter(line, 'x') + lane;
             for (let z = CITY_BOUNDS.minZ + 5; z < CITY_BOUNDS.maxZ; z += 2) {
                 const free = freeRunway(obstacles, x, z);
                 if (free > best.free) best = { x, z, free };

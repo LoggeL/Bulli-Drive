@@ -49,9 +49,11 @@ export const BUILDING_COLORS = [
     0xE0C8A8, // Stucco beige
 ];
 
-// Center line of road number `index` (0..gridSize) along either axis
-export function roadLineCenter(index: number): number {
-    return CITY_CONFIG.centerX - HALF_CITY + index * TOTAL_BLOCK_SIZE + CITY_CONFIG.roadWidth / 2;
+// Center line of road number `index` (0..gridSize) on the given axis: the x of
+// a north-south road ('x') or the z of an east-west road ('z').
+export function roadLineCenter(index: number, axis: 'x' | 'z'): number {
+    const center = axis === 'x' ? CITY_CONFIG.centerX : CITY_CONFIG.centerZ;
+    return center - HALF_CITY + index * TOTAL_BLOCK_SIZE + CITY_CONFIG.roadWidth / 2;
 }
 
 // Center of a city block (bx, bz) in world coordinates
@@ -99,7 +101,7 @@ export function generateCity(random: RandomSource): CityData {
     for (let i = 0; i <= gridSize; i++) {
         // Vertical (x-constant) roads run along world Z with no rotation.
         roads.push({
-            x: roadLineCenter(i),
+            x: roadLineCenter(i, 'x'),
             z: roadSpanCenterZ,
             width: roadWidth,
             length: fullCitySpan,
@@ -109,7 +111,7 @@ export function generateCity(random: RandomSource): CityData {
         // Horizontal (z-constant) roads rotate the long local Z axis onto X.
         roads.push({
             x: roadSpanCenterX,
-            z: centerZ - HALF_CITY + i * TOTAL_BLOCK_SIZE + roadWidth / 2,
+            z: roadLineCenter(i, 'z'),
             width: roadWidth,
             length: fullCitySpan,
             rotation: Math.PI / 2
