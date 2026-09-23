@@ -1,4 +1,6 @@
+import * as THREE from 'three';
 import { state } from './state.js';
+import { focusLightingOn } from './render/lighting.js';
 import type { Obstacle } from './types.js';
 
 // Hook for the Playwright smoke tests (tests/e2e) and the screenshot script
@@ -34,6 +36,7 @@ export interface CameraPose {
 }
 
 let cameraOverride: CameraPose | null = null;
+const _overrideFocus = new THREE.Vector3();
 let renderPatched = false;
 
 // Applies the override right before each render, after the chase camera ran,
@@ -51,6 +54,9 @@ function patchRenderForCameraOverride(): void {
             if (pose.fov) state.camera.fov = pose.fov;
             state.camera.updateProjectionMatrix();
             state.camera.updateMatrixWorld();
+            // Sky dome and shadows followed the chase camera; move them to
+            // the fixed view so the sky and shadows look like in the game
+            focusLightingOn(state.camera, _overrideFocus.set(...pose.lookAt));
         }
         render(scene, camera);
     };
