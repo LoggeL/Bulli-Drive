@@ -20,6 +20,7 @@ import { Bulli, type CarType } from './entities/Bulli.js';
 import { sendToServer } from './network/socket.js';
 import { AdaptiveRenderQuality } from './effects/renderQuality.js';
 import { updateWorldShaders } from './effects/worldShaders.js';
+import { ensureCurrentBuild } from './buildVersion.js';
 
 // Reusable chase-camera state/vectors to avoid per-frame allocations.
 const _cameraTarget = new THREE.Vector3();
@@ -493,5 +494,5 @@ function animate(frameTime: number) {
 
 }
 
-// Start the game
-init();
+// Start the game (unless this page is a stale build that is about to reload)
+ensureCurrentBuild().then(init);

@@ -3,19 +3,18 @@
   "version": "1.0.0",
   "main": "dist/server/index.js",
   "scripts": {
-    "test": "tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.server.json --noEmit",
-    "build:client": "node scripts/clean-client-build.mjs && tsc -p tsconfig.client.json && node scripts/version-client-build.mjs",
-    "build:server": "tsc -p tsconfig.server.json",
-    "build": "npm run build:client && npm run build:server",
+    "dev": "concurrently --kill-others-on-fail --names server,vite --prefix-colors blue,magenta \"tsx watch src/server/index.ts\" \"vite\"",
+    "build": "vite build && tsc -p tsconfig.server.json",
     "start": "node dist/server/index.js",
-    "dev": "npm run build && node dist/server/index.js"
+    "typecheck": "tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.node.json --noEmit",
+    "test": "npm run typecheck"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "engines": {
-    "node": ">=18"
+    "node": "^20.19.0 || >=22.12.0"
   },
   "dependencies": {
     "express": "^5.2.1",
@@ -28,6 +27,10 @@
     "@types/node": "^25.0.3",
     "@types/three": "0.160.0",
     "@types/ws": "^8.18.1",
-    "typescript": "^5.9.3"
+    "concurrently": "^10.0.5",
+    "three": "0.160.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.0"
   }
 }

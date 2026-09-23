@@ -3,7 +3,7 @@
   "compilerOptions": {
     "noEmit": true,
     "moduleResolution": "bundler",
-    "types": ["three", "vite/client"]
+    "types": ["node"]
   },
-  "include": ["src/client/**/*", "src/shared/**/*"]
+  "include": ["vite.config.ts"]
 }

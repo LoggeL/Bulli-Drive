@@ -5,19 +5,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Bulli Drive — Hit the Road</title>
-    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Righteous&family=Quicksand:wght@400;600;700&family=Permanent+Marker&display=swap" rel="stylesheet">
-    <link id="app-stylesheet" rel="stylesheet" href="style.css">
-    <script type="importmap">
-        {
-            "imports": {
-                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-            }
-        }
-    </script>
+    <link rel="stylesheet" href="/src/client/style.css">
 </head>
 
 <body>
@@ -380,21 +372,7 @@
         </div>
     </div>
 
-    <script type="module">
-        const versionResponse = await fetch('/build-version.txt', { cache: 'no-store' });
-        if (!versionResponse.ok) {
-            throw new Error(`Unable to load client build version (${versionResponse.status})`);
-        }
-
-        const buildVersion = (await versionResponse.text()).trim();
-        if (!/^[a-f0-9]{16}$/.test(buildVersion)) {
-            throw new Error('Invalid client build version');
-        }
-
-        const stylesheet = document.getElementById('app-stylesheet');
-        if (stylesheet) stylesheet.setAttribute('href', `style.css?v=${buildVersion}`);
-        await import(`./js/client/main.js?v=${buildVersion}`);
-    </script>
+    <script type="module" src="/src/client/main.ts"></script>
 </body>
 
 </html>
