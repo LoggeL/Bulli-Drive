@@ -10,6 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "npm run build && playwright test",
+    "perf:baseline": "npm run build && tsx scripts/perf-baseline.ts",
     "ci": "npm run typecheck && npm test && npm run build"
   },
   "keywords": [],
