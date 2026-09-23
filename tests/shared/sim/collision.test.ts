@@ -41,9 +41,16 @@ describe('v2 wall response', () => {
         const world = createFlatWorld([{ kind: 'box', x: 0, z: 20, hw: 50, hd: 0.25, top: Infinity }]);
         const car = spawnCar(world, 'a', 'bulli', 0, 0, 0, 50);
         car.mods.shield = true;
+        let hits = 0;
         drive(car, world, 30, {}, () => {
-            if (car.events.wallImpact > 0) expect(car.state.vz).toBeCloseTo(0, 9);
+            if (car.events.wallImpact > 0) {
+                hits++;
+                expect(car.state.vz).toBeCloseTo(0, 9);
+            }
         });
+        // The shield still collides: it hit the wall and stayed in front of it
+        expect(hits).toBeGreaterThan(0);
+        expect(car.state.z + 0.7 + 1.3).toBeLessThanOrEqual(19.75 + 1e-6);
     });
 
     it('slides along a wall hit at 10° with 50 m/s and turns parallel to it', () => {
@@ -220,18 +227,20 @@ interface Approach {
     z: number;
     yaw: number;
     ticks: number;
+    // The run checks nothing unless the car reaches the collider
+    mustTouch: boolean;
     check: (car: SimCar) => void;
 }
 
 // Drives at a fixed speed along the heading until the first wall contact,
 // then lets the sim take over; check runs after every tick
-function approach({ classId, mega, speed, world, x, z, yaw, ticks, check }: Approach): SimCar {
+function approach({ classId, mega, speed, world, x, z, yaw, ticks, mustTouch, check }: Approach): SimCar {
     const car = spawnCar(world, 'a', classId, x, z, yaw);
     if (mega) {
         car.mods.mega = true;
         car.state.scale = MEGA_SCALE;
     }
-    let touched = false;
+    let touched = false, pushed = false;
     for (let tick = 0; tick < ticks; tick++) {
         if (!touched) {
             car.state.vx = Math.sin(yaw) * speed;
@@ -241,13 +250,26 @@ function approach({ classId, mega, speed, world, x, z, yaw, ticks, check }: Appr
         car.input.throttle = 255;
         stepVehicle(car, world);
         touched ||= car.events.wallImpact > 0;
+        // A graze can push the car out without an impulse (wallTicks = 0,
+        // counted up once at the end of the tick)
+        pushed ||= touched || car.state.wallTicks === 1;
         check(car);
     }
+    if (mustTouch) expect(pushed, `${classId} ${speed} m/s never reached the collider`).toBe(true);
     return car;
 }
 
 const ANGLES = [0, 10, 20, 30, 40, 50, 60, 70, 80].map(a => a * DEG);
 const SPEEDS = [85, V_SAFE];
+
+// Start distances spread over one tick of travel: how deep a circle is in
+// at the first contact substep depends on this phase alone, and it decides
+// whether a car tunnels (section 7.3). With SUBSTEPS = 1 these checks fail.
+function phases(speed: number): number[] {
+    const list: number[] = [];
+    for (let phase = 0; phase < speed * DT; phase += 0.05) list.push(phase);
+    return list;
+}
 
 function offsets(reach: number): number[] {
     const list: number[] = [];
@@ -261,30 +283,29 @@ describe('v2 tunneling against the world', () => {
             const label = `${classId}${mega ? ' (Mega)' : ''}`;
 
             it(`${label} never passes through a 0.35 m post`, () => {
+                // The post is round, so one heading (+z) covers every angle
                 const world = createFlatWorld([{ kind: 'circle', x: 0, z: 0, r: 0.35, top: 3.3 }]);
                 for (const speed of SPEEDS) {
-                    for (const angle of ANGLES) {
-                        const dx = Math.sin(angle), dz = Math.cos(angle);
-                        const probe = spawnCar(world, 'p', classId, 0, 0, 0);
-                        const scale = mega ? MEGA_SCALE : 1;
-                        const r = probe.base.colliderRadius * scale, c = probe.base.colliderOffset * scale;
-                        for (const offset of offsets(c + r + 0.4)) {
+                    const probe = spawnCar(world, 'p', classId, 0, 0, 0);
+                    const scale = mega ? MEGA_SCALE : 1;
+                    const r = probe.base.colliderRadius * scale, c = probe.base.colliderOffset * scale;
+                    for (const phase of phases(speed)) {
+                        // Offsets up to just inside the reach, so every run hits
+                        for (const offset of offsets(r + 0.25)) {
                             // Along/lateral coordinates of every circle relative to the post
                             let prev: [number, number][] | null = null;
                             approach({
-                                classId, mega, speed, world, ticks: 30, yaw: angle,
-                                x: -dx * (c + r + 8) + dz * offset,
-                                z: -dz * (c + r + 8) - dx * offset,
+                                classId, mega, speed, world, ticks: 30, yaw: 0, mustTouch: true,
+                                x: offset, z: -(c + r + 8) - phase,
                                 check: car => {
-                                    const now = circleCentres(car).map(([px, pz]) =>
-                                        [px * dx + pz * dz, px * dz - pz * dx] as [number, number]);
+                                    const now = circleCentres(car).map(([px, pz]) => [pz, px] as [number, number]);
                                     if (prev) {
                                         for (let i = 0; i < 2; i++) {
                                             const [a0, l0] = prev[i], [a1, l1] = now[i];
                                             if (a0 < 0 && a1 >= 0) {
                                                 // Crossed the post's line: must be beside it, not through it
                                                 const lateral = l0 + (l1 - l0) * (-a0 / (a1 - a0));
-                                                expect(Math.abs(lateral), `${label} ${speed} m/s ${angle / DEG}° offset ${offset}`)
+                                                expect(Math.abs(lateral), `${label} ${speed} m/s phase ${phase} offset ${offset}`)
                                                     .toBeGreaterThan(r + 0.35 - 0.3);
                                             }
                                         }
@@ -301,13 +322,15 @@ describe('v2 tunneling against the world', () => {
                 const world = createFlatWorld([{ kind: 'box', x: 0, z: 0, hw: 200, hd: 0.25, top: Infinity }]);
                 for (const speed of SPEEDS) {
                     for (const angle of ANGLES) {
-                        for (const offset of offsets(1)) {
+                        // The wall is long, so where along it the car hits
+                        // does not matter; the start phase does
+                        for (const phase of phases(speed)) {
                             const scale = mega ? MEGA_SCALE : 1;
                             const probe = spawnCar(world, 'p', classId, 0, 0, 0);
                             const reach = (probe.base.colliderOffset + probe.base.colliderRadius) * scale;
                             approach({
-                                classId, mega, speed, world, ticks: 20, yaw: angle,
-                                x: offset - Math.tan(angle) * 3, z: -(reach + 3),
+                                classId, mega, speed, world, ticks: 30, yaw: angle, mustTouch: true,
+                                x: -Math.tan(angle) * 3, z: -(reach + 3) - phase * Math.cos(angle),
                                 check: car => {
                                     expect(car.state.z, `${label} ${speed} m/s ${angle / DEG}°`).toBeLessThan(-0.25);
                                     for (const [, cz] of circleCentres(car)) expect(cz).toBeLessThan(-0.25);
@@ -329,7 +352,7 @@ describe('v2 tunneling against the world', () => {
                         const reach = (probe.base.colliderOffset + probe.base.colliderRadius) * scale;
                         for (const offset of offsets(reach + 0.4)) {
                             approach({
-                                classId, mega, speed, world, ticks: 30, yaw: angle,
+                                classId, mega, speed, world, ticks: 30, yaw: angle, mustTouch: false,
                                 x: -dx * (reach + 6) + dz * offset,
                                 z: -dz * (reach + 6) - dx * offset,
                                 check: car => {

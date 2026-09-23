@@ -403,26 +403,39 @@ function expectNoTunneling(a: SimCar, b: SimCar, speedA: number, speedB: number,
     }
 }
 
+// Start distances spread over one tick of the closing speed: the depth at
+// the first contact substep depends on this phase alone, and it decides
+// whether the cars tunnel. With SUBSTEPS = 1 these checks fail.
+function phases(closingSpeed: number): number[] {
+    const list: number[] = [];
+    for (let phase = 0; phase < closingSpeed * DT; phase += 0.05) list.push(phase);
+    return list;
+}
+
 describe('v2 tunneling between cars', () => {
     it('two beetles meeting head-on at 85 m/s each never pass through each other', () => {
         for (const angle of [0, 10, 20, 30]) {
-            for (let k = -30; k <= 30; k++) {
-                const offset = k / 10;
-                const world = createFlatWorld();
-                const a = spawnCar(world, 'a', 'beetle', 0, -8, 0);
-                const b = spawnCar(world, 'b', 'beetle', offset, 8, Math.PI + angle * DEG);
-                expectNoTunneling(a, b, 85, 85, 0, 1, `head-on ${angle}° offset ${offset}`);
+            for (const phase of phases(170)) {
+                for (let k = -30; k <= 30; k += 2) {
+                    const offset = k / 10;
+                    const world = createFlatWorld();
+                    const a = spawnCar(world, 'a', 'beetle', 0, -8, 0);
+                    const b = spawnCar(world, 'b', 'beetle', offset, 8 + phase, Math.PI + angle * DEG);
+                    expectNoTunneling(a, b, 85, 85, 0, 1, `head-on ${angle}° phase ${phase} offset ${offset}`);
+                }
             }
         }
     });
 
     it('a beetle T-boning another at 85 m/s never passes through it', () => {
-        for (let k = -40; k <= 40; k++) {
-            const offset = k / 10;
-            const world = createFlatWorld();
-            const a = spawnCar(world, 'a', 'beetle', -10, offset, Math.PI / 2);
-            const b = spawnCar(world, 'b', 'beetle', 0, 0, 0);
-            expectNoTunneling(a, b, 85, 0, 1, 0, `T-bone offset ${offset}`);
+        for (const phase of phases(85)) {
+            for (let k = -40; k <= 40; k += 2) {
+                const offset = k / 10;
+                const world = createFlatWorld();
+                const a = spawnCar(world, 'a', 'beetle', -10 - phase, offset, Math.PI / 2);
+                const b = spawnCar(world, 'b', 'beetle', 0, 0, 0);
+                expectNoTunneling(a, b, 85, 0, 1, 0, `T-bone phase ${phase} offset ${offset}`);
+            }
         }
     });
 });
