@@ -15,14 +15,19 @@ export const MAX_TICKS_PER_FRAME = 8;
 export class FixedStepLoop {
     acc = 0;
 
-    advance(frameDt: number, tick: () => void): number {
+    // tick gets lag: how far (s) the moment the tick simulates lies before
+    // the end of the frame. Inputs with a clock of their own (the remote
+    // proxies) use it, so each tick sees its own time at any frame rate.
+    advance(frameDt: number, tick: (lag: number) => void): number {
         this.acc += Math.min(Math.max(frameDt, 0), MAX_FRAME);
-        let n = 0;
-        while (this.acc >= DT && n < MAX_TICKS_PER_FRAME) {
-            tick();
-            this.acc -= DT;
+        // Count the ticks first (same arithmetic as ticking one by one)
+        let rest = this.acc, n = 0;
+        while (rest >= DT && n < MAX_TICKS_PER_FRAME) {
+            rest -= DT;
             n++;
         }
+        for (let i = 0; i < n; i++) tick((n - 1 - i) * DT + rest);
+        this.acc = rest;
         // Drop the rest after a hitch instead of catching up over many frames
         if (n === MAX_TICKS_PER_FRAME && this.acc >= DT) this.acc = 0;
         return this.acc / DT;

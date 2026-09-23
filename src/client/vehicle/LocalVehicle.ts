@@ -176,7 +176,7 @@ export class LocalVehicle {
         ev.jumped = ev.boostStarted = ev.reset = false;
         this.hintChanged = false;
         const start = performance.now();
-        this.alpha = this.loop.advance(dt, () => this.tick(host, now));
+        this.alpha = this.loop.advance(dt, lag => this.tick(host, now - lag * 1000));
         this.simMsTotal += performance.now() - start;
         this.applyPose(dt, host);
     }
@@ -195,6 +195,7 @@ export class LocalVehicle {
         }
     }
 
+    // now: the time this tick simulates (performance.now() scale)
     private tick(host: VehicleHost, now: number): void {
         const car = this.car;
         copyVehicleState(this.prev, car.state);

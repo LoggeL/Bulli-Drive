@@ -87,6 +87,25 @@ describe('FixedStepLoop', () => {
         expect(ticks).toBe(MAX_TICKS_PER_FRAME + 1);
     });
 
+    it('tells every tick how far its moment lies before the end of the frame', () => {
+        const loop = new FixedStepLoop();
+        const lags: number[] = [];
+        loop.advance(2.5 * DT, lag => lags.push(lag));
+        expect(lags).toHaveLength(2);
+        expect(lags[0]).toBeCloseTo(1.5 * DT, 12);
+        expect(lags[1]).toBeCloseTo(0.5 * DT, 12);
+        // Tick moments at 30 FPS are the ones at 60 FPS: frame end - lag
+        const moments = (frame: number) => {
+            const clock = new FixedStepLoop();
+            const out: number[] = [];
+            for (let end = frame; end <= 1 + 1e-9; end += frame) clock.advance(frame, lag => out.push(end - lag));
+            return out;
+        };
+        const at30 = moments(1 / 30), at60 = moments(1 / 60);
+        expect(at30.length).toBe(at60.length);
+        at30.forEach((moment, i) => expect(moment).toBeCloseTo(at60[i], 9));
+    });
+
     it('ignores negative frame times', () => {
         const loop = new FixedStepLoop();
         let ticks = 0;
