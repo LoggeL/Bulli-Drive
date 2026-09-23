@@ -25,15 +25,10 @@ import { installE2EHook } from './e2eHook.js';
 import { watchWebGLContext, isWebGLContextLost } from './ui/contextLoss.js';
 import { installPerfMonitor, type PerfMonitor } from './debug/perfMonitor.js';
 import { setupLighting, updateLighting } from './render/lighting.js';
+import { ChaseCamera, LEGACY_CAMERA, type ChaseTarget } from './camera/ChaseCamera.js';
 
-// Reusable chase-camera state/vectors to avoid per-frame allocations.
-const _cameraTarget = new THREE.Vector3();
-const _desiredLookAt = new THREE.Vector3();
-const _smoothedLookAt = new THREE.Vector3();
-const _lastCarPosition = new THREE.Vector3();
-let cameraYaw = 0;
-let cameraRigReady = false;
-let useMobileCameraEnvelope = false;
+const chaseCamera = new ChaseCamera(LEGACY_CAMERA);
+const _chaseTarget: ChaseTarget = { position: new THREE.Vector3(), yaw: 0, speedRatio: 0, boost: false };
 
 let renderQuality: AdaptiveRenderQuality;
 // Only set with ?debug=perf (FPS/draw call/bandwidth overlay)
@@ -47,9 +42,9 @@ function init() {
     state.scene = new THREE.Scene();
 
     // Camera
-    refreshCameraEnvelope();
+    chaseCamera.refreshEnvelope();
     state.camera = new THREE.PerspectiveCamera(
-        useMobileCameraEnvelope ? CONFIG.cameraMobileFov : CONFIG.cameraBaseFov,
+        chaseCamera.baseFov,
         window.innerWidth / window.innerHeight,
         0.1,
         1000
@@ -142,24 +137,10 @@ function init() {
 
 function onWindowResize() {
     if (!state.camera || !state.renderer) return;
-    refreshCameraEnvelope();
+    chaseCamera.refreshEnvelope();
     state.camera.aspect = window.innerWidth / window.innerHeight;
     state.camera.updateProjectionMatrix();
     renderQuality.resize(window.innerWidth, window.innerHeight);
-}
-
-function refreshCameraEnvelope() {
-    useMobileCameraEnvelope = typeof window.matchMedia === 'function'
-        && window.matchMedia('(max-width: 768px), (pointer: coarse)').matches;
-}
-
-function dampingFactor(rate: number, dt: number): number {
-    return 1 - Math.exp(-rate * Math.min(dt, 0.1));
-}
-
-function dampAngle(current: number, target: number, amount: number): number {
-    const shortestDelta = Math.atan2(Math.sin(target - current), Math.cos(target - current));
-    return current + shortestDelta * amount;
 }
 
 function updateChaseCamera(
@@ -170,61 +151,13 @@ function updateChaseCamera(
     boostActive: boolean
 ) {
     const maxSpeed = Math.max(0.001, state.bulli.maxSpeed * (boostActive ? SPEED_BOOST_FACTOR : 1));
-    const speedRatio = Math.min(1, Math.abs(carSpeed) / maxSpeed);
-    const movedDistanceSq = cameraRigReady ? _lastCarPosition.distanceToSquared(carPos) : 0;
-    const teleportThresholdSq = CONFIG.cameraTeleportDistance * CONFIG.cameraTeleportDistance;
-    const shouldSnap = !cameraRigReady || state.cameraSnapPending || movedDistanceSq > teleportThresholdSq;
-
-    if (shouldSnap) {
-        cameraYaw = carAngle;
-    } else {
-        cameraYaw = dampAngle(cameraYaw, carAngle, dampingFactor(CONFIG.cameraYawDamping, dt));
-    }
-
-    const distanceScale = useMobileCameraEnvelope ? CONFIG.cameraMobileDistanceScale : 1;
-    const heightScale = useMobileCameraEnvelope ? CONFIG.cameraMobileHeightScale : 1;
-    const distance = CONFIG.cameraDistance * distanceScale
-        * (1 + speedRatio * 0.12 + (boostActive ? 0.06 : 0));
-    const height = CONFIG.cameraHeight * heightScale
-        * (1 + speedRatio * 0.08 + (boostActive ? 0.04 : 0));
-    const forwardX = Math.sin(cameraYaw);
-    const forwardZ = Math.cos(cameraYaw);
-    const lookAhead = CONFIG.cameraLookAhead + CONFIG.cameraSpeedLookAhead * speedRatio;
-
-    _cameraTarget.set(
-        carPos.x - forwardX * distance,
-        carPos.y + height,
-        carPos.z - forwardZ * distance
-    );
-    _desiredLookAt.set(
-        carPos.x + forwardX * lookAhead,
-        carPos.y + CONFIG.cameraLookAtY,
-        carPos.z + forwardZ * lookAhead
-    );
-
-    const baseFov = useMobileCameraEnvelope ? CONFIG.cameraMobileFov : CONFIG.cameraBaseFov;
-    const targetFov = Math.min(
-        CONFIG.cameraMaxFov,
-        baseFov + speedRatio * CONFIG.cameraSpeedFov + (boostActive ? CONFIG.cameraBoostFov : 0)
-    );
-
-    if (shouldSnap) {
-        state.camera.position.copy(_cameraTarget);
-        _smoothedLookAt.copy(_desiredLookAt);
-        state.camera.fov = targetFov;
-        cameraRigReady = true;
+    _chaseTarget.position.copy(carPos);
+    _chaseTarget.yaw = carAngle;
+    _chaseTarget.speedRatio = Math.min(1, Math.abs(carSpeed) / maxSpeed);
+    _chaseTarget.boost = boostActive;
+    if (chaseCamera.update(dt, state.camera, _chaseTarget, state.cameraSnapPending)) {
         state.cameraSnapPending = false;
-    } else {
-        state.camera.position.lerp(_cameraTarget, dampingFactor(CONFIG.cameraPositionDamping, dt));
-        _smoothedLookAt.lerp(_desiredLookAt, dampingFactor(CONFIG.cameraLookDamping, dt));
-        state.camera.fov += (targetFov - state.camera.fov) * dampingFactor(CONFIG.cameraFovDamping, dt);
     }
-
-    state.camera.lookAt(_smoothedLookAt);
-    if (shouldSnap || Math.abs(targetFov - state.camera.fov) > 0.01) {
-        state.camera.updateProjectionMatrix();
-    }
-    _lastCarPosition.copy(carPos);
 }
 
 function animate(frameTime: number) {
