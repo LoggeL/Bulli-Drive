@@ -931,3 +931,68 @@ Stand nach dem Schritt „sim-core“ (`src/shared/sim/*`, `src/shared/world/col
 11. **Kein Swept-Test:** Die Tunneling-Matrix aus 14.5 (alle Klassen, normal und Mega, 85 und 90 m/s, Pfosten r 0,35, Wand mit halber Dicke 0,25, Gebäudeecke, Versätze in 0,1-m-Schritten, 0–80°) und Auto gegen Auto (2 × Käfer frontal mit je 85 m/s, 0–30°, T-Bone mit 85 m/s) laufen mit den 3 festen Substeps ohne Durchtunneln. Die Prüfungen wurden gegengetestet: Mit abgeschalteter Kollision schlagen sie an.
 
 **Messwerte:** 32 Autos × `stepWorld` in Node ≈ 0,17 ms pro Tick (Ziel < 2 ms). Störungsabbau (1 m/s quer + 0,8 rad/s) bei 10–85 m/s in allen Klassen, beiden Assist-Profilen und `gripScale` 1,0/1,5: \|r\| nach 3 s < 0,05 rad/s, keine wachsende Amplitude. Beim gehaltenen Handbremsen-Drift mit Vollgas und Volleinschlag verliert Sport bei `gripScale` 1,5 in 3 s fast alles Tempo (β ~60°), dreht sich aber nicht; das ist das Risiko „Drift verliert viel Tempo bei hohem `gripScale`“ aus Abschnitt 16.
+
+## 20. Client-Integration: Stand, Abweichungen und Messwerte
+
+Stand nach dem Schritt „client-integration“. Mit `?physics=v2` fährt das eigene Auto auf der Sim aus `src/shared/sim`. Ohne Flag läuft der bisherige Code: Die Legacy-E2E-Suite ist unverändert grün, und `LocalVehicle` wird gar nicht erzeugt.
+
+**Module wie in 4.2:**
+
+- `client/flags.ts`
+- `game/loop.ts` (`FixedStepLoop`)
+- `input/InputManager.ts` und `input/gamepad.ts`
+- `vehicle/CarModel.ts`, `vehicle/Nametag.ts`, `vehicle/LocalVehicle.ts`, `vehicle/remoteProxies.ts` und `vehicle/simWorldClient.ts`
+- `camera/ChaseCamera.ts` mit den Profilen `LEGACY_CAMERA` und `RACE_CAMERA`
+
+Neu dazugekommen sind zwei Module:
+
+- `vehicle/legacyPhysics.ts`: Der Bewegungsblock aus `Bulli.update` ist unverändert ausgelagert und lässt sich nach dem Blindtest in einem Schritt löschen. Hupen und Schießen stehen jetzt in `Bulli.handleActions`, damit beide Pfade sie nutzen.
+- `vehicle/v2Driver.ts`: der Frame im v2-Pfad mit Gamepad-Abfrage, Einfrieren, Ticks, Effekten aus den Sim-Events und dem Positions-Update.
+
+`Bulli` ist eine Fassade: Die öffentlichen Felder bleiben, `group`, `flipGroup`, `wheels` und `shieldMesh` sind Objekte des `CarModel`.
+
+**Begründete Abweichungen und Ergänzungen:**
+
+1. **Reset auf die nächste Straße.** Der Auftrag verlangt den Reset auf die Straße statt an Ort und Stelle wie in 6.7. Das ist deterministisch in shared umgesetzt, damit 1b es übernehmen kann:
+   - `SimWorld.roads` (`RoadGrid`) kommt von `cityRoadGrid()` in `cityGen.ts`.
+   - `moveToRoad` in `vehicle.ts` setzt das Auto auf die nächste Mittellinie in höchstens 40 m Entfernung und richtet es längs der Straße aus, in der Richtung, die seinem Yaw am nächsten ist. Danach folgt `resetVehicle` wie bisher.
+   - Das gilt nur für den gehaltenen Reset. Teleport und Respawn rufen `resetVehicle` direkt auf.
+   - Weiter als 40 m von einer Straße entfernt bleibt der Reset an Ort und Stelle.
+   - Die Golden-Szenarien haben `roads = null` und bleiben unverändert.
+2. **Touch, Flip-Button:** Ein kurzer Druck springt beim Loslassen. Hält man den Button 30 Ticks (0,5 s), setzt er zurück, und es gibt keinen Sprung. Der Sprung kommt dadurch um die Tippdauer später. Die Alternative, beim Drücken zu springen und bei längerem Halten zusätzlich zurückzusetzen, würde vor jedem Reset einen Hopser erzeugen.
+3. **Auto-Gas startet erst mit der ersten Berührung des Sticks** nach Spawn, Respawn oder Tod. Sonst fährt das Auto schon beim Beitreten los. Der Umschalter AUTO wird unter `localStorage['bulli-auto-gas']` gespeichert.
+4. **Vorrang der Quellen (11.1):** Die Achsen kommen aus der aktiven Quelle mit dem höchsten Rang, also Touch vor Gamepad vor Tastatur. Die Buttons aller Quellen werden per ODER zusammengefasst. Touch gilt als aktiv, solange der Stick berührt wird oder Auto-Gas läuft. Das Gamepad gilt als aktiv, sobald Stick oder Trigger außerhalb der Deadzone sind.
+5. **Race-Kamera:**
+   - Position gedämpft mit 12/s, Yaw mit 7/s (Legacy: 6,5/s und 6/s). Mit den Legacy-Werten hinge die Kamera bei 50 m/s rund 8 m weiter hinten.
+   - Look-ahead 4 m + 6 m · Tempoverhältnis.
+   - Die Höhe wächst nicht mit dem Tempo.
+   - Das Tempoverhältnis ist u / effektives vtop. Boost und Turbo weiten das FOV.
+6. **HUD:**
+   - Die Boost-Leiste mit Marke bei 0,15 und das Drift-Licht stehen auf dem Desktop über dem Tacho. Auf Phones stehen sie oben in der Mitte, weil der Tacho dort ausgeblendet ist. Dazu kommt ein Füllring um den BOOST-Button.
+   - Während des Drift-Boosts zeigt der Tacho „BOOST“. Motorsound und Boost-Feuer verhalten sich dann wie beim Turbo.
+   - Der Reset-Hinweis nach 6.7 erscheint als Einblendung. Der Flip-Button wechselt dabei auf das Recover-Symbol.
+7. **Remote-Proxies (8.5):**
+   - Eine geschätzte Geschwindigkeit gilt nur 250 ms lang. Stehende Autos senden nur einmal pro Sekunde, danach ist die Geschwindigkeit 0.
+   - Ein Sprung von mehr als 20 m zwischen zwei Updates gilt als Teleport und setzt die Geschwindigkeit auf 0.
+   - Mitspieler ohne Update werden an ihrer `init`-Position geführt.
+   - Tote Mitspieler (ausgeblendet) nehmen nicht teil.
+8. **Powerups:** Im v2-Pfad werden die Timer pro Tick heruntergezählt. Das Respawn-Schild zählt als `mods.shield`. Der Legacy-Mega-Ram bleibt unverändert.
+9. **Darstellung:**
+   - Nicken aus `loadX` mit 0,2°/(m/s²), höchstens 4°.
+   - Rollen aus u · r mit 0,26°/(m/s²), höchstens 5°.
+   - Beides mit 10/s gedämpft, dazu die Geländeneigung wie bei Legacy.
+   - Bei der Landung wird das Auto um höchstens 15 % gestaucht.
+   - Die Vorderräder lenken sichtbar mit `steerAngle`.
+   - Ein Salto, den die Landung abbricht, dreht in rund 6 Frames zu Ende.
+10. **Assist-Profil:** Bei `(pointer: coarse)` gilt „touch“, sonst „standard“. Der Joystick-Filter liegt im v2-Modus bei 30/s.
+11. **E2E-Hook:** `snapshot()` liefert zusätzlich `physics`, `camera`, `local.y` und `v2`. `v2` enthält die Sim-Pose, u, β, Gierrate, Input, Boost und Drift sowie Zähler für Ticks, Sprünge und Resets. `placeLocalCar` setzt auch das Sim-Auto.
+12. **Noch offen, nicht Teil dieses Schritts:**
+    - Offline-Sandbox mit lil-gui-Tuning-Panel, `?tune=1` und Browser-Golden `__bulliSim` (12.7, 13, 14.4). lil-gui ist deshalb noch keine Abhängigkeit.
+    - Kanten-Collider der Rampen (7.2).
+    - E2E für eine gemischte Session aus v2 und Legacy (14.8). Weil das Protokoll unverändert ist, funktioniert sie per Konstruktion. Der Test fehlt, weil drei Software-WebGL-Seiten gleichzeitig zu langsam laufen.
+
+**Messwerte:**
+
+- **Unit-Tests:** Die Zustandsfolge pro Tick ist bei Frames von 1/30, 1/60 und 1/144 s und bei zufällig schwankenden Frames bitgleich. Nach einem Hitch laufen höchstens 8 Ticks, der Rest wird verworfen.
+- **E2E Desktop:** Handbremse + A bei etwa 15 m/s in der Stadt ergibt einen Driftwinkel von bis zu 33°.
+- **E2E zwei Spieler:** Die Mitten beider Autos kommen sich beim Auffahren auf 3,99 m nahe. Das ist Kreis an Kreis (c + r je Bulli ≈ 2,0 m). Das Auto, das getroffen wird, schiebt die eigene Sim vorwärts.
