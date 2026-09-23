@@ -314,14 +314,15 @@ async function compare(browser: Browser, [beforeDir, afterDir]: [string, string]
     const page = await browser.newPage();
     for (const file of views) {
         const dataUrl = (dir: string) => `data:image/png;base64,${fs.readFileSync(path.join(dir, file)).toString('base64')}`;
+        // No named helper functions inside: tsx would wrap them in __name(),
+        // which does not exist in the page.
         const png = await page.evaluate(async ({ before, after, label }) => {
-            const load = (src: string) => new Promise<HTMLImageElement>((resolve, reject) => {
+            const [a, b] = await Promise.all([before, after].map(src => new Promise<HTMLImageElement>((resolve, reject) => {
                 const image = new Image();
                 image.onload = () => resolve(image);
                 image.onerror = reject;
                 image.src = src;
-            });
-            const [a, b] = await Promise.all([load(before), load(after)]);
+            })));
             const gap = 8;
             const canvas = document.createElement('canvas');
             canvas.width = a.width + gap + b.width;
