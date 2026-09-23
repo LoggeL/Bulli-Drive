@@ -149,11 +149,13 @@ src/shared/           Code for both sides: protocol schemas (valibot), constants
 tests/                Vitest (shared/, server/, client/) and Playwright (e2e/)
 scripts/              perf-baseline.ts, screenshots.ts
 public/models/        Packed car GLBs (3 LODs each) + manifest.json
+public/icons/         Rendered car-select icons (WebP)
 public/textures/      KTX2 world textures, HDRIs + manifest.json
 tools/                Offline asset pipeline (own package.json): Blender car builds,
                       gltfpack/KTX2 packing, texture download and encoding
 docs/                 Refactor plan, performance baseline, phase 1a spec, blind test
-                      guide, asset provenance and licences (assets.md), world look (world-look.md)
+                      guide, asset provenance and licences (assets.md), world look (world-look.md),
+                      cars (cars.md)
 ```
 
 The server generates the world from a fixed seed and sends it to every client
@@ -171,7 +173,8 @@ support, 24/7 hosting). The plan, decisions and phases are in
 rebuild is measured against is in [docs/baseline.md](docs/baseline.md). The
 realistic world look (HDRI sky, height fog, PBR materials, quality tiers, draw
 call budgets; `?tier=high|low|software` forces a tier) is described in
-[docs/world-look.md](docs/world-look.md).
+[docs/world-look.md](docs/world-look.md), the cars (the Blender T1 in the
+game, LODs, lamps, scale against the sim hull) in [docs/cars.md](docs/cars.md).
 
 ## Controls
 - **WASD or arrows:** Drive, brake/reverse and steer

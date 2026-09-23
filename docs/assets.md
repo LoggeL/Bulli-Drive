@@ -8,7 +8,8 @@ Dieses Dokument listet jede Binärdatei unter `public/models` und `public/textur
 
 | Bereich | Quelle | Lizenz | Im Repo | Größe |
 |---|---|---|---|---|
-| Automodelle (`public/models`) | eigene prozedurale Blender-Skripte (`tools/models`) | eigenes Werk des Projekts | GLB (meshopt + KTX2), 3 LODs je Auto | 331 KB (Bulli) |
+| Automodelle (`public/models`) | eigene prozedurale Blender-Skripte (`tools/models`) | eigenes Werk des Projekts | GLB (meshopt + KTX2), 3 LODs je Auto | 333 KB (Bulli) |
+| Car-Select-Icons (`public/icons`) | Eevee-Render der eigenen Modelle (`build-all.mjs --icons`) | eigenes Werk des Projekts | WebP mit Alpha, 156×96 | 7 KB (Bulli) |
 | PBR-Texturen (`public/textures/pbr`) | Poly Haven | CC0 1.0 | KTX2 | 3,3 MB |
 | Generierte Texturen (`public/textures/generated`) | KI-generiert (Codex CLI, imagegen-Skill, OpenAI `image_gen`), eigene Nachbearbeitung | Nutzungsrechte beim Projekt, **kein** CC0 | KTX2 + JSON | 2,3 MB |
 | HDRIs (`public/textures/hdri`) | Poly Haven | CC0 1.0 | Radiance `.hdr`, 1k | 2,7 MB |
@@ -25,6 +26,8 @@ Quelltexturen in voller Auflösung liegen nicht im Repo. `npm --prefix tools run
 - **VW-Logo:** das echte VW-Rundzeichen als Geometrie (Front, Heck) und als Normal-Map-Prägung auf den Radkappen. Das ist eine bewusste Nutzerentscheidung für dieses private Projekt (Plan, Entscheidung 5). Die Marke gehört der Volkswagen AG.
 - **Nummernschild:** kalifornisches Schild im Stil 1963–69 mit dem erfundenen Kennzeichen „BULLI“ (KI-generiert, siehe Abschnitt 4).
 - **Surfbrett:** Teil jedes Modells, standardmäßig ausgeblendet (freischaltbares Zubehör).
+- **Im Spiel** seit Schritt „Bulli T1“: Maßstab 1,15 (passend zur Sim-Hülle), LOD nach Entfernung, Lampen und Material-Klone pro Auto. Details in [`docs/cars.md`](cars.md).
+- **Icon:** `public/icons/car-bulli.webp` ist ein Render von LOD0 für die Autoauswahl im Startbildschirm.
 - Käfer, T1-Pritsche, Porsche 356 und Typ 181 folgen in späteren Schritten. Bis dahin bleiben sie prozedural im Spiel (`src/client/vehicle/CarModel.ts`).
 
 ## 3. Poly-Haven-Texturen und HDRIs (CC0 1.0)
@@ -83,11 +86,11 @@ Die KTX2-Dateien sind die kanonischen Kopien. Die aufbereiteten Quellen (1–2 M
 
 | | Grenze | Bulli heute |
 |---|---|---|
-| LOD0 | 25 000 Dreiecke, 10 Primitives, 350 KB | 24 415, 9, 205 KB |
-| LOD1 | 8 000 Dreiecke, 10 Primitives, 160 KB | 7 995, 9, 111 KB |
-| LOD2 | 2 000 Dreiecke, 4 Primitives, 48 KB | 1 942, 4, 23 KB |
-| alle LODs eines Autos | 560 KB | 339 KB |
+| LOD0 | 25 000 Dreiecke, 10 Primitives, 350 KB | 24 719, 9, 206 KB |
+| LOD1 | 8 000 Dreiecke, 10 Primitives, 160 KB | 7 965, 9, 111 KB |
+| LOD2 | 2 000 Dreiecke, 4 Primitives, 48 KB | 1 960, 4, 24 KB |
+| alle LODs eines Autos | 560 KB | 341 KB |
 | `public/models` + `public/textures` | 30 MB | 8,6 MB |
-| Mobile Tier low (iPhone 12/13), ganzes Bild | ≤ 150 Draw Calls inkl. Schatten, ≤ 500k Dreiecke, KTX2 Pflicht, kein Post | Autos noch nicht im Bild |
+| Mobile Tier low (iPhone 12/13), ganzes Bild | ≤ 150 Draw Calls inkl. Schatten, ≤ 500k Dreiecke, KTX2 Pflicht, kein Post | Straßenansicht quer mit T1: 119 Calls, 237k Dreiecke |
 
 Grenzwerte pro LOD stehen maschinenlesbar in `tools/models/budgets.json` und werden beim Packen und im Unit-Test geprüft.
