@@ -4,6 +4,8 @@ import {
     classDefaults, exportTuning, importTuning, profileDefaults, refreshCarParams, resetTuning, tuningIsDefault
 } from '../../../src/shared/sim/tuning.js';
 import { tuningIsDefault as scenarioTuningIsDefault } from '../../../src/shared/sim/scenarios.js';
+import { applyModifiers } from '../../../src/shared/sim/modifiers.js';
+import { createVehicleModifiers } from '../../../src/shared/sim/types.js';
 import { createSimCar } from '../../../src/shared/sim/vehicle.js';
 import { ASSIST_PROFILES, CAR_CLASS_IDS, VEHICLE_CLASSES, createVehicleParams } from '../../../src/shared/sim/vehicleClasses.js';
 
@@ -99,5 +101,18 @@ describe('v2 tuning', () => {
         refreshCarParams(bulli, 'bulli', 'touch');
         expect(bulli.base).toStrictEqual(createVehicleParams('bulli', 'touch'));
         expect(bulli.base.topSpeed).toBe(50);
+    });
+
+    it('lets the mass reach the car-car contacts, also through an import', () => {
+        const pickup = createSimCar('p', 'pickup');
+        VEHICLE_CLASSES.pickup.mass = 3000;
+        refreshCarParams(pickup, 'pickup', 'standard');
+        expect(pickup.base.contactMass).toBe(3000);
+        pickup.mods.mega = true;
+        expect(applyModifiers(pickup.base, pickup.mods, 1, pickup.params).contactMass).toBe(9000);
+
+        importTuning({ format: 1, classes: { pickup: { mass: 2500 } } });
+        expect(createVehicleParams('pickup').contactMass).toBe(2500);
+        expect(applyModifiers(createVehicleParams('pickup'), createVehicleModifiers(), 1, createVehicleParams('pickup')).contactMass).toBe(2500);
     });
 });

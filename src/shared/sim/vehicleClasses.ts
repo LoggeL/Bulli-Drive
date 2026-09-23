@@ -18,11 +18,12 @@ export const ASSIST_PROFILES: Record<AssistProfile, AssistSettings> = {
     touch: { counterSteer: 0.7, spinGuardAngle: 30 * DEG }
 };
 
-// Everything except the assist values, which come from the profile
-export type ClassParams = Omit<VehicleParams, 'counterSteer' | 'spinGuardAngle'>;
+// Everything except the assist values, which come from the profile, and
+// the contact mass, which applyModifiers derives from mass
+export type ClassParams = Omit<VehicleParams, 'counterSteer' | 'spinGuardAngle' | 'contactMass'>;
 
-function carClass(p: Omit<ClassParams, 'contactMass' | 'massRatioCap' | 'restitutionWall' | 'jumpSpeed'>): ClassParams {
-    return { ...p, contactMass: p.mass, massRatioCap: 1.8, restitutionWall: 0.15, jumpSpeed: 11 };
+function carClass(p: Omit<ClassParams, 'massRatioCap' | 'restitutionWall' | 'jumpSpeed'>): ClassParams {
+    return { ...p, massRatioCap: 1.8, restitutionWall: 0.15, jumpSpeed: 11 };
 }
 
 export const VEHICLE_CLASSES: Record<CarClassId, ClassParams> = {
@@ -79,5 +80,6 @@ export function isCarClassId(value: unknown): value is CarClassId {
 
 // Fresh base params for a class and assist profile (SimCar.base)
 export function createVehicleParams(classId: CarClassId, profile: AssistProfile = 'standard'): VehicleParams {
-    return { ...VEHICLE_CLASSES[classId], ...ASSIST_PROFILES[profile] };
+    const values = VEHICLE_CLASSES[classId];
+    return { ...values, ...ASSIST_PROFILES[profile], contactMass: values.mass };
 }

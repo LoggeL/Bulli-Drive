@@ -71,7 +71,7 @@ export interface VehicleParams {
     jumpSpeed: number;      // m/s
     counterSteer: number;   // K_CS (assist profile)
     spinGuardAngle: number; // β0 (rad) (assist profile)
-    contactMass: number;    // effective contact mass (Mega/Shield), set by applyModifiers
+    contactMass: number;    // effective contact mass: mass × Mega/Shield, set by applyModifiers
     massRatioCap: number;   // R (1.8; Mega 3.5)
     restitutionWall: number;
 }

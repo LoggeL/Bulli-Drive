@@ -16,6 +16,8 @@ export const SHIELD_CONTACT_MASS = 2;
 // shrinks back), the driving behaviour does not.
 export function applyModifiers(base: VehicleParams, mods: VehicleModifiers, scale: number, out: VehicleParams): VehicleParams {
     Object.assign(out, base);
+    // Always from the mass, so the tuning panel's mass reaches the contacts
+    out.contactMass = base.mass;
     if (mods.turbo) {
         out.topSpeed = base.topSpeed * TURBO_TOP_SPEED;
         out.accel = base.accel * TURBO_ACCEL;
