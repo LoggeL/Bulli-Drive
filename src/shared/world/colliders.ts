@@ -6,15 +6,16 @@ import type { TerrainConfig } from '../protocol.js';
 import { getTerrainHeight } from './terrain.js';
 
 // top is the height of the upper edge above base. A car whose underside is
-// at or above base + top passes over the collider.
+// at or above base + top passes over the collider. ramp marks the edge walls
+// of that ramp (index into SimWorld.ramps, see rampEdgeColliders).
 export type Collider =
-    | { kind: 'circle'; x: number; z: number; r: number; base: number; top: number }
-    | { kind: 'box'; x: number; z: number; hw: number; hd: number; base: number; top: number }; // axis-aligned
+    | { kind: 'circle'; x: number; z: number; r: number; base: number; top: number; ramp?: number }
+    | { kind: 'box'; x: number; z: number; hw: number; hd: number; base: number; top: number; ramp?: number }; // axis-aligned
 
 // What the world builder provides; createSimWorld adds base
 export type ColliderInput =
-    | { kind: 'circle'; x: number; z: number; r: number; top: number }
-    | { kind: 'box'; x: number; z: number; hw: number; hd: number; top: number };
+    | { kind: 'circle'; x: number; z: number; r: number; top: number; ramp?: number }
+    | { kind: 'box'; x: number; z: number; hw: number; hd: number; top: number; ramp?: number };
 
 // Wedge rising along its heading (sin yaw, cos yaw) from 0 at the rear edge
 // to height at the front edge, where cars take off
@@ -153,6 +154,67 @@ function rampHeight(ramp: RampDef, rampBase: number, x: number, z: number): numb
     const across = dx * cos - dz * sin;
     if (Math.abs(across) > ramp.width / 2 || Math.abs(along) > ramp.length / 2) return -Infinity;
     return rampBase + ramp.height * (along / ramp.length + 0.5);
+}
+
+// True when (x, z) lies on the ramp's footprint
+export function insideRamp(ramp: RampDef, x: number, z: number): boolean {
+    return rampHeight(ramp, 0, x, z) > -Infinity;
+}
+
+// Half thickness of a ramp's edge walls, the minimum of section 7.3
+export const RAMP_EDGE_THICKNESS = 0.25;
+// Side wall pieces lower than this are left out: a car simply rolls onto
+// the ramp there
+export const RAMP_EDGE_MIN_TOP = 0.3;
+// Side walls are split into pieces this long at most, each as high as the
+// ramp at its upper end
+const RAMP_SIDE_PIECE = 4;
+
+/**
+ * Walls along the high (front) edge and both sides of a ramp, so a car
+ * coming from behind or from the side hits the ramp instead of popping up
+ * onto it (section 7.2). Each wall is as high as the ramp at that edge.
+ * The collision skips them for a car on the ramp or above the ground next
+ * to it (collision.ts), so a car taking off never snags the front wall.
+ * front = false leaves out the front wall, for two ramps put back to back
+ * as a hill. Only for ramps facing along an axis (yaw a multiple of 90°),
+ * since boxes are axis-aligned.
+ */
+export function rampEdgeColliders(ramp: RampDef, index: number, front = true): ColliderInput[] {
+    const quarter = ramp.yaw / (Math.PI / 2);
+    if (Math.abs(quarter - Math.round(quarter)) > 1e-6) {
+        throw new Error('ramp edge colliders need a ramp facing along an axis');
+    }
+    // Forward (up the ramp) and left in world axes, snapped to exact ±1/0
+    const fx = Math.round(Math.sin(ramp.yaw)), fz = Math.round(Math.cos(ramp.yaw));
+    const lx = fz, lz = -fx;
+    const t = RAMP_EDGE_THICKNESS;
+    const out: ColliderInput[] = [];
+    // A wall centred at along/across (ramp frame) with half extents
+    const wall = (along: number, across: number, halfAlong: number, halfAcross: number, top: number) => {
+        const x = ramp.x + fx * along + lx * across;
+        const z = ramp.z + fz * along + lz * across;
+        const alongX = fx !== 0;
+        out.push({
+            kind: 'box', x, z,
+            hw: alongX ? halfAlong : halfAcross,
+            hd: alongX ? halfAcross : halfAlong,
+            top,
+            ramp: index
+        });
+    };
+    const halfLength = ramp.length / 2, halfWidth = ramp.width / 2;
+    // Front edge, where cars take off: wall across the full width plus the sides
+    if (front) wall(halfLength + t, 0, t, halfWidth + 2 * t, ramp.height);
+    const pieces = Math.max(1, Math.ceil(ramp.length / RAMP_SIDE_PIECE));
+    const pieceLength = ramp.length / pieces;
+    for (let i = 0; i < pieces; i++) {
+        const top = ramp.height * (i + 1) / pieces;
+        if (top < RAMP_EDGE_MIN_TOP) continue;
+        const along = -halfLength + pieceLength * (i + 0.5);
+        for (const side of [1, -1]) wall(along, side * (halfWidth + t), pieceLength / 2, t, top);
+    }
+    return out;
 }
 
 export function createSimWorld(

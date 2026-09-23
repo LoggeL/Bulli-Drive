@@ -4,13 +4,26 @@
 // out and answered with an impulse against an infinitely heavy wall, so a
 // grazing hit slides along instead of bouncing back.
 
-import type { Collider, SimWorld } from '../world/colliders.js';
+import { insideRamp, type Collider, type SimWorld } from '../world/colliders.js';
 import { SIM_TUNING as T } from './constants.js';
 import type { SimCar, VehicleParams, VehicleState } from './types.js';
 
 const WORLD_ITERATIONS = 2;
 const PUSH_EPSILON = 0.001;
 const QUERY_MARGIN = 0.5;
+// A ramp's edge walls (rampEdgeColliders) only stop cars at ground level
+// beside the ramp: not a car on the ramp (centre over its footprint) and
+// not one above the ground next to it (taking off, flying past, falling
+// off the side). The overflight test alone would let the front wall catch
+// a car taking off, whose underside is still a little below the edge.
+const RAMP_WALL_CLEARANCE = 0.3;
+
+// True when the car does not collide with this collider at its height
+function passes(s: VehicleState, collider: Collider, world: SimWorld): boolean {
+    if (s.y >= collider.base + collider.top) return true;
+    if (collider.ramp === undefined) return false;
+    return s.y > collider.base + RAMP_WALL_CLEARANCE || insideRamp(world.ramps[collider.ramp], s.x, s.z);
+}
 
 // Result of the last narrow-phase test (module scratch, no allocation)
 let hitPen = 0;
@@ -128,7 +141,7 @@ function resolveColliders(s: VehicleState, p: VehicleParams, world: SimWorld, ca
     const count = queryCar(s, p, world);
     for (let k = 0; k < count; k++) {
         const collider = world.colliders[world.queryBuffer[k]];
-        if (s.y >= collider.base + collider.top) continue;
+        if (passes(s, collider, world)) continue;
         const pen = carVsCollider(s, p, fx, fz, collider);
         if (pen <= 0) continue;
         const nx = hitNx, nz = hitNz;
@@ -171,7 +184,7 @@ export function overlapsColliders(s: VehicleState, p: VehicleParams, world: SimW
     const count = queryCar(s, p, world);
     for (let k = 0; k < count; k++) {
         const collider = world.colliders[world.queryBuffer[k]];
-        if (s.y >= collider.base + collider.top) continue;
+        if (passes(s, collider, world)) continue;
         if (carVsCollider(s, p, fx, fz, collider) > 0) return true;
     }
     return false;
