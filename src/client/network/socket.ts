@@ -1,5 +1,5 @@
 import { state } from '../state.js';
-import { ClientMessage } from '../../shared/protocol.js';
+import type { ClientMessage } from '../../shared/protocol.js';
 
 // Single choke-point for client -> server messages. Returns true when the
 // frame was actually handed to the socket, false when offline / not open.

@@ -1,36 +1,17 @@
 import * as THREE from 'three';
 import { state } from '../state.js';
-import { BuildingData, RoadData, CityData } from '../types.js';
+import type { BuildingData, RoadData, CityData } from '../../shared/protocol.js';
 import { getTerrainHeight } from './environment.js';
 import { CITY_LAYOUT, PLAZA_PROP_LAYOUT } from '../../shared/constants.js';
 import { createWaterMaterial } from '../effects/worldShaders.js';
+import { positionHash } from '../../shared/math/rng.js';
+import { blockCenter, PARK_BLOCK, PLAZA_BLOCK, roadLineCenter } from '../../shared/world/cityGen.js';
 
 const ROAD_COLOR = 0x282a2b;
 const INTERSECTION_COLOR = 0x242627;
 const LANE_MARKING_COLOR = 0xf6e7ba;
 const SIDEWALK_COLOR = 0xc8c1ae;
 const PARK_COLOR = 0x4f8a48;
-
-const PLAZA_BLOCK = { x: Math.floor(CITY_LAYOUT.gridSize / 2) - 1, z: Math.floor(CITY_LAYOUT.gridSize / 2) - 1 };
-const PARK_BLOCK = { x: CITY_LAYOUT.gridSize - 1, z: CITY_LAYOUT.gridSize - 1 };
-
-function roadGridCenter(index: number): number {
-    const { blockSize, roadWidth, gridSize } = CITY_LAYOUT;
-    const totalBlockSize = blockSize + roadWidth;
-    const halfCity = (gridSize * totalBlockSize) / 2;
-    return -halfCity + index * totalBlockSize + roadWidth / 2;
-}
-
-// Center of a city block (bx, bz) in world coordinates, derived from the shared layout
-function blockCenter(bx: number, bz: number): { x: number; z: number } {
-    const { blockSize, roadWidth, gridSize } = CITY_LAYOUT;
-    const totalBlockSize = blockSize + roadWidth;
-    const halfCity = (gridSize * totalBlockSize) / 2;
-    return {
-        x: -halfCity + roadWidth + bx * totalBlockSize + blockSize / 2,
-        z: -halfCity + roadWidth + bz * totalBlockSize + blockSize / 2
-    };
-}
 
 // Shared geometries and materials for windows (created once, reused across all buildings)
 let sharedHFrameGeo: THREE.BoxGeometry;
@@ -334,8 +315,8 @@ function createIntersectionDetails() {
 
     for (let ix = 0; ix <= gridSize; ix++) {
         for (let iz = 0; iz <= gridSize; iz++) {
-            const x = roadGridCenter(ix);
-            const z = roadGridCenter(iz);
+            const x = roadLineCenter(ix, 'x');
+            const z = roadLineCenter(iz, 'z');
             const y = getTerrainHeight(x, z);
 
             quaternion.identity();
@@ -407,12 +388,6 @@ function createBlockSurfaces() {
     }
 }
 
-// Seeded random for deterministic building details
-function seededRandom(x: number, z: number, salt: number): number {
-    const n = Math.sin(x * 12.9898 + z * 78.233 + salt * 43.1234) * 43758.5453;
-    return n - Math.floor(n);
-}
-
 const AWNING_COLORS = [0xCC3333, 0xE67E22, 0x2980B9, 0x27AE60, 0x8E44AD, 0xC0392B];
 const WINDOW_FRAME_COLOR = 0xF5F0E1;
 const DOOR_COLORS = [0x5D3A1A, 0x3B2510, 0x6B4226, 0x2C1810];
@@ -434,14 +409,14 @@ function addWindows(group: THREE.Group, building: BuildingData) {
     let litGlassCount = 0;
     for (let wx = 0; wx < numWindowsX; wx++) {
         for (let wy = 0; wy < numWindowsY; wy++) {
-            if (seededRandom(building.x + wx, building.z + wy, 7) > 0.6) {
+            if (positionHash(building.x + wx, building.z + wy, 7) > 0.6) {
                 litGlassCount += 2;
             }
         }
     }
     for (let wz = 0; wz < numWindowsZ; wz++) {
         for (let wy = 0; wy < numWindowsY; wy++) {
-            if (seededRandom(building.x + wz + 10, building.z + wy, 8) > 0.6) {
+            if (positionHash(building.x + wz + 10, building.z + wy, 8) > 0.6) {
                 litGlassCount += 2;
             }
         }
@@ -509,7 +484,7 @@ function addWindows(group: THREE.Group, building: BuildingData) {
         for (let wy = 0; wy < numWindowsY; wy++) {
             const xPos = -building.width / 2 + 1.5 + wx * windowSpacingH;
             const yPos = 2 + wy * windowSpacingV;
-            const isLit = seededRandom(building.x + wx, building.z + wy, 7) > 0.6;
+            const isLit = positionHash(building.x + wx, building.z + wy, 7) > 0.6;
 
             writeWindow(xPos, yPos, building.depth / 2 + 0.06, 0, isLit);
             writeWindow(xPos, yPos, -building.depth / 2 - 0.06, Math.PI, isLit);
@@ -521,7 +496,7 @@ function addWindows(group: THREE.Group, building: BuildingData) {
         for (let wy = 0; wy < numWindowsY; wy++) {
             const zPos = -building.depth / 2 + 1.5 + wz * windowSpacingH;
             const yPos = 2 + wy * windowSpacingV;
-            const isLit = seededRandom(building.x + wz + 10, building.z + wy, 8) > 0.6;
+            const isLit = positionHash(building.x + wz + 10, building.z + wy, 8) > 0.6;
 
             writeWindow(-building.width / 2 - 0.06, yPos, zPos, -Math.PI / 2, isLit);
             writeWindow(building.width / 2 + 0.06, yPos, zPos, Math.PI / 2, isLit);
@@ -610,8 +585,8 @@ function addRoofProps(group: THREE.Group, building: BuildingData, seed: number, 
         const numAC = 1 + Math.floor(seed * 2);
         for (let i = 0; i < numAC; i++) {
             const ac = new THREE.Mesh(sharedACGeo, sharedACMat);
-            const acX = (seededRandom(building.x, building.z, 10 + i) - 0.5) * (building.width * 0.6);
-            const acZ = (seededRandom(building.x, building.z, 20 + i) - 0.5) * (building.depth * 0.6);
+            const acX = (positionHash(building.x, building.z, 10 + i) - 0.5) * (building.width * 0.6);
+            const acZ = (positionHash(building.x, building.z, 20 + i) - 0.5) * (building.depth * 0.6);
             ac.position.set(acX, roofY + 0.4, acZ);
             ac.castShadow = true;
             group.add(ac);
@@ -646,13 +621,13 @@ function addRoofProps(group: THREE.Group, building: BuildingData, seed: number, 
     if (seed > 0.3 && seed < 0.5) {
         const numBushes = 2 + Math.floor(seed2 * 3);
         for (let b = 0; b < numBushes; b++) {
-            const sizeRand = seededRandom(building.x, building.z, 30 + b);
+            const sizeRand = positionHash(building.x, building.z, 30 + b);
             const bushGeo = sharedBushGeos[Math.floor(sizeRand * sharedBushGeos.length)];
             const bush = new THREE.Mesh(bushGeo, sharedBushMat);
             bush.position.set(
-                (seededRandom(building.x, building.z, 40 + b) - 0.5) * (building.width * 0.7),
+                (positionHash(building.x, building.z, 40 + b) - 0.5) * (building.width * 0.7),
                 roofY + 0.3,
-                (seededRandom(building.x, building.z, 50 + b) - 0.5) * (building.depth * 0.7)
+                (positionHash(building.x, building.z, 50 + b) - 0.5) * (building.depth * 0.7)
             );
             bush.castShadow = true;
             group.add(bush);
@@ -728,9 +703,9 @@ function addBuildingShapeDetails(group: THREE.Group, building: BuildingData, see
 function createBuildings(buildings: BuildingData[]) {
     buildings.forEach(building => {
         const buildingGroup = new THREE.Group();
-        const seed = seededRandom(building.x, building.z, 0);
-        const seed2 = seededRandom(building.x, building.z, 1);
-        const seed3 = seededRandom(building.x, building.z, 2);
+        const seed = positionHash(building.x, building.z, 0);
+        const seed2 = positionHash(building.x, building.z, 1);
+        const seed3 = positionHash(building.x, building.z, 2);
 
         // Main building body
         const bodyGeo = new THREE.BoxGeometry(building.width, building.height, building.depth);
@@ -901,7 +876,7 @@ function createPark() {
 
 function createParkTree(x: number, z: number) {
     const treeGroup = new THREE.Group();
-    const height = 5.5 + seededRandom(x, z, 91) * 2.5;
+    const height = 5.5 + positionHash(x, z, 91) * 2.5;
 
     // Trunk
     const trunk = new THREE.Mesh(sharedParkTrunkGeo, sharedParkTrunkMat);
@@ -931,11 +906,11 @@ function createParkTree(x: number, z: number) {
 
 function createPalmTree(x: number, z: number, salt: number) {
     const palm = new THREE.Group();
-    const height = 6.5 + seededRandom(x, z, salt) * 2.2;
+    const height = 6.5 + positionHash(x, z, salt) * 2.2;
     const trunk = new THREE.Mesh(sharedPalmTrunkGeo, sharedPalmTrunkMat);
     trunk.scale.y = height;
     trunk.position.y = height / 2;
-    trunk.rotation.z = (seededRandom(x, z, salt + 1) - 0.5) * 0.07;
+    trunk.rotation.z = (positionHash(x, z, salt + 1) - 0.5) * 0.07;
     trunk.castShadow = true;
     palm.add(trunk);
 
@@ -1015,7 +990,7 @@ function createStreetDetails() {
 
     // A palm-lined central boulevard anchors the California identity and is
     // visible from most blocks, making orientation much easier at speed.
-    const boulevardX = roadGridCenter(Math.floor(gridSize / 2));
+    const boulevardX = roadLineCenter(Math.floor(gridSize / 2), 'x');
     for (let bz = 0; bz < gridSize; bz++) {
         const z = blockCenter(0, bz).z;
         createPalmTree(boulevardX - roadWidth / 2 - 2.2, z, 200 + bz);

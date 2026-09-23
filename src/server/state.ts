@@ -2,6 +2,7 @@ import { Player } from './types.js';
 import { PlayerData, ScoreboardEntry } from '../shared/protocol.js';
 import { CITY_LAYOUT, MEGA_SCALE, PLAZA_PROP_LAYOUT } from '../shared/constants.js';
 import { cityData } from './world.js';
+import { blockCenter, PLAZA_BLOCK } from '../shared/world/cityGen.js';
 
 export const players: Record<string, Player> = {};
 
@@ -21,15 +22,11 @@ const SPAWN_FOUNTAIN_CLEARANCE = 9;
 const SPAWN_PROP_MARGIN = 2;
 
 function plazaLayout(): { x: number; z: number; halfSize: number } {
-    const { blockSize, roadWidth, gridSize } = CITY_LAYOUT;
-    const totalBlockSize = blockSize + roadWidth;
-    const halfCity = (gridSize * totalBlockSize) / 2;
-    const blockIndex = Math.floor(gridSize / 2) - 1;
-    const center = -halfCity + roadWidth + blockIndex * totalBlockSize + blockSize / 2;
+    const center = blockCenter(PLAZA_BLOCK.x, PLAZA_BLOCK.z);
     return {
-        x: center,
-        z: center,
-        halfSize: blockSize / 2 - SPAWN_BUILDING_MARGIN
+        x: center.x,
+        z: center.z,
+        halfSize: CITY_LAYOUT.blockSize / 2 - SPAWN_BUILDING_MARGIN
     };
 }
 

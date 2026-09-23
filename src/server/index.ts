@@ -2,6 +2,7 @@ import express from 'express';
 import http from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { PORT, TERRAIN_CONFIG, HEARTBEAT_INTERVAL_MS } from './config.js';
@@ -21,12 +22,13 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server, maxPayload: 64 * 1024 });
 setWss(wss);
 
-// Serve static files from the public directory (built client lives in public/js).
-// This file compiles to dist/server/index.js (rootDir is src, so the shared/
-// modules can be included), so public/ - which sits next to dist/ - is two
-// levels up from __dirname both in the Docker image (/app/public) and in local
-// dev (<repo>/public).
-const publicPath = path.join(__dirname, '../../public');
+// Serve the Vite-built client. This file compiles to dist/server/index.js
+// (rootDir is src, so the shared/ modules can be included) and Vite writes the
+// client to dist/client, so it is one level up from __dirname both in the
+// Docker image (/app/dist/client) and locally (<repo>/dist/client). In dev the
+// client is served by the Vite dev server instead, which proxies /ws here.
+const clientPath = path.join(__dirname, '../client');
+const clientIndexPath = path.join(clientPath, 'index.html');
 
 function preventStaleClientCaching(response: http.ServerResponse) {
     response.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
@@ -34,23 +36,36 @@ function preventStaleClientCaching(response: http.ServerResponse) {
     response.setHeader('Cloudflare-CDN-Cache-Control', 'no-store');
 }
 
-app.get(['/', '/index.html'], (_request, response) => {
-    preventStaleClientCaching(response);
-    response.sendFile(path.join(publicPath, 'index.html'));
-});
+if (fs.existsSync(clientIndexPath)) {
+    app.get(['/', '/index.html'], (_request, response) => {
+        preventStaleClientCaching(response);
+        response.sendFile(clientIndexPath);
+    });
 
-app.get('/build-version.txt', (_request, response) => {
-    preventStaleClientCaching(response);
-    response.sendFile(path.join(publicPath, 'build-version.txt'));
-});
+    app.get('/build-version.txt', (_request, response) => {
+        preventStaleClientCaching(response);
+        response.sendFile(path.join(clientPath, 'build-version.txt'));
+    });
 
-app.use(express.static(publicPath, {
-    setHeaders(response, filePath) {
-        if (/\.(?:css|html|js|txt)$/.test(filePath)) {
-            preventStaleClientCaching(response);
+    // Vite puts a content hash into every file name under /assets, so a new
+    // build never reuses a URL and these can be cached forever.
+    app.use('/assets', express.static(path.join(clientPath, 'assets'), {
+        immutable: true,
+        maxAge: '1y'
+    }));
+
+    app.use(express.static(clientPath, {
+        index: false,
+        setHeaders(response, filePath) {
+            if (/\.(?:css|html|js|txt)$/.test(filePath)) {
+                preventStaleClientCaching(response);
+            }
         }
-    }
-}));
+    }));
+} else {
+    // Expected under "npm run dev": Vite serves the client and proxies /ws here.
+    console.warn(`No client build at ${clientPath}, serving the WebSocket only (run "npm run build" for production)`);
+}
 
 initWorld();
 
@@ -126,23 +141,21 @@ wss.on('connection', (ws: WebSocket) => {
         trees,
         city: cityData,
         scoreboard: getScoreboard()
-    } as ServerMessage));
+    } satisfies ServerMessage));
 
     ws.on('message', (message: Buffer | string) => {
-        let data: any;
+        let data: unknown;
         try {
             data = JSON.parse(message.toString());
         } catch (e) {
             console.warn('Dropping invalid JSON from', id);
             return;
         }
-        if (!data || typeof data !== 'object' || typeof data.type !== 'string') {
-            return;
-        }
+        // handleClientMessage validates the shape and drops invalid messages.
         try {
             handleClientMessage(id, data);
         } catch (e) {
-            console.error('Handler error for type', data.type, e);
+            console.error('Handler error for type', (data as { type?: unknown } | null)?.type, e);
         }
     });
 

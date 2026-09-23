@@ -11,7 +11,7 @@ WORKDIR /app
 ENV PUPPETEER_SKIP_DOWNLOAD=1
 COPY package*.json ./
 RUN npm ci --omit=dev
+# dist/server + dist/shared (tsc) and dist/client (Vite build incl. public/)
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/public ./public
 EXPOSE 8000
 CMD ["node", "dist/server/index.js"]

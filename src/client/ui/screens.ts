@@ -1,6 +1,7 @@
 import { state } from '../state.js';
 import { releaseKeyboardInputs } from '../controls/keyboard.js';
 import { resetMobileControls } from '../controls/mobile.js';
+import { sendToServer } from '../network/socket.js';
 
 /**
  * Initialize the splash screen: car selector, start button, and enter-key handler.
@@ -129,12 +130,7 @@ export function initRenameUI(): void {
             const newName = nameInput.value.trim();
             if (newName) {
                 localStorage.setItem('bulli-player-name', newName);
-                if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-                    state.ws.send(JSON.stringify({
-                        type: 'rename',
-                        name: newName
-                    }));
-                }
+                sendToServer({ type: 'rename', name: newName });
                 nameInput.value = '';
                 nameInput.placeholder = newName;
                 state.myName = newName;

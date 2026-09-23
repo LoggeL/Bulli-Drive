@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { RemotePlayer, Inputs, PowerupData, CoinData, TerrainConfig, ScoreboardEntry, Obstacle } from './types.js';
+import { RemotePlayer, Inputs, Obstacle } from './types.js';
+import type { PowerupData, CoinData, TerrainConfig, ScoreboardEntry } from '../shared/protocol.js';
 
 export const state = {
     scene: null as unknown as THREE.Scene,

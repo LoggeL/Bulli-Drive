@@ -1,4 +1,4 @@
-import { ClientMessage, ServerMessage } from '../shared/protocol.js';
+import { ClientMessage, ServerMessage, parseClientMessage } from '../shared/protocol.js';
 import {
     AFK_THRESHOLD_MS,
     BASE_SHOT_DAMAGE,
@@ -27,9 +27,14 @@ import { powerupsById, coinsById } from './world.js';
 
 type Msg<T extends ClientMessage['type']> = Extract<ClientMessage, { type: T }>;
 
-export function handleClientMessage(id: string, msg: ClientMessage) {
+// Entry point for every parsed inbound frame. Anything that does not match
+// the shared ClientMessageSchema is dropped silently, like unknown types were
+// before, so a broken or hostile client cannot crash a handler.
+export function handleClientMessage(id: string, data: unknown) {
     const player = players[id];
     if (!player) return;
+    const msg = parseClientMessage(data);
+    if (!msg) return;
 
     switch (msg.type) {
         case 'update': return handleUpdate(player, msg);
@@ -51,8 +56,7 @@ function handleUpdate(player: Player, msg: Msg<'update'>) {
     if (!player.ready) return;
     const now = Date.now();
     if (now - player.lastUpdateAt < MIN_UPDATE_INTERVAL_MS) return;
-    if (!Number.isFinite(msg.x) || !Number.isFinite(msg.z) ||
-        !Number.isFinite(msg.angle) || !Number.isFinite(msg.flipAngle)) return;
+    // x/z/angle/flipAngle are finite numbers (schema); y may be missing.
     const y = typeof msg.y === 'number' && Number.isFinite(msg.y) ? msg.y : 0;
 
     player.lastUpdateAt = now;
@@ -61,7 +65,7 @@ function handleUpdate(player: Player, msg: Msg<'update'>) {
     player.z = clamp(msg.z, -WORLD_BOUND, WORLD_BOUND);
     player.angle = msg.angle;
     player.flipAngle = msg.flipAngle;
-    player.isFlipping = !!msg.isFlipping;
+    player.isFlipping = msg.isFlipping;
     player.lastActivity = now;
 
     broadcastPlayerState(player.id, player.id);
@@ -69,7 +73,6 @@ function handleUpdate(player: Player, msg: Msg<'update'>) {
 
 function handleCollectPowerup(player: Player, msg: Msg<'collectPowerup'>) {
     if (!player.ready) return;
-    if (typeof msg.powerupId !== 'number') return;
     const powerup = powerupsById.get(msg.powerupId);
     if (!powerup) return;
 
@@ -84,7 +87,6 @@ function handleCollectPowerup(player: Player, msg: Msg<'collectPowerup'>) {
 
 function handleCollectCoin(player: Player, msg: Msg<'collectCoin'>) {
     if (!player.ready) return;
-    if (typeof msg.coinId !== 'number') return;
     const coin = coinsById.get(msg.coinId);
     if (!coin) return;
 
@@ -107,7 +109,6 @@ function handleHonk(player: Player) {
 }
 
 function handleRename(player: Player, msg: Msg<'rename'>) {
-    if (typeof msg.name !== 'string') return;
     const now = Date.now();
     if (now - player.lastRenameAt < RENAME_INTERVAL_MS) return;
     const cleanName = msg.name.replace(/[\x00-\x1f\x7f]/g, '').trim().substring(0, MAX_NAME_LENGTH);
@@ -123,7 +124,6 @@ function handleRename(player: Player, msg: Msg<'rename'>) {
 }
 
 function handleSetCarType(player: Player, msg: Msg<'setCarType'>) {
-    if (typeof msg.carType !== 'string') return;
     if (!VALID_CAR_TYPES.includes(msg.carType)) return;
     player.carType = msg.carType;
 }
@@ -147,7 +147,7 @@ function handleRespawnShieldExpired(player: Player) {
 
 function handleShoot(player: Player, msg: Msg<'shoot'>) {
     if (!player.ready) return;
-    if (typeof msg.targetId !== 'string' || msg.targetId === player.id) return;
+    if (msg.targetId === player.id) return;
 
     const now = Date.now();
     if (player.health <= 0) return;
@@ -317,8 +317,6 @@ function scheduleRespawn(targetId: string) {
         const sp = randomSpawn();
         applySpawnState(reborn, sp.x, sp.z);
 
-        // y/angle ride along for the client even though the protocol type
-        // only lists x/z on playerRespawn.
         broadcast({
             type: 'playerRespawn',
             playerId: targetId,
@@ -327,7 +325,7 @@ function scheduleRespawn(targetId: string) {
             z: sp.z,
             y: reborn.y,
             angle: reborn.angle
-        } as ServerMessage);
+        });
     }, RESPAWN_DELAY_MS);
 }
 

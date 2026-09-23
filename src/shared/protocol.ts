@@ -1,6 +1,13 @@
 // Shared wire protocol - single source of truth for client and server.
 // Field shapes must match what is actually serialized on each side.
 
+import * as v from 'valibot';
+
+// Bumped on every incompatible wire change. Not negotiated yet: a later
+// phase makes the client send it in a handshake and the server reject
+// mismatches instead of silently dropping unknown messages.
+export const PROTOCOL_VERSION = 1;
+
 // ---------- DTOs ----------
 
 export interface TerrainConfig {
@@ -83,18 +90,56 @@ export interface ScoreboardEntry {
 }
 
 // ---------- Client -> Server ----------
+// Runtime schemas: the server validates every inbound frame against these
+// and drops anything that does not match. The TypeScript types are derived
+// from them, so sender and validator cannot drift apart.
 // Note: no 'scoreUpdate' (server is sole score authority) and 'shoot' carries no damage.
 
-export type ClientMessage =
-    | { type: 'update', x: number, z: number, y?: number, angle: number, flipAngle: number, isFlipping: boolean, scale?: number, ghostActive?: boolean, shieldActive?: boolean, megaActive?: boolean }
-    | { type: 'collectPowerup', powerupId: number }
-    | { type: 'collectCoin', coinId: number }
-    | { type: 'honk' }
-    | { type: 'rename', name: string }
-    | { type: 'setCarType', carType: string }
-    | { type: 'playerReady' }
-    | { type: 'respawnShieldExpired' }
-    | { type: 'shoot', targetId: string };
+const finiteNumber = v.pipe(v.number(), v.finite());
+
+export const ClientMessageSchema = v.variant('type', [
+    v.object({
+        type: v.literal('update'),
+        // Only the position and angles make an update invalid. The other
+        // fields are as lenient as the pre-valibot handler on main (1d39c07),
+        // so a bad value (e.g. a NaN, which JSON turns into null) never drops
+        // the whole update and freezes the car for everyone else.
+        x: finiteNumber,
+        z: finiteNumber,
+        // Visual bob/jump offset; the server falls back to 0 when it is not a number.
+        y: v.fallback(v.optional(v.number()), undefined),
+        angle: finiteNumber,
+        flipAngle: finiteNumber,
+        // Any truthy value counts and a missing one is false, like
+        // `!!msg.isFlipping` on main.
+        isFlipping: v.pipe(v.optional(v.unknown(), false), v.transform(value => !!value)),
+        // Client-side hints only; the server tracks these effects itself and
+        // ignores them, so a wrong type is dropped instead.
+        scale: v.fallback(v.optional(v.number()), undefined),
+        ghostActive: v.fallback(v.optional(v.boolean()), undefined),
+        shieldActive: v.fallback(v.optional(v.boolean()), undefined),
+        megaActive: v.fallback(v.optional(v.boolean()), undefined)
+    }),
+    v.object({ type: v.literal('collectPowerup'), powerupId: v.number() }),
+    v.object({ type: v.literal('collectCoin'), coinId: v.number() }),
+    v.object({ type: v.literal('honk') }),
+    // Length and control characters are cleaned up by the server.
+    v.object({ type: v.literal('rename'), name: v.string() }),
+    // Unknown car types are ignored by the server (VALID_CAR_TYPES).
+    v.object({ type: v.literal('setCarType'), carType: v.string() }),
+    v.object({ type: v.literal('playerReady') }),
+    v.object({ type: v.literal('respawnShieldExpired') }),
+    v.object({ type: v.literal('shoot'), targetId: v.string() })
+]);
+
+export type ClientMessage = v.InferOutput<typeof ClientMessageSchema>;
+
+// Returns the validated message (unknown keys stripped), or null if the
+// value is not a well-formed client message.
+export function parseClientMessage(value: unknown): ClientMessage | null {
+    const result = v.safeParse(ClientMessageSchema, value);
+    return result.success ? result.output : null;
+}
 
 // ---------- Server -> Client ----------
 
@@ -112,5 +157,5 @@ export type ServerMessage =
     | { type: 'scoreboard', scoreboard: ScoreboardEntry[] }
     | { type: 'playerHit', targetId: string, shooterId: string, newHealth: number, damage: number }
     | { type: 'playerKilled', targetId: string, killerId: string, killerName: string, targetName: string }
-    | { type: 'playerRespawn', playerId: string, health: number, x: number, z: number }
+    | { type: 'playerRespawn', playerId: string, health: number, x: number, z: number, y?: number, angle?: number }
     | { type: 'shieldBreak', targetId: string, shooterId: string };

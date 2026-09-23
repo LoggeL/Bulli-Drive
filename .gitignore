@@ -8,6 +8,8 @@ yarn-error.log*
 *.log
 .DS_Store
 dist/
+# Build output of the pre-Vite client (main before phase 0), which may still
+# lie around in older checkouts. See legacyOutputGuard in vite.config.ts.
 public/js/
 public/build-version.txt
 *.tsbuildinfo
@@ -18,3 +20,5 @@ screenshot*.js
 .playwright-cli/
 output/
 
+test-results/
+playwright-report/

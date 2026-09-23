@@ -1,4 +1,5 @@
 import { state } from '../state.js';
+import { carSpeedToKmh, speedoFill, SPEEDO_TICK_INTERVALS } from './speedoScale.js';
 
 // Hitmarker
 let hitmarkerEl: HTMLElement | null = null;
@@ -222,8 +223,8 @@ function rebuildSpeedoStaticLayer() {
 
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
     ctx.lineWidth = 1.5;
-    for (let i = 0; i <= 10; i++) {
-        const angle = SPEEDO_START_ANGLE + (i / 10) * (SPEEDO_END_ANGLE - SPEEDO_START_ANGLE);
+    for (let i = 0; i <= SPEEDO_TICK_INTERVALS; i++) {
+        const angle = SPEEDO_START_ANGLE + (i / SPEEDO_TICK_INTERVALS) * (SPEEDO_END_ANGLE - SPEEDO_START_ANGLE);
         ctx.beginPath();
         ctx.moveTo(cx + Math.cos(angle) * (r - 10), cy + Math.sin(angle) * (r - 10));
         ctx.lineTo(cx + Math.cos(angle) * (r - 4), cy + Math.sin(angle) * (r - 4));
@@ -251,7 +252,8 @@ export function updateSpeedometer() {
         rebuildSpeedoStaticLayer();
     }
 
-    const kmh = Math.round(Math.abs(state.bulli.speed) * 120);
+    // 1 u = 1 m, so this is the real speed (see src/shared/constants.ts)
+    const kmh = Math.round(carSpeedToKmh(state.bulli.speed));
     const turboActive = state.bulli.powerups.speed.active;
     if (kmh !== lastDisplayedKmh) {
         speedoValue.innerText = kmh.toString();
@@ -271,7 +273,7 @@ export function updateSpeedometer() {
     const cx = w / 2;
     const cy = h / 2;
     const r = w / 2 - 10;
-    const pct = Math.min(kmh / 180, 1);
+    const pct = speedoFill(kmh);
     speedoCtx.clearRect(0, 0, w, h);
     if (speedoStaticLayer) speedoCtx.drawImage(speedoStaticLayer, 0, 0);
     if (pct <= 0.005) return;

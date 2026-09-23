@@ -2317,3 +2317,94 @@ canvas {
     min-width: 24px;
     color: var(--sunset-gold);
 }
+
+/* ==========================================================================
+   WEBGL CONTEXT LOSS NOTICE
+   ========================================================================== */
+
+#context-lost {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 1rem;
+    background: rgba(0, 0, 0, 0.55);
+}
+
+#context-lost.hidden {
+    display: none;
+}
+
+.context-lost-card {
+    max-width: 360px;
+    padding: 1.5rem 1.75rem;
+    text-align: center;
+    color: var(--text);
+    background: rgba(30, 30, 30, 0.95);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.context-lost-card h2 {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 1.4rem;
+    letter-spacing: 1px;
+    color: var(--sunset-gold);
+    margin-bottom: 0.5rem;
+}
+
+.context-lost-card p {
+    font-family: var(--font-body);
+    font-size: 0.95rem;
+    color: var(--text-muted);
+}
+
+.context-lost-reload {
+    margin-top: 1.25rem;
+    padding: 0.7rem 1.8rem;
+    border: none;
+    border-radius: var(--radius-pill);
+    background: linear-gradient(135deg, var(--sunset-red) 0%, #D63031 100%);
+    color: white;
+    font-family: var(--font-display);
+    font-size: 1rem;
+    letter-spacing: 1px;
+    cursor: pointer;
+}
+
+.context-lost-reload[hidden] {
+    display: none;
+}
+
+/* ==========================================================================
+   PERF OVERLAY (?debug=perf only)
+   ========================================================================== */
+
+#perf-overlay {
+    position: fixed;
+    left: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 9500;
+    margin: 0;
+    padding: 6px 8px;
+    background: rgba(0, 0, 0, 0.65);
+    color: #9EF7A0;
+    font: 11px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    border-radius: 4px;
+    pointer-events: none;
+    white-space: pre;
+}
+
+@media (max-width: 768px), (pointer: coarse) {
+    /* Below the score pill, clear of the car in the middle of the screen */
+    #perf-overlay {
+        top: 180px;
+        transform: none;
+        font-size: 10px;
+    }
+}
