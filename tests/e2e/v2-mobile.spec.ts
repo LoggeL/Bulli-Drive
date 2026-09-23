@@ -120,6 +120,27 @@ const HUD = [
     '#btn-drift', '#btn-boost', '#btn-autogas', '#btn-flip', '#btn-shoot', '#btn-honk',
     '#joystick-move', '#interaction-prompt', '#drive-meter', '#map-panel', '#score-container', '#player-list'
 ];
+// Touch controls that must also stay off the car itself (standing at spawn),
+// so they never hide it or the road right beside it
+const CONTROLS = ['#btn-drift', '#btn-boost', '#btn-autogas', '#btn-flip', '#btn-shoot', '#btn-honk', '#joystick-move'];
+interface CarBox { left: number; right: number; top: number; bottom: number }
+
+// The car's screen box in CSS pixels, once the camera has caught up with
+// the new viewport (two reads in a row agree)
+async function carBox(page: Page, width: number, height: number): Promise<CarBox> {
+    const read = () => page.evaluate(() => (window as unknown as {
+        __bulliDebug: { localCarScreenBox(): CarBox | null };
+    }).__bulliDebug.localCarScreenBox());
+    const reads: Array<CarBox | null> = [];
+    await expect.poll(async () => {
+        reads.push(await read());
+        const [previous, box] = reads.slice(-2);
+        return !!box && !!previous && Math.abs(box.left - previous.left) * width < 1 && Math.abs(box.top - previous.top) * height < 1;
+    }, { intervals: [150] }).toBe(true);
+    const done = reads[reads.length - 1]!;
+    return { left: done.left * width, right: done.right * width, top: done.top * height, bottom: done.bottom * height };
+}
+
 const VIEWPORTS = [
     { name: 'iPhone 13', width: 390, height: 664 },
     { name: 'iPhone SE', width: 320, height: 568 },
@@ -131,7 +152,7 @@ const VIEWPORTS = [
     { name: 'iPad landscape', width: 1024, height: 768 }
 ];
 
-test('v2 touch HUD: nothing overlaps on narrow phones and in landscape, prompt included', async ({ openPlayer }) => {
+test('v2 touch HUD: nothing overlaps on narrow phones and in landscape, prompt included, and the controls leave the car free', async ({ openPlayer }) => {
     const player = await openPlayer('phone-v2-layout');
     const { page } = player;
     await joinGame(player, 'E2E Phone Layout');
@@ -159,6 +180,14 @@ test('v2 touch HUD: nothing overlaps on narrow phones and in landscape, prompt i
                 if (!a || !b) continue;
                 const overlaps = a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
                 if (overlaps) problems.push(`${viewport.name}: ${boxes[i].selector} ${round(a)} overlaps ${boxes[j].selector} ${round(b)}`);
+            }
+        }
+        const car = await carBox(page, viewport.width, viewport.height);
+        for (const { selector, box } of boxes) {
+            if (!box || !CONTROLS.includes(selector)) continue;
+            const overlaps = box.x < car.right && car.left < box.x + box.width && box.y < car.bottom && car.top < box.y + box.height;
+            if (overlaps) {
+                problems.push(`${viewport.name}: ${selector} ${round(box)} covers the car ${round({ x: car.left, y: car.top, width: car.right - car.left, height: car.bottom - car.top })}`);
             }
         }
     }

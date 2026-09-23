@@ -2618,6 +2618,33 @@ body.physics-v2 .hint-row {
     }
 }
 
+/* Short landscape phones (iPhone SE: 568 x 320): the car ends about 90 px
+   left of the action buttons, so a narrower column moves right, next to
+   them, and leaves the car and the road beside it free */
+@media (max-width: 900px) and (orientation: landscape) and (max-height: 340px) {
+    .drive-buttons {
+        right: calc(max(0.75rem, env(safe-area-inset-right, 0px)) + 150px);
+        gap: 6px;
+    }
+
+    .control-btn.drive.drift {
+        width: 64px;
+        height: 64px;
+        font-size: 0.85rem;
+    }
+
+    .control-btn.drive.boost {
+        width: 46px;
+        height: 46px;
+    }
+
+    .control-btn.drive.autogas {
+        width: 52px;
+        height: 24px;
+        font-size: 0.56rem;
+    }
+}
+
 @media (max-width: 600px) and (orientation: portrait) {
     .drive-buttons {
         right: calc(max(1.1rem, env(safe-area-inset-right, 0px)) + 100px);
