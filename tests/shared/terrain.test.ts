@@ -5,6 +5,8 @@ import { sha256OfFloats } from '../helpers.js';
 
 // Golden heights were recorded from getTerrainHeight in the untouched
 // src/client/world/environment.ts on main (1d39c07) with DEFAULT_TERRAIN_CONFIG.
+// Math.sin/cos are not bit-identical across platforms (macOS arm64 vs Linux x64
+// in CI), so heights are compared to 1e-9 and hashed after quantizing to 1 µm.
 
 const config = DEFAULT_TERRAIN_CONFIG;
 
@@ -26,7 +28,7 @@ describe('getTerrainHeight', () => {
             [123.456, -321.987, 4.106825793349897]
         ];
         for (const [x, z, h] of samples) {
-            expect(getTerrainHeight(config, x, z), `height at (${x}, ${z})`).toBe(h);
+            expect(getTerrainHeight(config, x, z), `height at (${x}, ${z})`).toBeCloseTo(h, 9);
         }
     });
 
@@ -35,10 +37,10 @@ describe('getTerrainHeight', () => {
         const heights: number[] = [];
         for (let iz = 0; iz <= segments; iz++) {
             for (let ix = 0; ix <= segments; ix++) {
-                heights.push(getTerrainHeight(config, -size / 2 + ix * size / segments, -size / 2 + iz * size / segments));
+                heights.push(Math.round(getTerrainHeight(config, -size / 2 + ix * size / segments, -size / 2 + iz * size / segments) * 1e6));
             }
         }
-        expect(sha256OfFloats(heights)).toBe('27fa94915250d1071aabd197ccf89c58916188ab841af60f57fff39f01a79800');
+        expect(sha256OfFloats(heights)).toBe('72caa9afcbc2b602bfa09876a4225a2d7947cfc8d2ec02d0f9f0f94bf125b592');
     });
 
     it('keeps the golden city flattening area', () => {
