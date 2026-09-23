@@ -17,6 +17,7 @@ import { releaseKeyboardInputs } from '../controls/keyboard.js';
 import { resetMobileControls } from '../controls/mobile.js';
 import { sendToServer } from './socket.js';
 import { PHYSICS_V2 } from '../flags.js';
+import { noteRemoteUpdate, removeRemoteProxy } from '../vehicle/remoteProxies.js';
 
 let environmentInitialized = false;
 let cityInitialized = false;
@@ -426,6 +427,7 @@ export function removeRemotePlayer(id: string) {
         state.scene.remove(remote.group);
         remote.dispose();
         delete state.remotePlayers[id];
+        removeRemoteProxy(id);
         updateScoreboardUI();
     }
 }
@@ -459,6 +461,9 @@ function updateRemotePlayer(data: { id: string; x: number; z: number; y?: number
     } else {
         remote.flipGroup.position.y = 0;
     }
+
+    // v2: the remote car as a kinematic contact partner of the local sim
+    if (PHYSICS_V2) noteRemoteUpdate(data.id, remote, performance.now());
 
     // Ghost visual on remote player
     if (data.ghostActive !== undefined && remote.setGhostVisual) {

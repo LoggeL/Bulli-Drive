@@ -9,6 +9,7 @@ import type { SimWorld } from '../../shared/world/colliders.js';
 import { FixedStepLoop } from '../game/loop.js';
 import { inputManager } from '../input/InputManager.js';
 import { state } from '../state.js';
+import { collectRemoteProxies } from './remoteProxies.js';
 
 // The local car on the v2 physics (docs/phase-1a-design.md, 12.2/12.3): the
 // sim car, the fixed-step loop, the prev/curr pair for the render
@@ -163,16 +164,16 @@ export class LocalVehicle {
     }
 
     /** Runs the ticks due this frame and writes the interpolated pose onto host. */
-    update(dt: number, host: VehicleHost, _now: number): void {
+    update(dt: number, host: VehicleHost, now: number): void {
         const ev = this.events;
         ev.wallImpact = ev.carImpact = ev.landedImpact = 0;
         ev.jumped = ev.boostStarted = ev.reset = false;
         this.hintChanged = false;
-        this.alpha = this.loop.advance(dt, () => this.tick(host));
+        this.alpha = this.loop.advance(dt, () => this.tick(host, now));
         this.applyPose(dt, host);
     }
 
-    private tick(host: VehicleHost): void {
+    private tick(host: VehicleHost, now: number): void {
         const car = this.car;
         copyVehicleState(this.prev, car.state);
 
@@ -195,6 +196,7 @@ export class LocalVehicle {
         const cars = this.cars;
         cars.length = 0;
         cars.push(car);
+        collectRemoteProxies(now, this.world, cars);
         this.proxyCount = cars.length - 1;
         stepWorld(cars, this.world);
         this.ticks++;
