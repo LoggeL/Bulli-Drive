@@ -62,6 +62,22 @@ export function createPowerupMarker(p: PowerupData) {
     powerupMarkers.set(p.id, { mesh: marker, iconMat });
 }
 
+// Removes every marker (a room switch brings the new room's powerups)
+export function clearPowerupMarkers() {
+    for (const { mesh, iconMat } of powerupMarkers.values()) {
+        state.scene.remove(mesh);
+        mesh.geometry.dispose();
+        (mesh.material as THREE.Material).dispose();
+        const icon = mesh.children[0] as THREE.Mesh | undefined;
+        icon?.geometry.dispose();
+        iconMat.dispose();
+    }
+    powerupMarkers.clear();
+    powerupBaseY.clear();
+    pendingCollects.clear();
+    state.worldPowerups = [];
+}
+
 // Dim/restore the marker visuals when a powerup is collected/reset (called from websocket.ts)
 export function setPowerupCollectedVisual(id: PowerupData['id'], collected: boolean): void {
     pendingCollects.delete(id);

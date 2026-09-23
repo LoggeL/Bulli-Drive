@@ -4,9 +4,10 @@ import type { ServerMessage, PlayerData, CityData } from '../../shared/protocol.
 import { Bulli } from '../entities/Bulli.js';
 import { createEnvironment } from '../world/environment.js';
 import { createCity } from '../world/city.js';
-import { createPowerupMarker, applyPowerupEffect, setPowerupCollectedVisual } from '../world/powerups.js';
+import { clearPowerupMarkers, createPowerupMarker, applyPowerupEffect, setPowerupCollectedVisual } from '../world/powerups.js';
+import { clearProjectiles } from '../world/projectiles.js';
 import { DEFAULT_TERRAIN_CONFIG, WORLD_BOUND } from '../../shared/constants.js';
-import { createCoinsFromServer, removeCoinById, resetCoinById } from '../world/coins.js';
+import { clearCoins, createCoinsFromServer, removeCoinById, resetCoinById } from '../world/coins.js';
 import { updateScoreboardUI } from '../ui/playerList.js';
 import { getTerrainHeight } from '../world/environment.js';
 import { playHitSound } from '../effects/sounds.js';
@@ -19,12 +20,15 @@ import { sendToServer } from './socket.js';
 import { PHYSICS_V2 } from '../flags.js';
 import { noteRemoteUpdate, removeRemoteProxy } from '../vehicle/remoteProxies.js';
 import { setWorldColliders } from '../vehicle/simWorldClient.js';
+import { partyRulesActive, preferredRoomKind, setCurrentRoom } from '../ui/roomMenu.js';
 
 let environmentInitialized = false;
 let cityInitialized = false;
 
 export function initWebSocket() {
-    state.ws = new WebSocket(CONFIG.serverUrl);
+    // The server puts the connection into a room of the mode played last;
+    // START on the splash switches if the player picks the other one
+    state.ws = new WebSocket(`${CONFIG.serverUrl}?room=${preferredRoomKind()}`);
 
     state.ws.onopen = () => {
         console.log('Connected to server');
@@ -68,6 +72,7 @@ function handleServerMessage(data: ServerMessage) {
         case 'init':
             state.myId = data.id;
             state.myColor = data.color;
+            if (data.room) setCurrentRoom(data.room);
             
             const savedName = localStorage.getItem('bulli-player-name');
             if (savedName) {
@@ -104,7 +109,8 @@ function handleServerMessage(data: ServerMessage) {
             }
 
             createLocalPlayer(state.myColor!, state.myName, data.spawn);
-            state.respawnShield = true;
+            // The spawn shield is a Party rule
+            state.respawnShield = partyRulesActive();
             state.respawnMoveStart = 0;
             removeLoader();
 
@@ -125,6 +131,10 @@ function handleServerMessage(data: ServerMessage) {
                 state.serverCoins = data.coins;
                 createCoinsFromServer(data.coins);
             }
+            break;
+
+        case 'roomJoined':
+            enterRoom(data);
             break;
 
         case 'newPlayer':
@@ -272,31 +282,7 @@ function handleServerMessage(data: ServerMessage) {
         case 'playerRespawn':
             if (data.playerId === state.myId) {
                 // Local player respawned at new location
-                state.dead = false;
-                state.health = data.health;
-                releaseKeyboardInputs();
-                resetMobileControls();
-                state.respawnShield = true;
-                state.respawnMoveStart = 0;
-                if (state.bulli) {
-                    state.bulli.powerups.shield.active = false;
-                    state.bulli.powerups.shield.timer = 0;
-                    state.bulli.powerups.ghost.active = false;
-                    state.bulli.powerups.ghost.timer = 0;
-                    state.bulli.powerups.size.active = false;
-                    state.bulli.powerups.size.timer = 0;
-                    state.bulli.group.scale.set(1, 1, 1);
-                    state.bulli.group.position.x = data.x;
-                    state.bulli.group.position.z = data.z;
-                    state.bulli.group.position.y = getTerrainHeight(data.x, data.z);
-                    state.bulli.speed = 0;
-                    state.cameraSnapPending = true;
-                    state.bulli.flipGroup.visible = true;
-                    state.bulli.health = data.health;
-                    // v2: the sim car follows (no vehicle exists without the flag)
-                    state.bulli.vehicle?.respawn(data.x, data.z);
-                }
-                hideRespawnOverlay();
+                respawnLocalCar(data.x, data.z, data.health, true);
             } else {
                 // Remote player respawned
                 const respawnRemote = state.remotePlayers[data.playerId] as any;
@@ -317,6 +303,66 @@ function handleServerMessage(data: ServerMessage) {
             }
             break;
     }
+}
+
+// Puts the local car back at (x, z), whole and without powerups. The spawn
+// shield comes with it in the Party.
+function respawnLocalCar(x: number, z: number, health: number, respawnShield: boolean) {
+    state.dead = false;
+    state.health = health;
+    releaseKeyboardInputs();
+    resetMobileControls();
+    state.respawnShield = respawnShield;
+    state.respawnMoveStart = 0;
+    if (state.bulli) {
+        for (const key of ['shield', 'ghost', 'size'] as const) {
+            state.bulli.powerups[key].active = false;
+            state.bulli.powerups[key].timer = 0;
+        }
+        state.bulli.group.scale.set(1, 1, 1);
+        state.bulli.group.position.x = x;
+        state.bulli.group.position.z = z;
+        state.bulli.group.position.y = getTerrainHeight(x, z);
+        state.bulli.speed = 0;
+        state.cameraSnapPending = true;
+        state.bulli.flipGroup.visible = true;
+        state.bulli.health = health;
+        // v2: the sim car follows (no vehicle exists without the flag)
+        state.bulli.vehicle?.respawn(x, z);
+    }
+    hideRespawnOverlay();
+}
+
+// The server moved this client to another room (docs/phase-1b-design.md, 9):
+// same map, so the scene stays; players, items and the car start over.
+function enterRoom(data: Extract<ServerMessage, { type: 'roomJoined' }>) {
+    for (const id of Object.keys(state.remotePlayers)) removeRemotePlayer(id);
+    clearProjectiles();
+    clearCoins();
+    clearPowerupMarkers();
+
+    setCurrentRoom(data.room);
+    state.worldPowerups = data.powerups;
+    state.worldPowerups.forEach(p => createPowerupMarker(p));
+    state.serverCoins = data.coins;
+    createCoinsFromServer(data.coins);
+    state.scoreboard = data.scoreboard;
+
+    // Nothing carries over from the old room, the Turbo neither
+    if (state.bulli) {
+        for (const key of ['speed', 'jump', 'magnet'] as const) {
+            state.bulli.powerups[key].active = false;
+            state.bulli.powerups[key].timer = 0;
+        }
+    }
+    respawnLocalCar(data.spawn.x, data.spawn.z, 100, partyRulesActive());
+    if (state.bulli?.shieldMesh && !state.respawnShield) {
+        state.bulli.shieldMesh.visible = false;
+    }
+    for (const pid in data.players) {
+        if (pid !== state.myId) addRemotePlayer(data.players[pid]);
+    }
+    updateScoreboardUI();
 }
 
 function flashScreenRed() {

@@ -5,6 +5,7 @@ import type { Obstacle } from './types.js';
 import { PHYSICS_V2 } from './flags.js';
 import type { LocalVehicle } from './vehicle/LocalVehicle.js';
 import type { VehicleInput } from '../shared/sim/types.js';
+import type { RoomInfo } from '../shared/protocol.js';
 import type { ColliderInput } from '../shared/world/colliders.js';
 import { listTaggedColliders, type TaggedCollider } from './world/colliderTags.js';
 
@@ -62,6 +63,9 @@ export interface BulliDebugSnapshot {
     physics: 'legacy' | 'v2';
     myId: string | null;
     connected: boolean;
+    // The room the server put this page in, and its items in the scene
+    room: RoomInfo | null;
+    items: { coins: number; powerups: number };
     local: CarSnapshot | null;
     remotes: Record<string, CarSnapshot & { name: string }>;
     // Combined keyboard/touch drive axes
@@ -210,6 +214,8 @@ export function installE2EHook(): void {
                 physics: PHYSICS_V2 ? 'v2' : 'legacy',
                 myId: state.myId,
                 connected: state.ws?.readyState === WebSocket.OPEN,
+                room: state.room ? { ...state.room } : null,
+                items: { coins: state.coins.length, powerups: state.worldPowerups.length },
                 local: state.bulli ? carSnapshot(state.bulli) : null,
                 remotes,
                 inputs: { throttle: state.inputs.throttle, steer: state.inputs.steer },

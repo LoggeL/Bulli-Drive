@@ -10,6 +10,7 @@ import { createLegacyPhysicsState, updateLegacyMovement, type LegacyPhysicsState
 import type { LocalVehicle } from '../vehicle/LocalVehicle.js';
 import { driveLocalCar } from '../vehicle/v2Driver.js';
 import { PHYSICS_V2 } from '../flags.js';
+import { partyRulesActive } from '../ui/roomMenu.js';
 
 // Muzzle distance for mega shots - just past the enlarged nose.
 const MEGA_PROJECTILE_FRONT_OFFSET = 6.5;
@@ -149,7 +150,8 @@ export class Bulli {
         }
 
         if (state.inputs.e) {
-            this.shoot();
+            // No shooting in Free Roam
+            if (partyRulesActive()) this.shoot();
             state.inputs.e = false;
         }
     }

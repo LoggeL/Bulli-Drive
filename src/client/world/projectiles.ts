@@ -69,6 +69,11 @@ function removeProjectile(index: number) {
     projectiles.pop();
 }
 
+// Drops the shots in flight (a room switch: their targets are gone)
+export function clearProjectiles() {
+    while (projectiles.length > 0) removeProjectile(projectiles.length - 1);
+}
+
 export function updateProjectiles(dt: number) {
     let i = 0;
     while (i < projectiles.length) {

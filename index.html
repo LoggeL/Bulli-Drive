@@ -262,6 +262,19 @@
                     </div>
                 </div>
             </div>
+            <div class="mode-selector">
+                <span class="input-label" id="mode-selector-label">GAME MODE</span>
+                <div class="mode-selector-row" role="radiogroup" aria-labelledby="mode-selector-label">
+                    <button type="button" class="mode-option" role="radio" aria-checked="true" data-room="party">
+                        <span class="mode-name">PARTY</span>
+                        <span class="mode-desc">Coins, powerups, shooting</span>
+                    </button>
+                    <button type="button" class="mode-option" role="radio" aria-checked="false" data-room="freeroam">
+                        <span class="mode-name">FREE ROAM</span>
+                        <span class="mode-desc">Just drive and bump</span>
+                    </button>
+                </div>
+            </div>
             <button id="start-btn">
                 <svg class="ui-icon btn-icon" aria-hidden="true"><use href="#icon-play"></use></svg>
                 START ENGINE
@@ -359,7 +372,7 @@
             <button id="btn-honk" class="control-btn action honk" type="button" data-key="f" aria-label="Honk horn">
                 <svg class="ui-icon" aria-hidden="true"><use href="#icon-horn"></use></svg>
             </button>
-            <button id="btn-shoot" class="control-btn action shoot" type="button" data-key="e" aria-label="Shoot projectile">
+            <button id="btn-shoot" class="control-btn action shoot party-only" type="button" data-key="e" aria-label="Shoot projectile">
                 <svg class="ui-icon" aria-hidden="true"><use href="#icon-target"></use></svg>
             </button>
             <button id="btn-flip" class="control-btn action flip" type="button" data-key="space" data-mode="jump" aria-label="Jump and flip vehicle">
@@ -378,7 +391,7 @@
     </div>
 
     <div id="ui-overlay">
-        <div id="score-container" role="group" aria-label="Driving status">
+        <div id="score-container" class="party-only" role="group" aria-label="Driving status">
             <div class="score-segment">
                 <svg class="ui-icon score-coin-icon" aria-hidden="true"><use href="#icon-score"></use></svg>
                 <span id="score-display" role="status" aria-live="polite" aria-label="Score: 0">0</span>
@@ -391,7 +404,7 @@
             </div>
         </div>
 
-        <div id="powerup-panel"></div>
+        <div id="powerup-panel" class="party-only"></div>
 
         <div class="controls-hint" role="group" aria-label="Keyboard controls">
             <div class="hint-grid">
@@ -431,7 +444,7 @@
                     <svg class="ui-icon hint-icon" aria-hidden="true"><use href="#icon-recover"></use></svg>
                     <span class="sr-only">Hold to reset onto the road</span>
                 </div>
-                <div class="hint-row">
+                <div class="hint-row party-only">
                     <div class="key">E</div>
                     <svg class="ui-icon hint-icon" aria-hidden="true"><use href="#icon-target"></use></svg>
                     <span class="sr-only">Shoot projectile</span>
@@ -469,11 +482,26 @@
         </div>
 
         <div id="player-list">
-            <button id="scoreboard-toggle" type="button" aria-expanded="false" aria-controls="scoreboard-panel" aria-label="Open scoreboard. Current rank 1">
+            <button id="room-chip" type="button" aria-expanded="false" aria-controls="room-panel" aria-label="Game mode: Party, room 1. Change mode">
+                <span id="room-chip-mode" aria-hidden="true">PARTY</span>
+                <span id="room-chip-index" aria-hidden="true">ROOM 1</span>
+            </button>
+            <button id="scoreboard-toggle" class="party-only" type="button" aria-expanded="false" aria-controls="scoreboard-panel" aria-label="Open scoreboard. Current rank 1">
                 <svg class="ui-icon rank-chip-icon" aria-hidden="true"><use href="#icon-rank"></use></svg>
                 <span id="player-rank" aria-hidden="true">#1</span>
             </button>
-            <div id="scoreboard-panel" hidden>
+            <div id="room-panel" role="group" aria-label="Change game mode" hidden>
+                <h3>Game mode</h3>
+                <button type="button" class="room-option" data-room="party">
+                    <span class="mode-name">PARTY</span>
+                    <span class="mode-desc">Coins, powerups, shooting</span>
+                </button>
+                <button type="button" class="room-option" data-room="freeroam">
+                    <span class="mode-name">FREE ROAM</span>
+                    <span class="mode-desc">Just drive and bump</span>
+                </button>
+            </div>
+            <div id="scoreboard-panel" class="party-only" hidden>
                 <h3>Drivers</h3>
                 <ul id="scoreboard-list"></ul>
             </div>

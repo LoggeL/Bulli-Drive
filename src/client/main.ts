@@ -13,6 +13,7 @@ import { checkPowerupCollection, animatePowerups } from './world/powerups.js';
 import { updatePowerupsUI, updateSpeedometer, updateHealthBar, updateDriveHud } from './ui/hud.js';
 import { updateProjectiles } from './world/projectiles.js';
 import { initSplashScreen, initAboutModal } from './ui/screens.js';
+import { applySplashChoice, initModeSelector, initRoomMenu } from './ui/roomMenu.js';
 import { animateFountain } from './world/city.js';
 import { updateMinimap } from './ui/minimap.js';
 import { SPEED_BOOST_FACTOR } from '../shared/constants.js';
@@ -107,9 +108,11 @@ function init() {
             state.scene.add(state.bulli.group);
         }
 
-        // Notify server of name and car type
+        // Notify server of name and car type, move to the chosen mode
+        // (Party or Free Roam) and show the car
         sendToServer({ type: 'rename', name });
         sendToServer({ type: 'setCarType', carType });
+        applySplashChoice();
         sendToServer({ type: 'playerReady' });
 
         // Hide splash screen
@@ -140,6 +143,8 @@ function init() {
 
     // UI modules
     initAboutModal();
+    initModeSelector();
+    initRoomMenu();
 
     // Test-only state probe, a no-op unless the page URL has ?e2e=1
     installE2EHook();

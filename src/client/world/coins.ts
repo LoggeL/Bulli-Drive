@@ -44,6 +44,16 @@ export function createCoin(id: number, x: number, z: number) {
     coinMeshes.set(id, coin);
 }
 
+// Removes every coin (a room switch brings the new room's coins)
+export function clearCoins() {
+    for (const coin of coinMeshes.values()) state.scene.remove(coin);
+    for (const coin of state.coins) state.scene.remove(coin);
+    coinMeshes.clear();
+    coinBaseY.clear();
+    pendingCollects.clear();
+    state.coins.length = 0;
+}
+
 export function removeCoinById(coinId: number) {
     pendingCollects.delete(coinId);
     const coin = coinMeshes.get(coinId);

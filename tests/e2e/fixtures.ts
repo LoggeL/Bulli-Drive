@@ -89,12 +89,17 @@ export async function v2(page: Page): Promise<V2Snapshot> {
     return state.v2!;
 }
 
+async function tap(page: Page, selector: string): Promise<void> {
+    if (await page.evaluate(() => navigator.maxTouchPoints > 0)) await page.locator(selector).tap();
+    else await page.locator(selector).click();
+}
+
 /**
  * Walks through the real join flow: loading screen, splash screen with the
- * road name, START ENGINE. Resolves with the player's server id.
- * extraQuery is appended to the URL, e.g. '&debug=perf'.
+ * road name (and the game mode, when given), START ENGINE. Resolves with the
+ * player's server id. extraQuery is appended to the URL, e.g. '&debug=perf'.
  */
-export async function joinGame(player: Player, name: string, extraQuery = ''): Promise<string> {
+export async function joinGame(player: Player, name: string, extraQuery = '', mode?: 'party' | 'freeroam'): Promise<string> {
     const { page } = player;
     await page.goto(`/?e2e=1${extraQuery}`);
 
@@ -105,12 +110,11 @@ export async function joinGame(player: Player, name: string, extraQuery = ''): P
     await expect(splash).not.toHaveClass(/\bhidden\b/);
 
     await page.locator('#splash-name-input').fill(name);
-    const startButton = page.locator('#start-btn');
-    if (await page.evaluate(() => navigator.maxTouchPoints > 0)) {
-        await startButton.tap();
-    } else {
-        await startButton.click();
+    if (mode) {
+        await tap(page, `.mode-option[data-room="${mode}"]`);
+        await expect(page.locator(`.mode-option[data-room="${mode}"]`)).toHaveAttribute('aria-checked', 'true');
     }
+    await tap(page, '#start-btn');
 
     await expect(splash).toHaveClass(/\bhidden\b/);
     await expect.poll(async () => {
@@ -118,6 +122,7 @@ export async function joinGame(player: Player, name: string, extraQuery = ''): P
         return state.connected && !!state.local && state.myId;
     }).toBeTruthy();
     expect(player.sentMessages.map(message => message.type)).toContain('playerReady');
+    if (mode) await expect.poll(async () => (await snapshot(page)).room?.kind).toBe(mode);
 
     return (await snapshot(page)).myId!;
 }

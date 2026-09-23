@@ -2846,3 +2846,254 @@ body.sandbox #player-list {
         max-height: calc(100% - 12rem);
     }
 }
+
+/* ==========================================================================
+   ROOMS: Party (default) or Free Roam, chosen on the splash and switched
+   with the room chip next to the rank chip (ui/roomMenu.ts)
+   ========================================================================== */
+
+/* Free Roam has no score, HP, shooting, powerups or scoreboard */
+body.room-freeroam .party-only,
+body.room-freeroam #killfeed,
+body.room-freeroam #respawn-overlay,
+body.room-freeroam .nametag-hp {
+    display: none !important;
+}
+
+/* Splash: two large options, easy to hit with a thumb */
+#splash-screen {
+    overflow-y: auto;
+    align-items: flex-start;
+}
+
+.splash-content {
+    /* Centred while it fits, scrollable from the top when it does not */
+    margin: auto;
+}
+
+.mode-selector {
+    margin-bottom: 1.5rem;
+}
+
+.mode-selector .input-label {
+    margin-bottom: 0.7rem;
+}
+
+.mode-selector-row {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.mode-option,
+.room-option {
+    flex: 1 1 0;
+    min-height: 56px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.15rem;
+    padding: 0.45rem 0.5rem;
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.04);
+    border: 2px solid rgba(255, 255, 255, 0.08);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    font-family: var(--font-body);
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.mode-option:hover,
+.room-option:hover:not(:disabled) {
+    border-color: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.mode-option[aria-checked="true"],
+.room-option[aria-current="true"] {
+    color: var(--sunset-orange);
+    border-color: var(--sunset-orange);
+    background: rgba(245, 166, 35, 0.12);
+    box-shadow: 0 0 16px rgba(245, 166, 35, 0.2);
+}
+
+.mode-option:focus-visible,
+.room-option:focus-visible {
+    outline: 2px solid var(--sunset-gold);
+    outline-offset: 2px;
+}
+
+.mode-name {
+    font-family: var(--font-display);
+    font-size: 0.95rem;
+    letter-spacing: 1.5px;
+    line-height: 1.1;
+}
+
+.mode-desc {
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    color: var(--text-muted);
+}
+
+/* In the game: room chip below the rank chip (desktop), beside it (touch) */
+#player-list {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.45rem;
+}
+
+#room-chip {
+    width: 144px;
+    min-height: 44px;
+    padding: 0.35rem 0.8rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.05rem;
+    color: var(--cream);
+    background: linear-gradient(145deg, rgba(31, 49, 42, 0.91), rgba(24, 32, 30, 0.82));
+    border: 1px solid rgba(243, 210, 142, 0.68);
+    border-radius: 16px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.26), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.18s ease, border-color 0.18s ease, transform 0.12s ease;
+}
+
+#room-chip:hover,
+#room-chip:focus-visible,
+#room-chip[aria-expanded="true"] {
+    background: linear-gradient(145deg, rgba(45, 67, 58, 0.96), rgba(29, 39, 36, 0.9));
+    border-color: rgba(255, 213, 79, 0.9);
+    outline: none;
+}
+
+#room-chip:active {
+    transform: scale(0.97);
+}
+
+#room-chip-mode {
+    font-family: var(--font-display);
+    font-size: 0.9rem;
+    letter-spacing: 1px;
+    line-height: 1.1;
+    white-space: nowrap;
+}
+
+#room-chip-index {
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: rgba(255, 248, 231, 0.65);
+    white-space: nowrap;
+}
+
+#room-panel {
+    position: absolute;
+    top: calc(100% + 0.55rem);
+    right: 0;
+    width: min(260px, calc(100vw - 2rem));
+    padding: 0.8rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    color: var(--cream);
+    background: linear-gradient(145deg, rgba(31, 49, 42, 0.96), rgba(17, 25, 23, 0.94));
+    border: 1px solid rgba(243, 210, 142, 0.48);
+    border-radius: 16px;
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.36);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+}
+
+#room-panel[hidden] {
+    display: none;
+}
+
+#room-panel h3 {
+    margin: 0;
+    padding: 0 0 0.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    font-family: var(--font-display);
+    font-size: 0.86rem;
+    font-weight: 400;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.room-option {
+    flex: 0 0 auto;
+    min-height: 52px;
+}
+
+.room-option:disabled {
+    cursor: default;
+}
+
+.room-option:disabled:not([aria-current="true"]) {
+    opacity: 0.5;
+}
+
+@media (max-width: 768px), (pointer: coarse) {
+    #player-list {
+        flex-direction: row-reverse;
+        align-items: flex-start;
+        gap: 0.4rem;
+    }
+
+    #room-chip {
+        width: auto;
+        min-width: 72px;
+        min-height: 48px;
+        padding: 0.3rem 0.55rem;
+        border-radius: 16px;
+    }
+
+    #room-chip-mode {
+        font-size: 0.72rem;
+    }
+
+    #room-chip-index {
+        font-size: 0.52rem;
+    }
+
+    #room-panel {
+        width: min(240px, calc(100vw - 1.3rem));
+        max-height: calc(100vh - 5rem);
+        overflow: auto;
+    }
+
+    .mode-option {
+        min-height: 52px;
+    }
+}
+
+@media (max-width: 600px) and (orientation: portrait) {
+    #room-chip {
+        min-height: 44px;
+    }
+}
+
+/* Short screens (phones in landscape): a slimmer splash */
+@media (max-height: 480px) {
+    .mode-selector {
+        margin-bottom: 1rem;
+    }
+
+    .mode-option {
+        min-height: 44px;
+    }
+
+    .mode-desc {
+        display: none;
+    }
+}

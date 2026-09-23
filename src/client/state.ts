@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { RemotePlayer, Inputs, Obstacle } from './types.js';
-import type { PowerupData, CoinData, TerrainConfig, ScoreboardEntry } from '../shared/protocol.js';
+import type { PowerupData, CoinData, TerrainConfig, ScoreboardEntry, RoomInfo } from '../shared/protocol.js';
 import type { ColliderInput } from '../shared/world/colliders.js';
 
 export const state = {
@@ -22,6 +22,8 @@ export const state = {
     obstacles: [] as Obstacle[],
     terrainConfig: null as TerrainConfig | null,
     myId: null as string | null,
+    // The room the server put this client in (null offline and in the sandbox)
+    room: null as RoomInfo | null,
     myColor: null as number | null,
     myName: "Player",
     myCarType: "bulli",
