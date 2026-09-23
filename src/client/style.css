@@ -378,6 +378,15 @@ canvas {
     height: 32px;
 }
 
+/* Rendered car icons (WebP with alpha): a little lift so they sit like the
+   drawn icons of the other cars */
+.car-icon-render {
+    object-fit: contain;
+    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35));
+    user-select: none;
+    pointer-events: none;
+}
+
 .car-name {
     font-family: var(--font-body);
     font-size: 0.6rem;
