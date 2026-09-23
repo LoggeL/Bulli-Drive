@@ -1,6 +1,6 @@
 # Plan: Bulli Drive als Open-World-Multiplayer-Rennspiel
 
-**Stand:** 2026-09-23 · **Aktuelle Phase:** Phase 0 – in Arbeit (Branch `refactor/phase-0-foundation`, Basis `1d39c07`); offen sind noch die Messung auf dem Referenz-Handy, der erste CI-Lauf auf GitHub und die Entscheidung zum Ziel-Topspeed
+**Stand:** 2026-09-23 · **Aktuelle Phase:** Phase 1a – umgesetzt hinter `?physics=v2` (Branch `refactor/phase-1a-driving`), wartet auf den Blindtest durch den Nutzer ([Anleitung](phase-1a-playtest.md)); danach wird die Legacy-Physik gelöscht. Phase 0 ist gemergt (PR #7, CI grün); offen ist dort nur noch die Messung auf echten Geräten (Referenz-Handy, Desktop im Browserfenster).
 
 ## 0. Entscheidungen (2026-09-23)
 
@@ -14,6 +14,7 @@ Diese Entscheidungen sind verbindlich und ersetzen die Empfehlungen des Entwurfs
 | 4 | **Mobile ist eine gleichwertige Plattform.** | Touch-Steuerung, Mobile-HUD und das Performance-Budget (Tier low) sind Teil jedes Exit-Kriteriums, nicht erst der Politur. Der Playwright-Smoke läuft ab Phase 0 auch mit Touch-Emulation. |
 | 5 | **Das echte VW-Logo bleibt** (privates Fun-Projekt). | Kein Branding-Umbau. Die Logo-Textur (`Bulli.ts:23-89`, `addVWLogo`) zählt zu den Teilen, die bleiben. |
 | 6 | **Der Server läuft 24/7 in einem Docker-Container; SQLite auf einem persistenten Volume ist in Ordnung.** | Graceful Shutdown, `/healthz`, Restart-Policy, Speicherstabilität über Tage und ein Backup des Volumes gehören zum Plan. Kein externer Datenbankdienst. |
+| 7 | **Topspeed: 1 u = 1 m, Basis-Topspeed je Karosse 45–55 m/s (Mittel ~50 m/s = 180 km/h), mit Boost ~70 m/s (252 km/h). Das Turbo-Powerup darf darüber, mit sinnvoller Obergrenze.** | Umgesetzt in Phase 1a: vtop 47–55 m/s je Karosse, Boost zielt auf vtop + 20 m/s (Bulli 70 m/s), harte Obergrenze 85 m/s (306 km/h) auch mit Turbo und Boost, Tacho im v2-Modus bis 320 km/h ([`phase-1a-design.md`](phase-1a-design.md), Abschnitte 6, 9, 19). |
 
 ## 1. Kurzfazit
 
@@ -104,7 +105,7 @@ Die Dauer ist in Wochen fokussierter Arbeit angegeben, im Kalender wird es läng
 - Jedes Exit-Kriterium gilt für Desktop **und** Mobile.
 - Nach Phase 2 und nach Phase 3 gibt es jeweils ein fertiges Spiel, an dem man aufhören könnte.
 
-**Phase 0 – Fundament und Baseline (ca. 1 Woche) · Status: in Arbeit**
+**Phase 0 – Fundament und Baseline (ca. 1 Woche) · Status: gemergt (PR #7, CI grün); offen nur die Messung auf echten Geräten**
 - **Ziel:** Sicher iterieren können, ohne dass sich für Spieler etwas ändert.
 - **Deliverables:**
   - [x] Vite mit `three@0.160.0` über npm, Importmap und `scripts/*.mjs` gelöscht; `build-version.txt` und der Reload bei neuer Version funktionieren weiter
@@ -115,24 +116,35 @@ Die Dauer ist in Wochen fokussierter Arbeit angegeben, im Kalender wird es läng
   - [x] Baseline-Messung (FPS, Draw Calls, Bandbreite) headless — Overlay mit `?debug=perf`, `npm run perf:baseline` (2 Clients, 20 s, SwiftShader oder `--gl=gpu`), Ergebnisse in [`docs/baseline.md`](baseline.md)
   - [ ] Baseline auf einem **Referenz-Handy** und einem Desktop mit echter GPU im Browserfenster (Gerät noch festlegen; Messung per `?debug=perf`, Werte in `docs/baseline.md` ergänzen)
   - [x] **Maßstab festlegen:** 1 u = 1 m (`METERS_PER_UNIT`, `MS_TO_KMH` in `src/shared/constants.ts`), Tacho zeigt echte km/h (Topspeed heute 60 m/s = 216 km/h, mit Turbo 108 m/s ≈ 389 km/h; Skala bis 400 km/h). Die Fahrphysik ist unverändert. Einschränkung: Das gilt ab 30 FPS. Darunter klemmt die Legacy-Physik den Frame auf 1/30 s (`Bulli.ts:750`), das Auto fährt also langsamer, als der Tacho zeigt (bei 20 FPS 2/3). Der E2E-Test misst die zurückgelegte Strecke und rechnet diese Klemmung ein; behoben wird das erst mit der v2-Physik mit festem Tick (Phase 1a).
-  - [ ] **Ziel-Topspeed** für die v2-Physik: offene Entscheidung 2, wirksam erst in Phase 1a
+  - [x] **Ziel-Topspeed** für die v2-Physik: entschieden am 2026-09-23 (Abschnitt 0, Entscheidung 7), umgesetzt in Phase 1a
 - Kampf, Coins, Powerups und Sprung bleiben in Phase 0 unverändert im Spiel.
 - **Exit:** Das Spiel verhält sich auf Desktop und Mobile identisch zu `1d39c07` (bis auf den Tacho), der Stale-Client-Reload funktioniert, und die CI ist grün.
 
-**Phase 1a – Fahrgefühl und Kontakt (3–4 Wochen, Flag `?physics=v2`)**
+**Phase 1a – Fahrgefühl und Kontakt (3–4 Wochen, Flag `?physics=v2`) · Status: umgesetzt hinter `?physics=v2`, wartet auf den Blindtest; danach Legacy-Physik löschen**
+
+Verbindliche Spezifikation, Abweichungen und Messwerte: [`phase-1a-design.md`](phase-1a-design.md). Anleitung für den Blindtest: [`phase-1a-playtest.md`](phase-1a-playtest.md). Ohne Flag verhält sich das Spiel wie vorher, das Protokoll ist unverändert, Multiplayer funktioniert in beiden Modi.
+
 - **Deliverables:**
-  - `stepVehicle` mit Längs- und Quergrip, Handbremse, Drift, die ein Boost-Meter füllt, und echter Gravitation
-  - Klassen-Stats für die 5 Karossen, inklusive **Masse** für den Kontakt
-  - Kollision mit der Welt als 2 Kreise gegen das SpatialGrid, swept bzw. mit Substeps (108 m/s bedeuten 1,8 m pro Tick), Gleiten an Wänden statt `speed×-0.5`
-  - **Auto-Auto-Kontakt in `sim/contact.ts`:** Kreis-Paare pro Auto, Impuls mit Masse, geringer Restitution und Reibung, Drehmoment bei außermittigem Treffer, Impuls pro Kontakt begrenzt (kein Wegschleudern in die Luft). Die Paare werden in fester Reihenfolge (sortiert nach Spieler-ID) aufgelöst, damit Client und Server dasselbe rechnen. `stepWorld` simuliert alle Autos eines Ticks gemeinsam.
-  - **Powerup-Effekte als Sim-Modifikatoren** (Turbo, Mega, Super-Jump, Ghost = kein Kontakt), damit der Party-Modus auf v2 läuft; Sprung/Salto als Impuls in der Sim
-  - Fixed-Step-Loop
-  - `Bulli.ts` zerlegt
-  - InputManager mit Tastatur, Touch (bestehender Joystick und Buttons) und Gamepad; Option Auto-Gas für Touch
-  - Sandbox-Strecke mit **Rampen**, Kurven, Wand und **Dummy-Autos zum Rempeln** sowie ein lil-gui-Tuning-Panel
-  - Niedrigere Renn-Kamera
-  - Reset statt der toten Recovery-Logik
+  - [x] `stepVehicle` mit Längs- und Quergrip, Handbremse, Drift, die ein Boost-Meter füllt, und echter Gravitation — Einspurmodell mit Reifenkennlinie und drei Fahrassists in `src/shared/sim`, fester Takt 1/60 s
+  - [x] Klassen-Stats für die 5 Karossen, inklusive **Masse** für den Kontakt — `sim/vehicleClasses.ts`, Assist-Profile „standard“ und „touch“
+  - [x] Kollision mit der Welt als 2 Kreise gegen das SpatialGrid, Gleiten an Wänden statt `speed×-0.5` — mit 3 festen Substeps statt Swept-Test; die Tunneling-Matrix mit 85 und 90 m/s ist grün (Spezifikation 19)
+  - [x] **Auto-Auto-Kontakt in `sim/contact.ts`:** Kreis-Paare pro Auto, Impuls mit Masse, geringer Restitution und Reibung, Drehmoment bei außermittigem Treffer, Impuls pro Kontakt begrenzt (kein Wegschleudern in die Luft). Die Paare werden in fester Reihenfolge (sortiert nach Spieler-ID) aufgelöst, damit Client und Server dasselbe rechnen. `stepWorld` simuliert alle Autos eines Ticks gemeinsam. Gegen echte Mitspieler wirkt der Kontakt in 1a weich und nur auf das eigene Auto (kinematische Proxies); beidseitig wird er mit dem Server-Tick in 1b.
+  - [x] **Powerup-Effekte als Sim-Modifikatoren** (Turbo, Mega, Super-Jump, Ghost = kein Kontakt), damit der Party-Modus auf v2 läuft; Sprung/Salto als Impuls in der Sim
+  - [x] Fixed-Step-Loop — `client/game/loop.ts`, höchstens 8 Ticks pro Frame, Render-Interpolation
+  - [x] `Bulli.ts` zerlegt — `CarModel`, `Nametag`, `ChaseCamera`, `LocalVehicle`; die Legacy-Physik liegt unverändert in `vehicle/legacyPhysics.ts`
+  - [x] InputManager mit Tastatur, Touch (bestehender Joystick und Buttons) und Gamepad; Option Auto-Gas für Touch — dazu großer DRIFT- und BOOST-Button, Gamepad mit Standard-Mapping
+  - [x] Sandbox-Strecke mit **Rampen**, Kurven, Wand und **Dummy-Autos zum Rempeln** sowie ein lil-gui-Tuning-Panel — `?sandbox=1` (offline) und `?tune=1`, Export der Werte als JSON
+  - [x] Niedrigere Renn-Kamera
+  - [x] Reset statt der toten Recovery-Logik — R halten bzw. Flip-Button halten setzt auf die nächste Straße
+  - [x] Messung der Sim-Kosten: `npm run perf:baseline -- --physics=v2` bzw. `--sandbox`, höchstens 0,09 ms pro Frame auch mit 6 Autos ([`baseline.md`](baseline.md), Abschnitt Phase 1a)
 - **Exit:** Mindestens 4 von 5 Testern ziehen das neue Fahren im Blindtest vor, auch auf dem Handy. Die Trajektorie ist bei 30, 60 und 144 FPS identisch. Der Tunneling-Test ist grün, auch für Auto gegen Auto bei Frontalzusammenstoß mit Topspeed. Ein Golden-Test für Kontaktszenarien (frontal, seitlich, Heck, drei Autos) läuft in Node und im Browser mit Toleranz gleich. Die Legacy-Physik ist gelöscht.
+- **Stand des Exits:**
+  - [ ] **Blindtest durch den Nutzer** (4 von 5, auch auf dem Handy) — offen, Anleitung in [`phase-1a-playtest.md`](phase-1a-playtest.md); getunte Werte kommen als JSON aus dem Panel zurück
+  - [x] Trajektorie bei 30, 60 und 144 FPS identisch — bitgleich pro Tick, auch bei unregelmäßigen Frames: `tests/client/loop.test.ts` (Loop und Sim) und `tests/client/fpsIndependence.test.ts` (der ganze Client-Tick mit InputManager, Powerup-Timern, Sandbox-Welt und Dummies)
+  - [x] Tunneling-Test grün, auch Auto gegen Auto frontal mit 2 × 85 m/s und T-Bone mit 85 m/s
+  - [x] Golden-Tests für 10 Szenarien (darunter frontal, T-Bone, PIT, drei Autos, Mega gegen Käfer) in Node exakt und im Browser auf 1 mm bzw. 1e-4 rad
+  - [ ] **Legacy-Physik löschen** — erst nach dem Blindtest: `vehicle/legacyPhysics.ts`, die Legacy-Zweige in `controls/keyboard.ts`, `controls/mobile.ts` und `main.ts`, die `.legacy-only`-Elemente in `index.html`; `?physics=v2` wird Standard
+- **Außerdem noch offen:** E2E-Test für eine gemischte Session aus v2- und Legacy-Client (funktioniert per Konstruktion, weil das Protokoll unverändert ist; drei Software-WebGL-Seiten gleichzeitig sind in der CI zu langsam), Messung der Sim-Kosten und Feinschliff von Renn-Kamera und Touch auf dem Referenz-Handy.
 
 **Phase 1b – Server-autoritativer Netz-Kern (3–4 Wochen)**
 - **Deliverables:**
@@ -235,10 +247,10 @@ Die Dauer ist in Wochen fokussierter Arbeit angegeben, im Kalender wird es läng
 
 ## 8. Offene Entscheidungen (mit Empfehlung)
 
-Entschieden am 2026-09-23 und daher nicht mehr offen: Kampf/Coins/Powerups (Party-Modus), Rempeln (ja, auch im Rennen), Welt (kuratiert, 1,5–2 km, kein Streaming), Mobile (gleichwertig), Branding (VW-Logo bleibt), Hosting (Docker 24/7, SQLite auf Volume). Siehe Abschnitt 0.
+Entschieden am 2026-09-23 und daher nicht mehr offen: Kampf/Coins/Powerups (Party-Modus), Rempeln (ja, auch im Rennen), Welt (kuratiert, 1,5–2 km, kein Streaming), Mobile (gleichwertig), Branding (VW-Logo bleibt), Hosting (Docker 24/7, SQLite auf Volume), Topspeed (Punkt 2). Siehe Abschnitt 0.
 
 1. **Spielerzahlen:** Empfehlung: bis 8 pro Rennen, bis 16 pro Party-Room und ca. 32 pro Free-Roam-Instanz; Sharding erst, wenn es gemessen nötig ist.
-2. **Topspeed:** Der Maßstab ist in Phase 0 festgelegt (1 u = 1 m). Heute fährt das Auto 60 m/s (216 km/h), mit Turbo 108 m/s. Empfehlung für v2: ca. 45–55 m/s Basis, mit Boost ca. 70 m/s; festlegen spätestens zu Beginn von Phase 1a.
+2. **Topspeed – entschieden (2026-09-23, Abschnitt 0, Entscheidung 7):** 1 u = 1 m, Basis 45–55 m/s je Karosse, mit Boost ~70 m/s, Turbo mit harter Obergrenze (umgesetzt: 85 m/s). Zum Vergleich: Legacy fährt 60 m/s (216 km/h), mit Turbo 108 m/s.
 3. **Kontaktstärke im Rennen:** Empfehlung: gleiche Physik wie im Free Roam, aber Impuls pro Kontakt begrenzt und Ghost in den ersten 3 s nach Start und Reset. Im Playtest von Phase 2 nachjustieren.
 4. **Sprung außerhalb des Party-Modus:** Empfehlung: im Free Roam erlaubt, im Rennen aus (Rampen übernehmen die Rolle).
 5. **Party-Modus in der neuen Map:** Empfehlung: eigene Zone bzw. Arena statt der ganzen Map, damit sich Free Roam und Party nicht stören.
