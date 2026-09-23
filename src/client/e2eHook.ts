@@ -16,6 +16,8 @@ export interface BulliDebugSnapshot {
     connected: boolean;
     local: CarSnapshot | null;
     remotes: Record<string, CarSnapshot & { name: string }>;
+    // Combined keyboard/touch drive axes
+    inputs: { throttle: number; steer: number };
     // three.js counters of the last rendered frame
     render: { frame: number; calls: number; triangles: number };
 }
@@ -44,6 +46,7 @@ export function installE2EHook(): void {
                 connected: state.ws?.readyState === WebSocket.OPEN,
                 local: state.bulli ? carSnapshot(state.bulli) : null,
                 remotes,
+                inputs: { throttle: state.inputs.throttle, steer: state.inputs.steer },
                 render: {
                     frame: state.renderer?.info.render.frame ?? 0,
                     calls: state.renderer?.info.render.calls ?? 0,
