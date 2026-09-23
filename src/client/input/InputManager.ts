@@ -125,7 +125,11 @@ export class InputManager {
 
     // ---- Keyboard ----
 
-    keyDown(key: DriveKey): void {
+    // repeat: a key repeat of the browser. Held keys take it like a new
+    // press, so a key still held after releaseKeys (respawn, modal, blur)
+    // drives again at once; jump and reset stay edge-triggered.
+    keyDown(key: DriveKey, repeat = false): void {
+        if (repeat && (key === 'jump' || key === 'reset')) return;
         this.keys.add(key);
         const bits = KEY_BUTTONS[key];
         if (bits) this.keyLatch.press(bits);
@@ -213,12 +217,14 @@ export class InputManager {
     /**
      * The input for one sim tick. Axes come from the active source with the
      * highest priority - touch, then gamepad, then keyboard; buttons are
-     * combined from all of them.
+     * combined from all of them. Auto-gas alone (stick released) yields to
+     * a gamepad or keyboard in use, e.g. a controller on a tablet.
      */
     sampleTick(out: VehicleInput): VehicleInput {
         let axes: DriveAxes;
-        const touchActive = this.touchUi && (this.stickActive || this.autoGasActive);
         const padActive = this.pad.steer !== 0 || this.pad.throttle > 0 || this.pad.brake > 0;
+        const keysActive = this.keys.has('up') || this.keys.has('down') || this.keys.has('left') || this.keys.has('right');
+        const touchActive = this.touchUi && (this.stickActive || (this.autoGasActive && !padActive && !keysActive));
         if (touchActive) {
             axes = touchDriveAxes(this.stickX, this.stickY, this.autoGasActive, this.touchAxes);
         } else if (padActive) {

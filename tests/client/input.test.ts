@@ -160,6 +160,20 @@ describe('InputManager', () => {
         expect(input.sampleTick(out)).toEqual({ steer: 0, throttle: 0, brake: 0, buttons: 0 });
     });
 
+    it('takes key repeats for held keys, but not for jump and reset', () => {
+        const input = new InputManager();
+        const out = createVehicleInput();
+        input.keyDown('up');
+        input.keyDown('boost');
+        // Respawn, modal or blur while the keys stay held
+        input.releaseKeys();
+        input.keyDown('up', true);
+        input.keyDown('boost', true);
+        input.keyDown('jump', true);
+        input.keyDown('reset', true);
+        expect(input.sampleTick(out)).toEqual({ steer: 0, throttle: 255, brake: 0, buttons: BTN_BOOST });
+    });
+
     it('does not lose a jump pressed and released between two ticks', () => {
         const input = new InputManager();
         const out = createVehicleInput();
@@ -189,5 +203,28 @@ describe('InputManager', () => {
         input.touchUi = false;
         input.setPad(null);
         expect(input.sampleTick(out)).toEqual({ steer: 0, throttle: 255, brake: 0, buttons: BTN_BOOST });
+    });
+
+    it('lets a gamepad or the keyboard take over from auto-gas once the stick is released', () => {
+        const input = new InputManager();
+        const out = createVehicleInput();
+        input.touchUi = true;
+        input.setStick(0.3, 0, true);
+        input.setStick(0, 0, false);
+        expect(input.sampleTick(out)).toEqual({ steer: 0, throttle: 255, brake: 0, buttons: 0 });
+        const padState = createPadState();
+        padState.steer = 1;
+        padState.brake = 1;
+        input.setPad(padState);
+        expect(input.sampleTick(out)).toEqual({ steer: 127, throttle: 0, brake: 255, buttons: 0 });
+        input.setPad(null);
+        input.keyDown('right');
+        expect(input.sampleTick(out)).toEqual({ steer: -127, throttle: 0, brake: 0, buttons: 0 });
+        // Pad and keys idle: auto-gas is back, and a held stick always wins
+        input.keyUp('right');
+        expect(input.sampleTick(out).throttle).toBe(255);
+        input.setPad(padState);
+        input.setStick(-1, 0, true);
+        expect(input.sampleTick(out)).toEqual({ steer: 127, throttle: 255, brake: 0, buttons: 0 });
     });
 });

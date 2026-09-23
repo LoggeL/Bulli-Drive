@@ -47,7 +47,7 @@ function onV2KeyDown(e: KeyboardEvent) {
     const key = e.key.toLowerCase();
     const driveKey = V2_KEYS[key];
     if (driveKey) {
-        if (!e.repeat) inputManager.keyDown(driveKey);
+        inputManager.keyDown(driveKey, e.repeat);
         e.preventDefault();
     } else if (key === 'e' && !e.repeat) {
         state.inputs.e = true;
