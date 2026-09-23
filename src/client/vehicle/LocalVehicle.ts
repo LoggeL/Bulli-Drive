@@ -14,8 +14,8 @@ import { collectRemoteProxies } from './remoteProxies.js';
 
 // The local car on the v2 physics (docs/phase-1a-design.md, 12.2/12.3): the
 // sim car, the fixed-step loop, the prev/curr pair for the render
-// interpolation and the pose, springs and legacy adapter fields written
-// onto the Bulli model. Not created with ?physics=legacy.
+// interpolation and the pose, springs and adapter fields written onto the
+// Bulli model.
 
 const TWO_PI = Math.PI * 2;
 const POWERUP_KEYS = ['speed', 'size', 'jump', 'shield', 'magnet', 'ghost'] as const;
@@ -28,7 +28,7 @@ const SPRING_RATE = 10;
 const SQUASH_RATE = 8;
 // A flip cut short by the landing turns the rest within about 6 frames
 const FLIP_FINISH_RATE = 18;
-// Terrain tilt like the legacy car: ±2 m samples, eased
+// Terrain tilt: ±2 m samples, eased
 const SLOPE_STEP = 2.0;
 const TILT_RATE = 6;
 // Reset hint (6.7): pushing into a wall at a standstill for a second
@@ -184,7 +184,7 @@ export class LocalVehicle {
     /**
      * Counts the powerup timers down, a Party rule (section 10): per tick
      * while the sim runs, per frame while it is frozen (modal, dead, GL
-     * context lost), so they run out then too, like in legacy.
+     * context lost), so they run out then too.
      */
     countPowerups(host: VehicleHost, seconds: number): void {
         for (const key of POWERUP_KEYS) {
@@ -329,7 +329,7 @@ export class LocalVehicle {
             }
         }
 
-        // Legacy adapter: speeds in units per 1/60 s tick (section 12.3)
+        // Adapter: speeds in units per 1/60 s tick (section 12.3)
         host.speed = u / 60;
         host.maxSpeed = this.car.params.topSpeed / 60;
         host.angle = pose.yaw;
@@ -337,7 +337,7 @@ export class LocalVehicle {
         host.canRecover = this.resetHint;
     }
 
-    // Anything left for the server to see move (like the legacy check)
+    // Anything left for the server to see move
     get moving(): boolean {
         const s = this.car.state;
         return Math.hypot(s.vx, s.vz) > 0.01

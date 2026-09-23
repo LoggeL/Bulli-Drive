@@ -17,19 +17,6 @@ export const METERS_PER_UNIT = 1;
 // Multiply a speed in m/s by this to get km/h
 export const MS_TO_KMH = 3.6;
 
-// The legacy client car (entities/Bulli.ts) integrates its speed in units per
-// 1/60 s tick, independent of the actual frame rate down to 30 FPS. It caps a
-// frame at 1/30 s, so below 30 FPS the car covers less ground per second than
-// its speed (and the speedometer) says, e.g. 2/3 of it at 20 FPS.
-export const LEGACY_SPEED_TICKS_PER_SECOND = 60;
-// Legacy top speed in units per tick: 1.0 u/tick = 60 m/s = 216 km/h, and
-// 108 m/s = 388.8 km/h while the Turbo powerup (SPEED_BOOST_FACTOR) is active.
-export const LEGACY_CAR_MAX_SPEED = 1.0;
-
-// Turbo (speed powerup) multiplier applied to acceleration AND max speed for the
-// full duration of the boost (constant, not decaying with the remaining timer).
-export const SPEED_BOOST_FACTOR = 1.8;
-
 // Powerup effect durations (ms): shield/ghost last longer than the rest
 export const POWERUP_DURATIONS_MS: Record<string, number> = {
     speed: 5000,

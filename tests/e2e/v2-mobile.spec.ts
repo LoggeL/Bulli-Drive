@@ -36,7 +36,7 @@ test('v2 touch controls: auto-gas, steering, drift, jump and reset', async ({ op
     for (const selector of ['#joystick-move', '#btn-flip', '#btn-shoot', '#btn-honk', '#btn-drift', '#btn-boost', '#btn-autogas', '#drive-meter']) {
         await expect(page.locator(selector), selector).toBeVisible();
     }
-    // The v2 buttons do not cover the legacy ones
+    // The drive buttons do not cover each other
     const boxes = await Promise.all(['#btn-drift', '#btn-boost', '#btn-autogas', '#btn-flip', '#btn-shoot', '#btn-honk', '#joystick-move']
         .map(async selector => ({ selector, box: (await page.locator(selector).boundingBox())! })));
     for (let i = 0; i < boxes.length; i++) {

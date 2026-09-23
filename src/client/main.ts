@@ -1,12 +1,11 @@
 import * as THREE from 'three';
-import { CONFIG } from './config.js';
 import { state } from './state.js';
 import { initWebSocket } from './network/websocket.js';
 import { initKeyboard } from './controls/keyboard.js';
 import { setupMobileControls } from './controls/mobile.js';
 import { updateParticles, spawnDriftParticle, spawnBoostFireParticle, spawnDamageSmoke } from './effects/particles.js';
 import { playCollisionSound } from './effects/sounds.js';
-import { updateJumpControl, showHitmarker } from './ui/hud.js';
+import { updateJumpControl, showHitmarker, showInteractionPrompt } from './ui/hud.js';
 import { initSounds, startEngineSound, updateEngineSound } from './effects/sounds.js';
 import { checkCoinCollection, animateCoins } from './world/coins.js';
 import { checkPowerupCollection, animatePowerups } from './world/powerups.js';
@@ -16,7 +15,6 @@ import { initSplashScreen, initAboutModal } from './ui/screens.js';
 import { applySplashChoice, initModeSelector, initRoomMenu } from './ui/roomMenu.js';
 import { animateFountain } from './world/city.js';
 import { updateMinimap } from './ui/minimap.js';
-import { SPEED_BOOST_FACTOR } from '../shared/constants.js';
 import { Bulli, type CarType } from './entities/Bulli.js';
 import { sendToServer } from './network/socket.js';
 import { AdaptiveRenderQuality } from './effects/renderQuality.js';
@@ -26,13 +24,12 @@ import { installE2EHook } from './e2eHook.js';
 import { watchWebGLContext, isWebGLContextLost } from './ui/contextLoss.js';
 import { installPerfMonitor, type PerfMonitor } from './debug/perfMonitor.js';
 import { setupLighting, updateLighting } from './render/lighting.js';
-import { ChaseCamera, LEGACY_CAMERA, RACE_CAMERA, RACE_CAMERA_SLIP_BLEND, type ChaseTarget } from './camera/ChaseCamera.js';
-import { PHYSICS_V2, SANDBOX, TUNE_PANEL } from './flags.js';
+import { ChaseCamera, RACE_CAMERA, RACE_CAMERA_SLIP_BLEND, type ChaseTarget } from './camera/ChaseCamera.js';
+import { SANDBOX, TUNE_PANEL, TUNE_REQUESTED } from './flags.js';
 import { gameHooks } from './game/hooks.js';
 import type { LocalVehicle } from './vehicle/LocalVehicle.js';
 
-const chaseCamera = new ChaseCamera(PHYSICS_V2 ? RACE_CAMERA : LEGACY_CAMERA);
-gameHooks.camera = chaseCamera;
+const chaseCamera = new ChaseCamera(RACE_CAMERA);
 const _chaseTarget: ChaseTarget = { position: new THREE.Vector3(), yaw: 0, speedRatio: 0, boost: false };
 
 let renderQuality: AdaptiveRenderQuality;
@@ -43,10 +40,6 @@ let perfMonitor: PerfMonitor | null = null;
 const ramCooldowns: Record<string, number> = {};
 
 function init() {
-    // index.html starts with body.physics-v2 (v2 HUD and control hints,
-    // style.css: .v2-only, .legacy-only); ?physics=legacy swaps them back
-    document.body.classList.toggle('physics-v2', PHYSICS_V2);
-
     // Scene
     state.scene = new THREE.Scene();
 
@@ -58,7 +51,7 @@ function init() {
         0.1,
         1000
     );
-    state.camera.position.set(0, CONFIG.cameraHeight, CONFIG.cameraDistance);
+    state.camera.position.set(0, RACE_CAMERA.height, RACE_CAMERA.distance);
 
     // Renderer
     state.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -150,11 +143,14 @@ function init() {
     installE2EHook();
     // Performance overlay, a no-op unless the page URL has ?debug=perf
     perfMonitor = installPerfMonitor();
-    // lil-gui tuning panel of the v2 physics, only loaded with ?tune=1
+    // lil-gui tuning panel of the physics, only loaded with ?tune=1 in the
+    // sandbox: online the server drives with the default tuning
     if (TUNE_PANEL) {
         import('./debug/tuningPanel.js')
             .then(panel => panel.installTuningPanel())
             .catch(error => console.error('Tuning panel failed to load', error));
+    } else if (TUNE_REQUESTED) {
+        showInteractionPrompt('TUNING ONLY IN THE SANDBOX (?sandbox=1&tune=1)');
     }
 
     // Start Loop
@@ -169,24 +165,7 @@ function onWindowResize() {
     renderQuality.resize(window.innerWidth, window.innerHeight);
 }
 
-function updateChaseCamera(
-    dt: number,
-    carPos: THREE.Vector3,
-    carAngle: number,
-    carSpeed: number,
-    boostActive: boolean
-) {
-    const maxSpeed = Math.max(0.001, state.bulli.maxSpeed * (boostActive ? SPEED_BOOST_FACTOR : 1));
-    _chaseTarget.position.copy(carPos);
-    _chaseTarget.yaw = carAngle;
-    _chaseTarget.speedRatio = Math.min(1, Math.abs(carSpeed) / maxSpeed);
-    _chaseTarget.boost = boostActive;
-    if (chaseCamera.update(dt, state.camera, _chaseTarget, state.cameraSnapPending)) {
-        state.cameraSnapPending = false;
-    }
-}
-
-// v2: the camera swings a little towards the travel direction in a drift
+// The camera swings a little towards the travel direction in a drift
 function updateRaceCamera(dt: number, carPos: THREE.Vector3, vehicle: LocalVehicle) {
     const s = vehicle.car.state;
     const u = vehicle.forwardSpeed;
@@ -223,11 +202,7 @@ function animate(frameTime: number) {
         // shortest arc, while position, framing and FOV use independent damping
         // so a quick turn feels deliberate instead of whipping the view around.
         const carPos = state.bulli.group.position;
-        if (vehicle) {
-            updateRaceCamera(dt, carPos, vehicle);
-        } else {
-            updateChaseCamera(dt, carPos, state.bulli.angle, state.bulli.speed, state.bulli.powerups.speed.active);
-        }
+        if (vehicle) updateRaceCamera(dt, carPos, vehicle);
 
         // Effects based on speed
         const speed = Math.abs(state.bulli.speed);

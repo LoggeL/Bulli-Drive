@@ -57,7 +57,7 @@ export interface PerfRecording {
     cpuMs: Distribution;
     drawCalls: Distribution;
     triangles: Distribution;
-    // Only with the v2 physics, null with the legacy physics
+    // null before the local car drives
     sim: SimCost | null;
     // renderer.info.memory / programs at the end of the recording
     geometries: number;

@@ -4,7 +4,6 @@
 //
 //   npm run screenshots -- --out=shots/after                 # build + capture
 //   npm run screenshots -- --out=shots/after --gl=swiftshader
-//   npm run screenshots -- --out=shots/legacy --physics=legacy   # the old physics and camera
 //   npx tsx scripts/screenshots.ts --compare=shots/before,shots/after --out=shots/compare
 //
 // --gl=gpu (default) renders on the machine's GPU (ANGLE/Metal on macOS) and
@@ -27,18 +26,16 @@ interface Options {
     port: number;
     only: string[] | null;
     compare: [string, string] | null;
-    physics: 'v2' | 'legacy';
 }
 
 function parseArgs(argv: string[]): Options {
-    const options: Options = { out: 'screenshots', gl: 'gpu', port: 8260, only: null, compare: null, physics: 'v2' };
+    const options: Options = { out: 'screenshots', gl: 'gpu', port: 8260, only: null, compare: null };
     for (const arg of argv) {
         const [key, value = ''] = arg.replace(/^--/, '').split('=');
         if (key === 'out') options.out = value;
         else if (key === 'gl' && (value === 'gpu' || value === 'swiftshader')) options.gl = value;
         else if (key === 'port') options.port = Number(value);
         else if (key === 'only') options.only = value.split(',').filter(Boolean);
-        else if (key === 'physics' && (value === 'v2' || value === 'legacy')) options.physics = value;
         else if (key === 'compare') {
             const [before, after] = value.split(',');
             if (!before || !after) throw new Error('--compare needs two folders: --compare=before,after');
@@ -158,7 +155,7 @@ async function settle(page: Page, minMs: number): Promise<void> {
     while ((await snapshot(page)).render.frame < start + 10 && Date.now() < deadline) await sleep(100);
 }
 
-async function join(browser: Browser, contextOptions: BrowserContextOptions, baseURL: string, name: string, physics: Options['physics']): Promise<Page> {
+async function join(browser: Browser, contextOptions: BrowserContextOptions, baseURL: string, name: string): Promise<Page> {
     const context = await browser.newContext({ ...contextOptions, baseURL });
     await context.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, route =>
         route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
@@ -166,7 +163,7 @@ async function join(browser: Browser, contextOptions: BrowserContextOptions, bas
     page.on('pageerror', error => log(`page error: ${error.message}`));
     page.on('console', message => { if (message.type() === 'error') log(`console.error: ${message.text()}`); });
 
-    await page.goto(physics === 'legacy' ? '/?e2e=1&physics=legacy' : '/?e2e=1');
+    await page.goto('/?e2e=1');
     await page.locator('#loading-screen').waitFor({ state: 'detached', timeout: 90_000 });
     await page.locator('.car-card[data-car="bulli"]').click();
     await page.locator('#splash-name-input').fill(name);
@@ -212,7 +209,7 @@ async function captureDesktop(browser: Browser, baseURL: string, options: Option
     const want = (view: string) => !options.only || options.only.includes(view);
     const page = await join(browser, {
         ...devices['Desktop Chrome'], viewport: { width: 1600, height: 900 }, deviceScaleFactor: 1
-    }, baseURL, 'Shots', options.physics);
+    }, baseURL, 'Shots');
 
     // Chase camera on the middle road looking north towards the plaza, HUD
     // visible (checks UI legibility too). The car is fresh, so the respawn
@@ -325,7 +322,7 @@ async function captureMobile(browser: Browser, baseURL: string, options: Options
         const viewport = orientation === 'portrait'
             ? iphone.viewport
             : { width: iphone.viewport.height, height: iphone.viewport.width };
-        const page = await join(browser, { ...iphone, viewport, screen: viewport }, baseURL, 'Mobile', options.physics);
+        const page = await join(browser, { ...iphone, viewport, screen: viewport }, baseURL, 'Mobile');
         await place(page, MID_ROAD, -60, 0);
         await settle(page, 2500);
         await shoot(page, options.out, view, stats, true);
@@ -409,7 +406,7 @@ async function main() {
         const stats: ShotStats[] = [];
         await captureDesktop(browser, baseURL, options, stats);
         await captureMobile(browser, baseURL, options, stats);
-        const summary = { date: new Date().toISOString(), renderer, physics: options.physics, shots: stats };
+        const summary = { date: new Date().toISOString(), renderer, shots: stats };
         fs.writeFileSync(path.join(options.out, 'stats.json'), JSON.stringify(summary, null, 2) + '\n');
         log(`wrote ${stats.length} screenshots to ${options.out}`);
     } finally {

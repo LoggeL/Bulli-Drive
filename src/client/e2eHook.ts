@@ -1,8 +1,6 @@
 import * as THREE from 'three';
 import { state } from './state.js';
 import { focusLightingOn } from './render/lighting.js';
-import type { Obstacle } from './types.js';
-import { PHYSICS_V2 } from './flags.js';
 import type { LocalVehicle } from './vehicle/LocalVehicle.js';
 import type { VehicleInput } from '../shared/sim/types.js';
 import type { RoomInfo } from '../shared/protocol.js';
@@ -25,7 +23,7 @@ interface CarSnapshot {
     speed: number;
 }
 
-// State of the local v2 sim car, null with the legacy physics (?physics=legacy)
+// State of the local sim car, null before the car's first frame
 export interface V2Snapshot {
     // Sim pose: y is the height above the ground under the car
     x: number;
@@ -60,7 +58,6 @@ export interface V2Snapshot {
 }
 
 export interface BulliDebugSnapshot {
-    physics: 'legacy' | 'v2';
     myId: string | null;
     connected: boolean;
     // The room the server put this page in, and its items in the scene
@@ -211,7 +208,6 @@ export function installE2EHook(): void {
                 remotes[id] = { ...carSnapshot(remote), name: remote.name };
             }
             return {
-                physics: PHYSICS_V2 ? 'v2' : 'legacy',
                 myId: state.myId,
                 connected: state.ws?.readyState === WebSocket.OPEN,
                 room: state.room ? { ...state.room } : null,
@@ -233,11 +229,6 @@ export function installE2EHook(): void {
                 },
                 v2: v2Snapshot(state.bulli?.vehicle)
             };
-        },
-        // Collision obstacles of the local car (buildings, trees, props)
-        // as circles and rects
-        obstacles(): Obstacle[] {
-            return state.obstacles.map(obstacle => ({ ...obstacle }));
         },
         // The same as the sim's collider list (shared/world/colliderGen.ts)
         colliders(): ColliderInput[] {

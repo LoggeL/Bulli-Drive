@@ -34,7 +34,6 @@ test('the sandbox runs offline with dummy cars that move when rammed', async ({ 
 
     // v2 physics without a server: no WebSocket at all
     const state = await snapshot(page);
-    expect(state.physics).toBe('v2');
     expect(state.connected).toBe(false);
     expect(player.sentMessages).toEqual([]);
     await expect(page.locator('#sandbox-banner')).toBeVisible();

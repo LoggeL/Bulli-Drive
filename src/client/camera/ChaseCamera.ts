@@ -33,34 +33,9 @@ export interface ChaseProfile {
     fovDamping: number;
 }
 
-// Today's high camera (CONFIG.camera*)
-export const LEGACY_CAMERA: ChaseProfile = {
-    height: CONFIG.cameraHeight,
-    distance: CONFIG.cameraDistance,
-    lookAtY: CONFIG.cameraLookAtY,
-    lookAhead: CONFIG.cameraLookAhead,
-    speedLookAhead: CONFIG.cameraSpeedLookAhead,
-    distanceSpeedGain: 0.12,
-    heightSpeedGain: 0.08,
-    distanceBoostGain: 0.06,
-    heightBoostGain: 0.04,
-    baseFov: CONFIG.cameraBaseFov,
-    mobileFov: CONFIG.cameraMobileFov,
-    speedFov: CONFIG.cameraSpeedFov,
-    boostFov: CONFIG.cameraBoostFov,
-    maxFov: CONFIG.cameraMaxFov,
-    mobileDistanceScale: CONFIG.cameraMobileDistanceScale,
-    mobileHeightScale: CONFIG.cameraMobileHeightScale,
-    portraitScale: 1,
-    yawDamping: CONFIG.cameraYawDamping,
-    positionDamping: CONFIG.cameraPositionDamping,
-    lookDamping: CONFIG.cameraLookDamping,
-    fovDamping: CONFIG.cameraFovDamping
-};
-
-// Lower racing camera of the v2 physics (docs/phase-1a-design.md, 12.5).
-// Standing on a 16:9 screen the car is about 16 % of the image wide (legacy
-// camera: 4 %), 12 % at 70 km/h; measured with npm run screenshots.
+// Low racing camera (docs/phase-1a-design.md, 12.5). Standing on a 16:9
+// screen the car is about 16 % of the image wide (the old high camera: 4 %),
+// 12 % at 70 km/h; measured with npm run screenshots.
 export const RACE_CAMERA: ChaseProfile = {
     height: 4.8,
     distance: 11,
@@ -80,7 +55,7 @@ export const RACE_CAMERA: ChaseProfile = {
     mobileDistanceScale: 1,
     mobileHeightScale: 1,
     portraitScale: 1.5,
-    // Tighter than the legacy camera, which trails far behind at 50 m/s
+    // Tight enough not to trail far behind at 50 m/s
     yawDamping: 7,
     positionDamping: 12,
     lookDamping: 12,

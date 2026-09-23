@@ -1,6 +1,6 @@
 import { test as base, expect, type BrowserContext, type Page } from '@playwright/test';
 import type { BulliDebugSnapshot, V2Snapshot } from '../../src/client/e2eHook.js';
-import type { Obstacle } from '../../src/client/types.js';
+import type { ColliderInput } from '../../src/shared/world/colliders.js';
 import { CITY_BOUNDS, CITY_CONFIG, roadLineCenter } from '../../src/shared/world/cityGen.js';
 import { MEGA_SCALE } from '../../src/shared/constants.js';
 
@@ -78,14 +78,10 @@ export function snapshot(page: Page): Promise<BulliDebugSnapshot> {
     }).__bulliDebug.snapshot());
 }
 
-// The local v2 sim car (created with the car's first frame); fails when the
-// page runs the legacy physics
+// The local sim car (created with the car's first frame)
 export async function v2(page: Page): Promise<V2Snapshot> {
     let state = await snapshot(page);
-    if (!state.v2) {
-        expect(state.physics, 'the page runs the legacy physics (?physics=legacy)').toBe('v2');
-        await expect.poll(async () => (state = await snapshot(page)).v2).not.toBeNull();
-    }
+    if (!state.v2) await expect.poll(async () => (state = await snapshot(page)).v2).not.toBeNull();
     return state.v2!;
 }
 
@@ -151,20 +147,20 @@ export function distance(a: { x: number; z: number }, b: { x: number; z: number 
 const RUNWAY_CLEARANCE = 1.5 * MEGA_SCALE + 1;
 
 /**
- * Free length ahead of a car at (x, z0) driving towards +z (angle 0) until an
- * obstacle (grown by RUNWAY_CLEARANCE) blocks the line x = const.
+ * Free length ahead of a car at (x, z0) driving towards +z (angle 0) until a
+ * collider (grown by RUNWAY_CLEARANCE) blocks the line x = const.
  */
-function freeRunway(obstacles: Obstacle[], x: number, z0: number): number {
+function freeRunway(colliders: ColliderInput[], x: number, z0: number): number {
     let free = CITY_BOUNDS.maxZ - z0;
-    for (const obstacle of obstacles) {
+    for (const obstacle of colliders) {
         let halfAcross: number;
         let halfAlong: number;
-        if (obstacle.type === 'rect') {
-            halfAcross = obstacle.halfWidth + RUNWAY_CLEARANCE;
-            halfAlong = obstacle.halfDepth + RUNWAY_CLEARANCE;
+        if (obstacle.kind === 'box') {
+            halfAcross = obstacle.hw + RUNWAY_CLEARANCE;
+            halfAlong = obstacle.hd + RUNWAY_CLEARANCE;
         } else {
             const dx = Math.abs(obstacle.x - x);
-            const reach = obstacle.radius + RUNWAY_CLEARANCE;
+            const reach = obstacle.r + RUNWAY_CLEARANCE;
             if (dx >= reach) continue;
             halfAcross = reach;
             halfAlong = Math.sqrt(reach * reach - dx * dx);
@@ -186,10 +182,10 @@ function freeRunway(obstacles: Obstacle[], x: number, z0: number): number {
  * Returns where the car was put and how much room it has ahead.
  */
 export async function placeOnClearRunway(page: Page, minLength = 120): Promise<{ x: number; z: number; free: number }> {
-    const obstacles = await page.evaluate(() => (window as unknown as {
-        __bulliDebug: { obstacles(): Obstacle[] };
-    }).__bulliDebug.obstacles());
-    expect(obstacles.length, 'city obstacles').toBeGreaterThan(0);
+    const colliders = await page.evaluate(() => (window as unknown as {
+        __bulliDebug: { colliders(): ColliderInput[] };
+    }).__bulliDebug.colliders());
+    expect(colliders.length, 'city colliders').toBeGreaterThan(0);
 
     let best = { x: 0, z: 0, free: -1 };
     const laneOffset = CITY_CONFIG.roadWidth / 4;
@@ -197,7 +193,7 @@ export async function placeOnClearRunway(page: Page, minLength = 120): Promise<{
         for (const lane of [-laneOffset, 0, laneOffset]) {
             const x = roadLineCenter(line, 'x') + lane;
             for (let z = CITY_BOUNDS.minZ + 5; z < CITY_BOUNDS.maxZ; z += 2) {
-                const free = freeRunway(obstacles, x, z);
+                const free = freeRunway(colliders, x, z);
                 if (free > best.free) best = { x, z, free };
             }
         }

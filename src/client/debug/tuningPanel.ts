@@ -3,7 +3,6 @@ import { SIM_TUNING, SIM_TUNING_DEFAULTS, type SimTuning } from '../../shared/si
 import { exportTuning, importTuning, refreshCarParams, resetTuning, tuningIsDefault } from '../../shared/sim/tuning.js';
 import type { AssistProfile, CarClassId } from '../../shared/sim/types.js';
 import { ASSIST_PROFILES, CAR_CLASS_IDS, VEHICLE_CLASSES, type AssistSettings, type ClassParams } from '../../shared/sim/vehicleClasses.js';
-import { LEGACY_CAMERA, RACE_CAMERA } from '../camera/ChaseCamera.js';
 import { SANDBOX } from '../flags.js';
 import { gameHooks } from '../game/hooks.js';
 import { state } from '../state.js';
@@ -295,17 +294,10 @@ export async function installTuningPanel(): Promise<void> {
             current.profile = profile;
             refreshLiveCars();
             updateAll(gui);
-        },
-        get camera(): string {
-            return gameHooks.camera?.profile === LEGACY_CAMERA ? 'legacy' : 'race';
-        },
-        set camera(name: string) {
-            if (gameHooks.camera) gameHooks.camera.profile = name === 'legacy' ? LEGACY_CAMERA : RACE_CAMERA;
         }
     };
     for (const knob of TOP_GLOBALS) addKnob(top, knob);
     top.add(switches, 'assistProfile', ['standard', 'touch']).name('Assist-Profil ·P').listen();
-    top.add(switches, 'camera', ['race', 'legacy']).name('Kamera').listen();
     top.add(edit, 'classId', [...CAR_CLASS_IDS]).name('Werte der Klasse ·K').onChange(() => updateAll(gui));
 
     for (const [title, knobs] of FOLDERS) {

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { RemotePlayer, Inputs, Obstacle } from './types.js';
+import { RemotePlayer, Inputs } from './types.js';
 import type { PowerupData, CoinData, TerrainConfig, ScoreboardEntry, RoomInfo } from '../shared/protocol.js';
 import type { ColliderInput } from '../shared/world/colliders.js';
 
@@ -10,16 +10,14 @@ export const state = {
     bulli: null as any, // Local car instance
     remotePlayers: {} as Record<string, RemotePlayer>,
     inputs: {
-        throttle: 0, steer: 0, e: false, f: false, space: false
+        throttle: 0, steer: 0, e: false, f: false
     } as Inputs,
     worldPowerups: [] as PowerupData[],
     isModalOpen: false,
     audioCtx: null as AudioContext | null,
     ws: null as WebSocket | null,
-    // Static colliders of the world (vehicle/simWorldClient.ts), and the
-    // same as circles and rects for the legacy physics
+    // Static colliders of the world (vehicle/simWorldClient.ts)
     worldColliders: [] as ColliderInput[],
-    obstacles: [] as Obstacle[],
     terrainConfig: null as TerrainConfig | null,
     myId: null as string | null,
     // The room the server put this client in (null offline and in the sandbox)

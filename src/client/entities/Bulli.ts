@@ -2,14 +2,12 @@ import * as THREE from 'three';
 import { state } from '../state.js';
 import { playHonkSound, playShootSound } from '../effects/sounds.js';
 import { createProjectile } from '../world/projectiles.js';
-import { LEGACY_CAR_MAX_SPEED, UPDATE_SEND_INTERVAL_MS } from '../../shared/constants.js';
+import { UPDATE_SEND_INTERVAL_MS } from '../../shared/constants.js';
 import { sendToServer } from '../network/socket.js';
 import { CarModel, randomCarType, type CarType } from '../vehicle/CarModel.js';
 import { Nametag } from '../vehicle/Nametag.js';
-import { createLegacyPhysicsState, updateLegacyMovement, type LegacyPhysicsState } from '../vehicle/legacyPhysics.js';
 import type { LocalVehicle } from '../vehicle/LocalVehicle.js';
 import { driveLocalCar } from '../vehicle/v2Driver.js';
-import { PHYSICS_V2 } from '../flags.js';
 import { partyRulesActive } from '../ui/roomMenu.js';
 
 // Muzzle distance for mega shots - just past the enlarged nose.
@@ -31,14 +29,13 @@ export class Bulli {
     carType: CarType;
     name: string = "Unknown";
     pitchOffset: number;
+    // Adapter fields for HUD, sound and particles (LocalVehicle writes them):
+    // speeds in m per 1/60 s tick, like before the v2 physics
     speed: number = 0;
     angle: number = 0;
-    acceleration: number = 0.015;
-    maxSpeed: number = LEGACY_CAR_MAX_SPEED;
-    friction: number = 0.96;
+    maxSpeed: number = 50 / 60;
     isFlipping: boolean = false;
     canRecover: boolean = false;
-    flipVelocity: number = 0;
     nextHonkTime: number = 0;
     lastShootTime: number = 0;
     powerups = {
@@ -50,9 +47,7 @@ export class Bulli {
         ghost: { active: false, timer: 0 }
     };
     health: number = 100;
-    // State of the legacy physics (vehicle/legacyPhysics.ts)
-    readonly legacy: LegacyPhysicsState = createLegacyPhysicsState();
-    // The v2 sim car; only the local car gets one (none with ?physics=legacy)
+    // The sim car; only the local car gets one
     vehicle?: LocalVehicle;
     shieldMesh?: THREE.Mesh;
     wheels: THREE.Group[];
@@ -158,10 +153,8 @@ export class Bulli {
 
     update(dt: number) {
         this.updateNametag();
-        // The v2 sim counts the powerup timers per tick instead (LocalVehicle)
-        const v2 = PHYSICS_V2 && this.isLocal;
-
-        for (const key of v2 ? [] : POWERUP_KEYS) {
+        // The local car's sim counts the powerup timers per tick instead (LocalVehicle)
+        for (const key of this.isLocal ? [] : POWERUP_KEYS) {
             const p = this.powerups[key];
             if (p.active) {
                 p.timer -= dt;
@@ -192,15 +185,7 @@ export class Bulli {
             this.setGhostVisual(this.powerups.ghost.active);
         }
 
-        if (!this.isLocal) return;
-        if (v2) {
-            driveLocalCar(this, dt);
-            return;
-        }
-        if (state.isModalOpen) return;
-        if (state.dead) return;
-
-        updateLegacyMovement(this, dt);
+        if (this.isLocal) driveLocalCar(this, dt);
     }
 
     sendMovementSnapshot(now: number, moving: boolean) {

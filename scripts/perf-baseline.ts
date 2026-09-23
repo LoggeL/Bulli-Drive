@@ -5,16 +5,14 @@
 //   npm run perf:baseline                       # build, 2 clients, 20 s
 //   npm run perf:baseline -- --duration=30 --clients=3 --device=mobile --out=perf.json
 //   npm run perf:baseline -- --gl=gpu           # use the machine's GPU instead
-//   npm run perf:baseline -- --physics=legacy   # the old driving physics (?physics=legacy)
-//   npm run perf:baseline -- --sandbox          # v2 in the offline sandbox with its 5 dummy cars
+//   npm run perf:baseline -- --sandbox          # the offline sandbox with its 5 dummy cars
 //
 // By default headless Chromium renders with SwiftShader (CPU), so FPS and
 // frame times are far below a real GPU. Draw calls, triangles and memory
 // counters do not depend on the GPU. The client sends at most one position
 // update per frame, so the upload rate is only representative when the
 // clients reach at least 20 FPS (check "fps"; --gl=gpu usually does).
-// With the v2 physics (the default) each client also reports "sim": the CPU time of the
-// sim ticks per frame and per tick and how many cars stepWorld ran. In the
+// Each client also reports "sim": the CPU time of the sim ticks per frame and per tick and how many cars stepWorld ran. In the
 // sandbox every client drives its own offline pad (no server traffic).
 
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
@@ -30,7 +28,6 @@ interface Options {
     clients: number;
     device: 'desktop' | 'mobile';
     gl: 'swiftshader' | 'gpu';
-    physics: 'legacy' | 'v2';
     sandbox: boolean;
     port: number;
     out: string | null;
@@ -39,7 +36,7 @@ interface Options {
 function parseArgs(argv: string[]): Options {
     const options: Options = {
         durationS: 20, warmupS: 5, clients: 2, device: 'desktop', gl: 'swiftshader',
-        physics: 'v2', sandbox: false, port: 8798, out: null
+        sandbox: false, port: 8798, out: null
     };
     for (const arg of argv) {
         const [key, value = ''] = arg.replace(/^--/, '').split('=');
@@ -48,7 +45,6 @@ function parseArgs(argv: string[]): Options {
         else if (key === 'clients') options.clients = Number(value);
         else if (key === 'device' && (value === 'desktop' || value === 'mobile')) options.device = value;
         else if (key === 'gl' && (value === 'swiftshader' || value === 'gpu')) options.gl = value;
-        else if (key === 'physics' && (value === 'legacy' || value === 'v2')) options.physics = value;
         else if (key === 'sandbox' && value === '') options.sandbox = true;
         else if (key === 'port') options.port = Number(value);
         else if (key === 'out') options.out = value;
@@ -57,8 +53,6 @@ function parseArgs(argv: string[]): Options {
     if (!(options.durationS > 0) || !(options.clients >= 1) || !(options.warmupS >= 0)) {
         throw new Error('duration and clients must be positive numbers');
     }
-    // The sandbox always runs the v2 physics (client/flags.ts)
-    if (options.sandbox) options.physics = 'v2';
     return options;
 }
 
@@ -137,7 +131,7 @@ function contextOptions(device: Options['device'], baseURL: string): BrowserCont
 
 function pagePath(options: Options): string {
     if (options.sandbox) return '/?e2e=1&debug=perf&sandbox=1';
-    return options.physics === 'legacy' ? '/?e2e=1&debug=perf&physics=legacy' : '/?e2e=1&debug=perf';
+    return '/?e2e=1&debug=perf';
 }
 
 async function joinClient(browser: Browser, options: Options, baseURL: string, index: number): Promise<Page> {
@@ -154,12 +148,12 @@ async function joinClient(browser: Browser, options: Options, baseURL: string, i
     if (options.device === 'mobile') await page.locator('#start-btn').tap();
     else await page.locator('#start-btn').click();
     await page.locator('#splash-screen.hidden').waitFor({ state: 'attached' });
-    // The sandbox never connects; a v2 car exists from its first frame on
-    await page.waitForFunction(({ offline, v2 }) => {
+    // The sandbox never connects; the sim car exists from its first frame on
+    await page.waitForFunction(({ offline }) => {
         const debug = (window as unknown as { __bulliDebug?: { snapshot(): BulliDebugSnapshot } }).__bulliDebug;
         const current = debug?.snapshot();
-        return !!current && (offline || current.connected) && !!current.local && (!v2 || !!current.v2);
-    }, { offline: options.sandbox, v2: options.physics === 'v2' });
+        return !!current && (offline || current.connected) && !!current.local && !!current.v2;
+    }, { offline: options.sandbox });
     return page;
 }
 
@@ -274,7 +268,6 @@ async function main() {
                 gpu,
                 headless: true,
                 device: options.device,
-                physics: options.physics,
                 sandbox: options.sandbox,
                 clients: options.clients,
                 warmupS: options.warmupS,

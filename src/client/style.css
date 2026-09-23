@@ -2410,16 +2410,9 @@ canvas {
 }
 
 /* ==========================================================================
-   PHYSICS V2 (default; ?physics=legacy switches back): drive HUD and touch
-   buttons
+   DRIVE HUD AND TOUCH BUTTONS (body.physics-v2 is static in index.html and
+   only keeps the specificity of these rules)
    ========================================================================== */
-
-/* Elements for one physics only; index.html starts with body.physics-v2 and
-   main.ts removes it for ?physics=legacy */
-body:not(.physics-v2) .v2-only,
-body.physics-v2 .legacy-only {
-    display: none !important;
-}
 
 /* Splash: touch controls instead of the keys on phones */
 .preview-touch {

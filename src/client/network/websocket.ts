@@ -17,7 +17,6 @@ import { initMinimap } from '../ui/minimap.js';
 import { releaseKeyboardInputs } from '../controls/keyboard.js';
 import { resetMobileControls } from '../controls/mobile.js';
 import { sendToServer } from './socket.js';
-import { PHYSICS_V2 } from '../flags.js';
 import { noteRemoteUpdate, removeRemoteProxy } from '../vehicle/remoteProxies.js';
 import { setWorldColliders } from '../vehicle/simWorldClient.js';
 import { partyRulesActive, preferredRoomKind, setCurrentRoom } from '../ui/roomMenu.js';
@@ -515,7 +514,7 @@ function updateRemotePlayer(data: { id: string; x: number; z: number; y?: number
     }
 
     // v2: the remote car as a kinematic contact partner of the local sim
-    if (PHYSICS_V2) noteRemoteUpdate(data.id, remote, performance.now());
+    noteRemoteUpdate(data.id, remote, performance.now());
 
     // Ghost visual on remote player
     if (data.ghostActive !== undefined && remote.setGhostVisual) {

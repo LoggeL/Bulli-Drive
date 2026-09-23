@@ -48,23 +48,6 @@ test('?debug=perf shows the overlay and records frame and bandwidth stats', asyn
     await expect(overlay).toContainText(/sim\s+\d+\.\d+ ms\s+1 cars/);
 });
 
-test('?debug=perf has no sim line with the legacy physics', async ({ openPlayer }) => {
-    const player = await openPlayer('perf-legacy');
-    const { page } = player;
-    await joinGame(player, 'E2E Perf Legacy', '&debug=perf&physics=legacy');
-
-    const overlay = page.locator('#perf-overlay');
-    await expect(overlay).toContainText(/FPS\s+\d/);
-    await page.evaluate(() => (window as unknown as { __bulliPerf: PerfHook }).__bulliPerf.startRecording());
-    const startFrame = (await snapshot(page)).render.frame;
-    await expect.poll(async () => (await snapshot(page)).render.frame).toBeGreaterThan(startFrame + 5);
-    const recording = await page.evaluate(() =>
-        (window as unknown as { __bulliPerf: PerfHook }).__bulliPerf.stopRecording()) as PerfRecording;
-    expect(recording.frames).toBeGreaterThan(3);
-    expect(recording.sim).toBeNull();
-    await expect(overlay).not.toContainText('sim');
-});
-
 test('?debug=perf counts the v2 sim ticks with the sandbox dummies', async ({ openPlayer }) => {
     const player = await openPlayer('perf-v2');
     const { page } = player;

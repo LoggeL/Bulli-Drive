@@ -1,6 +1,5 @@
 import type { SimCar } from '../../shared/sim/types.js';
 import type { SimWorld } from '../../shared/world/colliders.js';
-import type { ChaseCamera } from '../camera/ChaseCamera.js';
 import type { CarModel } from '../vehicle/CarModel.js';
 import type { LocalVehicle } from '../vehicle/LocalVehicle.js';
 
@@ -23,7 +22,5 @@ export const gameHooks = {
     frame: [] as Array<(dt: number) => void>,
     // After the tuning panel changed class or profile values, so cars that
     // already exist pick them up (tuning.ts refreshCarParams)
-    tuningChanged: [] as Array<() => void>,
-    // The chase camera main.ts drives (profile switch in the panel)
-    camera: null as ChaseCamera | null
+    tuningChanged: [] as Array<() => void>
 };

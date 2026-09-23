@@ -15,8 +15,7 @@ import { simWorldFor } from './simWorldClient.js';
 // 12.3): gamepad poll, fixed-step ticks, pose, sounds and particles from
 // the sim events, then the unchanged position update to the server.
 
-// Wall hits louder than these play a sound / throw sparks (legacy 0.125 and
-// 0.2 units per tick, section 7.3)
+// Wall hits louder than these play a sound / throw sparks (section 7.3)
 const WALL_SOUND_FROM = 7.5;
 const WALL_SPARKS_FROM = 12;
 const CAR_SOUND_FROM = 3;
@@ -51,7 +50,7 @@ export function driveLocalCar(car: Bulli, dt: number): void {
     const vehicle = car.vehicle;
     vehicle.world = world;
 
-    // Frozen like the legacy car while a modal is open, while dead and
+    // Frozen while a modal is open, while dead and
     // while the GL context is gone; the powerup timers keep running
     if (state.isModalOpen || state.dead || isWebGLContextLost()) {
         vehicle.loop.reset();

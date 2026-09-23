@@ -50,18 +50,16 @@ reachable from the LAN as well: `npm run build && npm start`, then
 | `npm run typecheck` | Type-checks client, server, tests, scripts and build config |
 | `npm test` | Vitest unit tests in `tests/` (golden tests for world generation, terrain, RNG and the v2 sim scenarios, protocol validation, server handlers, speedometer scale) |
 | `npm run test:e2e` | Builds, then runs the Playwright smoke tests in `tests/e2e` against the production server (port 8799, `E2E_PORT` to override) |
-| `npm run perf:baseline` | Builds, then drives two headless Chromium clients for 20 s and prints FPS, draw calls and WebSocket bandwidth as JSON (see [docs/baseline.md](docs/baseline.md)); with the v2 physics it also reports the sim time per frame; `-- --physics=legacy` measures the old physics, `-- --sandbox` the offline sandbox |
-| `npm run screenshots` | Builds, then captures a fixed set of views with headless Chromium for visual before/after comparisons (`-- --out=<dir>`, `--gl=swiftshader`, `--physics=legacy`, `--compare=<a>,<b>`; `stats.json` records how much of the frame the car takes; see `scripts/screenshots.ts`) |
+| `npm run perf:baseline` | Builds, then drives two headless Chromium clients for 20 s and prints FPS, draw calls and WebSocket bandwidth as JSON (see [docs/baseline.md](docs/baseline.md)); it also reports the sim time per frame, `-- --sandbox` measures the offline sandbox |
+| `npm run screenshots` | Builds, then captures a fixed set of views with headless Chromium for visual before/after comparisons (`-- --out=<dir>`, `--gl=swiftshader`, `--compare=<a>,<b>`; `stats.json` records how much of the frame the car takes; see `scripts/screenshots.ts`) |
 | `npx tsx scripts/sim-golden-drift.ts` | Shows how far the v2 golden scenarios drift when `Math.sin` & co. round differently in the last bit, and that the golden tolerance still catches tiny tuning changes |
 | `npm run ci` | typecheck, unit tests and build in one go |
 
-The Playwright tests cover the v2 physics as the default (driving on desktop
-and phone, two players bumping into each other, the sandbox with its dummy
-cars, the tuning panel and the golden sim scenarios in the browser), the old
-physics behind `?physics=legacy` (desktop join and drive, two players seeing
-each other move, the touch controls on an emulated iPhone 13), which physics
-each URL starts, the stale-client reload, a lost WebGL context and the perf
-overlay.
+The Playwright tests cover driving on desktop and phone, two players bumping
+into each other, the sandbox with its dummy cars, the tuning panel and the
+golden sim scenarios in the browser, Party and Free Roam rooms, the collider
+parity between browser and server, the stale-client reload, a lost WebGL
+context and the perf overlay.
 They need Chromium once:
 `npx playwright install chromium`.
 
@@ -74,17 +72,14 @@ The game drives with the fixed-step v2 physics (single-track model with
 drift, boost and car contact, see
 [docs/phase-1a-design.md](docs/phase-1a-design.md)) without any flag.
 
-- `?physics=legacy` switches back to the old driving physics, camera, HUD
-  and controls. It is a temporary escape hatch and goes away once v2 has run
-  for a few days without problems. Multiplayer works with both, also mixed.
-  (`?physics=v2` is still accepted and changes nothing.)
 - `?sandbox=1` opens the offline test pad of the v2 physics instead of the
   city (always v2, no server connection needed). See below.
-- `?tune=1` adds the live tuning panel with telemetry to the v2 physics
-  (not with `?physics=legacy`). It is loaded on demand.
+- `?tune=1` together with `?sandbox=1` adds the live tuning panel with
+  telemetry. It is loaded on demand. Online the server drives every car with
+  the default tuning, so the game only shows a hint there.
 - `?debug=perf` shows a performance overlay (FPS, frame time, draw calls,
-  triangles, geometries, textures, WebSocket bytes per second, and with the
-  v2 physics the sim time per frame). Use it to measure on real devices.
+  triangles, geometries, textures, WebSocket bytes per second and the sim
+  time per frame). Use it to measure on real devices.
 - `?e2e=1` installs a state hook for the Playwright tests (read-only, apart
   from placing the car on a free stretch of road).
 
@@ -175,8 +170,5 @@ brakes when pulled back; hold **DRIFT** for the handbrake and **BOOST** to
 boost, **AUTO** switches auto-gas on and off, and the jump button jumps on a
 tap and resets when held. Gamepads (standard mapping) work too: RT/LT gas and
 brake, A drift, B boost, Y jump, Back reset, X shoot, LB honk.
-
-With `?physics=legacy`: WASD drive, **SPACE** jumps / flips and recovers
-when stuck, E shoots, F honks.
 
 The camera automatically swings into a chase view behind the car.
