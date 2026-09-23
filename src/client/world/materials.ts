@@ -538,13 +538,11 @@ export function createWorldMaterials(tier: RenderTier): WorldMaterials {
     // Street furniture (instanced kinds and the merged plaza/park props):
     // color from the vertex colors, roughness, metalness, emission and
     // traffic light lenses from the `surface` attribute (furniture.ts).
-    // Double sided for the open visors and lathe profiles.
     M.furniture = patch(surface({
         vertexColors: true,
         roughness: 1,
         metalness: 0,
-        envMapIntensity: 1.0,
-        side: THREE.DoubleSide
+        envMapIntensity: 1.0
     }), { surface: true, baseAO: 0.8, macro: 0.05, macroScale: 3 });
 
     // Plaza: Saltillo style terracotta pavers, 60 cm, in the concrete PBR set
@@ -707,12 +705,14 @@ export function createWorldMaterials(tier: RenderTier): WorldMaterials {
 
     // Falling water sheets and the jet of the fountain: streaks running
     // down, whiter and denser at the bottom (lathe UVs: y along the fall)
-    M.falls = patchWorldMaterial(surface({
+    // (Software WebGL: the lean shader, a plain veil of the given opacity)
+    M.falls = patch(surface({
         color: new THREE.Color(0.7, 0.8, 0.84),
         roughness: 0.06,
         metalness: 0,
         envMapIntensity: 1.1,
         transparent: true,
+        opacity: 0.35,
         side: THREE.DoubleSide
     }), {
         vertexDecl: 'varying vec2 vFallUv;',

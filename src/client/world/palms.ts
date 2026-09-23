@@ -167,10 +167,13 @@ export interface PalmGeometry {
     height: number;
 }
 
-/** One palm of `kind` in object space (foot at the origin), deterministic per seed. */
-export function buildPalm(kind: PalmKind, seed: number, low: boolean): PalmGeometry {
+/**
+ * One palm of `kind` in object space (foot at the origin), deterministic per
+ * seed. `low`: fewer segments (phones); `keepRatio`: share of the leaves kept.
+ */
+export function buildPalm(kind: PalmKind, seed: number, low: boolean, keepRatio = low ? 0.8 : 1): PalmGeometry {
     const R = rng(seed);
-    const keep = () => R() < (low ? 0.8 : 1);
+    const keep = () => R() < keepRatio;
     const segments = low ? (kind === 'fan' ? 3 : 4) : (kind === 'fan' ? 5 : 6);
     const radial = low ? 6 : 9;
     const trunk = new Batch(`palm-trunk-${kind}`);
@@ -377,7 +380,8 @@ class PalmField {
         for (const kind of KINDS) {
             const list = spots.filter(spot => spot.kind === kind);
             if (!list.length) continue;
-            const geometry = buildPalm(kind, kind === 'fan' ? 3 : 5, low);
+            // Software WebGL pays for every leaf pixel on the CPU: a sparser crown
+            const geometry = buildPalm(kind, kind === 'fan' ? 3 : 5, low, tier === 'software' ? 0.6 : undefined);
             const trunk = new THREE.InstancedMesh(geometry.trunk, M.trunk, list.length);
             const fronds = new THREE.InstancedMesh(geometry.fronds, kind === 'fan' ? M.fan : M.frond, list.length);
             trunk.name = `palm-trunks-${kind}`;

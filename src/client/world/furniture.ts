@@ -88,7 +88,35 @@ export class PropBatch {
     }
 }
 
-/** Surface of revolution from (radius, height) pairs, bottom to top. */
+/** The geometry plus a copy facing the other way (thin open shells). */
+function twoSided(g: THREE.BufferGeometry): THREE.BufferGeometry {
+    const flat = g.index ? g.toNonIndexed() : g;
+    const back = flat.clone();
+    const P = back.attributes.position, N = back.attributes.normal;
+    for (let i = 0; i < P.count; i += 3) {
+        for (const A of [P, N]) {
+            const x = A.getX(i + 1), y = A.getY(i + 1), z = A.getZ(i + 1);
+            A.setXYZ(i + 1, A.getX(i + 2), A.getY(i + 2), A.getZ(i + 2));
+            A.setXYZ(i + 2, x, y, z);
+        }
+    }
+    for (let i = 0; i < N.count; i++) N.setXYZ(i, -N.getX(i), -N.getY(i), -N.getZ(i));
+    const merged = new THREE.BufferGeometry();
+    for (const name of ['position', 'normal', 'uv'] as const) {
+        const a = flat.getAttribute(name), b = back.getAttribute(name);
+        const data = new Float32Array(a.count * a.itemSize * 2);
+        data.set(a.array as Float32Array);
+        data.set(b.array as Float32Array, a.count * a.itemSize);
+        merged.setAttribute(name, new THREE.BufferAttribute(data, a.itemSize));
+    }
+    return merged;
+}
+
+/**
+ * Surface of revolution from (radius, height) pairs. Trace the profile with
+ * the solid on the left (bottom outwards, up the outside, top inwards): the
+ * front faces then face out of the solid.
+ */
 export function lathe(profile: readonly (readonly [number, number])[], segments: number): THREE.BufferGeometry {
     return new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(r, y)), segments);
 }
@@ -137,7 +165,7 @@ function lampGeometry(P: PropBatch, low: boolean): void {
     P.add(tube(points, points.map((_, i) => 0.04 - i * 0.0012), low ? 5 : 7), iron);
     const hx = points[steps].x;
     // Lantern: hood, cap, frosted globe with a warm core
-    P.add(lathe([[0.02, 5.26], [0.05, 5.22], [0.07, 5.17], [0.27, 5.02], [0.28, 4.98], [0.1, 4.99]], r).translate(hx, 0, 0), iron);
+    P.add(lathe([[0.1, 4.99], [0.28, 4.98], [0.27, 5.02], [0.07, 5.17], [0.05, 5.22], [0.02, 5.26]], r).translate(hx, 0, 0), iron);
     P.add(new THREE.SphereGeometry(0.175, r, low ? 6 : 8).scale(1, 1.2, 1).translate(hx, 4.78, 0), FINISH.globe);
     P.add(new THREE.SphereGeometry(0.08, 6, 4).translate(hx, 4.72, 0), FINISH.lampCore);
 }
@@ -151,8 +179,8 @@ function signalHead(P: PropBatch, x: number, y: number, z: number, low: boolean,
         const ly = y + 0.31 - i * 0.31;
         P.add(new THREE.CircleGeometry(0.105, low ? 10 : 14).rotateY(Math.PI).translate(x, ly, z - 0.132), lenses[i]);
         // Visor: open half cylinder over the lens
-        P.add(new THREE.CylinderGeometry(0.125, 0.125, 0.2, low ? 6 : 9, 1, true, -Math.PI / 2, Math.PI)
-            .rotateX(-Math.PI / 2).translate(x, ly, z - 0.232), FINISH.signalBody);
+        P.add(twoSided(new THREE.CylinderGeometry(0.125, 0.125, 0.2, low ? 6 : 9, 1, true, -Math.PI / 2, Math.PI)
+            .rotateX(-Math.PI / 2).translate(x, ly, z - 0.232)), FINISH.signalBody);
     }
 }
 
