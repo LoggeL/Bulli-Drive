@@ -2607,6 +2607,24 @@ body.physics-v2 .hint-row {
         bottom: auto;
         width: 120px;
     }
+
+    /* Over the bright evening sky: full opacity, bold, a dark halo */
+    #boost-meter-label,
+    #drift-indicator {
+        font-size: 0.66rem;
+        font-weight: 700;
+        opacity: 1;
+        text-shadow: 0 0 3px rgba(0, 0, 0, 0.85), 0 1px 2px rgba(0, 0, 0, 0.9), 0 0 8px rgba(0, 0, 0, 0.45);
+    }
+
+    #boost-meter {
+        background: rgba(0, 0, 0, 0.6);
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+    }
+
+    #drift-indicator {
+        opacity: 0;
+    }
 }
 
 @media (max-width: 900px) and (orientation: landscape) {
@@ -2671,6 +2689,33 @@ body.physics-v2 .hint-row {
 
     #drive-meter {
         top: max(1.4rem, calc(env(safe-area-inset-top, 0px) + 0.9rem));
+    }
+}
+
+/* Portrait phones from 375 px: the score pill joins the top row between
+   the minimap and the rank chip, the boost bar goes under it, and the road
+   ahead of the car stays free */
+@media (min-width: 375px) and (max-width: 600px) and (orientation: portrait) {
+    #score-container {
+        top: max(0.65rem, env(safe-area-inset-top, 0px));
+        left: calc(max(0.65rem, env(safe-area-inset-left, 0px)) + 96px + 0.5rem);
+        right: calc(max(0.65rem, env(safe-area-inset-right, 0px)) + 68px + 0.5rem);
+        width: auto;
+        transform: none;
+        padding-inline: 0.55rem;
+        gap: 0.45rem;
+    }
+
+    #score-container #health-bar-bg {
+        min-width: 36px;
+    }
+
+    #score-container #health-bar-container {
+        gap: 0.35rem;
+    }
+
+    #drive-meter {
+        top: max(4.3rem, calc(env(safe-area-inset-top, 0px) + 3.75rem));
     }
 }
 
@@ -2854,4 +2899,18 @@ body.sandbox #player-list {
         top: calc(max(0.65rem, env(safe-area-inset-top, 0px)) + 10.5rem);
         max-height: calc(100% - 12rem);
     }
+}
+
+/* Start button while the world textures and car models finish loading */
+#start-btn.loading {
+    cursor: progress;
+    filter: saturate(0.6);
+}
+
+#start-btn.loading .btn-icon {
+    animation: start-btn-pulse 1s ease-in-out infinite;
+}
+
+@keyframes start-btn-pulse {
+    50% { opacity: 0.35; }
 }

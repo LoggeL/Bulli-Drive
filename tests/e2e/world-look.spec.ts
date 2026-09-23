@@ -13,6 +13,8 @@ import { roadLineCenter } from '../../src/shared/world/cityGen.js';
 
 interface WorldHook {
     worldSettled(): Promise<WorldInfo>;
+    spawnCar(type: string, color: number, x: number, z: number, yaw?: number): unknown;
+    carModels(): { gltf: boolean; lod: number; local: boolean; shadowCasters: number }[];
     worldInfo(): WorldInfo;
     obstacles(): Obstacle[];
     placeLocalCar(x: number, z: number, angle: number): void;
@@ -81,6 +83,25 @@ test('the phone tier stays within 150 draw calls including shadows', async ({ op
     const { palms } = await page.evaluate(() => (window as unknown as { __bulliDebug: WorldHook }).__bulliDebug.worldInfo());
     expect(palms?.impostors).toBeGreaterThan(0);
     expect(palms?.near).toBeGreaterThan(0);
+
+    // A party on the road ahead: seven other cars (all five types) 8 to 38 m
+    // in front of the camera. Other players' cars are cheap on the phone
+    // (LOD1 with baked wheels or LOD2, no shadow casting), so the budget
+    // holds with them in view.
+    const alone = render.calls;
+    await page.evaluate(({ x, z }) => {
+        const debug = (window as unknown as { __bulliDebug: WorldHook }).__bulliDebug;
+        const types = ['bulli', 'beetle', 'pickup', 'sport', 'jeep', 'bulli', 'beetle'];
+        types.forEach((type, i) => debug.spawnCar(type, 0x3366aa + i * 0x101010, x + (i % 2 ? 3 : -3), z + 8 + i * 5, 0));
+    }, STREET);
+    await waitFrames(page, 5);
+    const party = (await snapshot(page)).render;
+    const cars = await page.evaluate(() => (window as unknown as { __bulliDebug: WorldHook }).__bulliDebug.carModels());
+    const others = cars.filter(car => !car.local);
+    expect(others).toHaveLength(7);
+    expect(others.every(car => car.gltf && car.lod >= 1 && car.shadowCasters === 0)).toBe(true);
+    expect(party.calls, `${alone} calls alone`).toBeLessThanOrEqual(150);
+    expect(party.triangles).toBeLessThanOrEqual(500_000);
 });
 
 // Mean color of the rendered view without the HUD, decoded in the page (no
@@ -149,4 +170,29 @@ test('a restored WebGL context rebuilds the environment map and the textures', a
     for (let channel = 0; channel < 3; channel++) {
         expect(Math.abs(colorAfter[channel] - colorBefore[channel]), `channel ${channel}: ${colorBefore} -> ${colorAfter}`).toBeLessThan(6);
     }
+});
+
+test('without its KTX2 textures the world is plainly shaded, not black', async ({ openPlayer }) => {
+    const player = await openPlayer('world-no-textures', { allowedProblems: /\.ktx2|Failed to load resource|net::ERR_FAILED/ });
+    const { page } = player;
+    // Every world texture fails (network, CDN, transcoder all end up here)
+    await page.route(/\/textures\/.*\.ktx2/, route => route.abort());
+    await joinGame(player, 'E2E No Textures', '&tier=low');
+
+    const info = await settled(page);
+    expect(info.textures.requested).toBeGreaterThan(5);
+    expect(info.textures.loaded).toBe(0);
+    expect(info.textures.failed).toBe(info.textures.requested);
+
+    await page.evaluate(({ x, z }) => {
+        const debug = (window as unknown as { __bulliDebug: WorldHook }).__bulliDebug;
+        debug.placeLocalCar(x, z, 0);
+        // Looking down the street: road, sidewalks and facades fill the view
+        debug.setCameraOverride({ position: [x - 4, 6, z - 14], lookAt: [x + 2, 2, z + 20], fov: 55 });
+    }, STREET);
+    await waitFrames(page, 3);
+    const [r, g, b] = await meanColor(page);
+    // The placeholders are the mean albedo of each material: a black world
+    // (unloaded textures sampled as black) averages far below this
+    expect(Math.min(r, g, b), `mean color ${r}, ${g}, ${b}`).toBeGreaterThan(45);
 });

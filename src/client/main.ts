@@ -27,6 +27,7 @@ import { installPerfMonitor, type PerfMonitor } from './debug/perfMonitor.js';
 import { setupLighting, updateLighting } from './render/lighting.js';
 import { renderFrame } from './render/frameStats.js';
 import { startModelPreload } from './assets/gameModels.js';
+import { waitForGameAssets } from './ui/assetGate.js';
 import { updateCarModels } from './vehicle/CarModel.js';
 import { ChaseCamera, LEGACY_CAMERA, RACE_CAMERA, RACE_CAMERA_SLIP_BLEND, type ChaseTarget } from './camera/ChaseCamera.js';
 import { PHYSICS_V2, SANDBOX, TUNE_PANEL } from './flags.js';
@@ -92,8 +93,9 @@ function init() {
             await state.audioCtx.resume();
         }
 
-        // Init and start sounds
-        await initSounds();
+        // Init the sounds while the world textures and car models finish
+        // loading (the start button shows the progress)
+        await Promise.all([initSounds(), waitForGameAssets(document.getElementById('start-btn'))]);
         startEngineSound();
 
         // Save name and car type
