@@ -62,9 +62,17 @@ test('the sandbox runs offline with dummy cars that move when rammed', async ({ 
     // Pushed forward (+x), along the ram
     expect(hit.x).toBeGreaterThan(target.x + 1);
 
-    // N puts the dummies back
+    // N puts the dummies back. The own car is still rolling right behind the
+    // beetle, so move it off first: on the beetle's spot it would push the
+    // beetle away again with the next tick
+    await page.evaluate(({ x, z }) => (window as unknown as {
+        __bulliDebug: { placeLocalCar(x: number, z: number, angle: number): void };
+    }).__bulliDebug.placeLocalCar(x, z, Math.PI / 2), { x: target.x - 25, z: target.z });
     await page.keyboard.press('n');
     await expect.poll(async () => distance(target, await dummy(page, 'dummy-beetle'))).toBeLessThan(0.01);
+    // and it stays there once ticks have run
+    await page.waitForTimeout(500);
+    expect(distance(target, await dummy(page, 'dummy-beetle'))).toBeLessThan(0.01);
 
     // C switches the body; the sim car follows with the next frame
     const classBefore = (await v2(page)).classId;
