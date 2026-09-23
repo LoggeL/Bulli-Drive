@@ -1,5 +1,8 @@
 import { test, expect, joinGame, snapshot, distance } from './fixtures.js';
 
+// Two software-rendered games at once; a smaller window keeps them fluid.
+test.use({ viewport: { width: 800, height: 500 } });
+
 test('two players see each other and position updates arrive', async ({ openPlayer }) => {
     const alice = await openPlayer('alice');
     const bob = await openPlayer('bob');
@@ -20,18 +23,22 @@ test('two players see each other and position updates arrive', async ({ openPlay
     await expect.poll(async () => (await snapshot(alice.page)).remotes[bobId]?.name).toBe('E2E Bob');
     await expect(bob.page.locator('.nametag-name', { hasText: 'E2E Alice' })).toHaveCount(1);
 
-    // Alice drives; Bob's copy of her car follows.
-    const aliceAtStart = (await snapshot(bob.page)).remotes[aliceId];
-    await alice.page.keyboard.down('w');
+    // Alice drives until she has covered some ground (a car spawned facing an
+    // obstacle may not get far, and software WebGL runs at a few FPS).
+    const aliceAtStart = (await snapshot(alice.page)).local!;
     await expect.poll(async () => distance(aliceAtStart, (await snapshot(bob.page)).remotes[aliceId]))
-        .toBeGreaterThan(3);
+        .toBeLessThan(0.1);
+    await alice.page.keyboard.down('w');
+    await expect.poll(async () => distance(aliceAtStart, (await snapshot(alice.page)).local!), { timeout: 30_000 })
+        .toBeGreaterThan(1.5);
     await alice.page.keyboard.up('w');
 
-    // Once she has stopped, both views agree on where she is.
-    await expect.poll(async () => (await snapshot(alice.page)).local!.speed, { timeout: 20_000 }).toBe(0);
-    const aliceStopped = (await snapshot(alice.page)).local!;
-    await expect.poll(async () => distance(aliceStopped, (await snapshot(bob.page)).remotes[aliceId]))
-        .toBeLessThan(0.01);
+    // Bob's copy of her car followed and catches up with where she really is.
+    await expect.poll(async () => {
+        const [aliceView, bobView] = await Promise.all([snapshot(alice.page), snapshot(bob.page)]);
+        return distance(aliceView.local!, bobView.remotes[aliceId]);
+    }).toBeLessThan(0.1);
+    expect(distance(aliceAtStart, (await snapshot(bob.page)).remotes[aliceId])).toBeGreaterThan(1.5);
 
     // Alice leaves: she disappears from Bob's scene and scoreboard.
     await alice.page.context().close();

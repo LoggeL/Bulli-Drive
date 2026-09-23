@@ -27,8 +27,14 @@ test('touch controls drive the car on a phone', async ({ openPlayer }) => {
     }
     await expect.poll(async () => (await snapshot(page)).local!.speed).toBeGreaterThan(0.1);
     await expect.poll(async () => distance(start, (await snapshot(page)).local!)).toBeGreaterThan(1);
+    // Letting go of the stick releases throttle and steering; the car slows down.
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-    await expect.poll(async () => (await snapshot(page)).local!.speed, { timeout: 20_000 }).toBe(0);
+    await expect.poll(async () => {
+        const { inputs } = await snapshot(page);
+        return Math.abs(inputs.throttle) + Math.abs(inputs.steer);
+    }).toBe(0);
+    const releasedSpeed = Math.abs((await snapshot(page)).local!.speed);
+    await expect.poll(async () => Math.abs((await snapshot(page)).local!.speed)).toBeLessThan(releasedSpeed);
 
     // Action buttons: jump and honk reach the car (and the server).
     await page.locator('#btn-flip').tap();

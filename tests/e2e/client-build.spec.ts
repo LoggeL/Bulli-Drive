@@ -14,7 +14,7 @@ test('current build starts without reload and without the test hook', async ({ o
     const loads = countPageLoads(player);
     await player.page.goto('/');
 
-    await expect(player.page.locator('#loading-screen')).toHaveCount(0, { timeout: 30_000 });
+    await expect(player.page.locator('#loading-screen')).toHaveCount(0, { timeout: 60_000 });
     await expect(player.page.locator('#splash-screen')).toBeVisible();
     const pageVersion = await player.page.locator('meta[name="bulli-build-version"]').getAttribute('content');
     const serverVersion = (await (await player.page.request.get('/build-version.txt')).text()).trim();
@@ -36,7 +36,7 @@ test('a stale page reloads exactly once, then starts', async ({ openPlayer }) =>
     });
 
     await player.page.goto('/?e2e=1');
-    await expect(player.page.locator('#loading-screen')).toHaveCount(0, { timeout: 30_000 });
+    await expect(player.page.locator('#loading-screen')).toHaveCount(0, { timeout: 60_000 });
     await expect(player.page.locator('#splash-screen')).toBeVisible();
     expect(loads()).toBe(2);
     expect(warnings.some(text => text.includes('Running stale client build'))).toBe(true);

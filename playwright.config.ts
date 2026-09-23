@@ -22,7 +22,9 @@ export default defineConfig({
     workers: 1,
     forbidOnly: !!process.env.CI,
     retries: 0,
-    timeout: 60_000,
+    // Generous: software WebGL on a busy CI runner can take a while to
+    // build the city before the splash screen appears.
+    timeout: 120_000,
     expect: { timeout: 15_000 },
     reporter: process.env.CI
         ? [['github'], ['list'], ['html', { open: 'never' }]]

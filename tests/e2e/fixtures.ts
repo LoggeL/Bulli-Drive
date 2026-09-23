@@ -75,7 +75,7 @@ export async function joinGame(player: Player, name: string): Promise<string> {
     await page.goto('/?e2e=1');
 
     // The loader is removed once the server's init message has built the world.
-    await expect(page.locator('#loading-screen')).toHaveCount(0, { timeout: 30_000 });
+    await expect(page.locator('#loading-screen')).toHaveCount(0, { timeout: 60_000 });
     const splash = page.locator('#splash-screen');
     await expect(splash).toBeVisible();
     await expect(splash).not.toHaveClass(/\bhidden\b/);

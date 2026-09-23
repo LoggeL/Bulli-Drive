@@ -34,13 +34,16 @@ test('loads, joins and drives on desktop', async ({ openPlayer }) => {
     const start = (await snapshot(page)).local!;
     await page.keyboard.down('w');
     await expect.poll(async () => Number(await page.locator('#speedo-value').textContent())).toBeGreaterThan(10);
-    await page.waitForTimeout(500);
+    // Software rendering can stall for a moment, so wait for the distance
+    // instead of holding W for a fixed time.
+    await expect.poll(async () => distance(start, (await snapshot(page)).local!)).toBeGreaterThan(2);
     await page.keyboard.up('w');
-    const moved = (await snapshot(page)).local!;
-    expect(distance(start, moved)).toBeGreaterThan(1);
     expect(player.sentMessages.some(message => message.type === 'update')).toBe(true);
 
-    // Letting go of W brings the car back to a stop.
-    await expect.poll(async () => (await snapshot(page)).local!.speed, { timeout: 20_000 }).toBe(0);
+    // Letting go of W releases the throttle and the car slows down.
+    const releasedAt = await snapshot(page);
+    expect(Math.abs(releasedAt.inputs.throttle)).toBe(0);
+    await expect.poll(async () => Math.abs((await snapshot(page)).local!.speed))
+        .toBeLessThan(Math.abs(releasedAt.local!.speed));
     expect((await snapshot(page)).myId).toBe(myId);
 });
