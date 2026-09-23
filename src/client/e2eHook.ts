@@ -5,6 +5,8 @@ import type { Obstacle } from './types.js';
 import { PHYSICS_V2 } from './flags.js';
 import type { LocalVehicle } from './vehicle/LocalVehicle.js';
 import type { VehicleInput } from '../shared/sim/types.js';
+import type { ColliderInput } from '../shared/world/colliders.js';
+import { listTaggedColliders, type TaggedCollider } from './world/colliderTags.js';
 
 // Hook for the Playwright smoke tests (tests/e2e) and the screenshot script
 // (scripts/screenshots.ts). It is only installed when the page is opened with
@@ -227,8 +229,17 @@ export function installE2EHook(): void {
             };
         },
         // Collision obstacles of the local car (buildings, trees, props)
+        // as circles and rects
         obstacles(): Obstacle[] {
             return state.obstacles.map(obstacle => ({ ...obstacle }));
+        },
+        // The same as the sim's collider list (shared/world/colliderGen.ts)
+        colliders(): ColliderInput[] {
+            return state.worldColliders.map(collider => ({ ...collider }));
+        },
+        // Rendered objects that stand on a collider (world/colliderTags.ts)
+        colliderProps(): TaggedCollider[] {
+            return state.scene ? listTaggedColliders(state.scene) : [];
         },
         // Puts the local car at rest at (x, z), facing angle. Like any move it
         // reaches the server with the car's next position update.

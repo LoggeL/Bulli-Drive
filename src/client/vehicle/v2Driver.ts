@@ -46,7 +46,7 @@ inputManager.onAction = (action) => {
 
 export function driveLocalCar(car: Bulli, dt: number): void {
     // The sandbox brings its own world (game/hooks.ts)
-    const world = gameHooks.world ?? simWorldFor(state.terrainConfig ?? DEFAULT_TERRAIN_CONFIG, state.obstacles);
+    const world = gameHooks.world ?? simWorldFor(state.terrainConfig ?? DEFAULT_TERRAIN_CONFIG, state.worldColliders);
     if (!car.vehicle) car.vehicle = LocalVehicle.forHost(car, world);
     const vehicle = car.vehicle;
     vehicle.world = world;

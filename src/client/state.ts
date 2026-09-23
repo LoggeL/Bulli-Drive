@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RemotePlayer, Inputs, Obstacle } from './types.js';
 import type { PowerupData, CoinData, TerrainConfig, ScoreboardEntry } from '../shared/protocol.js';
+import type { ColliderInput } from '../shared/world/colliders.js';
 
 export const state = {
     scene: null as unknown as THREE.Scene,
@@ -15,6 +16,9 @@ export const state = {
     isModalOpen: false,
     audioCtx: null as AudioContext | null,
     ws: null as WebSocket | null,
+    // Static colliders of the world (vehicle/simWorldClient.ts), and the
+    // same as circles and rects for the legacy physics
+    worldColliders: [] as ColliderInput[],
     obstacles: [] as Obstacle[],
     terrainConfig: null as TerrainConfig | null,
     myId: null as string | null,

@@ -1,60 +1,41 @@
 import { test, expect, joinGame } from './fixtures.js';
-import type { Obstacle } from '../../src/client/types.js';
-import { cityColliders, treeColliders } from '../../src/shared/world/colliderGen.js';
-import { insideCitySceneryExclusion, PROP_RADII } from '../../src/shared/world/props.js';
-import { COLLIDER_TOPS, type ColliderInput } from '../../src/shared/world/colliders.js';
+import type { ColliderInput } from '../../src/shared/world/colliders.js';
+import { buildWorldColliders } from '../../src/shared/world/colliderGen.js';
 import { generateWorld } from '../../src/shared/world/worldGen.js';
+import type { TaggedCollider } from '../../src/client/world/colliderTags.js';
 
-// Step 1 of the collider port (docs/phase-1b-design.md, 6): the shared
-// collider list must equal the obstacles the client still pushes while it
-// builds the city, index for index. Rocks draw from their own stream now
-// and are only checked for shape and range.
+// The collider world (docs/phase-1b-design.md, 6): the browser's sim collides
+// with exactly the list the server builds, and every rendered prop that
+// collides stands on one of those colliders, so look and collision agree.
 
-function asCollider(obstacle: Obstacle): ColliderInput {
-    const top = obstacle.top ?? Infinity;
-    return obstacle.type === 'rect'
-        ? { kind: 'box', x: obstacle.x, z: obstacle.z, hw: obstacle.halfWidth, hd: obstacle.halfDepth, top }
-        : { kind: 'circle', x: obstacle.x, z: obstacle.z, r: obstacle.radius, top };
-}
+// A tagged object stands on a collider of this kind
+const TAG_KIND: Record<TaggedCollider['tag'], ColliderInput['kind']> = {
+    building: 'box', tree: 'circle', rock: 'circle', bench: 'circle', parkTree: 'circle',
+    pond: 'circle', planter: 'circle', parasol: 'circle', fountain: 'circle', lamp: 'circle',
+    palm: 'circle', signPost: 'circle'
+};
 
-function expectSame(actual: ColliderInput, expected: ColliderInput, label: string) {
-    expect(actual.kind, label).toBe(expected.kind);
-    expect(actual.top, label).toBe(expected.top);
-    for (const key of ['x', 'z', 'r', 'hw', 'hd'] as const) {
-        const a = (actual as unknown as Record<string, number>)[key];
-        const e = (expected as unknown as Record<string, number>)[key];
-        if (e === undefined) continue;
-        expect(Math.abs(a - e), `${label} ${key}`).toBeLessThanOrEqual(1e-9);
-    }
-}
-
-test('the shared colliders match the client obstacles index for index', async ({ openPlayer }) => {
+test('the browser collides with the shared colliders and renders a prop on each', async ({ openPlayer }) => {
     const player = await openPlayer('parity');
     await joinGame(player, 'E2E Parity');
-    const obstacles = (await player.page.evaluate(() => (window as unknown as {
-        __bulliDebug: { obstacles(): Obstacle[] };
-    }).__bulliDebug.obstacles())).map(asCollider);
+    const { colliders, props } = await player.page.evaluate(() => {
+        const debug = (window as unknown as {
+            __bulliDebug: { colliders(): ColliderInput[]; colliderProps(): TaggedCollider[] };
+        }).__bulliDebug;
+        return { colliders: debug.colliders(), props: debug.colliderProps() };
+    });
 
-    const world = generateWorld();
-    const trees = treeColliders(world.trees);
-    const city = cityColliders(world.city);
-    const rockCount = obstacles.length - trees.length - city.length;
-    test.info().annotations.push({ type: 'colliders', description: `${obstacles.length} obstacles, ${trees.length} trees, ${rockCount} rocks, ${city.length} city` });
-    expect(rockCount).toBeGreaterThan(0);
+    // Same count, order and dimensions as the server's list (bit for bit)
+    expect(colliders).toEqual(buildWorldColliders(generateWorld()));
 
-    trees.forEach((expected, i) => expectSame(obstacles[i], expected, `tree ${i}`));
-    const cityStart = trees.length + rockCount;
-    city.forEach((expected, i) => expectSame(obstacles[cityStart + i], expected, `city ${i}`));
-    for (let i = trees.length; i < cityStart; i++) {
-        const rock = obstacles[i];
-        expect(rock.kind).toBe('circle');
-        if (rock.kind !== 'circle') continue;
-        const size = rock.r / PROP_RADII.rockPerSize;
-        expect(size).toBeGreaterThan(1.2);
-        expect(size).toBeLessThan(2.8 + 1e-9);
-        expect(Math.abs(rock.top - COLLIDER_TOPS.rockPerSize * size)).toBeLessThan(1e-9);
-        expect(Math.abs(rock.x)).toBeLessThanOrEqual(350);
-        expect(Math.abs(rock.z)).toBeLessThanOrEqual(350);
-        expect(insideCitySceneryExclusion(rock.x, rock.z)).toBe(false);
+    // One rendered object per collider, at its position
+    expect(props).toHaveLength(colliders.length);
+    const unmatched = colliders.map((collider, index) => ({ collider, index }));
+    for (const prop of props) {
+        const hit = unmatched.findIndex(({ collider }) => collider.kind === TAG_KIND[prop.tag] &&
+            Math.abs(collider.x - prop.x) < 1e-6 && Math.abs(collider.z - prop.z) < 1e-6);
+        expect(hit, `${prop.tag} at ${prop.x.toFixed(2)}, ${prop.z.toFixed(2)} stands on a collider`).toBeGreaterThanOrEqual(0);
+        unmatched.splice(hit, 1);
     }
+    expect(unmatched).toEqual([]);
 });

@@ -18,6 +18,7 @@ import { resetMobileControls } from '../controls/mobile.js';
 import { sendToServer } from './socket.js';
 import { PHYSICS_V2 } from '../flags.js';
 import { noteRemoteUpdate, removeRemoteProxy } from '../vehicle/remoteProxies.js';
+import { setWorldColliders } from '../vehicle/simWorldClient.js';
 
 let environmentInitialized = false;
 let cityInitialized = false;
@@ -51,8 +52,10 @@ export function initWebSocket() {
             if (!environmentInitialized) {
                 createEnvironment([]);
                 environmentInitialized = true;
+                // Offline: no trees and no city, only the rocks
+                setWorldColliders({ trees: [], city: null });
             }
-            
+
             const savedName = localStorage.getItem('bulli-player-name');
             createLocalPlayer(0xD32F2F, savedName || "Offline");
             removeLoader();
@@ -92,6 +95,9 @@ function handleServerMessage(data: ServerMessage) {
                 }
                 initMinimap(data.city);
             }
+            // The sim collides with the shared collider list of this world
+            // (the same one the server builds), not with what was rendered
+            setWorldColliders({ trees: data.trees ?? [], city: data.city ?? null });
             
             if (data.scoreboard) {
                 state.scoreboard = data.scoreboard;
