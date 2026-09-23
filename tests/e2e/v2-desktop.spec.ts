@@ -39,11 +39,15 @@ test('the v2 physics drives, steers, jumps, drifts and resets', async ({ openPla
     const beforeDrift = await v2(page);
     await page.keyboard.down('Space');
     await page.keyboard.down('a');
+    // 1.5 s of sim time (90 ticks), not wall-clock time: below 7.5 fps
+    // (software WebGL on a CI runner) the fixed-step loop caps the ticks per
+    // frame and the sim runs slower than real time.
     const peak = await page.evaluate(async () => {
-        const debug = (window as unknown as { __bulliDebug: { snapshot(): { v2: { beta: number; yaw: number } } } }).__bulliDebug;
+        const debug = (window as unknown as { __bulliDebug: { snapshot(): { v2: { beta: number; yaw: number; ticks: number } } } }).__bulliDebug;
         let maxBeta = 0;
-        const until = performance.now() + 1500;
-        while (performance.now() < until) {
+        const endTick = debug.snapshot().v2.ticks + 90;
+        const deadline = performance.now() + 15000;
+        while (debug.snapshot().v2.ticks < endTick && performance.now() < deadline) {
             await new Promise(resolve => requestAnimationFrame(resolve));
             maxBeta = Math.max(maxBeta, Math.abs(debug.snapshot().v2.beta));
         }

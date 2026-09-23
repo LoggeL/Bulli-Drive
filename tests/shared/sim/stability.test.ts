@@ -18,6 +18,16 @@ function expectFinite(s: VehicleState): void {
     }
 }
 
+// Cheap per-tick check: expect() only runs once something is off, so the
+// 10 000-tick loop does not spend its time in the matcher machinery.
+function isFiniteState(s: VehicleState): boolean {
+    for (const key in s) {
+        const value = (s as unknown as Record<string, unknown>)[key];
+        if (typeof value === 'number' && !Number.isFinite(value)) return false;
+    }
+    return true;
+}
+
 describe('v2 stability', () => {
     it('stays finite over 10 000 ticks of random input among colliders and other cars', () => {
         const random = mulberry32(0x5eed);
@@ -46,12 +56,14 @@ describe('v2 stability', () => {
             }
             stepWorld(cars, world);
             for (const car of cars) {
+                const speed = Math.hypot(car.state.vx, car.state.vz);
+                if (isFiniteState(car.state) && speed <= 90 + 30 && Math.abs(car.state.yawRate) <= 6) continue;
                 expectFinite(car.state);
-                expect(Math.hypot(car.state.vx, car.state.vz)).toBeLessThanOrEqual(90 + 30);
-                expect(Math.abs(car.state.yawRate)).toBeLessThanOrEqual(6);
+                expect(speed, `${car.id} speed at tick ${tick}`).toBeLessThanOrEqual(90 + 30);
+                expect(Math.abs(car.state.yawRate), `${car.id} yaw rate at tick ${tick}`).toBeLessThanOrEqual(6);
             }
         }
-    });
+    }, 30_000);
 
     for (const profile of ['standard', 'touch'] as AssistProfile[]) {
         it(`damps a push (1 m/s sideways, 0.8 rad/s) at 10-85 m/s, assists ${profile}`, () => {

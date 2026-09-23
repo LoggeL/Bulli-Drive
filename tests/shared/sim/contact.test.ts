@@ -412,6 +412,10 @@ function phases(closingSpeed: number): number[] {
     return list;
 }
 
+// The sweeps take about 1 s locally and several times that on a CI runner,
+// too close to vitest's 5 s default.
+const SWEEP_TIMEOUT_MS = 30_000;
+
 describe('v2 tunneling between cars', () => {
     it('two beetles meeting head-on at 85 m/s each never pass through each other', () => {
         for (const angle of [0, 10, 20, 30]) {
@@ -425,7 +429,7 @@ describe('v2 tunneling between cars', () => {
                 }
             }
         }
-    });
+    }, SWEEP_TIMEOUT_MS);
 
     it('a beetle T-boning another at 85 m/s never passes through it', () => {
         for (const phase of phases(85)) {
@@ -437,5 +441,5 @@ describe('v2 tunneling between cars', () => {
                 expectNoTunneling(a, b, 85, 0, 1, 0, `T-bone phase ${phase} offset ${offset}`);
             }
         }
-    });
+    }, SWEEP_TIMEOUT_MS);
 });

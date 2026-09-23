@@ -162,6 +162,9 @@ test('v2 touch HUD: nothing overlaps on narrow phones and in landscape, prompt i
         prompt.style.transition = 'none';
         prompt.classList.remove('hidden');
     });
+    // The final layout counts: .control-btn animates its size (transition:
+    // all 0.1s), which a slow CI runner can still be in after a resize
+    await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; }' });
     // All problems of all viewports at once in the message
     const problems: string[] = [];
     for (const viewport of VIEWPORTS) {
