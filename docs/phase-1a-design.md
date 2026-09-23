@@ -125,10 +125,11 @@ Pflicht-Unit-Tests vor allem anderen (Abschnitt 14.1): Links lenken lässt yaw s
 | `client/vehicle/simWorldClient.ts` | `obstaclesToColliders(state.obstacles)` und `createSimWorld` nach dem Weltaufbau |
 | `client/camera/ChaseCamera.ts` | Aus `main.ts:187–237` extrahiert (reines Refactoring) + v2-Profil „race“ |
 | `client/entities/Bulli.ts` | Bleibt als Fassade (öffentliche Felder unverändert, weil `main.ts`/`websocket.ts` sie nutzen). Setzt sich aus `CarModel` + `Nametag` zusammen. Legacy-`update` unverändert; mit `PHYSICS_V2` delegiert der Bewegungsblock (`Bulli.ts:746–950`) an `LocalVehicle` |
-| `client/sandbox/main.ts` + `sandbox.html` | Offline-Sandbox (eigener Vite-Einstieg): Rampen, Kurven, Wände, Dummy-Autos, Tuning-Panel |
+| `client/sandbox/main.ts` + `sandbox.html` | Offline-Sandbox (eigener Vite-Einstieg): Rampen, Kurven, Wände, Dummy-Autos, Tuning-Panel. **Umgesetzt als `client/sandbox/sandbox.ts` hinter `?sandbox=1` auf der normalen Seite (Abschnitt 21)** |
 | `client/debug/tuningPanel.ts` | lil-gui-Panel (dynamischer Import; nur Sandbox oder `?physics=v2&tune=1`) |
+| `client/game/hooks.ts` | (neu, Abschnitt 21) Erweiterungspunkte für Sandbox und Panel: Welt-Ersatz, zusätzliche Sim-Autos, Hooks vor und nach dem Tick und pro Frame |
 
-Neue Abhängigkeit: `lil-gui` (dependency, nur dynamisch importiert → eigener Chunk).
+Neue Abhängigkeit: `lil-gui` (nur dynamisch importiert → eigener Chunk). Umgesetzt als devDependency wie `three`, weil Vite sie in den Client bündelt und das Server-Image sie nicht braucht (Abschnitt 21).
 
 ---
 
@@ -513,7 +514,7 @@ export function createSimWorld(terrain: TerrainConfig, colliders: ColliderInput[
 - `Obstacle` in `client/types.ts` bekommt ein optionales Feld `top`. Die `push`-Stellen in `city.ts` und `environment.ts` setzen es nach der Tabelle. Legacy ignoriert das Feld (verhaltensneutral).
 - `client/vehicle/simWorldClient.ts` baut nach dem Weltaufbau (`init`) einmal `createSimWorld(state.terrainConfig, obstaclesToColliders(state.obstacles), [])`.
 - In 1b braucht der Server dieselben Collider. Die Platzierung ist schon deterministisch (cityGen, `mulberry32(SCENERY_SEED)`, `positionHash`) und wird dann nach `shared/world` verschoben, abgesichert durch einen Paritätstest gegen `window.__bulliDebug.obstacles()`. **Nicht Teil von 1a.**
-- Rampen gibt es nur in der Sandbox. Seiten und Rückseite jeder Rampe bekommen Box-Collider mit `top` = Rampenhöhe an dieser Kante, damit man nicht von hinten „hochpoppt“. **Offen für den Sandbox-Schritt:** Der Überflug-Test nutzt eine Höhe für das ganze Auto (Unterkante am Schwerpunkt); ein Rückseiten-Collider direkt an der Absprungkante würde abspringende Autos streifen. `createSimWorld` liefert deshalb bisher nur die Rampenfläche in `groundHeight`, die Kanten-Collider kommen mit der Sandbox.
+- Rampen gibt es nur in der Sandbox. Seiten und Rückseite jeder Rampe bekommen Box-Collider mit `top` = Rampenhöhe an dieser Kante, damit man nicht von hinten „hochpoppt“. Der Überflug-Test nutzt eine Höhe für das ganze Auto (Unterkante am Schwerpunkt); ein Collider direkt an der Absprungkante würde abspringende Autos streifen. **Gelöst im Sandbox-Schritt** mit `rampEdgeColliders` und einer eigenen Regel für Rampenwände (Abschnitt 21, Punkt 3). `createSimWorld` selbst legt keine Wände an; die Sandbox gibt sie als Collider mit.
 
 ### 7.3 SpatialGrid und Auflösung
 
@@ -759,6 +760,8 @@ Ein Profilwechsel ist im Tuning-Panel möglich (für den Blindtest: v2 auch mit 
 
 ### 12.7 Sandbox (`sandbox.html`)
 
+*Umgesetzt hinter `?sandbox=1` auf der normalen Seite; Stand und Abweichungen in Abschnitt 21.*
+
 Offline, ohne Server, eigener Vite-Einstieg (Multi-Page-Build). Flache Ebene 400 × 400 m mit:
 
 - Rampen (10°, 15°, 20°; 8 m breit), eine Sprungschanze mit Landehügel,
@@ -772,6 +775,8 @@ Offline, ohne Server, eigener Vite-Einstieg (Multi-Page-Build). Flache Ebene 400
 ---
 
 ## 13. Tuning-Parameter (lil-gui)
+
+*Umgesetzt hinter `?tune=1`; Stand und Abweichungen in Abschnitt 21.*
 
 Das Panel schreibt in `SIM_TUNING` (global) bzw. in die Klassen-Params des lokalen Autos. „Export“ kopiert die geänderten Werte als TS-Literal in die Zwischenablage.
 
@@ -987,8 +992,8 @@ Neu dazugekommen sind zwei Module:
 10. **Assist-Profil:** Bei `(pointer: coarse)` gilt „touch“, sonst „standard“. Der Joystick-Filter liegt im v2-Modus bei 30/s.
 11. **E2E-Hook:** `snapshot()` liefert zusätzlich `physics`, `camera`, `local.y` und `v2`. `v2` enthält die Sim-Pose, u, β, Gierrate, Input, Boost und Drift sowie Zähler für Ticks, Sprünge und Resets. `placeLocalCar` setzt auch das Sim-Auto.
 12. **Noch offen, nicht Teil dieses Schritts:**
-    - Offline-Sandbox mit lil-gui-Tuning-Panel, `?tune=1` und Browser-Golden `__bulliSim` (12.7, 13, 14.4). lil-gui ist deshalb noch keine Abhängigkeit.
-    - Kanten-Collider der Rampen (7.2).
+    - Offline-Sandbox mit lil-gui-Tuning-Panel, `?tune=1` und Browser-Golden `__bulliSim` (12.7, 13, 14.4). lil-gui ist deshalb noch keine Abhängigkeit. *Erledigt im Sandbox-Schritt, Abschnitt 21.*
+    - Kanten-Collider der Rampen (7.2). *Erledigt im Sandbox-Schritt, Abschnitt 21.*
     - E2E für eine gemischte Session aus v2 und Legacy (14.8). Weil das Protokoll unverändert ist, funktioniert sie per Konstruktion. Der Test fehlt, weil drei Software-WebGL-Seiten gleichzeitig zu langsam laufen.
 
 **Messwerte:**
@@ -996,3 +1001,118 @@ Neu dazugekommen sind zwei Module:
 - **Unit-Tests:** Die Zustandsfolge pro Tick ist bei Frames von 1/30, 1/60 und 1/144 s und bei zufällig schwankenden Frames bitgleich. Nach einem Hitch laufen höchstens 8 Ticks, der Rest wird verworfen.
 - **E2E Desktop:** Handbremse + A bei etwa 15 m/s in der Stadt ergibt einen Driftwinkel von bis zu 33°.
 - **E2E zwei Spieler:** Die Mitten beider Autos kommen sich beim Auffahren auf 3,99 m nahe. Das ist Kreis an Kreis (c + r je Bulli ≈ 2,0 m). Das Auto, das getroffen wird, schiebt die eigene Sim vorwärts.
+
+## 21. Sandbox und Tuning-Werkzeug: Stand, Bedienung und Abweichungen
+
+Stand nach dem Schritt „sandbox-tuning“. Die Sandbox und das Tuning-Panel laufen nur mit ihren URL-Flags. Ohne Flags lädt die Seite weder den Sandbox- noch den Panel-Code (eigene Chunks), und das Spiel verhält sich wie vorher.
+
+### 21.1 Bedienung
+
+| URL | Wirkung |
+|---|---|
+| `/?sandbox=1` | Offline-Testfläche statt der Stadt, impliziert `?physics=v2`, keine Server-Verbindung |
+| `/?sandbox=1&tune=1` | dazu das lil-gui-Tuning-Panel mit Telemetrie |
+| `/?physics=v2&tune=1` | Panel im normalen Spiel (Stadt, Multiplayer), ohne den Sandbox-Ordner |
+| `&e2e=1` | zusätzlich `window.__bulliSim` (Sandbox: Dummies, Golden-Szenarien) und `window.__bulliTune` (Panel: Export, Import, Reset, Telemetrie) |
+
+Lokal: `npm run dev`, dann `http://localhost:5173/?sandbox=1&tune=1`. Für die Sandbox allein reicht `npx vite`, weil sie keinen Server braucht. Nach `npm run build && npm start` gilt dieselbe URL auf Port 8000.
+
+| Taste | Sandbox |
+|---|---|
+| W/S, A/D oder Pfeiltasten | Gas, Bremse/rückwärts, lenken |
+| Leertaste / Shift / Q | Handbremse (Drift) / Boost / Sprung |
+| R halten | Reset an Ort und Stelle (die Sandbox hat kein Straßennetz) |
+| N | Dummies und Hütchen zurück auf ihre Plätze |
+| C | nächste Karosse |
+
+Dieselben Aktionen liegen als Knöpfe im SANDBOX-Kasten oben links, auch für Touch. Auf dem Handy liegt der Kasten dort, wo sonst das Radar ist (in der Sandbox ausgeblendet). Die Karosse wählt man außerdem im Splash-Screen oder im Panel.
+
+**Panel (`?tune=1`):**
+
+- *Telemetrie:* km/h, u, w, β (Drift), Gierrate r, Radeinschlag δ, Boost-Stand und -Zustand, Bodenkontakt, Drift, Luft-Ticks, Ticks seit Wandkontakt. Die Werte werden pro Sim-Tick geschrieben.
+- *Verlauf 5 s:* Canvas-Plot der letzten 300 Ticks mit Tempo (km/h) und Driftwinkel (°). Die Skalen wachsen mit den Daten.
+- *Global:* `gripScale`, `G_AIR`, `STICK`, das Assist-Profil des eigenen Autos, das Kameraprofil (race/legacy) und „Werte der Klasse“.
+- *Antrieb, Reifen, Lenkung, Drift, Assists, Boost, Kollision, Sprung:* die Regler aus Tabelle 13, dazu der Ordner *Fahrwerk* (Masse, Radstand, Schwerpunkt, Trägheitsradius, driftFill) und *Alle globalen Werte* mit den übrigen `SIM_TUNING`-Werten. Mit `·K` markierte Regler ändern die in „Werte der Klasse“ gewählte Klasse (Standard: die eigene), `·P` das Assist-Profil des eigenen Autos, alle anderen gelten global. Winkel stehen in Grad.
+- *Sandbox* (nur mit `?sandbox=1`): Powerup-Wirkungen zum Anklicken (Turbo, Mega, Super-Jump, Ghost, Schild), Karosse, Dummies zurücksetzen.
+- *Export / Import:* „Export → Zwischenablage“ kopiert die geänderten Werte als JSON, „Import ← Zwischenablage“ lädt ein solches JSON, „Reset auf Defaults“ stellt alles zurück. Ist die Zwischenablage gesperrt, fragt ein Eingabedialog. „Golden gültig“ zeigt, ob die Golden-Dateien für die aktuellen Werte noch gelten.
+
+Das Exportformat (`src/shared/sim/tuning.ts`):
+
+```json
+{
+  "format": 1,
+  "global": { "gripScale": 1.25 },
+  "classes": { "sport": { "gripRear": 2.4 } },
+  "profiles": { "touch": { "counterSteer": 0.8 } }
+}
+```
+
+Es enthält nur die Werte, die von den Defaults abweichen. Winkel stehen darin in Radiant, wie in der Sim. Ein Import ersetzt das ganze Tuning: erst die Defaults, dann die Werte aus dem JSON. Er prüft vorher alles (bekannte Schlüssel, endliche Zahlen, `drive` nur `rear`/`all`) und ändert bei einem Fehler nichts. Übernehmen lassen sich Werte dauerhaft, indem man sie in `SIM_TUNING` (`sim/constants.ts`) bzw. `VEHICLE_CLASSES` (`sim/vehicleClasses.ts`) einträgt und die Golden-Dateien mit `UPDATE_GOLDEN=1 npm test` neu erzeugt.
+
+### 21.2 Aufbau
+
+**Shared (für Tests und Browser gleich):**
+
+- `world/sandbox.ts`: `SANDBOX` (Layout), `sandboxColliders()`, `createSandboxWorld()`. Flache Welt der Standardgröße (Rand bei ±498), Fläche 400 × 400 m.
+- `sim/dummies.ts`: `createDummy`, `resetDummy`, `driveDummy`. Die Dummies sind volle Sim-Autos (`kinematic = false`) im selben `stepWorld` wie das eigene Auto. Geparkte bekommen keinen Input. Kreisende folgen ihrem Kreis mit Pure Pursuit (Zielpunkt 14 m voraus, Volleinschlag ab 0,4 rad Kursfehler) und einem P-Regler auf das Tempo. Beides hängt nur vom Zustand ab, ein Lauf lässt sich also exakt wiederholen.
+- `world/colliders.ts`: `rampEdgeColliders`, `insideRamp`, optionales Feld `ramp` an `Collider`/`ColliderInput`.
+- `sim/tuning.ts`: `exportTuning`, `importTuning`, `resetTuning`, `tuningIsDefault` (prüft jetzt auch Klassen und Profile; `scenarios.ts` exportiert es weiter), `refreshCarParams`.
+
+**Client:**
+
+- `sandbox/sandbox.ts`: baut die Szene aus `SANDBOX`, hängt Welt und Dummies in die Hooks, rendert die Dummies interpoliert mit dem `alpha` des eigenen Autos, lässt Hütchen umfallen und stellt `__bulliSim` bereit.
+- `debug/tuningPanel.ts`: das Panel, statisch mit lil-gui, selbst nur dynamisch importiert.
+- `game/hooks.ts`: `world` (ersetzt die Stadt-Welt in `v2Driver`), `extraCars` (laufen im Tick von `LocalVehicle` mit), `beforeTick`/`afterTick` (Dummy-Fahrer, Telemetrie), `frame` (Dummy-Darstellung), `tuningChanged` (Klassen- und Profiländerungen erreichen bestehende Autos), `camera` (Profilwechsel). Ohne Flags bleiben alle Listen leer.
+
+**Layout:**
+
+| Element | Lage | Daten |
+|---|---|---|
+| Start | (0, −160), Blick +z | Startlinie |
+| Kicker 10°, 15°, 20° | x = −25, 0, 25, z = −90 | 8 m breit, 16/14/12 m lang, 2,82/3,75/4,37 m hoch |
+| Sprung mit Landehügel | x = 70 | Kicker 16 m/3 m, 16 m Lücke, Hügel aus steiler Vorderseite (6 m) und Landehang (24 m, 3 m) |
+| Lange Wand | x = −60, z −190…30 | 1 m dick, 220 m lang |
+| Pfostenreihe | z = 0, x −45…−15 | 13 Pfosten r 0,35 alle 2,5 m, zu eng für jedes Auto |
+| Hütchen-Slalom | x = 0, z 20…140 | 9 Hütchen alle 15 m |
+| Kurven | Mitte (110, 110) | aufgemalte Kreise R 40 und R 80 |
+| Stadtecke | x −176…−56, z 68…176 | drei Blöcke, 12 m breite Straße mit 90°-Knick |
+| Dummies | geparkt bei x = 40 (Pickup, Käfer, Jeep), kreisend Sport (R 40, 14 m/s) und Bulli (R 80, 20 m/s) | je eine Karosse, verschiedene Massen |
+
+### 21.3 Abweichungen und Entscheidungen
+
+1. **`?sandbox=1` statt eigenem Einstieg `sandbox.html`** (4.2, 12.7). Der Auftrag verlangt das Flag. Außerdem nutzt die Sandbox so genau den Client, den man später fährt: Renderer, HUD, Eingabe mit Touch und Gamepad, Kamera, Automodell und Effekte. Einen zweiten Bootstrap gibt es nicht. Der Sandbox-Code ist ein eigener, dynamisch geladener Chunk (~11 kB).
+2. **Offline statt mit Server-Verbindung.** Das ist die robustere Wahl: Die Sandbox braucht keinen Server (auch nicht unter `npx vite`), es gibt keine Mitspieler, Respawns oder Party-Effekte, die dazwischenfunken, und der Ablauf ist reproduzierbar. Kontakt gegen echte Mitspieler bleibt im normalen Spiel testbar.
+3. **Kanten-Collider der Rampen (7.2).** `rampEdgeColliders(ramp, index, front)` legt eine Wand an die hohe Vorderkante und Wandstücke von höchstens 4 m an beide Seiten. Jedes Stück ist so hoch wie die Rampe an seinem oberen Ende; Stücke unter 0,3 m fallen weg. Das geht nur für Rampen längs einer Achse, weil die Boxen achsparallel sind. Zusätzlich zum Überflug-Test überspringt die Kollision Rampenwände, wenn die Unterkante des Autos mehr als 0,3 m über dem Boden an der Wand liegt oder der Schwerpunkt über der Rampe steht. Nur so streift die Vorderwand ein abspringendes Auto nicht, dessen Unterkante im Absprung noch knapp unter der Kante liegt. `createSimWorld` legt selbst keine Wände an, die Golden-Dateien bleiben unverändert.
+4. **Landehügel aus zwei Rampen** (Flag `hill`, ohne Wand an der gemeinsamen Kante). Eine einzelne, zum Kicker gewandte Rampe hätte eine senkrechte Stirnfläche im Höhenfeld. Landete ein Auto genau auf deren Kante, maß die Zentraldifferenz einen riesigen Gradienten; gemessen wurde ein Landeaufprall von 94 m/s.
+5. **Flache Kurven statt Steilkurven.** Der Boden der Sim ist ein Höhenfeld aus Terrain und Keilrampen. Eine Steilkurve bräuchte eine neue Flächenart in shared, und das 2,5D-Modell hat kein Rollen; nur der Hangabtrieb würde wirken. Die aufgemalten Kreise R 40 und R 80 zeigen den Kurvenradius, die kreisenden Dummies nutzen sie. Steilkurven sind möglich, sobald der Blindtest sie verlangt.
+6. **Hütchen nur optisch.** Ein statischer Collider mit r 0,35 wäre ein Pfosten, an dem man mit 50 m/s hängen bleibt. Die Hütchen kippen um, wenn ein Auto sie berührt, und stehen mit N wieder.
+7. **Dummies geparkt oder kreisend.** Die Spezifikation nannte zusätzlich „geradeaus“. Auf einer 400-m-Fläche wäre ein geradeaus fahrender Dummy nach wenigen Sekunden am Rand; die kreisenden decken bewegte Ziele ab.
+8. **Panel nur mit `?tune=1`**, auch in der Sandbox (12.7 sah es dort offen vor). So verlangt es der Auftrag; auf dem Handy startet es eingeklappt und liegt unter der Punkteanzeige.
+9. **Export als JSON statt als TS-Literal** (13), wie im Auftrag. Das JSON lässt sich trotzdem direkt in TS einfügen.
+10. **Telemetrie ohne αF/αR, FzF/FzR und ohne Vektoren im 3D-View** (13, Ordner Debug). Die Größen sind Zwischenwerte in `integrateForces` und liegen nicht im Zustand. Für die Anzeige müsste man die Formeln doppeln oder die Sim um Debug-Ausgaben erweitern. Beides lohnt erst, wenn das Tuning es braucht.
+11. **lil-gui als devDependency** (4.2 sagte dependency), wie `three`: Vite bündelt sie in den Client, und das Server-Image (`npm ci --omit=dev`) braucht sie nicht.
+12. **`LocalVehicle.profile` ist veränderbar**, damit das Panel das Assist-Profil umschalten kann (danach `refreshCarParams`).
+13. **E2E-Test `v2-desktop`**: Das Bremsen bis zum Stillstand wird jetzt pro Frame im Browser geprüft. Die Abfrage per Poll konnte den kurzen Stillstand verpassen. Die Bremse geht nach 8 Ticks im Stand in Rückwärtsfahrt über, und der Test sah dann nur noch ein Auto, das mit 15 m/s rückwärts fuhr (einmal im vollen Lauf aufgetreten).
+
+### 21.4 Tests und Messwerte
+
+- **Vitest** (`tests/shared/sim/sandbox.test.ts`, `tuning.test.ts`):
+  - Alle Collider liegen auf der Fläche; Pfosten haben r ≥ 0,35, Wände mindestens 0,25 m halbe Dicke.
+  - Start und Dummy-Plätze sind frei, liegen nicht auf Rampen und mindestens 10 m auseinander.
+  - Die Welt wird bei jedem Aufbau gleich gebaut.
+  - Form der Rampenwände, auch für gedrehte Rampen und mit `front = false`.
+  - Alle 5 Klassen springen mit 28 m/s von allen drei Kickern ohne Wandkontakt ab.
+  - Von hinten und von der Seite mit 20 m/s: Das Auto wird gestoppt (Aufprall > 15 m/s) und hebt nicht ab (y < 5 cm).
+  - Sprung mit 30 m/s: landet auf dem Landehang mit einem Aufprall unter 10 m/s (gemessen 4,2 m/s), ohne Wandkontakt.
+  - Gleiten an der langen Wand unter 10° mit 40 m/s: nach 2 s noch über 35 m/s.
+  - Alle Klassen mit 85 m/s auf die Pfostenreihe, auf einen Pfosten und mittig dazwischen: Keine kommt durch.
+  - Kreisende Dummies nach 10 s: Abstand zum Kreis höchstens 1,33 m (Sport, R 40) bzw. 0,36 m (Bulli, R 80), Tempoabweichung ≤ 0,35 m/s. Geparkte bleiben ohne Kontakt exakt stehen.
+  - Ein Rammstoß mit 20 m/s schiebt einen geparkten Dummy über 2 m weg; der Reset stellt ihn exakt zurück.
+  - Ein Sandbox-Lauf über 900 Ticks lässt sich bitgleich wiederholen.
+  - Tuning: Export nur der Änderungen, Rundreise über JSON, Import ersetzt alles, 14 Arten fehlerhafter Eingaben werden abgelehnt, ohne etwas zu ändern, und bestehende Autos übernehmen Änderungen.
+- **Playwright:**
+  - `sandbox.spec.ts` (Desktop): Die Sandbox lädt ohne WebSocket, und ohne `?tune=1` lädt weder das Panel noch lil-gui. Es gibt 5 Dummies mit 5 Karossen, die kreisenden fahren. Das Auto rammt den geparkten Käfer und schiebt ihn weg (in Rammrichtung). N setzt ihn zurück, C wechselt die Karosse.
+  - Zweiter Test dort: Das Panel lädt mit `?tune=1`, die Telemetrie läuft beim Fahren mit, ein importierter Wert (`topSpeed` 61) erreicht das Sim-Auto, und Reset stellt es zurück.
+  - `v2-sandbox-mobile.spec.ts` (iPhone 13): Der Sandbox-Kasten überdeckt keine Touch-Bedienelemente, Auto-Gas fährt, und der Knopf zum Karossenwechsel funktioniert per Tippen.
+  - `sim-golden.spec.ts`: Alle 10 Golden-Szenarien laufen im Browser über `__bulliSim.runGolden` und stimmen mit den JSON-Dateien auf 1 mm bzw. 1e-4 rad überein (14.4).
+- **Bundle:** Ohne Flags lädt die Seite nur `index` und `three`. Die Sandbox (~11 kB), das Panel mit lil-gui (~39 kB) und das gemeinsame Tuning-Modul (~2 kB) sind eigene Chunks.

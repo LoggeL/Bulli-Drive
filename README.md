@@ -55,7 +55,10 @@ reachable from the LAN as well: `npm run build && npm start`, then
 
 The Playwright tests cover desktop join and drive, two players seeing each other
 move, the touch controls on an emulated iPhone 13, the stale-client reload, a
-lost WebGL context and the perf overlay. They need Chromium once:
+lost WebGL context and the perf overlay, and for the v2 physics driving on
+desktop and phone, two players bumping into each other, the sandbox with its
+dummy cars, the tuning panel and the golden sim scenarios in the browser.
+They need Chromium once:
 `npx playwright install chromium`.
 
 GitHub Actions (`.github/workflows/ci.yml`) runs typecheck and unit tests, the
@@ -63,6 +66,14 @@ build, the Playwright tests and a Docker build with a container smoke test on
 every pull request and push to `main`.
 
 ### URL flags
+- `?physics=v2` drives your car with the new fixed-step driving physics
+  (single-track model with drift, boost and car contact, see
+  [docs/phase-1a-design.md](docs/phase-1a-design.md)). Multiplayer works with
+  and without it.
+- `?sandbox=1` opens the offline test pad of the v2 physics instead of the
+  city (implies `?physics=v2`, no server connection needed). See below.
+- `?tune=1` adds the live tuning panel with telemetry to the v2 physics
+  (together with `?sandbox=1` or `?physics=v2`). It is loaded on demand.
 - `?debug=perf` shows a performance overlay (FPS, frame time, draw calls,
   triangles, geometries, textures, WebSocket bytes per second). Use it to
   measure on real devices.
@@ -70,6 +81,37 @@ every pull request and push to `main`.
   from placing the car on a free stretch of road).
 
 Without these flags the game behaves exactly the same.
+
+### Sandbox and tuning (v2 physics)
+Open `http://localhost:5173/?sandbox=1&tune=1` with `npm run dev` (or
+`http://localhost:8000/?sandbox=1&tune=1` after `npm run build && npm start`;
+`npx vite` alone is enough, the sandbox never connects to the server). The
+pad is 400 × 400 m and has three kickers (10°, 15°, 20°), a jump with a
+landing hill, a long wall to slide along, a post row, a cone slalom, two
+painted curves (R 40 and R 80 m), a 90° city corner with 12 m roads and five
+dummy cars, one of each body: three parked next to the start, two lapping
+the curves. They are full sim cars, so ramming them pushes them away.
+
+| Key | Sandbox |
+|---|---|
+| W/S, A/D (or arrows) | Throttle, brake/reverse, steer |
+| Space / Shift / Q | Handbrake (drift) / boost / jump |
+| R (hold) | Reset the car where it is |
+| N | Put the dummies and cones back |
+| C | Switch the car body |
+
+The same buttons are in the SANDBOX box at the top left (for touch). With
+`?tune=1` the panel on the right shows speed, slip (drift) angle, yaw rate,
+wheel angle, boost and ground contact, plots speed and drift angle of the
+last 5 s and has every tuning value of the spec: global values, the values
+of one car class (`·K`, pick the class in "Werte der Klasse") and of the
+assist profile (`·P`). "Export → Zwischenablage" copies the changed values
+as JSON, "Import ← Zwischenablage" loads such a JSON back and "Reset auf
+Defaults" undoes everything. In the sandbox the panel also toggles the
+powerup effects (Turbo, Mega, Super-Jump, Ghost, Shield) and switches the
+body. Changes live in the page only; to keep them, paste the exported JSON
+into the defaults (`SIM_TUNING` in `src/shared/sim/constants.ts`, the classes
+in `src/shared/sim/vehicleClasses.ts`).
 
 ## Architecture
 
@@ -83,10 +125,15 @@ src/client/           Browser game (three.js)
   controls/           Keyboard and touch (joystick, action buttons)
   ui/                 HUD, speedometer, minimap, screens, WebGL context-loss notice
   effects/            Particles, sounds, adaptive render quality
-  debug/              Perf overlay (?debug=perf)
+  debug/              Perf overlay (?debug=perf), v2 tuning panel (?tune=1)
+  vehicle/, input/,   v2 physics on the client: car model, local sim car,
+  camera/, game/      input manager, chase camera, fixed-step loop, hooks
+  sandbox/            Offline test pad of the v2 physics (?sandbox=1)
 src/server/           Express + ws game server: world state, message handlers, broadcasting
 src/shared/           Code for both sides: protocol schemas (valibot), constants,
-                      seeded RNG, city/world generation, terrain height
+                      seeded RNG, city/world generation, terrain height, the v2
+                      driving sim (sim/) and its collision world and sandbox
+                      layout (world/)
 tests/                Vitest (shared/, server/, client/) and Playwright (e2e/)
 scripts/              perf-baseline.ts
 docs/                 Refactor plan, performance baseline
@@ -111,5 +158,9 @@ rebuild is measured against is in [docs/baseline.md](docs/baseline.md).
 - **SPACE:** Jump / flip; recover when stuck
 - **E:** Shoot projectile
 - **F:** Honk
+
+With `?physics=v2`: WASD or arrows drive, **SPACE** is the handbrake
+(drift), **SHIFT** boosts, **Q** jumps, holding **R** resets the car; E and
+F as above. Gamepads (standard mapping) and the touch controls work too.
 
 The camera automatically swings into a chase view behind the car.
