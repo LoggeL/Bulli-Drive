@@ -1,6 +1,6 @@
 # Plan: Bulli Drive als Open-World-Multiplayer-Rennspiel
 
-**Stand:** 2026-09-23 · **Aktuelle Phase:** Phase 0 – in Arbeit (Branch `refactor/phase-0-foundation`, Basis `1d39c07`)
+**Stand:** 2026-09-23 · **Aktuelle Phase:** Phase 0 – in Arbeit (Branch `refactor/phase-0-foundation`, Basis `1d39c07`); offen sind noch die Messung auf dem Referenz-Handy, der erste CI-Lauf auf GitHub und die Entscheidung zum Ziel-Topspeed
 
 ## 0. Entscheidungen (2026-09-23)
 
@@ -32,7 +32,7 @@ Der Grund für den inkrementellen Weg ist das Tempo des Projekts. Es wird im Hob
 - **Wird ersetzt: Welt.** Die Stadt misst 220 m, wird einmalig aufgebaut und besteht aus über 1500 Meshes. Sie reist komplett in der `init`-Nachricht mit. Die Kollision ist ein Seiteneffekt des Renderns (`state.obstacles`, linearer Scan).
 - **Wird ersetzt: Build.** Three kommt per unpkg-Importmap, Versionierung läuft über ein `?v=`-Rewrite, es gibt keine Tests (nur `tsc --noEmit`) und keine CI.
 - **Fliegt raus:** Der AFK-Hack (`main.ts:369-424`, ersetzt durch ein serverseitiges Idle-Flag in Phase 1b), die Protokoll-Kopie in `client/types.ts:114-130` und `scripts/*.mjs` (ersetzt durch Vite in Phase 0).
-- **Unterschätzter Befund zum Maßstab:** Die Höchstgeschwindigkeit liegt heute bei ca. 60 u/s (216 km/h), der Tacho zeigt aber 120 km/h an (`hud.ts:254`). Die Kamera hängt auf 23 m Höhe. Außerhalb der Stadt gibt es kein Wasser, und die Sinus-Hügel sind zu flach, um abzuheben.
+- **Unterschätzter Befund zum Maßstab:** Die Höchstgeschwindigkeit liegt heute bei ca. 60 u/s (216 km/h), der Tacho zeigte aber 120 km/h an (`hud.ts:254`; in Phase 0 korrigiert). Die Kamera hängt auf 23 m Höhe. Außerhalb der Stadt gibt es kein Wasser, und die Sinus-Hügel sind zu flach, um abzuheben.
 
 ## 3. Ziel-Tech-Stack
 
@@ -55,6 +55,7 @@ Der Grund für den inkrementellen Weg ist das Tempo des Projekts. Es wird im Hob
 ```
 src/shared/              # kein three, kein DOM (Vitest-Scan tests/shared/purity.test.ts)
   protocol.ts            # valibot-Schemas → Typen, PROTOCOL_VERSION (Phase 0: eine Datei)
+  constants.ts           # Maßstab (1 u = 1 m, MS_TO_KMH) und Gameplay-Konstanten
   math/rng.ts            # mulberry32 + positionHash (heute sin-basiert; hash2 als Integer-Hash später)
   world/terrain.ts       # getTerrainHeight → Heightfield der Map (bilinear)
   world/cityGen.ts       # aus server/world.ts, Plaza/Park als Daten (heutige Stadt)
@@ -88,6 +89,8 @@ src/client/
   world/ city.ts → ChunkBuilder (Culling/Merging, kein Streaming)
   ui/ screens, hud, minimap, events.ts, mobile-Layouts
   effects/ particles, worldShaders, renderQuality → QualityTiers
+  debug/perfMonitor.ts   # Overlay + window.__bulliPerf, nur mit ?debug=perf (Phase 0)
+scripts/perf-baseline.ts # npm run perf:baseline, Ergebnisse in docs/baseline.md (Phase 0)
 tools/ bots/ (Pure-Pursuit), worldviewer/ + Spline-Editor (Phase 3)
 tests/ shared/, server/, integration/botRace.test.ts, e2e/ (Desktop + Mobile)
 ```
@@ -108,9 +111,11 @@ Die Dauer ist in Wochen fokussierter Arbeit angegeben, im Kalender wird es läng
   - [x] Vitest, CI (typecheck, test, build, docker), Playwright-Smoke mit 2 Tabs, einmal Desktop und einmal Mobile mit Touch-Emulation (Joystick, Action-Buttons) — `npm test`, `npm run test:e2e` (Desktop, 2 Spieler, iPhone 13 mit Touch, Stale-Client-Reload), `.github/workflows/ci.yml` mit Docker-Build und Container-Smoke; der Test-Hook `window.__bulliDebug` existiert nur mit `?e2e=1`
   - [x] Die eine Protokollquelle, `screens.ts:132` nutzt `sendToServer`; Client→Server-Nachrichten haben valibot-Schemas und werden in `handlers.ts` geprüft, `PROTOCOL_VERSION` ist definiert (noch ohne Handshake)
   - [x] rng, terrain und cityGen nach shared, mit Golden-Test (Seed 0xB0111D ergibt 30 Gebäude und 120 Bäume); die Golden-Werte stammen aus dem unveränderten Code auf `1d39c07`
-  - [ ] `webglcontextlost`-Handler
-  - [ ] Baseline-Messung (FPS, Draw Calls, Bandbreite) auf Desktop und einem Referenz-Handy
-  - [ ] **Maßstab festlegen:** 1 u = 1 m, Ziel-Topspeed, Tacho korrigieren (die einzige gewollte sichtbare Änderung)
+  - [x] `webglcontextlost`-Handler — `src/client/ui/contextLoss.ts`: `preventDefault`, Hinweis „Graphics paused“, Rendern pausiert, gehaltene Eingaben losgelassen; nach `webglcontextrestored` rendert three.js weiter, nach 5 s ohne Restore erscheint „Reload game“ (E2E-Test mit `WEBGL_lose_context`)
+  - [x] Baseline-Messung (FPS, Draw Calls, Bandbreite) headless — Overlay mit `?debug=perf`, `npm run perf:baseline` (2 Clients, 20 s, SwiftShader oder `--gl=gpu`), Ergebnisse in [`docs/baseline.md`](baseline.md)
+  - [ ] Baseline auf einem **Referenz-Handy** und einem Desktop mit echter GPU im Browserfenster (Gerät noch festlegen; Messung per `?debug=perf`, Werte in `docs/baseline.md` ergänzen)
+  - [x] **Maßstab festlegen:** 1 u = 1 m (`METERS_PER_UNIT`, `MS_TO_KMH` in `src/shared/constants.ts`), Tacho zeigt echte km/h (Topspeed heute 60 m/s = 216 km/h, mit Turbo 108 m/s ≈ 389 km/h; Skala bis 400 km/h). Die Fahrphysik ist unverändert.
+  - [ ] **Ziel-Topspeed** für die v2-Physik: offene Entscheidung 2, wirksam erst in Phase 1a
 - Kampf, Coins, Powerups und Sprung bleiben in Phase 0 unverändert im Spiel.
 - **Exit:** Das Spiel verhält sich auf Desktop und Mobile identisch zu `1d39c07` (bis auf den Tacho), der Stale-Client-Reload funktioniert, und die CI ist grün.
 
@@ -231,7 +236,7 @@ Die Dauer ist in Wochen fokussierter Arbeit angegeben, im Kalender wird es läng
 Entschieden am 2026-09-23 und daher nicht mehr offen: Kampf/Coins/Powerups (Party-Modus), Rempeln (ja, auch im Rennen), Welt (kuratiert, 1,5–2 km, kein Streaming), Mobile (gleichwertig), Branding (VW-Logo bleibt), Hosting (Docker 24/7, SQLite auf Volume). Siehe Abschnitt 0.
 
 1. **Spielerzahlen:** Empfehlung: bis 8 pro Rennen, bis 16 pro Party-Room und ca. 32 pro Free-Roam-Instanz; Sharding erst, wenn es gemessen nötig ist.
-2. **Topspeed und Maßstab:** Empfehlung: ca. 45–55 m/s Basis, mit Boost ca. 70 m/s, 1 u = 1 m. Wird in Phase 0 festgelegt.
+2. **Topspeed:** Der Maßstab ist in Phase 0 festgelegt (1 u = 1 m). Heute fährt das Auto 60 m/s (216 km/h), mit Turbo 108 m/s. Empfehlung für v2: ca. 45–55 m/s Basis, mit Boost ca. 70 m/s; festlegen spätestens zu Beginn von Phase 1a.
 3. **Kontaktstärke im Rennen:** Empfehlung: gleiche Physik wie im Free Roam, aber Impuls pro Kontakt begrenzt und Ghost in den ersten 3 s nach Start und Reset. Im Playtest von Phase 2 nachjustieren.
 4. **Sprung außerhalb des Party-Modus:** Empfehlung: im Free Roam erlaubt, im Rennen aus (Rampen übernehmen die Rolle).
 5. **Party-Modus in der neuen Map:** Empfehlung: eigene Zone bzw. Arena statt der ganzen Map, damit sich Free Roam und Party nicht stören.

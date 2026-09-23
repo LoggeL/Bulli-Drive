@@ -1,0 +1,134 @@
+{
+  "meta": {
+    "date": "2026-09-23T10:46:51.427Z",
+    "commit": "20d7581",
+    "node": "v24.18.0",
+    "chromium": "153.0.8010.12",
+    "gl": "gpu",
+    "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)",
+    "headless": true,
+    "device": "desktop",
+    "clients": 2,
+    "warmupS": 5,
+    "durationS": 20,
+    "note": "Headless Chromium on the local GPU: closer to a real desktop, but without vsync/compositor and with all clients sharing one machine."
+  },
+  "server": {
+    "rssMbStart": 73.6,
+    "rssMbEnd": 78.5
+  },
+  "clients": [
+    {
+      "name": "Perf 1",
+      "joinWs": {
+        "bytesIn": 20545,
+        "bytesOut": 646,
+        "messagesIn": 5,
+        "messagesOut": 6
+      },
+      "drivenMeters": 548,
+      "remotesSeen": 1,
+      "durationMs": 20064.8,
+      "frames": 1197,
+      "fps": 59.66,
+      "frameMs": {
+        "avg": 16.76,
+        "p50": 16.7,
+        "p95": 16.7,
+        "p99": 16.8,
+        "max": 133.3
+      },
+      "cpuMs": {
+        "avg": 1.42,
+        "p50": 1.4,
+        "p95": 2.1,
+        "p99": 2.5,
+        "max": 2.8
+      },
+      "drawCalls": {
+        "avg": 51.26,
+        "p50": 52,
+        "p95": 116,
+        "p99": 120,
+        "max": 120
+      },
+      "triangles": {
+        "avg": 42535.12,
+        "p50": 43452,
+        "p95": 45624,
+        "p99": 45800,
+        "max": 45824
+      },
+      "geometries": 269,
+      "textures": 4,
+      "programs": 12,
+      "pixelRatio": 1,
+      "ws": {
+        "bytesIn": 78691,
+        "bytesOut": 69410,
+        "messagesIn": 350,
+        "messagesOut": 339,
+        "bytesInPerSec": 3921.84,
+        "bytesOutPerSec": 3459.29,
+        "messagesInPerSec": 17.44,
+        "messagesOutPerSec": 16.9
+      }
+    },
+    {
+      "name": "Perf 2",
+      "joinWs": {
+        "bytesIn": 20520,
+        "bytesOut": 456,
+        "messagesIn": 3,
+        "messagesOut": 5
+      },
+      "drivenMeters": 554,
+      "remotesSeen": 1,
+      "durationMs": 20065.1,
+      "frames": 1196,
+      "fps": 59.61,
+      "frameMs": {
+        "avg": 16.78,
+        "p50": 16.7,
+        "p95": 16.7,
+        "p99": 16.8,
+        "max": 150
+      },
+      "cpuMs": {
+        "avg": 1.13,
+        "p50": 1,
+        "p95": 1.8,
+        "p99": 2.1,
+        "max": 2.4
+      },
+      "drawCalls": {
+        "avg": 40.06,
+        "p50": 52,
+        "p95": 52,
+        "p99": 52,
+        "max": 52
+      },
+      "triangles": {
+        "avg": 41025.85,
+        "p50": 43428,
+        "p95": 43500,
+        "p99": 43524,
+        "max": 43536
+      },
+      "geometries": 205,
+      "textures": 2,
+      "programs": 9,
+      "pixelRatio": 1,
+      "ws": {
+        "bytesIn": 78332,
+        "bytesOut": 70079,
+        "messagesIn": 346,
+        "messagesOut": 345,
+        "bytesInPerSec": 3903.89,
+        "bytesOutPerSec": 3492.58,
+        "messagesInPerSec": 17.24,
+        "messagesOutPerSec": 17.19
+      }
+    }
+  ]
+}

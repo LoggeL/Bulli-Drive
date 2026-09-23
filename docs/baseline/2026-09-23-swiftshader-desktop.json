@@ -1,0 +1,134 @@
+{
+  "meta": {
+    "date": "2026-09-23T10:46:23.168Z",
+    "commit": "20d7581",
+    "node": "v24.18.0",
+    "chromium": "153.0.8010.12",
+    "gl": "swiftshader",
+    "gpu": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+    "headless": true,
+    "device": "desktop",
+    "clients": 2,
+    "warmupS": 5,
+    "durationS": 20,
+    "note": "SwiftShader renders on the CPU: FPS and frame times are not representative. Draw calls, triangles and memory counters are; the upload rate only if fps >= 20."
+  },
+  "server": {
+    "rssMbStart": 73.6,
+    "rssMbEnd": 78.3
+  },
+  "clients": [
+    {
+      "name": "Perf 1",
+      "joinWs": {
+        "bytesIn": 20330,
+        "bytesOut": 2114,
+        "messagesIn": 4,
+        "messagesOut": 15
+      },
+      "drivenMeters": 445,
+      "remotesSeen": 1,
+      "durationMs": 20085.8,
+      "frames": 271,
+      "fps": 13.49,
+      "frameMs": {
+        "avg": 74.66,
+        "p50": 50,
+        "p95": 166.6,
+        "p99": 266.6,
+        "max": 350
+      },
+      "cpuMs": {
+        "avg": 0.77,
+        "p50": 0.8,
+        "p95": 1.1,
+        "p99": 1.2,
+        "max": 1.2
+      },
+      "drawCalls": {
+        "avg": 66.89,
+        "p50": 29,
+        "p95": 201,
+        "p99": 238,
+        "max": 269
+      },
+      "triangles": {
+        "avg": 41484.67,
+        "p50": 38080,
+        "p95": 52480,
+        "p99": 55864,
+        "max": 57088
+      },
+      "geometries": 171,
+      "textures": 3,
+      "programs": 11,
+      "pixelRatio": 0.75,
+      "ws": {
+        "bytesIn": 39743,
+        "bytesOut": 29611,
+        "messagesIn": 166,
+        "messagesOut": 136,
+        "bytesInPerSec": 1978.66,
+        "bytesOutPerSec": 1474.23,
+        "messagesInPerSec": 8.26,
+        "messagesOutPerSec": 6.77
+      }
+    },
+    {
+      "name": "Perf 2",
+      "joinWs": {
+        "bytesIn": 21121,
+        "bytesOut": 454,
+        "messagesIn": 6,
+        "messagesOut": 5
+      },
+      "drivenMeters": 224,
+      "remotesSeen": 1,
+      "durationMs": 20085.7,
+      "frames": 252,
+      "fps": 12.55,
+      "frameMs": {
+        "avg": 79.63,
+        "p50": 83.3,
+        "p95": 150,
+        "p99": 250,
+        "max": 800
+      },
+      "cpuMs": {
+        "avg": 6.86,
+        "p50": 1,
+        "p95": 1.5,
+        "p99": 2,
+        "max": 801.8
+      },
+      "drawCalls": {
+        "avg": 229.91,
+        "p50": 166,
+        "p95": 428,
+        "p99": 488,
+        "max": 490
+      },
+      "triangles": {
+        "avg": 57556.88,
+        "p50": 54092,
+        "p95": 71786,
+        "p99": 72848,
+        "max": 72956
+      },
+      "geometries": 187,
+      "textures": 2,
+      "programs": 10,
+      "pixelRatio": 0.75,
+      "ws": {
+        "bytesIn": 33571,
+        "bytesOut": 35555,
+        "messagesIn": 139,
+        "messagesOut": 164,
+        "bytesInPerSec": 1671.39,
+        "bytesOutPerSec": 1770.16,
+        "messagesInPerSec": 6.92,
+        "messagesOutPerSec": 8.17
+      }
+    }
+  ]
+}
