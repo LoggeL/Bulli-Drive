@@ -70,7 +70,7 @@ export function randomCarType(): CarType {
 }
 
 // Car types with a GLB model (tools/models/models.json)
-const GLTF_TYPES: ReadonlySet<string> = new Set(['bulli']);
+const GLTF_TYPES: ReadonlySet<string> = new Set(['bulli', 'pickup', 'sport', 'beetle', 'jeep']);
 
 // Body footprint (width, length) of the procedural bodies for the contact shadow
 const PROCEDURAL_FOOTPRINT: Record<CarType, [number, number]> = {
@@ -254,7 +254,7 @@ export class CarModel {
     }
 
     private get wheelbase(): number {
-        return (this.gltf ? 2.4 * this.gltf.scale : PROCEDURAL_WHEELBASE[this.carType]) ?? 2.4;
+        return (this.gltf ? this.gltf.wheelbase : PROCEDURAL_WHEELBASE[this.carType]) ?? 2.4;
     }
 
     /**

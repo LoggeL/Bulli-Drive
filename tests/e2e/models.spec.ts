@@ -44,7 +44,8 @@ test('car models load, decode and warm up during the splash screen', async ({ op
     const models = await settled(player);
     expect(models.errors).toEqual([]);
     expect(models.status).toBe('ready');
-    expect(models.loaded).toEqual(['bulli:1', 'bulli:2']);
+    // Software tier: LOD1 and LOD2 of all five cars
+    expect(models.loaded).toEqual(['beetle', 'bulli', 'jeep', 'pickup', 'sport'].flatMap(id => [`${id}:1`, `${id}:2`]));
     expect(models.warmedUp).toBe(true);
     // The splash screen is still up: loading does not wait for the player
     await expect(player.page.locator('#splash-screen')).toBeVisible();
@@ -100,7 +101,7 @@ test('the game falls back to the procedural cars without the models', async ({ o
     expect(car).toMatchObject({ carType: 'bulli', gltf: false, lod: -1 });
 });
 
-test('the Bulli drives as the GLB model with its own materials and distance LODs', async ({ openPlayer }) => {
+test('all five cars drive as GLB models with their own materials and distance LODs', async ({ openPlayer }) => {
     const player = await openPlayer('glb-car');
     await joinGame(player, 'Samba');
     await settled(player);
@@ -135,11 +136,25 @@ test('the Bulli drives as the GLB model with its own materials and distance LODs
     const cars = await player.page.evaluate(() => (window as unknown as { __bulliDebug: ModelHook }).__bulliDebug.carModels());
     expect(cars.every(c => c.sharedMaterials === 0)).toBe(true);
 
-    // The other car types stay procedural (no GLB yet)
-    const beetle = await player.page.evaluate(({ x, z }) =>
-        (window as unknown as { __bulliDebug: ModelHook }).__bulliDebug.spawnCar('beetle', 0xaa3333, x, z),
-    { x: local.x + 8, z: local.z });
-    expect(beetle).toMatchObject({ carType: 'beetle', gltf: false });
+    // The other four types are Blender models too, scaled into their unchanged
+    // sim hulls (docs/cars.md), each with its own materials
+    const expected: Record<string, { scale: number; width: number; length: number }> = {
+        beetle: { scale: 1.1, width: 1.69, length: 4.49 },
+        pickup: { scale: 1.15, width: 2.01, length: 4.92 },
+        sport: { scale: 1.15, width: 1.92, length: 4.61 },
+        jeep: { scale: 1.15, width: 1.89, length: 4.35 }
+    };
+    let offset = 8;
+    for (const [type, want] of Object.entries(expected)) {
+        const other = await player.page.evaluate(({ t, x, z }) =>
+            (window as unknown as { __bulliDebug: ModelHook }).__bulliDebug.spawnCar(t, 0xaa3333, x, z),
+        { t: type, x: local.x + offset, z: local.z });
+        offset += 6;
+        expect(other, type).toMatchObject({ carType: type, gltf: true, sharedMaterials: 0 });
+        expect(other!.scale, type).toBeCloseTo(want.scale, 5);
+        expect(other!.size![0], type).toBeCloseTo(want.width, 1);
+        expect(other!.size![2], type).toBeCloseTo(want.length, 1);
+    }
     await player.page.evaluate(() => (window as unknown as { __bulliDebug: ModelHook }).__bulliDebug.clearModels());
     expect(await player.page.evaluate(() => (window as unknown as { __bulliDebug: ModelHook }).__bulliDebug.carModels())).toHaveLength(1);
 });

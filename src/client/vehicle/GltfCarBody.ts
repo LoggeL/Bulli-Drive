@@ -9,15 +9,19 @@ import { carPaintColor, cloneCarMaterial, lampUniformsOf, type LampUniforms } fr
 // spin and steer, and the lamp uniforms.
 
 /**
- * Uniform scale of a model in the game. The sim hull of the Bulli class
- * (shared/sim/vehicleClasses.ts: two circles r = 1.3 m, 0.7 m off centre, so
- * 2.6 m wide and 4.0 m long) comes from the old cartoon box car (2.8 x 4.0 m
- * plus 0.4 m bumpers). The real T1 is 1.80 x 4.28 m; at 1.15 it is 2.07 x
- * 4.92 x 2.23 m: the bumpers reach 0.46 m past the hull ends like the old
- * ones did and the sides stay 0.27 m inside it. A uniform scale keeps the
- * proportions, the hull stays unchanged (docs/cars.md).
+ * Uniform scale of a model in the game. The sim hulls (shared/sim/vehicleClasses.ts:
+ * two circles of radius r, c off centre, so 2r wide and 2(c + r) long) come
+ * from the old cartoon box cars and stay unchanged; the real cars are scaled
+ * uniformly so their proportions survive (docs/cars.md):
+ * - bulli: T1 1.80 x 4.28 m -> 2.07 x 4.92 x 2.23 m in the 2.6 x 4.0 m hull
+ *   (bumpers 0.46 m past the hull ends like the old box's, sides 0.27 m inside)
+ * - pickup: T1 Pritsche, same factor as the Samba -> 2.01 x 4.93 x 2.21 m (hull 2.8 x 5.0)
+ * - sport: Porsche 356 1.67 x 4.01 m -> 1.92 x 4.61 x 1.51 m (hull 2.4 x 4.5)
+ * - jeep: Typ 181 1.64 x 3.78 m -> 1.89 x 4.35 x 1.73 m (hull 2.8 x 4.2)
+ * - beetle: Kaefer 1.54 x 4.08 m at 1.10 -> 1.69 x 4.49 x 1.65 m (hull 2.2 x 3.5); at
+ *   1.15 its bumpers would reach 0.6 m past the short hull, 1.10 keeps them at 0.5 m
  */
-export const MODEL_SCALE: Record<string, number> = { bulli: 1.15 };
+export const MODEL_SCALE: Record<string, number> = { bulli: 1.15, pickup: 1.15, sport: 1.15, jeep: 1.15, beetle: 1.1 };
 
 /** Camera distance (m) from which LOD1 and LOD2 are used, with a hysteresis. */
 export const LOD_DISTANCES: readonly number[] = [25, 70];
@@ -44,6 +48,8 @@ export class GltfCarBody {
     /** Scaled size of the car (m): width, height, length */
     readonly size: THREE.Vector3;
     readonly wheelRadius: number;
+    /** Scaled wheelbase (m), for the steering estimate of remote cars */
+    readonly wheelbase: number;
     /** Height of the nametag socket above the ground (scaled) */
     readonly nametagHeight: number;
     /** Every material clone of this car (all LODs) */
@@ -108,6 +114,7 @@ export class GltfCarBody {
         const dims = entry?.dimensions;
         this.size = new THREE.Vector3(dims?.width ?? 1.8, dims?.height ?? 1.9, dims?.length ?? 4.3).multiplyScalar(this.scale);
         this.wheelRadius = (entry?.wheelRadius ?? 0.33) * this.scale;
+        this.wheelbase = (dims?.wheelbase ?? 2.4) * this.scale;
         this.nametagHeight = (nametag || this.size.y / this.scale + 0.5) * this.scale;
         this.showLod(this.instances[0]?.lod ?? 0);
     }
