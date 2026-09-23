@@ -827,7 +827,7 @@ Je Szenario Input-Skript pro Tick, 180 Ticks, Endzustand und Zustand alle 30 Tic
 1. Beschleunigen + Grip-Kurve (bulli)
 2. Handbremsen-Drift mit Gegenlenken (sport)
 3. Sprung über eine Rampe mit Landung (beetle)
-4. Streifschuss 10° an Wand bei 50 m/s
+4. Streifschuss 10° an Wand bei 49 m/s (knapp unter vtop des Bulli, siehe 24.2)
 5. Kontakt frontal (2 × bulli, je 50 m/s)
 6. Kontakt seitlich/T-Bone (pickup in stehenden beetle)
 7. Kontakt Heck/PIT (sport trifft bulli mit 36 gegen 30 m/s unter 20° am rechten hinteren Viertel; ein gerader Auffahrer mit 1,5 m Versatz drückt fast durch den Schwerpunkt und dreht kaum, siehe Abschnitt 19)
@@ -835,7 +835,7 @@ Je Szenario Input-Skript pro Tick, 180 Ticks, Endzustand und Zustand alle 30 Tic
 9. Mega gegen Käfer
 10. Ghost fährt durch Auto und Wand; Ghost endet im Gebäude
 
-Node vergleicht exakt mit dem JSON. Der Browser (`tests/e2e/sim-golden.spec.ts`, Sandbox mit `?e2e=1`, `__bulliSim.runGolden(name)`) vergleicht mit Toleranz 1 mm bzw. 1e-4 rad.
+Node und Browser (`tests/e2e/sim-golden.spec.ts`, Sandbox mit `?e2e=1`, `__bulliSim.runGolden(name)`) vergleichen mit dem JSON auf 1e-9 · max(1, |Wert|), Zähler und Flags exakt (`tests/shared/sim/goldenCompare.ts`, Begründung in 24.2). Bitgleich bleibt nur der Vergleich zweier Läufe im selben Prozess (14.3).
 
 Zusätzliche Aussagen zu den Kontakt-Szenarien: frontal → beide \|v\| ≤ 4 m/s nach dem Stoß (wegen der Σ\|Δv\|-Kappe von 30 m/s nach zwei Ticks); Heck-Auffahren → Vorderer schneller; PIT → \|Δω\| ≤ 2,5 rad/s und Getroffener nach 90 Ticks mit Gegenlenken wieder |β| < 10°; drei Autos → nach 10 Ticks keine Überlappung > 5 cm; nie `vy ≠ 0` durch Kontakt; Summe der Impulse zweier dynamischer Autos ≈ 0 (Impulserhaltung bis auf Rückprall-Kappe).
 
@@ -1128,7 +1128,7 @@ Es enthält nur die Werte, die von den Defaults abweichen. Winkel stehen darin i
   - `sandbox.spec.ts` (Desktop): Die Sandbox lädt ohne WebSocket, und ohne `?tune=1` lädt weder das Panel noch lil-gui. Es gibt 5 Dummies mit 5 Karossen, die kreisenden fahren. Das Auto rammt den geparkten Käfer und schiebt ihn weg (in Rammrichtung). N setzt ihn zurück, C wechselt die Karosse.
   - Zweiter Test dort: Das Panel lädt mit `?tune=1`, die Telemetrie läuft beim Fahren mit, ein importierter Wert (`topSpeed` 61) erreicht das Sim-Auto, und Reset stellt es zurück.
   - `v2-sandbox-mobile.spec.ts` (iPhone 13): Der Sandbox-Kasten überdeckt keine Touch-Bedienelemente, Auto-Gas fährt, und der Knopf zum Karossenwechsel funktioniert per Tippen.
-  - `sim-golden.spec.ts`: Alle 10 Golden-Szenarien laufen im Browser über `__bulliSim.runGolden` und stimmen mit den JSON-Dateien auf 1 mm bzw. 1e-4 rad überein (14.4).
+  - `sim-golden.spec.ts`: Alle 10 Golden-Szenarien laufen im Browser über `__bulliSim.runGolden` und stimmen mit den JSON-Dateien überein (14.4; ursprünglich auf 1 mm bzw. 1e-4 rad, seit 24.2 mit derselben Toleranz wie Node).
 - **Bundle:** Ohne Flags lädt die Seite nur `index` und `three`. Die Sandbox (~11 kB), das Panel mit lil-gui (~39 kB) und das gemeinsame Tuning-Modul (~2 kB) sind eigene Chunks.
 
 ## 22. Absicherung und Doku: FPS-Test, Leistung, Blindtest
@@ -1219,3 +1219,21 @@ Ein adversarielles Review (Sim-Korrektheit, Netcode-Tauglichkeit, Client-Paritä
 - **Felsen-RNG und Collider-Reihenfolge:** Eine eigene Zufallsfolge für die Fels-Collider würde die Felsen verschieben und damit das Spiel ohne Flag ändern. Beides steht als Vorgabe für die Portierung in Abschnitt 18.
 - **Globales Tuning und Einfrieren** betreffen erst die Server-Sim von 1b; die Regeln stehen in Abschnitt 18.
 - **Sim-Kosten:** Der Plan nennt jetzt wie `baseline.md` den Mittelwert ≤ 0,09 ms pro Frame, p95 0,2 ms, Spitzen bis 0,4 ms.
+
+## 24. Integration auf main: Grafik G0 und plattformrobuste Goldens
+
+### 24.1 Rebase auf G0
+
+Phase 1a liegt jetzt auf `main` mit Phase 0 (Squash) und Grafik G0 (`render/lighting.ts`, Himmel, Nebel, ACES, Schatten, Kontaktschatten, Rauch-Sprites). Die alten Lichter aus `main.ts` sind weg, `setupLighting`/`updateLighting` bleiben an ihrer Stelle im zerlegten `main.ts`. Beides hängt an Feldern, die `LocalVehicle` bei v2 ohnehin schreibt: Schattenkamera und Kontaktschatten lesen `group.position`/`quaternion` und `flipGroup.position.y` direkt vor dem Rendern, also die interpolierte Pose; der Rauch liest `speed` und `angle`. Neu: Die Sandbox-Dummies (reine `CarModel`, nicht in `state.remotePlayers`) melden sich über `gameHooks.extraModels` an und bekommen ebenfalls Kontaktschatten. Der e2e-Hook hat beide Erweiterungen: `setCameraOverride` für die Screenshots und `placeLocalCar`, das bei v2 das Sim-Auto versetzt.
+
+### 24.2 Goldens über Plattformen
+
+Die Golden-Dateien entstehen auf macOS arm64 (Node 24), CI prüft auf Linux x64 (Node 22). `Math.sin/cos/tan/atan2/exp/pow/hypot` sind nicht korrekt gerundet und dürfen dort im letzten Bit abweichen (der Terrain-Golden aus Phase 0 brach genau daran). `scripts/sim-golden-drift.ts` misst beide Seiten:
+
+- **Rauschen:** Jedes nicht exakte Ergebnis dieser Funktionen um ±1, 2 oder 16 ulp verschoben (alle zugleich, zufällig je Aufruf oder nur 1 % der Aufrufe) verschiebt die Goldens nach 180 Ticks um höchstens 7e-12 · max(1, |Wert|) (1 und 2 ulp: 5e-13 bzw. 7e-13). Kein Zähler und kein Flag ändert sich.
+- **Echte Änderungen:** Jeder der 52 Werte in `SIM_TUNING` einzeln um den Faktor 1 + 1e-6 geändert: Die 26, die in den Szenarien überhaupt wirken, verschieben die Goldens um 1,4e-9 bis 1e-4, die übrigen gar nicht.
+
+Die Toleranz 1e-9 · max(1, |Wert|) liegt damit drei Größenordnungen über dem Rauschen und fängt noch Änderungen von einem Millionstel. Ein Test in `golden.test.ts` hält das fest (`G_TIRE` × (1 + 1e-6) muss auffallen).
+
+Die Messung fand einen echten Kipppunkt: `wall-graze-10deg` startete den Bulli genau mit seinem vtop von 50 m/s bei Vollgas. Dort springt der Antrieb zwischen „deckt den Fahrwiderstand“ (xs < 1) und „nichts“ (xs ≥ 1), und ob u = 50·(sin²+cos²) auf 50 oder knapp darunter rundet, hing vom letzten Bit von sin/cos(10°) ab: 5 cm Unterschied nach 3 s, bei jeder Toleranz ein Fehlschlag. Das Szenario startet jetzt mit 49 m/s, die Datei ist neu erzeugt. Die Unstetigkeit in der Sim selbst bleibt (sie betrifft nur Autos, die exakt auf vtop gesetzt werden; mit Vollgas von unten bleibt der Bulli nach 100 s rund 5e-13 m/s unter vtop stehen); für 1b ist sie ein Kandidat, wenn Server und Client auf verschiedenen Plattformen rechnen.
+
