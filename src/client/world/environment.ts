@@ -1,51 +1,21 @@
 import * as THREE from 'three';
 import { state } from '../state.js';
 import { TreeData } from '../types.js';
-import { CITY_LAYOUT } from '../../shared/constants.js';
 import { mulberry32 } from '../../shared/math/rng.js';
+import { CITY_TERRAIN_AREA, getTerrainHeight as getSharedTerrainHeight } from '../../shared/world/terrain.js';
 import { createTerrainMaterial } from '../effects/worldShaders.js';
 
-const CITY_GRID_HALF_SPAN = CITY_LAYOUT.gridSize * (CITY_LAYOUT.blockSize + CITY_LAYOUT.roadWidth) / 2;
-const CITY_MIN = -CITY_GRID_HALF_SPAN;
-const CITY_MAX = CITY_GRID_HALF_SPAN + CITY_LAYOUT.roadWidth;
-const CITY_CENTER = (CITY_MIN + CITY_MAX) / 2;
-const CITY_HALF_EXTENT = (CITY_MAX - CITY_MIN) / 2;
-const CITY_CLEARANCE = CITY_LAYOUT.roadWidth / 2;
-const CITY_FLAT_RADIUS = Math.SQRT2 * (CITY_HALF_EXTENT + CITY_CLEARANCE);
-const CITY_SCENERY_HALF_EXTENT = CITY_HALF_EXTENT + CITY_CLEARANCE;
 const SCENERY_SEED = 0x42554c4c; // "BULL"
 
 function isInsideCitySceneryExclusion(x: number, z: number): boolean {
-    return Math.abs(x - CITY_CENTER) < CITY_SCENERY_HALF_EXTENT &&
-        Math.abs(z - CITY_CENTER) < CITY_SCENERY_HALF_EXTENT;
+    return Math.abs(x - CITY_TERRAIN_AREA.center) < CITY_TERRAIN_AREA.halfExtent &&
+        Math.abs(z - CITY_TERRAIN_AREA.center) < CITY_TERRAIN_AREA.halfExtent;
 }
 
+// Height of the terrain the server configured (flat 0 before 'init').
 export function getTerrainHeight(x: number, z: number) {
     if (!state.terrainConfig) return 0;
-    const { frequency1, amplitude1, frequency2, amplitude2 } = state.terrainConfig;
-    const freq3 = (state.terrainConfig as any).frequency3 || 0;
-    const amp3 = (state.terrainConfig as any).amplitude3 || 0;
-
-    // Flatten the full city footprint plus half a road of clearance. Both the
-    // footprint and its slightly offset center come from the shared layout.
-    const distFromCenter = Math.hypot(x - CITY_CENTER, z - CITY_CENTER);
-    const blendRadius = 40;
-    let flattenFactor = 1.0;
-    if (distFromCenter < CITY_FLAT_RADIUS) {
-        flattenFactor = 0.0;
-    } else if (distFromCenter < CITY_FLAT_RADIUS + blendRadius) {
-        flattenFactor = (distFromCenter - CITY_FLAT_RADIUS) / blendRadius;
-        flattenFactor = flattenFactor * flattenFactor; // Smooth ease-in
-    }
-
-    const height = (
-        Math.sin(x * frequency1) * amplitude1 +
-        Math.cos(z * frequency1) * amplitude1 +
-        Math.sin(x * frequency2 + z * frequency2) * amplitude2 +
-        Math.sin(x * freq3 + 1.7) * Math.cos(z * freq3 + 2.3) * amp3
-    ) * flattenFactor;
-
-    return height;
+    return getSharedTerrainHeight(state.terrainConfig, x, z);
 }
 
 export function createEnvironment(treeData: TreeData[]) {

@@ -5,33 +5,13 @@ import { getTerrainHeight } from './environment.js';
 import { CITY_LAYOUT, PLAZA_PROP_LAYOUT } from '../../shared/constants.js';
 import { createWaterMaterial } from '../effects/worldShaders.js';
 import { positionHash } from '../../shared/math/rng.js';
+import { blockCenter, PARK_BLOCK, PLAZA_BLOCK, roadLineCenter } from '../../shared/world/cityGen.js';
 
 const ROAD_COLOR = 0x282a2b;
 const INTERSECTION_COLOR = 0x242627;
 const LANE_MARKING_COLOR = 0xf6e7ba;
 const SIDEWALK_COLOR = 0xc8c1ae;
 const PARK_COLOR = 0x4f8a48;
-
-const PLAZA_BLOCK = { x: Math.floor(CITY_LAYOUT.gridSize / 2) - 1, z: Math.floor(CITY_LAYOUT.gridSize / 2) - 1 };
-const PARK_BLOCK = { x: CITY_LAYOUT.gridSize - 1, z: CITY_LAYOUT.gridSize - 1 };
-
-function roadGridCenter(index: number): number {
-    const { blockSize, roadWidth, gridSize } = CITY_LAYOUT;
-    const totalBlockSize = blockSize + roadWidth;
-    const halfCity = (gridSize * totalBlockSize) / 2;
-    return -halfCity + index * totalBlockSize + roadWidth / 2;
-}
-
-// Center of a city block (bx, bz) in world coordinates, derived from the shared layout
-function blockCenter(bx: number, bz: number): { x: number; z: number } {
-    const { blockSize, roadWidth, gridSize } = CITY_LAYOUT;
-    const totalBlockSize = blockSize + roadWidth;
-    const halfCity = (gridSize * totalBlockSize) / 2;
-    return {
-        x: -halfCity + roadWidth + bx * totalBlockSize + blockSize / 2,
-        z: -halfCity + roadWidth + bz * totalBlockSize + blockSize / 2
-    };
-}
 
 // Shared geometries and materials for windows (created once, reused across all buildings)
 let sharedHFrameGeo: THREE.BoxGeometry;
@@ -335,8 +315,8 @@ function createIntersectionDetails() {
 
     for (let ix = 0; ix <= gridSize; ix++) {
         for (let iz = 0; iz <= gridSize; iz++) {
-            const x = roadGridCenter(ix);
-            const z = roadGridCenter(iz);
+            const x = roadLineCenter(ix);
+            const z = roadLineCenter(iz);
             const y = getTerrainHeight(x, z);
 
             quaternion.identity();
@@ -1010,7 +990,7 @@ function createStreetDetails() {
 
     // A palm-lined central boulevard anchors the California identity and is
     // visible from most blocks, making orientation much easier at speed.
-    const boulevardX = roadGridCenter(Math.floor(gridSize / 2));
+    const boulevardX = roadLineCenter(Math.floor(gridSize / 2));
     for (let bz = 0; bz < gridSize; bz++) {
         const z = blockCenter(0, bz).z;
         createPalmTree(boulevardX - roadWidth / 2 - 2.2, z, 200 + bz);

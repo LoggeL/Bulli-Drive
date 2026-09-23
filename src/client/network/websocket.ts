@@ -5,7 +5,7 @@ import { Bulli } from '../entities/Bulli.js';
 import { createEnvironment } from '../world/environment.js';
 import { createCity } from '../world/city.js';
 import { createPowerupMarker, applyPowerupEffect, setPowerupCollectedVisual } from '../world/powerups.js';
-import { WORLD_BOUND } from '../../shared/constants.js';
+import { DEFAULT_TERRAIN_CONFIG, WORLD_BOUND } from '../../shared/constants.js';
 import { createCoinsFromServer, removeCoinById, resetCoinById } from '../world/coins.js';
 import { updateScoreboardUI } from '../ui/playerList.js';
 import { getTerrainHeight } from '../world/environment.js';
@@ -45,16 +45,7 @@ export function initWebSocket() {
     state.ws.onerror = (e) => {
         console.warn('WebSocket error, offline mode?', e);
         if (!state.bulli) {
-            state.terrainConfig = {
-                size: 1000,
-                segments: 128,
-                frequency1: 0.006,
-                amplitude1: 6.0,
-                frequency2: 0.018,
-                amplitude2: 3.0,
-                frequency3: 0.045,
-                amplitude3: 1.2
-            };
+            state.terrainConfig = { ...DEFAULT_TERRAIN_CONFIG };
             if (!environmentInitialized) {
                 createEnvironment([]);
                 environmentInitialized = true;
