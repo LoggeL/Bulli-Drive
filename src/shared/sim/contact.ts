@@ -48,7 +48,9 @@ export function resolveContact(a: SimCar, b: SimCar): void {
     if (a.mods.ghost || b.mods.ghost) return;
     const sa = a.state, sb = b.state;
     if (sa.ghostTicks > 0 || sb.ghostTicks > 0) return;
-    if (Math.abs(sa.y - sb.y) > HEIGHT_WINDOW * Math.max(sa.scale, sb.scale)) return;
+    // Every test below is written so that NaN fails it: a car with a broken
+    // state must not hand NaN impulses to the others
+    if (!(Math.abs(sa.y - sb.y) <= HEIGHT_WINDOW * Math.max(sa.scale, sb.scale))) return;
 
     const pa = a.params, pb = b.params;
     const ca = pa.colliderOffset, ra = pa.colliderRadius;
@@ -56,7 +58,7 @@ export function resolveContact(a: SimCar, b: SimCar): void {
     // Broad phase on the enclosing circles
     const hull = ca + ra + cb + rb;
     const hx = sa.x - sb.x, hz = sa.z - sb.z;
-    if (hx * hx + hz * hz >= hull * hull) return;
+    if (!(hx * hx + hz * hz < hull * hull)) return;
 
     // Narrow phase: the four circle pairs in fixed order, deepest wins
     const fax = Math.sin(sa.yaw), faz = Math.cos(sa.yaw);
@@ -70,7 +72,7 @@ export function resolveContact(a: SimCar, b: SimCar): void {
         const bX = sb.x + sideB * cb * fbx, bZ = sb.z + sideB * cb * fbz;
         const dx = aX - bX, dz = aZ - bZ;
         const d2 = dx * dx + dz * dz;
-        if (d2 >= reach * reach) continue;
+        if (!(d2 < reach * reach)) continue;
         const d = Math.sqrt(d2);
         if (reach - d <= pen) continue;
         pen = reach - d;
@@ -84,7 +86,7 @@ export function resolveContact(a: SimCar, b: SimCar): void {
         }
         cjx = bX; cjz = bZ;
     }
-    if (pen <= 0) return;
+    if (!(pen > 0)) return;
 
     const dynA = !a.kinematic, dynB = !b.kinematic;
     // Contact point: middle of the overlap on the line between the circles

@@ -40,6 +40,12 @@ function clamp(value: number, min: number, max: number): number {
     return value < min ? min : value > max ? max : value;
 }
 
+// An input axis clamped to its range; NaN and non-numbers count as 0, so a
+// broken input cannot poison the sim (and through contacts every other car)
+function inputAxis(value: number, min: number, max: number): number {
+    return Number.isFinite(value) ? clamp(value, min, max) : 0;
+}
+
 // Ground gradient at (x, z) (module scratch): the exact slope of the ramp
 // under the point, else central differences of the terrain alone, so the
 // vertical step at a ramp's edge never reads as a slope
@@ -152,9 +158,9 @@ export function integrateForces(car: SimCar, world: SimWorld): void {
     const s = car.state, P = car.params, input = car.input, ev = car.events;
 
     // 0 Input
-    const st = clamp(input.steer, -127, 127) / 127;
-    const th = clamp(input.throttle, 0, 255) / 255;
-    const br = clamp(input.brake, 0, 255) / 255;
+    const st = inputAxis(input.steer, -127, 127) / 127;
+    const th = inputAxis(input.throttle, 0, 255) / 255;
+    const br = inputAxis(input.brake, 0, 255) / 255;
     const buttons = input.buttons | 0;
     const pressed = buttons & ~s.prevButtons;
     s.prevButtons = buttons;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MEGA_SCALE } from '../../../src/shared/constants.js';
-import { SIM_TUNING } from '../../../src/shared/sim/constants.js';
+import { DT, SIM_TUNING } from '../../../src/shared/sim/constants.js';
 import { resolveContact } from '../../../src/shared/sim/contact.js';
 import { createFlatWorld, findScenario, runScenario, type ScenarioRun } from '../../../src/shared/sim/scenarios.js';
 import { copyVehicleState, createVehicleState, type SimCar, type VehicleState } from '../../../src/shared/sim/types.js';
@@ -281,6 +281,39 @@ describe('v2 contact rules', () => {
         // At most a few g from the sliding tyres, not 12 m/s in one tick
         expect(maxDrop).toBeLessThan(1);
         expect(speedOf(car)).toBeGreaterThan(50);
+    });
+
+    it('a car with a broken input or state never poisons the others', () => {
+        const world = createFlatWorld();
+        const broken = spawnCar(world, 'a', 'bulli', 0, 0, 0, 10);
+        const near = spawnCar(world, 'b', 'beetle', 0, 3.5, 0);
+        const far = spawnCar(world, 'c', 'jeep', 300, 300, 0, 5);
+        const cars = [broken, near, far];
+        broken.input.steer = Number.NaN;
+        broken.input.throttle = 'x' as unknown as number;
+        for (let tick = 0; tick < 30; tick++) stepWorld(cars, world);
+        for (const car of cars) {
+            for (const [key, value] of Object.entries(car.state)) {
+                if (typeof value === 'number') expect(Number.isFinite(value), `${car.id}.${key}`).toBe(true);
+            }
+        }
+        // The NaN input counts as neutral: the Bulli coasted into the beetle
+        expect(near.state.vz).toBeGreaterThan(0);
+
+        // A state that went NaN anyway is reset in place of spreading
+        const before = copyVehicleState(createVehicleState(), far.state);
+        broken.state.vx = Number.NaN;
+        broken.state.x = Number.NaN;
+        stepWorld(cars, world);
+        expect(broken.events.reset).toBe(true);
+        expect(Number.isFinite(broken.state.x)).toBe(true);
+        expect(far.state.x).toBeCloseTo(before.x + before.vx * DT, 6);
+        expect(Number.isFinite(near.state.vx)).toBe(true);
+        // resolveContact on its own skips a NaN car too
+        const clean = copyVehicleState(createVehicleState(), near.state);
+        broken.state.x = Number.NaN;
+        resolveContact(broken, near);
+        expect(near.state).toStrictEqual(clean);
     });
 
     it('gives the same result whatever order the cars come in', () => {

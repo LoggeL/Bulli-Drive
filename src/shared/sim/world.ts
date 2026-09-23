@@ -8,8 +8,8 @@ import { overlapsColliders, resolveWorld } from './collision.js';
 import { DT, GHOST_EXIT_TICKS, SUBSTEPS } from './constants.js';
 import { resolveContact } from './contact.js';
 import { applyModifiers } from './modifiers.js';
-import { resetStepEvents, type SimCar } from './types.js';
-import { finishTick, integrateForces } from './vehicle.js';
+import { resetStepEvents, type SimCar, type VehicleState } from './types.js';
+import { finishTick, integrateForces, resetVehicle } from './vehicle.js';
 
 const CONTACT_ITERATIONS = 2;
 const SUB_DT = DT / SUBSTEPS;
@@ -69,8 +69,32 @@ export function stepWorld(cars: SimCar[], world: SimWorld): void {
     }
 
     for (let i = 0; i < count; i++) {
-        if (!cars[i].kinematic) finishTick(cars[i], world);
+        const car = cars[i];
+        if (car.kinematic) continue;
+        finishTick(car, world);
+        if (!stateIsFinite(car.state)) recoverCar(car, world);
     }
+}
+
+function stateIsFinite(s: VehicleState): boolean {
+    return Number.isFinite(s.x) && Number.isFinite(s.y) && Number.isFinite(s.z) && Number.isFinite(s.yaw)
+        && Number.isFinite(s.vx) && Number.isFinite(s.vy) && Number.isFinite(s.vz) && Number.isFinite(s.yawRate)
+        && Number.isFinite(s.steerAngle) && Number.isFinite(s.loadX) && Number.isFinite(s.rearGrip)
+        && Number.isFinite(s.betaPrev) && Number.isFinite(s.boostMeter) && Number.isFinite(s.flipAngle)
+        && Number.isFinite(s.flipRate) && Number.isFinite(s.scale);
+}
+
+// A car whose state went NaN or infinite (a degenerate case or a broken
+// input) is reset where it was, or at the origin if its position is gone,
+// instead of carrying the NaN into every later tick and contact
+function recoverCar(car: SimCar, world: SimWorld): void {
+    const s = car.state;
+    if (!Number.isFinite(s.x) || !Number.isFinite(s.z)) s.x = s.z = 0;
+    if (!Number.isFinite(s.yaw)) s.yaw = 0;
+    if (!Number.isFinite(s.boostMeter)) s.boostMeter = 0;
+    if (!Number.isFinite(s.scale)) s.scale = 1;
+    resetVehicle(s, car.params, world);
+    car.events.reset = true;
 }
 
 // A single car without partners, e.g. for tests and the sandbox
