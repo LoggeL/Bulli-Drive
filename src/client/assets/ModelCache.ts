@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { RenderTier } from '../effects/renderQuality.js';
-import { applyFresnelGlass } from './carMaterials.js';
+import { patchCarMaterial } from './carMaterials.js';
 
 // Loads the packed car models (public/models, built by tools/models) once and
 // hands out cheap clones. Loading never throws into the game: anything that
@@ -270,7 +270,8 @@ export class ModelCache {
 /**
  * One-time setup of a loaded model: names it, applies the node conventions of
  * tools/models/README.md (accessories hidden unless default_visible), the
- * Fresnel glass and the shadow flags (transparent glass and the ground blob
+ * game's shader patches (Fresnel glass, lamps; assets/carMaterials.ts) and
+ * the shadow flags (transparent glass and the ground blob
  * cast no shadow).
  */
 function prepareTemplate(root: THREE.Object3D, id: string, lod: number): THREE.Object3D {
@@ -282,7 +283,7 @@ function prepareTemplate(root: THREE.Object3D, id: string, lod: number): THREE.O
         const mesh = child as THREE.Mesh;
         if (!mesh.isMesh) return;
         const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-        for (const material of materials) if (material.name === 'glass') applyFresnelGlass(material);
+        for (const material of materials) patchCarMaterial(material);
         const transparent = materials.some(material => material.transparent);
         mesh.castShadow = !transparent;
         mesh.receiveShadow = !transparent;

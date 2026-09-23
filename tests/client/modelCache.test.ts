@@ -92,7 +92,7 @@ describe('ModelCache', () => {
         expect(body.castShadow).toBe(true);
         expect(glass.castShadow).toBe(false);
         // Fresnel glass shader patch, one program for all cars
-        expect((glass.material as THREE.Material).customProgramCacheKey()).toBe('bulliFresnelGlass');
+        expect((glass.material as THREE.Material).customProgramCacheKey()).toBe('bulli-car-glass-v2');
         expect(car.userData).toMatchObject({ modelId: 'bulli', lod: 0 });
     });
 

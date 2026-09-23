@@ -33,10 +33,11 @@ export class Nametag {
         this.element.style.display = 'none';
     }
 
-    // Places the tag 4 m above the car's origin, hidden behind the camera
-    update(carPosition: THREE.Vector3, camera: THREE.Camera) {
+    // Places the tag `height` m above the car's origin (the car model's
+    // nametag height), hidden behind the camera
+    update(carPosition: THREE.Vector3, camera: THREE.Camera, height = 4) {
         const pos = _nametagPosition.copy(carPosition);
-        pos.y += 4;
+        pos.y += height;
         pos.project(camera);
 
         const x = (pos.x * .5 + .5) * window.innerWidth;

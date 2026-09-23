@@ -27,6 +27,7 @@ import { installPerfMonitor, type PerfMonitor } from './debug/perfMonitor.js';
 import { setupLighting, updateLighting } from './render/lighting.js';
 import { renderFrame } from './render/frameStats.js';
 import { startModelPreload } from './assets/gameModels.js';
+import { updateCarModels } from './vehicle/CarModel.js';
 import { ChaseCamera, LEGACY_CAMERA, RACE_CAMERA, RACE_CAMERA_SLIP_BLEND, type ChaseTarget } from './camera/ChaseCamera.js';
 import { PHYSICS_V2, SANDBOX, TUNE_PANEL } from './flags.js';
 import { gameHooks } from './game/hooks.js';
@@ -357,18 +358,8 @@ function animate(frameTime: number) {
         // AFK visualization: gray out + show ZZZ
         if (isAfk && !remote._afkApplied) {
             remote._afkApplied = true;
-            remote.flipGroup.traverse((child: any) => {
-                if (child.isMesh) {
-                    const mat = child.material;
-                    if (mat) {
-                        mat.userData = mat.userData || {};
-                        if (mat.userData._origColor === undefined) {
-                            mat.userData._origColor = mat.color.getHex();
-                        }
-                        mat.color.setHex(0x888888);
-                    }
-                }
-            });
+            // Grey car: the model's own material copies, never shared ones
+            remote.setAfkVisual(true);
             if (remote.nametag) {
                 remote.nametag.style.opacity = '0.4';
                 const nameEl = remote.nametag.querySelector('.nametag-name');
@@ -381,15 +372,7 @@ function animate(frameTime: number) {
             }
         } else if (!isAfk && remote._afkApplied) {
             remote._afkApplied = false;
-            remote.flipGroup.traverse((child: any) => {
-                if (child.isMesh) {
-                    const mat = child.material;
-                    if (mat?.userData?._origColor !== undefined) {
-                        mat.color.setHex(mat.userData._origColor);
-                        delete mat.userData._origColor;
-                    }
-                }
-            });
+            remote.setAfkVisual(false);
             if (remote.nametag) {
                 remote.nametag.style.opacity = '';
                 const badge = remote.nametag.querySelector('.afk-badge');
@@ -466,6 +449,8 @@ function animate(frameTime: number) {
         updateLighting();
         // Near geometry or impostor per palm, for the final camera
         updatePalms(state.camera);
+        // Car LODs, wheels, brake lights and blinkers
+        updateCarModels(state.camera, dt);
         renderQuality.update(frameTime);
         // Counters include the shadow pass (perf overlay, e2e snapshot)
         renderFrame(state.renderer, state.scene, state.camera);

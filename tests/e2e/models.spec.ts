@@ -1,5 +1,5 @@
 import { test, expect, joinGame, snapshot, type Player } from './fixtures.js';
-import type { BulliDebugSnapshot, ModelInfo, TextureProbe } from '../../src/client/e2eHook.js';
+import type { BulliDebugSnapshot, CarInfo, ModelInfo, SpawnCarOptions, TextureProbe } from '../../src/client/e2eHook.js';
 
 // The asset pipeline end to end in the production build: the model cache
 // (src/client/assets/ModelCache.ts) loads the meshopt + KTX2 GLBs from
@@ -14,6 +14,10 @@ interface ModelHook {
     modelsSettled(): Promise<ModelsSnapshot>;
     modelInfo(id: string, lod: number): ModelInfo | null;
     loadTextureProbe(url: string): Promise<TextureProbe>;
+    localCarInfo(): CarInfo | null;
+    carModels(): CarInfo[];
+    spawnCar(type: string, color: number, x: number, z: number, yaw?: number, options?: SpawnCarOptions): CarInfo | null;
+    clearModels(): void;
 }
 
 async function openGame(player: Player): Promise<void> {
@@ -91,4 +95,51 @@ test('the game falls back to the procedural cars without the models', async ({ o
     expect(models.loaded).toEqual([]);
     expect(models.errors.join()).toMatch(/HTTP 404/);
     expect((await snapshot(player.page)).local).not.toBeNull();
+    const car = await player.page.evaluate(() =>
+        (window as unknown as { __bulliDebug: ModelHook }).__bulliDebug.localCarInfo());
+    expect(car).toMatchObject({ carType: 'bulli', gltf: false, lod: -1 });
+});
+
+test('the Bulli drives as the GLB model with its own materials and distance LODs', async ({ openPlayer }) => {
+    const player = await openPlayer('glb-car');
+    await joinGame(player, 'Samba');
+    await settled(player);
+    const debug = () => player.page.evaluate(() => (window as unknown as { __bulliDebug: ModelHook }).__bulliDebug.localCarInfo());
+
+    // The local car shows the GLB body; LOD0 is not loaded on the software
+    // tier, so the chase camera (~12 m) gets LOD1. None of its materials is a
+    // shared template material (paint colour, lamps, ghost and AFK looks)
+    await expect.poll(async () => (await debug())?.gltf).toBe(true);
+    const car = (await debug())!;
+    expect(car).toMatchObject({ carType: 'bulli', lods: [1, 2], lod: 1, sharedMaterials: 0 });
+    expect(car.scale).toBeCloseTo(1.15, 5);
+    // Sim hull 2.6 x 4.0 m: the scaled T1 is 2.07 x 4.92 x 2.23 m
+    expect(car.size![0]).toBeCloseTo(2.07, 1);
+    expect(car.size![2]).toBeCloseTo(4.92, 1);
+    expect(car.footprint[0]).toBeCloseTo(car.size![0], 5);
+    expect(car.nametagHeight).toBeGreaterThan(2.5);
+    expect(car.nametagHeight).toBeLessThan(3.5);
+
+    // A car 100 m from the camera switches to LOD2, one 3 m away back to the
+    // most detailed loaded LOD; each spawned car has its own materials too
+    const snap = await snapshot(player.page);
+    const local = snap.local!;
+    const far = await player.page.evaluate(({ x, z }) =>
+        (window as unknown as { __bulliDebug: ModelHook }).__bulliDebug.spawnCar('bulli', 0x3366aa, x, z, 0, { brake: true }),
+    { x: snap.camera.x + 100, z: snap.camera.z });
+    expect(far?.gltf).toBe(true);
+    await expect.poll(async () => {
+        const cars = await player.page.evaluate(() => (window as unknown as { __bulliDebug: ModelHook }).__bulliDebug.carModels());
+        return cars.map(c => c.lod).sort();
+    }).toEqual([1, 2]);
+    const cars = await player.page.evaluate(() => (window as unknown as { __bulliDebug: ModelHook }).__bulliDebug.carModels());
+    expect(cars.every(c => c.sharedMaterials === 0)).toBe(true);
+
+    // The other car types stay procedural (no GLB yet)
+    const beetle = await player.page.evaluate(({ x, z }) =>
+        (window as unknown as { __bulliDebug: ModelHook }).__bulliDebug.spawnCar('beetle', 0xaa3333, x, z),
+    { x: local.x + 8, z: local.z });
+    expect(beetle).toMatchObject({ carType: 'beetle', gltf: false });
+    await player.page.evaluate(() => (window as unknown as { __bulliDebug: ModelHook }).__bulliDebug.clearModels());
+    expect(await player.page.evaluate(() => (window as unknown as { __bulliDebug: ModelHook }).__bulliDebug.carModels())).toHaveLength(1);
 });

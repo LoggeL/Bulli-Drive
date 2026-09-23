@@ -222,13 +222,7 @@ function renderDummies(dt: number, alpha: number): void {
         const flip = s.flipAngle > 0 && p.flipAngle <= s.flipAngle ? p.flipAngle + (s.flipAngle - p.flipAngle) * alpha : 0;
         dummy.model.flipGroup.rotation.x = flip % TWO_PI;
         const u = s.vx * Math.sin(s.yaw) + s.vz * Math.cos(s.yaw);
-        dummy.model.wheels.forEach((wheel, index) => {
-            wheel.rotation.x -= u * 0.5 * Math.min(dt, 0.1);
-            if (index < 2) {
-                wheel.rotation.order = 'YXZ';
-                wheel.rotation.y = s.steerAngle;
-            }
-        });
+        dummy.model.setDriveState(u, s.steerAngle, dummy.car.input.brake > 20 && u > 0.5);
         if (state.camera) dummy.tag.update(group.position, state.camera);
         knockCones(x, z, s.vx, s.vz);
     }

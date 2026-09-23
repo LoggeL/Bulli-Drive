@@ -355,7 +355,8 @@ function writeContactShadow(index: number, car: any): boolean {
     const opacity = LIGHTING.contactShadow.opacity * airFade * ghostFade;
     if (opacity < 0.01) return false;
 
-    const [width, length] = CAR_FOOTPRINT[car.carType] ?? DEFAULT_FOOTPRINT;
+    // The car model knows its body size (GLB or procedural)
+    const [width, length] = car.footprint ?? CAR_FOOTPRINT[car.carType] ?? DEFAULT_FOOTPRINT;
     const spread = LIGHTING.contactShadow.spread * (group.scale.x || 1) * (1 + lift * 0.06);
     // Just above road markings and curbs, tilted with the car on slopes
     _position.copy(group.position);

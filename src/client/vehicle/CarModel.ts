@@ -1,10 +1,18 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { models } from '../assets/gameModels.js';
+import { carPaintColor } from '../assets/carMaterials.js';
+import { lightingTier } from '../render/lighting.js';
+import { GltfCarBody } from './GltfCarBody.js';
 
-// Three.js model of one car: the five bodies (with the VW logo), shield
-// bubble, ghost look and the GPU resources they own. Pure rendering - no
-// physics, no DOM, no network. Extracted from entities/Bulli.ts.
+// Three.js model of one car: the body (the packed GLB model where one exists,
+// see GltfCarBody; otherwise a procedural body), shield bubble, ghost and AFK
+// looks, wheels, lamps and the GPU resources the car owns. Pure rendering -
+// no physics, no DOM, no network. updateCarModels() runs once per frame for
+// every live car: LOD by camera distance, rolling and steering wheels, brake
+// lights and blinkers.
 
-// Cached VW logo texture
+// Cached VW logo texture (procedural bodies)
 let _vwLogoTexture: THREE.CanvasTexture | null = null;
 
 function createVWLogoTexture(): THREE.CanvasTexture {
@@ -19,46 +27,27 @@ function createVWLogoTexture(): THREE.CanvasTexture {
     const cy = size / 2;
     const r = size * 0.45;
 
-    // Transparent background
     ctx.clearRect(0, 0, size, size);
-
-    // Circle background - chrome/silver
+    // Chrome roundel: light ring, dark field, chrome letters
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.fillStyle = '#C0C0C0';
+    ctx.fillStyle = '#D8D8DA';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 0.84, 0, Math.PI * 2);
+    ctx.fillStyle = '#2A2C30';
     ctx.fill();
 
-    // Outer ring border
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.lineWidth = size * 0.04;
-    ctx.strokeStyle = '#888888';
-    ctx.stroke();
-
-    // Inner ring
-    ctx.beginPath();
-    ctx.arc(cx, cy, r * 0.82, 0, Math.PI * 2);
-    ctx.lineWidth = size * 0.025;
-    ctx.strokeStyle = '#888888';
-    ctx.stroke();
-
-    // Draw VW letters
-    ctx.fillStyle = '#333333';
-    ctx.strokeStyle = '#333333';
-    ctx.lineWidth = size * 0.045;
+    ctx.strokeStyle = '#E4E4E6';
+    ctx.lineWidth = size * 0.05;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-
-    const s = r * 0.65; // scale factor
-
-    // V shape (upper part)
+    const s = r * 0.65;
     ctx.beginPath();
     ctx.moveTo(cx - s * 0.55, cy - s * 0.7);
     ctx.lineTo(cx, cy + s * 0.15);
     ctx.lineTo(cx + s * 0.55, cy - s * 0.7);
     ctx.stroke();
-
-    // W shape (lower part - two V's joined)
     ctx.beginPath();
     ctx.moveTo(cx - s * 0.7, cy - s * 0.15);
     ctx.lineTo(cx - s * 0.28, cy + s * 0.75);
@@ -80,6 +69,31 @@ export function randomCarType(): CarType {
     return CAR_TYPES[Math.floor(Math.random() * CAR_TYPES.length)];
 }
 
+// Car types with a GLB model (tools/models/models.json)
+const GLTF_TYPES: ReadonlySet<string> = new Set(['bulli']);
+
+// Body footprint (width, length) of the procedural bodies for the contact shadow
+const PROCEDURAL_FOOTPRINT: Record<CarType, [number, number]> = {
+    bulli: [2.8, 4.0],
+    pickup: [3.0, 5.0],
+    sport: [2.6, 4.5],
+    beetle: [2.4, 3.5],
+    jeep: [3.0, 4.2]
+};
+const PROCEDURAL_WHEEL_RADIUS: Record<CarType, number> = { bulli: 0.65, pickup: 0.75, sport: 0.5, beetle: 0.6, jeep: 0.8 };
+const PROCEDURAL_WHEELBASE: Record<CarType, number> = { bulli: 2.4, pickup: 3.2, sport: 2.8, beetle: 2.0, jeep: 2.8 };
+
+// Drive look derived from the motion (remote cars): velocities come in 20 Hz
+// steps, so they are estimated between position changes and smoothed
+const MOTION_STALE_S = 0.3;
+const MOTION_BLEND = 0.45;
+const TELEPORT_M = 15;
+const BRAKE_DECEL = 3.5;          // m/s² of deceleration that counts as braking
+const BRAKE_HOLD_S = 0.25;
+const BLINK_STEER = 0.14;         // rad of steering that sets the blinker
+const BLINK_MAX_SPEED = 13;       // m/s: no blinking at speed
+const BLINK_PERIOD_S = 0.7;
+
 interface GhostMaterialState {
     opacity: number;
     transparent: boolean;
@@ -91,6 +105,76 @@ interface GhostMeshState {
     receiveShadow: boolean;
 }
 
+interface CarMaterials {
+    paint: THREE.MeshStandardMaterial;
+    cream: THREE.MeshStandardMaterial;
+    chrome: THREE.MeshStandardMaterial;
+    glass: THREE.MeshStandardMaterial;
+    rubber: THREE.MeshStandardMaterial;
+    trim: THREE.MeshStandardMaterial;
+    headlight: THREE.MeshStandardMaterial;
+    taillight: THREE.MeshStandardMaterial;
+}
+
+/**
+ * Materials of the procedural bodies in the realistic look of the GLB cars:
+ * clearcoated paint, mirror chrome, dark tinted glass, near-black tyres.
+ * The software tier (no GPU) gets plain standard materials.
+ */
+function createCarMaterials(colorCode: number): CarMaterials {
+    const light = lightingTier() === 'software';
+    const paint = (color: THREE.Color) => light
+        ? new THREE.MeshStandardMaterial({ color, roughness: 0.32, metalness: 0.05 })
+        : new THREE.MeshPhysicalMaterial({ color, roughness: 0.38, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.05 });
+    return {
+        paint: paint(carPaintColor(colorCode)),
+        cream: paint(new THREE.Color(0xD6CBB2)),
+        chrome: new THREE.MeshStandardMaterial({ color: 0xE8E8EA, roughness: 0.08, metalness: 1 }),
+        glass: new THREE.MeshStandardMaterial({
+            color: 0x1C252C, roughness: 0.04, metalness: 0.1, transparent: true, opacity: 0.62
+        }),
+        rubber: new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.88 }),
+        trim: new THREE.MeshStandardMaterial({ color: 0x1B1B1B, roughness: 0.7 }),
+        headlight: new THREE.MeshStandardMaterial({
+            color: 0xB8B6AE, emissive: 0xFFE3B6, emissiveIntensity: 0.25, roughness: 0.1, metalness: 0.6
+        }),
+        taillight: new THREE.MeshStandardMaterial({
+            color: 0x6E0906, emissive: 0xFF2414, emissiveIntensity: 0.35, roughness: 0.1
+        })
+    };
+}
+
+function roundedBox(width: number, height: number, depth: number, radius: number): THREE.BufferGeometry {
+    return new RoundedBoxGeometry(width, height, depth, 2, Math.min(radius, width / 2, height / 2, depth / 2) * 0.999);
+}
+
+const liveModels = new Set<CarModel>();
+const _cameraPosition = new THREE.Vector3();
+const _carPosition = new THREE.Vector3();
+
+/**
+ * Once per frame, before rendering: LOD by camera distance, wheels, lamps.
+ * Cars whose drive state was not set this frame (remote players) derive it
+ * from their motion.
+ */
+export function updateCarModels(camera: THREE.Camera | null, dt: number): void {
+    const step = Math.min(Math.max(dt, 0), 0.1);
+    const now = performance.now() / 1000;
+    if (camera) camera.getWorldPosition(_cameraPosition);
+    for (const model of liveModels) model.updateFrame(step, now, camera ? _cameraPosition : null);
+}
+
+/** LOD selection only, for another camera than the frame's (e2e camera override). */
+export function refreshCarLods(camera: THREE.Camera): void {
+    camera.getWorldPosition(_cameraPosition);
+    for (const model of liveModels) model.selectLod(_cameraPosition);
+}
+
+/** The live car models (e2e hook). */
+export function liveCarModels(): ReadonlySet<CarModel> {
+    return liveModels;
+}
+
 export class CarModel {
     // group carries position, yaw, slope tilt and the Mega scale; flipGroup
     // carries the body with the jump height and the flip rotation
@@ -99,14 +183,37 @@ export class CarModel {
     readonly carType: CarType;
     readonly colorCode: number;
     shieldMesh?: THREE.Mesh;
-    wheels: THREE.Group[] = [];
+    // Wheel groups of a procedural body (empty with a GLB body, whose pivots
+    // GltfCarBody drives)
+    readonly wheels: THREE.Group[] = [];
+    /** The GLB body, null while the car is procedural */
+    gltf: GltfCarBody | null = null;
     private _ghostVisualOn: boolean = false;
+    private _afkVisualOn: boolean = false;
     private _ghostMaterialStates = new Map<THREE.Material, GhostMaterialState>();
     private _ghostMeshStates = new Map<THREE.Mesh, GhostMeshState>();
+    private _afkColors = new Map<THREE.MeshStandardMaterial, number>();
     private _ownedGeometries = new Set<THREE.BufferGeometry>();
     private _ownedMaterials = new Set<THREE.Material>();
     private _ownedTextures = new Set<THREE.Texture>();
+    private _body: THREE.Object3D[] = [];
+    private _taillight: THREE.MeshStandardMaterial | null = null;
     private _disposed = false;
+    // Drive look: set per frame by the simulation (setDriveState) or derived
+    private _driveSet = false;
+    private _speed = 0;
+    private _steer = 0;
+    private _braking = false;
+    private _brakeLight = 0;
+    private _brakeHold = 0;
+    private _blinkClock = 0;
+    private _lastX = NaN;
+    private _lastZ = NaN;
+    private _lastYaw = 0;
+    private _lastMoveAt = 0;
+    private _velocity = 0;
+    private _yawRate = 0;
+    private _prevSpeed = 0;
 
     constructor(colorCode: number, carType: CarType) {
         this.group = new THREE.Group();
@@ -115,32 +222,60 @@ export class CarModel {
         this.colorCode = colorCode;
         this.carType = carType;
 
-        this.buildCar();
-        this.flipGroup.traverse((child) => {
-            const mesh = child as THREE.Mesh;
-            if (!mesh.isMesh) return;
-            this._ownedGeometries.add(mesh.geometry);
-            const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-            for (const material of materials) this._ownedMaterials.add(material);
-            for (const material of materials) {
-                for (const value of Object.values(material)) {
-                    const texture = value as THREE.Texture;
-                    if (texture?.isTexture && texture !== _vwLogoTexture) {
-                        this._ownedTextures.add(texture);
-                    }
-                }
+        if (GLTF_TYPES.has(carType) && GltfCarBody.available(carType)) {
+            this.buildGltf();
+        } else {
+            this.buildCar();
+            // Models still loading (the splash screen preload): swap in the GLB body once it is there
+            if (GLTF_TYPES.has(carType) && (models.status === 'loading' || models.status === 'idle')) {
+                models.whenLoaded().then(() => this.upgradeToGltf(), () => { /* stays procedural */ });
             }
-        });
+        }
+        liveModels.add(this);
     }
 
     get ghostVisualOn(): boolean {
         return this._ghostVisualOn;
     }
 
+    /** Width and length of the body for the contact shadow (unscaled by Mega) */
+    get footprint(): [number, number] {
+        if (this.gltf) return [this.gltf.size.x, this.gltf.size.z * 0.92];
+        return PROCEDURAL_FOOTPRINT[this.carType] ?? [2.8, 4.2];
+    }
+
+    /** Height of the nametag above the car's origin */
+    get nametagHeight(): number {
+        return this.gltf ? this.gltf.nametagHeight + 0.35 : 4;
+    }
+
+    private get wheelRadius(): number {
+        return this.gltf?.wheelRadius ?? PROCEDURAL_WHEEL_RADIUS[this.carType] ?? 0.6;
+    }
+
+    private get wheelbase(): number {
+        return (this.gltf ? 2.4 * this.gltf.scale : PROCEDURAL_WHEELBASE[this.carType]) ?? 2.4;
+    }
+
+    /**
+     * The drive state of this frame from the simulation: forward speed
+     * (m/s), road wheel angle (rad, + = left) and whether the brake is on.
+     * Cars without it (remote players) derive it from their motion.
+     */
+    setDriveState(speed: number, steerAngle: number, braking: boolean): void {
+        this._driveSet = true;
+        this._speed = speed;
+        this._steer = steerAngle;
+        this._braking = braking;
+    }
+
     setGhostVisual(active: boolean) {
         if (active === this._ghostVisualOn) return;
         this._ghostVisualOn = active;
+        this.applyGhost(active);
+    }
 
+    private applyGhost(active: boolean): void {
         if (active) {
             this.flipGroup.traverse((child) => {
                 const mesh = child as THREE.Mesh;
@@ -190,32 +325,204 @@ export class CarModel {
         }
     }
 
-    buildCar() {
-        // Shared materials
-        const bodyMat = new THREE.MeshStandardMaterial({ color: this.colorCode, roughness: 0.2, metalness: 0.1 });
-        const whiteMat = new THREE.MeshStandardMaterial({ color: 0xFFFFFF, roughness: 0.2, metalness: 0.1 });
-        const chromeMat = new THREE.MeshStandardMaterial({ color: 0xEEEEEE, roughness: 0.0, metalness: 1.0 });
-        const glassMat = new THREE.MeshStandardMaterial({
-            color: 0x88BBDD, roughness: 0.0, metalness: 0.3, transparent: true, opacity: 0.6
-        });
-        const rubberMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 });
-        const headlightMat = new THREE.MeshStandardMaterial({
-            color: 0xFFFFCC, emissive: 0xFFFFCC, emissiveIntensity: 0.8, roughness: 0.1, metalness: 0.0
-        });
-        const taillightMat = new THREE.MeshStandardMaterial({
-            color: 0xFF2222, emissive: 0xFF0000, emissiveIntensity: 0.6, roughness: 0.2, metalness: 0.0
-        });
+    /** AFK players: the whole car greyed out (the materials are this car's own). */
+    setAfkVisual(active: boolean): void {
+        if (active === this._afkVisualOn) return;
+        this._afkVisualOn = active;
+        this.applyAfk(active);
+    }
 
-        switch (this.carType) {
-            case 'pickup': this.buildPickup(bodyMat, chromeMat, glassMat, rubberMat, headlightMat, taillightMat); break;
-            case 'sport': this.buildSport(bodyMat, chromeMat, glassMat, rubberMat, headlightMat, taillightMat); break;
-            case 'beetle': this.buildBeetle(bodyMat, chromeMat, glassMat, rubberMat, headlightMat, taillightMat); break;
-            case 'jeep': this.buildJeep(bodyMat, chromeMat, glassMat, rubberMat, headlightMat, taillightMat); break;
-            default: this.buildBulli(bodyMat, whiteMat, chromeMat, glassMat, rubberMat, headlightMat, taillightMat); break;
+    private applyAfk(active: boolean): void {
+        if (active) {
+            const shieldMaterial = this.shieldMesh?.material;
+            for (const material of this.bodyMaterials()) {
+                const standard = material as THREE.MeshStandardMaterial;
+                if (material === shieldMaterial || !standard.color || this._afkColors.has(standard)) continue;
+                this._afkColors.set(standard, standard.color.getHex());
+                standard.color.setHex(0x888888);
+            }
+        } else {
+            this._afkColors.forEach((hex, material) => material.color.setHex(hex));
+            this._afkColors.clear();
+        }
+    }
+
+    private bodyMaterials(): Iterable<THREE.Material> {
+        return this.gltf ? this.gltf.materials : this._ownedMaterials;
+    }
+
+    /** Per frame (updateCarModels): drive look, LOD, wheels, lamps. */
+    updateFrame(dt: number, now: number, cameraPosition: THREE.Vector3 | null): void {
+        if (this._disposed || !this.flipGroup.visible) {
+            this._driveSet = false;
+            return;
+        }
+        if (!this._driveSet) this.deriveDriveState(dt, now);
+        this._driveSet = false;
+        const speed = this._speed;
+        const steer = this._steer;
+
+        // Brake lights: on at once, off after a short hold (no flicker)
+        if (this._braking) this._brakeHold = BRAKE_HOLD_S;
+        else this._brakeHold = Math.max(0, this._brakeHold - dt);
+        const brakeTarget = this._brakeHold > 0 ? 1 : 0;
+        this._brakeLight += (brakeTarget - this._brakeLight) * Math.min(1, dt * (brakeTarget > this._brakeLight ? 40 : 12));
+
+        // Blinkers while turning at city speed
+        let blinkLeft = 0, blinkRight = 0;
+        if (Math.abs(steer) > BLINK_STEER && Math.abs(speed) < BLINK_MAX_SPEED) {
+            this._blinkClock += dt;
+            const on = (this._blinkClock % BLINK_PERIOD_S) < BLINK_PERIOD_S * 0.5 ? 1 : 0;
+            if (steer > 0) blinkLeft = on;
+            else blinkRight = on;
+        } else {
+            this._blinkClock = 0;
         }
 
-        // Shield bubble (hidden by default)
-        const shieldGeo = new THREE.SphereGeometry(3.5, 16, 12);
+        const rolled = speed * dt;
+        const gltf = this.gltf;
+        if (gltf) {
+            if (cameraPosition) this.selectLod(cameraPosition);
+            gltf.roll(rolled, steer);
+            gltf.applyWheels();
+            gltf.setLamps(this._brakeLight, blinkLeft, blinkRight, this.flipGroup);
+        } else {
+            const spin = rolled / this.wheelRadius;
+            for (let i = 0; i < this.wheels.length; i++) {
+                const wheel = this.wheels[i];
+                wheel.rotation.order = 'YXZ';
+                wheel.rotation.x = (wheel.rotation.x + spin) % (Math.PI * 2);
+                if (i < 2) wheel.rotation.y = steer;
+            }
+            if (this._taillight) this._taillight.emissiveIntensity = 0.35 + this._brakeLight * 2.6;
+        }
+    }
+
+    /** Shows the GLB LOD for a camera at `cameraPosition` (Mega cars count as closer). */
+    selectLod(cameraPosition: THREE.Vector3): void {
+        if (!this.gltf) return;
+        this.group.getWorldPosition(_carPosition);
+        this.gltf.selectLod(_carPosition.distanceTo(cameraPosition) / Math.max(0.1, this.group.scale.x));
+    }
+
+    // Speed, steering and braking from the motion of the group (20 Hz updates)
+    private deriveDriveState(dt: number, now: number): void {
+        const x = this.group.position.x;
+        const z = this.group.position.z;
+        const yaw = this.group.rotation.y;
+        if (Number.isNaN(this._lastX)) {
+            this._lastX = x;
+            this._lastZ = z;
+            this._lastYaw = yaw;
+            this._lastMoveAt = now;
+            return;
+        }
+        const dx = x - this._lastX;
+        const dz = z - this._lastZ;
+        if (dx !== 0 || dz !== 0 || yaw !== this._lastYaw) {
+            const gap = Math.max(0.03, now - this._lastMoveAt);
+            if (Math.hypot(dx, dz) > TELEPORT_M) {
+                this._velocity = 0;
+                this._yawRate = 0;
+            } else {
+                const forward = (dx * Math.sin(yaw) + dz * Math.cos(yaw)) / gap;
+                const turn = Math.atan2(Math.sin(yaw - this._lastYaw), Math.cos(yaw - this._lastYaw)) / gap;
+                this._velocity += (forward - this._velocity) * MOTION_BLEND;
+                this._yawRate += (turn - this._yawRate) * MOTION_BLEND;
+            }
+            this._lastX = x;
+            this._lastZ = z;
+            this._lastYaw = yaw;
+            this._lastMoveAt = now;
+        } else if (now - this._lastMoveAt > MOTION_STALE_S) {
+            this._velocity *= Math.max(0, 1 - dt * 6);
+            this._yawRate *= Math.max(0, 1 - dt * 6);
+        }
+        const speed = this._velocity;
+        const steer = Math.abs(speed) > 0.5
+            ? Math.atan(this.wheelbase * this._yawRate / speed)
+            : 0;
+        const decel = dt > 0 ? (Math.abs(this._prevSpeed) - Math.abs(speed)) / dt : 0;
+        this._prevSpeed = speed;
+        this._speed = speed;
+        this._steer = Math.max(-0.55, Math.min(0.55, steer));
+        this._braking = Math.abs(speed) > 1.5 && decel > BRAKE_DECEL;
+    }
+
+    // ---- GLB body ----
+    private buildGltf(): void {
+        const body = new GltfCarBody(this.carType, this.colorCode);
+        this.gltf = body;
+        this.flipGroup.add(body.root);
+        this._body = [body.root];
+        this.addShield(body.size);
+    }
+
+    /** Replaces the procedural body with the GLB body once the models are loaded. */
+    upgradeToGltf(): boolean {
+        if (this._disposed || this.gltf || !GLTF_TYPES.has(this.carType) || !GltfCarBody.available(this.carType)) return false;
+        const ghost = this._ghostVisualOn;
+        const afk = this._afkVisualOn;
+        if (ghost) this.applyGhost(false);
+        if (afk) this.applyAfk(false);
+        const shieldVisible = this.shieldMesh?.visible ?? false;
+        const shieldMaterial = this.shieldMesh?.material as THREE.MeshStandardMaterial | undefined;
+        const shieldLook = shieldMaterial ? { opacity: shieldMaterial.opacity, emissive: shieldMaterial.emissiveIntensity } : null;
+        for (const object of this._body) object.removeFromParent();
+        if (this.shieldMesh) this.shieldMesh.removeFromParent();
+        this.disposeOwned();
+        this.wheels.length = 0;
+        this._taillight = null;
+        this.buildGltf();
+        if (this.shieldMesh && shieldLook) {
+            const material = this.shieldMesh.material as THREE.MeshStandardMaterial;
+            material.opacity = shieldLook.opacity;
+            material.emissiveIntensity = shieldLook.emissive;
+            this.shieldMesh.visible = shieldVisible;
+        }
+        if (ghost) this.applyGhost(true);
+        if (afk) this.applyAfk(true);
+        return true;
+    }
+
+    // ---- procedural bodies ----
+    buildCar() {
+        const m = createCarMaterials(this.colorCode);
+        this._taillight = m.taillight;
+        const before = new Set(this.flipGroup.children);
+
+        switch (this.carType) {
+            case 'pickup': this.buildPickup(m); break;
+            case 'sport': this.buildSport(m); break;
+            case 'beetle': this.buildBeetle(m); break;
+            case 'jeep': this.buildJeep(m); break;
+            default: this.buildBulli(m); break;
+        }
+        this._body = this.flipGroup.children.filter(child => !before.has(child));
+        for (const object of this._body) this.own(object);
+        this.addShield(null);
+    }
+
+    private own(object: THREE.Object3D): void {
+        object.traverse((child) => {
+            const mesh = child as THREE.Mesh;
+            if (!mesh.isMesh) return;
+            this._ownedGeometries.add(mesh.geometry);
+            const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+            for (const material of materials) {
+                this._ownedMaterials.add(material);
+                for (const value of Object.values(material)) {
+                    const texture = value as THREE.Texture;
+                    if (texture?.isTexture && texture !== _vwLogoTexture) this._ownedTextures.add(texture);
+                }
+            }
+        });
+    }
+
+    // Shield bubble (hidden by default): a sphere over the procedural cars,
+    // an ellipsoid hugging the GLB body
+    private addShield(size: THREE.Vector3 | null): void {
+        const shieldGeo = new THREE.SphereGeometry(size ? 1 : 3.5, 24, 16);
         const shieldMat = new THREE.MeshStandardMaterial({
             color: 0x00BFFF,
             transparent: true,
@@ -226,340 +533,237 @@ export class CarModel {
             side: THREE.DoubleSide
         });
         this.shieldMesh = new THREE.Mesh(shieldGeo, shieldMat);
-        this.shieldMesh.position.y = 1.5;
+        if (size) {
+            this.shieldMesh.scale.set(size.x / 2 + 0.7, size.y / 2 + 0.55, size.z / 2 + 0.6);
+            this.shieldMesh.position.y = size.y * 0.45;
+        } else {
+            this.shieldMesh.position.y = 1.5;
+        }
+        this.shieldMesh.name = 'shield';
         // An opacity-zero mesh still writes depth unless disabled above. Keep it
         // out of the render list entirely until a shield effect needs it.
         this.shieldMesh.visible = false;
         this.flipGroup.add(this.shieldMesh);
+        this._ownedGeometries.add(shieldGeo);
+        this._ownedMaterials.add(shieldMat);
     }
 
-    // ---- ORIGINAL VW BULLI ----
-    buildBulli(bodyMat: THREE.MeshStandardMaterial, whiteMat: THREE.MeshStandardMaterial, chromeMat: THREE.MeshStandardMaterial, glassMat: THREE.MeshStandardMaterial, rubberMat: THREE.MeshStandardMaterial, headlightMat: THREE.MeshStandardMaterial, taillightMat: THREE.MeshStandardMaterial) {
+    private mesh(geometry: THREE.BufferGeometry, material: THREE.Material, shadow = true): THREE.Mesh {
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.castShadow = shadow;
+        mesh.receiveShadow = shadow;
+        this.flipGroup.add(mesh);
+        return mesh;
+    }
+
+    // ---- VW BULLI (fallback while the GLB loads or when it fails) ----
+    buildBulli(m: CarMaterials) {
         const width = 2.8, length = 4.0, heightLower = 1.4, heightUpper = 1.2;
         const chassisY = 0.8;
 
-        const lowerBody = new THREE.Mesh(new THREE.BoxGeometry(width, heightLower, length), bodyMat);
+        const lowerBody = this.mesh(roundedBox(width, heightLower, length, 0.25), m.paint);
         lowerBody.position.y = chassisY + heightLower / 2;
-        lowerBody.castShadow = true; lowerBody.receiveShadow = true;
-        this.flipGroup.add(lowerBody);
-
-        const upperBody = new THREE.Mesh(new THREE.BoxGeometry(width - 0.1, heightUpper, length - 0.2), whiteMat);
+        const upperBody = this.mesh(roundedBox(width - 0.1, heightUpper, length - 0.2, 0.3), m.cream);
         upperBody.position.y = chassisY + heightLower + heightUpper / 2;
-        upperBody.castShadow = true; upperBody.receiveShadow = true;
-        this.flipGroup.add(upperBody);
 
-        // Windshield
         const windshieldW = width - 0.6, windshieldH = 0.8;
-        const windshield = new THREE.Mesh(new THREE.PlaneGeometry(windshieldW, windshieldH), glassMat);
-        windshield.position.set(0, upperBody.position.y, length / 2 + 0.02 - 0.05);
+        const windshield = this.mesh(new THREE.PlaneGeometry(windshieldW, windshieldH), m.glass, false);
+        windshield.position.set(0, upperBody.position.y, length / 2 - 0.08);
         windshield.rotation.x = -Math.PI / 12;
-        this.flipGroup.add(windshield);
 
-        // Side windows
         const sideWinGeo = new THREE.PlaneGeometry(length * 0.35, windshieldH * 0.85);
-        const leftSideWin = new THREE.Mesh(sideWinGeo, glassMat);
-        leftSideWin.position.set(-width / 2 - 0.01, upperBody.position.y, length * 0.1);
-        leftSideWin.rotation.y = -Math.PI / 2;
-        this.flipGroup.add(leftSideWin);
-        const rightSideWin = new THREE.Mesh(sideWinGeo, glassMat);
-        rightSideWin.position.set(width / 2 + 0.01, upperBody.position.y, length * 0.1);
-        rightSideWin.rotation.y = Math.PI / 2;
-        this.flipGroup.add(rightSideWin);
-
-        // Rear window
-        const rearWin = new THREE.Mesh(new THREE.PlaneGeometry(windshieldW * 0.7, windshieldH * 0.7), glassMat);
-        rearWin.position.set(0, upperBody.position.y, -length / 2 + 0.21);
+        for (const s of [-1, 1]) {
+            const sideWin = this.mesh(sideWinGeo, m.glass, false);
+            sideWin.position.set(s * (width / 2 - 0.04), upperBody.position.y, length * 0.1);
+            sideWin.rotation.y = s * Math.PI / 2;
+        }
+        const rearWin = this.mesh(new THREE.PlaneGeometry(windshieldW * 0.7, windshieldH * 0.7), m.glass, false);
+        rearWin.position.set(0, upperBody.position.y, -(length - 0.2) / 2 - 0.02);
         rearWin.rotation.y = Math.PI;
-        this.flipGroup.add(rearWin);
 
-        // Eyes
-        this.addEyes(lowerBody.position.y + 0.15, length / 2 + 0.05, 0.45);
-
-        // VW Logo (canvas-textured disc)
         this.addVWLogo(lowerBody.position.y + 0.3, length / 2 + 0.03, 0.5);
-
-        // Headlights & taillights
-        this.addLights(width, lowerBody.position.y, length, headlightMat, taillightMat);
-        // Bumpers
-        this.addBumpers(width, length, chromeMat);
-        // Wheels
-        this.addWheels(width, 0.65, 0.4, 1.2, rubberMat, chromeMat);
+        this.addLights(width, lowerBody.position.y, length, m);
+        this.addBumpers(width, length, m);
+        this.addWheels(width, 0.65, 0.4, 1.2, m);
     }
 
     // ---- PICKUP TRUCK ----
-    buildPickup(bodyMat: THREE.MeshStandardMaterial, chromeMat: THREE.MeshStandardMaterial, glassMat: THREE.MeshStandardMaterial, rubberMat: THREE.MeshStandardMaterial, headlightMat: THREE.MeshStandardMaterial, taillightMat: THREE.MeshStandardMaterial) {
+    buildPickup(m: CarMaterials) {
         const width = 3.0, length = 5.0, cabHeight = 1.8, bedHeight = 0.8;
         const chassisY = 1.0;
 
-        // Cab (front half)
-        const cab = new THREE.Mesh(new THREE.BoxGeometry(width, cabHeight, length * 0.4), bodyMat);
+        const cab = this.mesh(roundedBox(width, cabHeight, length * 0.4, 0.22), m.paint);
         cab.position.set(0, chassisY + cabHeight / 2, length * 0.2);
-        cab.castShadow = true; cab.receiveShadow = true;
-        this.flipGroup.add(cab);
 
-        // Truck bed (rear half, open top)
-        const bedFloor = new THREE.Mesh(new THREE.BoxGeometry(width, 0.3, length * 0.5), bodyMat);
+        const bedFloor = this.mesh(new THREE.BoxGeometry(width, 0.3, length * 0.5), m.paint);
         bedFloor.position.set(0, chassisY + 0.15, -length * 0.15);
-        bedFloor.castShadow = true;
-        this.flipGroup.add(bedFloor);
 
-        // Bed sides
-        const bedSideMat = new THREE.MeshStandardMaterial({ color: this.colorCode, roughness: 0.3, metalness: 0.1 });
-        const sideGeo = new THREE.BoxGeometry(0.15, bedHeight, length * 0.5);
-        const leftSide = new THREE.Mesh(sideGeo, bedSideMat);
-        leftSide.position.set(-width / 2 + 0.075, chassisY + bedHeight / 2, -length * 0.15);
-        leftSide.castShadow = true;
-        this.flipGroup.add(leftSide);
-        const rightSide = new THREE.Mesh(sideGeo, bedSideMat);
-        rightSide.position.set(width / 2 - 0.075, chassisY + bedHeight / 2, -length * 0.15);
-        rightSide.castShadow = true;
-        this.flipGroup.add(rightSide);
-        // Tailgate
-        const tailgate = new THREE.Mesh(new THREE.BoxGeometry(width, bedHeight, 0.15), bedSideMat);
+        const sideGeo = roundedBox(0.15, bedHeight, length * 0.5, 0.05);
+        for (const s of [-1, 1]) {
+            const side = this.mesh(sideGeo, m.paint);
+            side.position.set(s * (width / 2 - 0.075), chassisY + bedHeight / 2, -length * 0.15);
+        }
+        const tailgate = this.mesh(roundedBox(width, bedHeight, 0.15, 0.05), m.paint);
         tailgate.position.set(0, chassisY + bedHeight / 2, -length * 0.4 - 0.075);
-        tailgate.castShadow = true;
-        this.flipGroup.add(tailgate);
 
-        // Windshield
-        const windshield = new THREE.Mesh(new THREE.PlaneGeometry(width - 0.6, 1.0), glassMat);
+        const windshield = this.mesh(new THREE.PlaneGeometry(width - 0.6, 1.0), m.glass, false);
         windshield.position.set(0, cab.position.y + 0.2, length * 0.4 + 0.02);
         windshield.rotation.x = -Math.PI / 10;
-        this.flipGroup.add(windshield);
 
-        // Eyes
-        this.addEyes(chassisY + cabHeight * 0.4, length * 0.4 + 0.05, 0.5);
-
-        // Lights, bumpers, wheels
-        this.addLights(width, chassisY + cabHeight * 0.3, length * 0.8, headlightMat, taillightMat);
-        this.addBumpers(width, length * 0.8, chromeMat);
-        this.addWheels(width, 0.75, 0.5, 1.6, rubberMat, chromeMat); // Bigger wheels
+        this.addLights(width, chassisY + cabHeight * 0.3, length * 0.8, m);
+        this.addBumpers(width, length * 0.8, m);
+        this.addWheels(width, 0.75, 0.5, 1.6, m);
     }
 
     // ---- SPORTS CAR ----
-    buildSport(bodyMat: THREE.MeshStandardMaterial, chromeMat: THREE.MeshStandardMaterial, glassMat: THREE.MeshStandardMaterial, rubberMat: THREE.MeshStandardMaterial, headlightMat: THREE.MeshStandardMaterial, taillightMat: THREE.MeshStandardMaterial) {
+    buildSport(m: CarMaterials) {
         const width = 2.6, length = 4.5, bodyHeight = 0.9;
         const chassisY = 0.5;
 
-        // Low sleek body
-        const body = new THREE.Mesh(new THREE.BoxGeometry(width, bodyHeight, length), bodyMat);
+        const body = this.mesh(roundedBox(width, bodyHeight, length, 0.3), m.paint);
         body.position.y = chassisY + bodyHeight / 2;
-        body.castShadow = true; body.receiveShadow = true;
-        this.flipGroup.add(body);
 
-        // Sloped cabin (smaller, set back)
-        const cabinGeo = new THREE.BoxGeometry(width - 0.4, 0.7, length * 0.35);
-        const cabin = new THREE.Mesh(cabinGeo, bodyMat);
+        const cabin = this.mesh(roundedBox(width - 0.4, 0.7, length * 0.35, 0.28), m.paint);
         cabin.position.set(0, chassisY + bodyHeight + 0.35, -length * 0.05);
-        cabin.castShadow = true;
-        this.flipGroup.add(cabin);
 
-        // Windshield (angled)
-        const windshield = new THREE.Mesh(new THREE.PlaneGeometry(width - 0.8, 0.8), glassMat);
+        const windshield = this.mesh(new THREE.PlaneGeometry(width - 0.8, 0.8), m.glass, false);
         windshield.position.set(0, cabin.position.y + 0.1, cabin.position.z + length * 0.175 + 0.02);
         windshield.rotation.x = -Math.PI / 6;
-        this.flipGroup.add(windshield);
 
-        // Rear window
-        const rearWin = new THREE.Mesh(new THREE.PlaneGeometry(width - 1.0, 0.5), glassMat);
+        const rearWin = this.mesh(new THREE.PlaneGeometry(width - 1.0, 0.5), m.glass, false);
         rearWin.position.set(0, cabin.position.y, cabin.position.z - length * 0.175 - 0.02);
         rearWin.rotation.y = Math.PI;
         rearWin.rotation.x = Math.PI / 8;
-        this.flipGroup.add(rearWin);
 
-        // Spoiler
-        const spoilerWing = new THREE.Mesh(new THREE.BoxGeometry(width + 0.4, 0.08, 0.6), chromeMat);
+        // Ducktail spoiler in body colour on two chrome posts
+        const spoilerWing = this.mesh(roundedBox(width + 0.2, 0.08, 0.6, 0.03), m.paint);
         spoilerWing.position.set(0, chassisY + bodyHeight + 0.8, -length / 2 + 0.3);
-        this.flipGroup.add(spoilerWing);
-        const spoilerPost1 = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.4, 0.12), chromeMat);
-        spoilerPost1.position.set(-width / 2 + 0.3, chassisY + bodyHeight + 0.6, -length / 2 + 0.3);
-        this.flipGroup.add(spoilerPost1);
-        const spoilerPost2 = spoilerPost1.clone();
-        spoilerPost2.position.x = width / 2 - 0.3;
-        this.flipGroup.add(spoilerPost2);
+        const postGeo = new THREE.BoxGeometry(0.1, 0.4, 0.1);
+        for (const s of [-1, 1]) {
+            const post = this.mesh(postGeo, m.chrome, false);
+            post.position.set(s * (width / 2 - 0.3), chassisY + bodyHeight + 0.6, -length / 2 + 0.3);
+        }
 
-        // Eyes (smaller, angrier)
-        this.addEyes(chassisY + bodyHeight * 0.6, length / 2 + 0.05, 0.35);
-
-        this.addLights(width, chassisY + bodyHeight * 0.4, length, headlightMat, taillightMat);
-        this.addBumpers(width, length, chromeMat);
-        this.addWheels(width, 0.5, 0.45, 1.4, rubberMat, chromeMat);
+        this.addLights(width, chassisY + bodyHeight * 0.4, length, m);
+        this.addBumpers(width, length, m);
+        this.addWheels(width, 0.5, 0.45, 1.4, m);
     }
 
     // ---- VW BEETLE ----
-    buildBeetle(bodyMat: THREE.MeshStandardMaterial, chromeMat: THREE.MeshStandardMaterial, glassMat: THREE.MeshStandardMaterial, rubberMat: THREE.MeshStandardMaterial, headlightMat: THREE.MeshStandardMaterial, taillightMat: THREE.MeshStandardMaterial) {
+    buildBeetle(m: CarMaterials) {
         const width = 2.4, length = 3.5, bodyHeight = 1.2;
         const chassisY = 0.7;
 
-        // Rounded lower body
-        const body = new THREE.Mesh(new THREE.BoxGeometry(width, bodyHeight, length), bodyMat);
+        const body = this.mesh(roundedBox(width, bodyHeight, length, 0.4), m.paint);
         body.position.y = chassisY + bodyHeight / 2;
-        body.castShadow = true; body.receiveShadow = true;
-        this.flipGroup.add(body);
 
-        // Domed roof (sphere slice)
-        const roofGeo = new THREE.SphereGeometry(1.5, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2);
-        const roof = new THREE.Mesh(roofGeo, bodyMat);
+        const roof = this.mesh(new THREE.SphereGeometry(1.5, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), m.paint);
         roof.position.set(0, chassisY + bodyHeight, 0);
         roof.scale.set(1, 0.7, 1.1);
-        roof.castShadow = true;
-        this.flipGroup.add(roof);
 
-        // Windshield
-        const windshield = new THREE.Mesh(new THREE.PlaneGeometry(width - 0.8, 0.9), glassMat);
+        const windshield = this.mesh(new THREE.PlaneGeometry(width - 0.8, 0.9), m.glass, false);
         windshield.position.set(0, chassisY + bodyHeight + 0.3, length * 0.3);
         windshield.rotation.x = -Math.PI / 7;
-        this.flipGroup.add(windshield);
 
-        // Rear window (round-ish)
-        const rearWin = new THREE.Mesh(new THREE.CircleGeometry(0.7, 16), glassMat);
+        const rearWin = this.mesh(new THREE.CircleGeometry(0.7, 20), m.glass, false);
         rearWin.position.set(0, chassisY + bodyHeight + 0.2, -length * 0.3);
         rearWin.rotation.y = Math.PI;
-        this.flipGroup.add(rearWin);
 
-        // Big cute eyes
-        this.addEyes(chassisY + bodyHeight * 0.5, length / 2 + 0.05, 0.55);
-
-        // VW Logo on front
         this.addVWLogo(chassisY + bodyHeight * 0.5, length / 2 + 0.03, 0.4);
-
-        this.addLights(width, chassisY + bodyHeight * 0.3, length, headlightMat, taillightMat);
-        this.addBumpers(width, length, chromeMat);
-        this.addWheels(width, 0.6, 0.35, 1.0, rubberMat, chromeMat);
+        this.addLights(width, chassisY + bodyHeight * 0.3, length, m);
+        this.addBumpers(width, length, m);
+        this.addWheels(width, 0.6, 0.35, 1.0, m);
     }
 
-    // ---- JEEP / OFF-ROAD ----
-    buildJeep(bodyMat: THREE.MeshStandardMaterial, chromeMat: THREE.MeshStandardMaterial, glassMat: THREE.MeshStandardMaterial, rubberMat: THREE.MeshStandardMaterial, headlightMat: THREE.MeshStandardMaterial, taillightMat: THREE.MeshStandardMaterial) {
+    // ---- VW TYP 181 / OFF-ROAD ----
+    buildJeep(m: CarMaterials) {
         const width = 3.0, length = 4.2, bodyHeight = 1.5;
-        const chassisY = 1.1; // Higher ground clearance
+        const chassisY = 1.1;
 
-        // Boxy body
-        const body = new THREE.Mesh(new THREE.BoxGeometry(width, bodyHeight, length), bodyMat);
+        const body = this.mesh(roundedBox(width, bodyHeight, length, 0.12), m.paint);
         body.position.y = chassisY + bodyHeight / 2;
-        body.castShadow = true; body.receiveShadow = true;
-        this.flipGroup.add(body);
 
-        // Flat roof with rack
-        const roofGeo = new THREE.BoxGeometry(width + 0.2, 0.15, length + 0.2);
-        const roof = new THREE.Mesh(roofGeo, bodyMat);
+        const roof = this.mesh(roundedBox(width + 0.2, 0.15, length + 0.2, 0.06), m.trim);
         roof.position.y = chassisY + bodyHeight + 0.075;
-        roof.castShadow = true;
-        this.flipGroup.add(roof);
 
-        // Roof rack bars
-        const rackBarMat = chromeMat;
+        const barGeo = new THREE.CylinderGeometry(0.04, 0.04, width + 0.4, 8);
+        barGeo.rotateZ(Math.PI / 2);
         for (let i = -1; i <= 1; i++) {
-            const bar = new THREE.Mesh(new THREE.BoxGeometry(width + 0.4, 0.08, 0.08), rackBarMat);
+            const bar = this.mesh(barGeo, m.chrome, false);
             bar.position.set(0, chassisY + bodyHeight + 0.25, i * length * 0.3);
-            this.flipGroup.add(bar);
         }
-        // Side rack bars
-        [-1, 1].forEach(side => {
-            const sideBar = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, length + 0.4), rackBarMat);
+        const sideBarGeo = new THREE.CylinderGeometry(0.04, 0.04, length + 0.4, 8);
+        sideBarGeo.rotateX(Math.PI / 2);
+        for (const side of [-1, 1]) {
+            const sideBar = this.mesh(sideBarGeo, m.chrome, false);
             sideBar.position.set(side * (width / 2 + 0.15), chassisY + bodyHeight + 0.25, 0);
-            this.flipGroup.add(sideBar);
-        });
+        }
 
-        // Big flat windshield
-        const windshield = new THREE.Mesh(new THREE.PlaneGeometry(width - 0.4, 1.0), glassMat);
+        const windshield = this.mesh(new THREE.PlaneGeometry(width - 0.4, 1.0), m.glass, false);
         windshield.position.set(0, chassisY + bodyHeight * 0.7, length / 2 + 0.02);
         windshield.rotation.x = -Math.PI / 20;
-        this.flipGroup.add(windshield);
 
-        // Spare tire on back
-        const spareTire = new THREE.Mesh(new THREE.TorusGeometry(0.7, 0.3, 8, 16), rubberMat);
-        spareTire.position.set(0, chassisY + bodyHeight * 0.5, -length / 2 - 0.35);
-        this.flipGroup.add(spareTire);
+        const spareTire = this.mesh(new THREE.TorusGeometry(0.62, 0.26, 12, 24), m.rubber);
+        spareTire.position.set(0, chassisY + bodyHeight * 0.5, -length / 2 - 0.3);
 
-        // Eyes (tough looking)
-        this.addEyes(chassisY + bodyHeight * 0.5, length / 2 + 0.05, 0.4);
-
-        this.addLights(width, chassisY + bodyHeight * 0.3, length, headlightMat, taillightMat);
-        this.addBumpers(width, length, chromeMat);
-        this.addWheels(width, 0.8, 0.55, 1.4, rubberMat, chromeMat); // Big off-road wheels
+        this.addLights(width, chassisY + bodyHeight * 0.3, length, m);
+        this.addBumpers(width, length, m);
+        this.addWheels(width, 0.8, 0.55, 1.4, m);
     }
 
     // ---- SHARED HELPERS ----
     addVWLogo(logoY: number, logoZ: number, radius: number) {
-        const logoTexture = createVWLogoTexture();
         const logoMat = new THREE.MeshStandardMaterial({
-            map: logoTexture,
+            map: createVWLogoTexture(),
             transparent: true,
-            roughness: 0.1,
-            metalness: 0.6
+            roughness: 0.15,
+            metalness: 0.7
         });
-        const logoGeo = new THREE.CircleGeometry(radius, 32);
-        const logo = new THREE.Mesh(logoGeo, logoMat);
+        const logo = this.mesh(new THREE.CircleGeometry(radius, 32), logoMat, false);
         logo.position.set(0, logoY, logoZ);
-        this.flipGroup.add(logo);
     }
 
-    addEyes(eyeY: number, eyeZ: number, radius: number) {
-        const eyeGeo = new THREE.SphereGeometry(radius, 32, 16);
-        const eyeMat = new THREE.MeshStandardMaterial({ color: 0xFFFFFF, roughness: 0.1 });
-        const pupilGeo = new THREE.SphereGeometry(radius * 0.6, 32, 16);
-        const pupilMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
-
-        const leftEyeGroup = new THREE.Group();
-        leftEyeGroup.add(new THREE.Mesh(eyeGeo, eyeMat));
-        const lp = new THREE.Mesh(pupilGeo, pupilMat);
-        lp.position.z = radius - 0.1;
-        leftEyeGroup.add(lp);
-        leftEyeGroup.position.set(-0.8, eyeY, eyeZ);
-        this.flipGroup.add(leftEyeGroup);
-
-        const rightEyeGroup = leftEyeGroup.clone();
-        rightEyeGroup.position.set(0.8, eyeY, eyeZ);
-        this.flipGroup.add(rightEyeGroup);
+    addLights(width: number, bodyY: number, length: number, m: CarMaterials) {
+        // Flat lenses in chrome rings (no "eyes", user decision)
+        const headlightGeo = new THREE.SphereGeometry(0.17, 20, 10);
+        const ringGeo = new THREE.TorusGeometry(0.18, 0.03, 8, 24);
+        for (const s of [-1, 1]) {
+            const lamp = this.mesh(headlightGeo, m.headlight, false);
+            lamp.position.set(s * (width / 2 - 0.34), bodyY - 0.2, length / 2);
+            lamp.scale.z = 0.3;
+            const ring = this.mesh(ringGeo, m.chrome, false);
+            ring.position.set(s * (width / 2 - 0.34), bodyY - 0.2, length / 2 + 0.02);
+        }
+        const taillightGeo = roundedBox(0.36, 0.26, 0.1, 0.04);
+        for (const s of [-1, 1]) {
+            const tail = this.mesh(taillightGeo, m.taillight, false);
+            tail.position.set(s * (width / 2 - 0.3), bodyY - 0.1, -length / 2 - 0.05);
+        }
     }
 
-    addLights(width: number, bodyY: number, length: number, headlightMat: THREE.MeshStandardMaterial, taillightMat: THREE.MeshStandardMaterial) {
-        const headlightGeo = new THREE.SphereGeometry(0.25, 16, 8);
-        const lh = new THREE.Mesh(headlightGeo, headlightMat);
-        lh.position.set(-width / 2 + 0.3, bodyY - 0.2, length / 2 + 0.05);
-        lh.scale.z = 0.5;
-        this.flipGroup.add(lh);
-        const rh = new THREE.Mesh(headlightGeo, headlightMat);
-        rh.position.set(width / 2 - 0.3, bodyY - 0.2, length / 2 + 0.05);
-        rh.scale.z = 0.5;
-        this.flipGroup.add(rh);
-
-        const taillightGeo = new THREE.BoxGeometry(0.4, 0.3, 0.1);
-        const lt = new THREE.Mesh(taillightGeo, taillightMat);
-        lt.position.set(-width / 2 + 0.3, bodyY - 0.1, -length / 2 - 0.05);
-        this.flipGroup.add(lt);
-        const rt = new THREE.Mesh(taillightGeo, taillightMat);
-        rt.position.set(width / 2 - 0.3, bodyY - 0.1, -length / 2 - 0.05);
-        this.flipGroup.add(rt);
+    addBumpers(width: number, length: number, m: CarMaterials) {
+        const bumperGeo = new THREE.CylinderGeometry(0.13, 0.13, width + 0.2, 16);
+        bumperGeo.rotateZ(Math.PI / 2);
+        for (const s of [-1, 1]) {
+            const bumper = this.mesh(bumperGeo, m.chrome);
+            bumper.position.set(0, 0.5, s * (length / 2 + 0.2));
+        }
     }
 
-    addBumpers(width: number, length: number, chromeMat: THREE.MeshStandardMaterial) {
-        const bumperGeo = new THREE.BoxGeometry(width + 0.2, 0.3, 0.4);
-        const fb = new THREE.Mesh(bumperGeo, chromeMat);
-        fb.position.set(0, 0.5, length / 2 + 0.2);
-        fb.castShadow = true;
-        this.flipGroup.add(fb);
-        const rb = new THREE.Mesh(bumperGeo, chromeMat);
-        rb.position.set(0, 0.5, -length / 2 - 0.2);
-        rb.castShadow = true;
-        this.flipGroup.add(rb);
-    }
-
-    addWheels(width: number, wheelRadius: number, wheelWidth: number, wheelZ: number, rubberMat: THREE.MeshStandardMaterial, chromeMat: THREE.MeshStandardMaterial) {
-        this.wheels = [];
-        const wheelGeo = new THREE.CylinderGeometry(wheelRadius, wheelRadius, wheelWidth, 32);
-        wheelGeo.rotateZ(Math.PI / 2);
-        const capGeo = new THREE.CylinderGeometry(wheelRadius * 0.55, wheelRadius * 0.55, wheelWidth + 0.05, 16);
+    addWheels(width: number, wheelRadius: number, wheelWidth: number, wheelZ: number, m: CarMaterials) {
+        this.wheels.length = 0;
+        const tireGeo = new THREE.CylinderGeometry(wheelRadius, wheelRadius, wheelWidth, 32);
+        tireGeo.rotateZ(Math.PI / 2);
+        const capGeo = new THREE.CylinderGeometry(wheelRadius * 0.5, wheelRadius * 0.55, wheelWidth + 0.04, 20);
         capGeo.rotateZ(Math.PI / 2);
 
         const wheelGroup = new THREE.Group();
-        const tire = new THREE.Mesh(wheelGeo, rubberMat);
-        const cap = new THREE.Mesh(capGeo, chromeMat);
+        const tire = new THREE.Mesh(tireGeo, m.rubber);
         tire.castShadow = true;
-        wheelGroup.add(tire);
-        wheelGroup.add(cap);
+        const cap = new THREE.Mesh(capGeo, m.chrome);
+        wheelGroup.add(tire, cap);
 
         const wheelX = width / 2 - 0.2;
-        const wheelY = wheelRadius;
         const positions = [
             { x: -wheelX, z: wheelZ },
             { x: wheelX, z: wheelZ },
@@ -568,26 +772,32 @@ export class CarModel {
         ];
         positions.forEach(p => {
             const w = wheelGroup.clone();
-            w.position.set(p.x, wheelY, p.z);
+            w.position.set(p.x, wheelRadius, p.z);
             this.flipGroup.add(w);
             this.wheels.push(w);
         });
     }
 
-    dispose() {
-        if (this._disposed) return;
-        this._disposed = true;
-
-        this._ghostMaterialStates.clear();
-        this._ghostMeshStates.clear();
-
+    private disposeOwned(): void {
         for (const geometry of this._ownedGeometries) geometry.dispose();
         for (const material of this._ownedMaterials) material.dispose();
         for (const texture of this._ownedTextures) texture.dispose();
         this._ownedGeometries.clear();
         this._ownedMaterials.clear();
-        this.wheels.length = 0;
         this._ownedTextures.clear();
+        this._ghostMaterialStates.clear();
+        this._ghostMeshStates.clear();
+        this._afkColors.clear();
+        this.gltf?.dispose();
+        this.gltf = null;
+    }
+
+    dispose() {
+        if (this._disposed) return;
+        this._disposed = true;
+        liveModels.delete(this);
+        this.disposeOwned();
+        this.wheels.length = 0;
         this.group.clear();
     }
 }

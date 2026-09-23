@@ -12,6 +12,8 @@ import { getTerrainHeight } from './world/environment.js';
 import { palmStats, setPalmImpostorDistance, updatePalms, whenPalmImpostorsReady } from './world/palms.js';
 import { getKTX2Loader } from './assets/gltfLoader.js';
 import type { ModelCacheSnapshot } from './assets/ModelCache.js';
+import { CarModel, liveCarModels, refreshCarLods, type CarType } from './vehicle/CarModel.js';
+import { gameHooks } from './game/hooks.js';
 
 // Hook for the Playwright smoke tests (tests/e2e) and the screenshot script
 // (scripts/screenshots.ts). It is only installed when the page is opened with
@@ -192,8 +194,106 @@ function spawnModel(id: string, lod: number, x: number, z: number, yaw = 0): boo
     return true;
 }
 
+// Game car models (CarModel, like a remote player's car) placed for the
+// showroom screenshots; brake/steer hold their drive look every frame
+interface SpawnedCar {
+    model: CarModel;
+    brake: boolean;
+    steer: number;
+}
+const spawnedCars: SpawnedCar[] = [];
+let spawnedCarsHooked = false;
+
+export interface SpawnCarOptions {
+    brake?: boolean;
+    steer?: number;
+    surfboard?: boolean;
+}
+
+function spawnCar(carType: CarType, color: number, x: number, z: number, yaw = 0, options: SpawnCarOptions = {}): CarInfo | null {
+    if (!state.scene) return null;
+    const model = new CarModel(color, carType);
+    model.group.position.set(x, getTerrainHeight(x, z), z);
+    model.group.rotation.y = yaw;
+    model.gltf?.setSurfboard(options.surfboard ?? false);
+    state.scene.add(model.group);
+    spawnedCars.push({ model, brake: options.brake ?? false, steer: options.steer ?? 0 });
+    gameHooks.extraModels.push(model);
+    if (!spawnedCarsHooked) {
+        spawnedCarsHooked = true;
+        gameHooks.frame.push(() => {
+            for (const car of spawnedCars) car.model.setDriveState(0, car.steer, car.brake);
+        });
+    }
+    return carInfo(model);
+}
+
 function clearModels(): void {
     for (const root of spawnedModels.splice(0)) root.removeFromParent();
+    for (const car of spawnedCars.splice(0)) {
+        car.model.group.removeFromParent();
+        const index = gameHooks.extraModels.indexOf(car.model);
+        if (index >= 0) gameHooks.extraModels.splice(index, 1);
+        car.model.dispose();
+    }
+}
+
+// How a car is drawn: GLB body (which LOD) or procedural
+export interface CarInfo {
+    carType: string;
+    gltf: boolean;
+    lod: number;
+    lods: number[];
+    scale: number;
+    // Scaled body size (m) and the contact shadow footprint
+    size: [number, number, number] | null;
+    footprint: [number, number];
+    nametagHeight: number;
+    // Material objects of this car, and how many of them are the model
+    // cache's shared template materials (must be 0)
+    materials: number;
+    sharedMaterials: number;
+    meshes: number;
+}
+
+function templateMaterials(): Set<THREE.Material> {
+    const shared = new Set<THREE.Material>();
+    for (const key of models.snapshot().loaded) {
+        const [id, lod] = key.split(':');
+        const root = models.instantiate(id, Number(lod));
+        root?.traverse(child => {
+            const mesh = child as THREE.Mesh;
+            if (!mesh.isMesh) return;
+            for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) shared.add(material);
+        });
+    }
+    return shared;
+}
+
+function carInfo(model: CarModel): CarInfo {
+    const shared = templateMaterials();
+    const materials = new Set<THREE.Material>();
+    let meshes = 0;
+    model.flipGroup.traverse(child => {
+        const mesh = child as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        meshes++;
+        for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) materials.add(material);
+    });
+    const gltf = model.gltf;
+    return {
+        carType: model.carType,
+        gltf: !!gltf,
+        lod: gltf?.lod ?? -1,
+        lods: gltf?.lods ?? [],
+        scale: gltf?.scale ?? 1,
+        size: gltf ? [gltf.size.x, gltf.size.y, gltf.size.z] : null,
+        footprint: model.footprint,
+        nametagHeight: model.nametagHeight,
+        materials: materials.size,
+        sharedMaterials: [...materials].filter(material => shared.has(material)).length,
+        meshes
+    };
 }
 
 async function loadTextureProbe(url: string): Promise<TextureProbe> {
@@ -264,9 +364,10 @@ function localCarScreenBox(): ScreenBox | null {
     car.group.updateMatrixWorld(true);
     camera.updateMatrixWorld();
     let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
-    car.flipGroup.traverse((child: THREE.Object3D) => {
+    car.flipGroup.traverseVisible((child: THREE.Object3D) => {
         const mesh = child as THREE.Mesh;
-        if (!mesh.isMesh || !mesh.visible || mesh === car.shieldMesh) return;
+        if (!mesh.isMesh || mesh === car.shieldMesh) return;
+        if (!Array.isArray(mesh.material) && mesh.material.name === 'glass') return;
         if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
         _meshBox.copy(mesh.geometry.boundingBox!);
         for (let i = 0; i < 8; i++) {
@@ -318,6 +419,8 @@ function patchRenderForCameraOverride(): void {
             focusLightingOn(state.camera, _overrideFocus.set(...pose.lookAt));
             // Palm LOD (near geometry or impostor) for the fixed view as well
             updatePalms(state.camera);
+            // Car LODs too
+            refreshCarLods(state.camera);
         }
         render(scene, camera);
     };
@@ -396,6 +499,16 @@ export function installE2EHook(): void {
         // of the models before the game uses them); false if it is not loaded
         spawnModel,
         clearModels,
+        // A game car (CarModel) at (x, z) like a remote player's, for the
+        // showroom screenshots; cleared with clearModels
+        spawnCar,
+        // How the local car / every live car is drawn (GLB LOD or procedural)
+        localCarInfo(): CarInfo | null {
+            return state.bulli ? carInfo(state.bulli.model) : null;
+        },
+        carModels(): CarInfo[] {
+            return [...liveCarModels()].map(carInfo);
+        },
         // Visible meshes (draw call sources) per top level scene object,
         // named by the object's name or type, for draw call budgets
         sceneMeshes(): Record<string, number> {
