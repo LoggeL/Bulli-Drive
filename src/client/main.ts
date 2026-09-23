@@ -22,6 +22,7 @@ import { AdaptiveRenderQuality } from './effects/renderQuality.js';
 import { updateWorldShaders } from './effects/worldShaders.js';
 import { ensureCurrentBuild } from './buildVersion.js';
 import { installE2EHook } from './e2eHook.js';
+import { watchWebGLContext, isWebGLContextLost } from './ui/contextLoss.js';
 
 // Reusable chase-camera state/vectors to avoid per-frame allocations.
 const _cameraTarget = new THREE.Vector3();
@@ -60,6 +61,8 @@ function init() {
     state.renderer.shadowMap.enabled = true;
     state.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     document.body.appendChild(state.renderer.domElement);
+    // Show a notice and pause rendering if the browser drops the GL context
+    watchWebGLContext(state.renderer.domElement);
 
     // Audio Context
     try {
@@ -490,7 +493,9 @@ function animate(frameTime: number) {
     updateParticles(dt);
     updateMinimap(frameTime);
 
-    if (state.renderer && state.scene && state.camera) {
+    // While the GL context is lost three.js skips rendering anyway; skip the
+    // adaptive quality sampling too so the gap doesn't lower the resolution.
+    if (state.renderer && state.scene && state.camera && !isWebGLContextLost()) {
         updateWorldShaders(state.clock.elapsedTime);
         renderQuality.update(frameTime);
         state.renderer.render(state.scene, state.camera);
