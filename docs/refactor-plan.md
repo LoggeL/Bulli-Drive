@@ -105,7 +105,7 @@ Die Dauer ist in Wochen fokussierter Arbeit angegeben, im Kalender wird es läng
 - **Ziel:** Sicher iterieren können, ohne dass sich für Spieler etwas ändert.
 - **Deliverables:**
   - [x] Vite mit `three@0.160.0` über npm, Importmap und `scripts/*.mjs` gelöscht; `build-version.txt` und der Reload bei neuer Version funktionieren weiter
-  - [ ] Vitest, CI (typecheck, test, build, docker), Playwright-Smoke mit 2 Tabs, einmal Desktop und einmal Mobile mit Touch-Emulation (Joystick, Action-Buttons) — Vitest steht (`npm test`, `npm run ci`), CI und Playwright fehlen noch
+  - [x] Vitest, CI (typecheck, test, build, docker), Playwright-Smoke mit 2 Tabs, einmal Desktop und einmal Mobile mit Touch-Emulation (Joystick, Action-Buttons) — `npm test`, `npm run test:e2e` (Desktop, 2 Spieler, iPhone 13 mit Touch, Stale-Client-Reload), `.github/workflows/ci.yml` mit Docker-Build und Container-Smoke; der Test-Hook `window.__bulliDebug` existiert nur mit `?e2e=1`
   - [x] Die eine Protokollquelle, `screens.ts:132` nutzt `sendToServer`; Client→Server-Nachrichten haben valibot-Schemas und werden in `handlers.ts` geprüft, `PROTOCOL_VERSION` ist definiert (noch ohne Handshake)
   - [x] rng, terrain und cityGen nach shared, mit Golden-Test (Seed 0xB0111D ergibt 30 Gebäude und 120 Bäume); die Golden-Werte stammen aus dem unveränderten Code auf `1d39c07`
   - [ ] `webglcontextlost`-Handler

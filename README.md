@@ -37,6 +37,17 @@ at `http://localhost:5173`, which proxies the game WebSocket (`/ws`) to the game
 world generation, terrain and RNG, protocol validation, server handlers);
 `npm run ci` chains typecheck, tests and build.
 
+`npm run test:e2e` builds and runs the Playwright smoke tests in `tests/e2e`
+against the production server (port 8799, override with `E2E_PORT`): desktop
+join and drive, two players seeing each other move, the touch controls on an
+emulated iPhone 13 and the stale-client reload. They need Chromium once:
+`npx playwright install chromium`. The tests read game state through a small
+hook that only exists when the page is opened with `?e2e=1`.
+
+GitHub Actions (`.github/workflows/ci.yml`) runs typecheck and unit tests, the
+build, the Playwright tests and a Docker build with a container smoke test on
+every pull request and push to `main`.
+
 Code in `src/shared` runs in the browser and on the server, so it must not
 import three, the DOM or Node modules (a test enforces this).
 
