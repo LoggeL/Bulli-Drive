@@ -6,7 +6,7 @@
 import type { TerrainConfig } from '../protocol.js';
 import { createSimWorld, type ColliderInput, type RampDef, type SimWorld } from '../world/colliders.js';
 import { MEGA_SCALE } from '../constants.js';
-import { BTN_HANDBRAKE, DEG, SIM_TUNING, SIM_TUNING_DEFAULTS } from './constants.js';
+import { BTN_HANDBRAKE, DEG } from './constants.js';
 import { copyVehicleState, createVehicleState, type CarClassId, type SimCar, type VehicleState } from './types.js';
 import { createSimCar, placeVehicle } from './vehicle.js';
 import { stepWorld } from './world.js';
@@ -275,8 +275,6 @@ export function recordScenario(scenario: SimScenario, every = 30): ScenarioFrame
     return frames;
 }
 
-// Goldens are only valid with the shipped tuning, not after panel changes
-export function tuningIsDefault(): boolean {
-    return (Object.keys(SIM_TUNING_DEFAULTS) as (keyof typeof SIM_TUNING)[])
-        .every(key => SIM_TUNING[key] === SIM_TUNING_DEFAULTS[key]);
-}
+// Goldens are only valid with the shipped tuning (global, classes and
+// assist profiles), not after panel changes
+export { tuningIsDefault } from './tuning.js';

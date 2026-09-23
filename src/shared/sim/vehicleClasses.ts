@@ -19,7 +19,7 @@ export const ASSIST_PROFILES: Record<AssistProfile, AssistSettings> = {
 };
 
 // Everything except the assist values, which come from the profile
-type ClassParams = Omit<VehicleParams, 'counterSteer' | 'spinGuardAngle'>;
+export type ClassParams = Omit<VehicleParams, 'counterSteer' | 'spinGuardAngle'>;
 
 function carClass(p: Omit<ClassParams, 'contactMass' | 'massRatioCap' | 'restitutionWall' | 'jumpSpeed'>): ClassParams {
     return { ...p, contactMass: p.mass, massRatioCap: 1.8, restitutionWall: 0.15, jumpSpeed: 11 };
