@@ -6,6 +6,7 @@ import { spawnParticles } from '../effects/particles.js';
 import { MAGNET_RANGE } from '../../shared/constants.js';
 import { CLIENT_COIN_CONFIRM_MS, CLIENT_COIN_MAGNET_RADIUS, CLIENT_COIN_RADIUS } from '../../shared/party/rules.js';
 import { distSq2D } from './util.js';
+import { netDriver } from '../net/netDriver.js';
 import type { CoinData } from '../../shared/protocol.js';
 
 // Store base Y for bobbing animation
@@ -15,6 +16,8 @@ const coinMeshes: Map<number, THREE.Mesh> = new Map();
 // Coins the local car took before the server confirmed them (8.7): the
 // time they were taken; without a pickup event they come back
 const pendingCollects = new Map<number, number>();
+// Buffer, snapshot interval and jitter on top of the round trip
+const COIN_CONFIRM_MARGIN_MS = 300;
 
 const coinGeo = new THREE.CylinderGeometry(0.8, 0.8, 0.2, 16);
 const coinMat = new THREE.MeshStandardMaterial({
@@ -142,10 +145,13 @@ export function animateCoins(time: number) {
 }
 
 export function checkCoinCollection() {
-    // Taken coins the server did not confirm come back
+    // Taken coins the server did not confirm come back. The confirmation
+    // needs about a round trip (the server runs the tick a lead later and
+    // answers with the next snapshot): on a slow net wait longer than 600 ms
     const now = performance.now();
+    const confirmMs = Math.max(CLIENT_COIN_CONFIRM_MS, netDriver.clock.rtt + COIN_CONFIRM_MARGIN_MS);
     for (const [coinId, takenAt] of pendingCollects) {
-        if (now - takenAt < CLIENT_COIN_CONFIRM_MS) continue;
+        if (now - takenAt < confirmMs) continue;
         pendingCollects.delete(coinId);
         const data = state.serverCoins?.find((c: CoinData) => c.id === coinId);
         if (data && !data.collected) showCoinAgain(coinId);
