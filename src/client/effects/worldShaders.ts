@@ -12,6 +12,9 @@ export function createTerrainMaterial(
     parameters: THREE.MeshStandardMaterialParameters = {}
 ): THREE.MeshStandardMaterial {
     const material = new THREE.MeshStandardMaterial(parameters);
+    // Fades tree shadows out on grazing slopes and in the distance (see
+    // patchShadowChunks in render/lighting.ts)
+    material.defines = { ...material.defines, BULLI_GRAZING_SHADOW_FADE: '' };
 
     material.onBeforeCompile = shader => {
         shader.vertexShader = shader.vertexShader

@@ -5,7 +5,17 @@ import * as THREE from 'three';
 // The horizon color is also the fog color, which makes distant terrain and
 // the city edge dissolve into the sky without a visible seam.
 
-export const SKY_COLORS = {
+export interface SkyPalette {
+    zenith: number;
+    upper: number;
+    lower: number;
+    horizon: number;
+    ground: number;
+    sunGlow: number;
+    sunCore: number;
+}
+
+export const SKY_COLORS: SkyPalette = {
     zenith: 0x4a78b8,
     upper: 0x8fb3dc,
     lower: 0xf7d2b2,
@@ -89,19 +99,23 @@ export interface SkyOptions {
     sunDisc?: number;
     // 1 fades the lower hemisphere to the ground color (environment map)
     groundMix?: number;
+    // Replaces single colors of SKY_COLORS (the environment pass lights the
+    // scene with a less blue upper sky than the visible dome)
+    colors?: Partial<SkyPalette>;
 }
 
 export function createSkyMaterial(options: SkyOptions): THREE.ShaderMaterial {
+    const colors = { ...SKY_COLORS, ...options.colors };
     return new THREE.ShaderMaterial({
         uniforms: {
-            uZenith: { value: linear(SKY_COLORS.zenith) },
-            uUpper: { value: linear(SKY_COLORS.upper) },
-            uLower: { value: linear(SKY_COLORS.lower) },
-            uHorizon: { value: linear(SKY_COLORS.horizon) },
-            uGround: { value: linear(SKY_COLORS.ground) },
+            uZenith: { value: linear(colors.zenith) },
+            uUpper: { value: linear(colors.upper) },
+            uLower: { value: linear(colors.lower) },
+            uHorizon: { value: linear(colors.horizon) },
+            uGround: { value: linear(colors.ground) },
             uGroundMix: { value: options.groundMix ?? 0 },
-            uSunGlow: { value: linear(SKY_COLORS.sunGlow) },
-            uSunCore: { value: linear(SKY_COLORS.sunCore) },
+            uSunGlow: { value: linear(colors.sunGlow) },
+            uSunCore: { value: linear(colors.sunCore) },
             uSunDirection: { value: options.sunDirection.clone().normalize() },
             uIntensity: { value: options.intensity ?? 1 },
             uSunDisc: { value: options.sunDisc ?? 1 }
@@ -147,11 +161,12 @@ export function updateSkyDome(dome: THREE.Mesh, camera: THREE.Camera): void {
 export function createSkyEnvironment(
     renderer: THREE.WebGLRenderer,
     sunDirection: THREE.Vector3,
-    intensity: number
+    intensity: number,
+    colors?: Partial<SkyPalette>
 ): THREE.Texture {
     const skyScene = new THREE.Scene();
     const geometry = new THREE.SphereGeometry(1, 32, 16);
-    const material = createSkyMaterial({ sunDirection, intensity, sunDisc: 0, groundMix: 1 });
+    const material = createSkyMaterial({ sunDirection, intensity, sunDisc: 0, groundMix: 1, colors });
     const dome = new THREE.Mesh(geometry, material);
     dome.scale.setScalar(50);
     skyScene.add(dome);

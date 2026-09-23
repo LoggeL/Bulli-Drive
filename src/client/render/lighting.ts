@@ -13,29 +13,52 @@ export const LIGHTING = {
     sunColor: 0xffe0b8,
     sunIntensity: 3.2,
     // Degrees above the horizon, and the compass direction the sun shines
-    // from (0 = +z, 90 = +x). A low sun gives long, readable shadows.
-    sunElevation: 22,
+    // from (0 = +z, 90 = +x). Low enough for long, warm shadows; lower than
+    // about 25 degrees stretches tree shadows on slopes into long streaks.
+    sunElevation: 28,
     sunAzimuth: 67,
+    // Fill for everything the sun does not reach: warm sky above, warm bounce
+    // from the ground below, so shadows stay readable (not blue-black)
     hemiSkyColor: 0xffe3c6,
-    hemiGroundColor: 0x6b5842,
-    hemiIntensity: 0.35,
+    hemiGroundColor: 0x947258,
+    hemiIntensity: 0.6,
     // Brightness of the sky in the environment map (diffuse fill + reflections)
-    environmentIntensity: 0.65,
+    environmentIntensity: 0.85,
+    // The environment map lights the scene with a muted, lilac upper sky: the
+    // saturated blue of the visible dome tinted every shadow steel blue.
+    environmentColors: {
+        zenith: 0x8a8cae,
+        upper: 0xbdb6c6,
+        ground: 0x7e6550
+    },
+    // Tree shadows on the terrain fade out between these camera distances
+    // (meters). Streets and plazas are not terrain and keep their shadows.
+    terrainShadowFade: { start: 55, end: 110 },
     fogNear: 70,
     fogFar: 340,
     shadow: {
-        // Half size of the square the shadow map covers, in meters
-        halfExtent: 45,
-        // The covered square is shifted this far ahead in the view direction,
-        // where the chase camera sees more ground than behind the car.
-        lookAhead: 15,
+        // Half size of the square the shadow map covers (in light space,
+        // meters). On the ground it reaches 1 / sin(sunElevation) times as far
+        // along the sun's direction.
+        halfExtent: { desktop: 55, mobile: 50 },
+        // Texels on the ground: desktop 5 x 11 cm, mobile 7 x 14 cm (across x
+        // along the sun direction; the old steep-sun setup had 12 x 14 cm)
+        mapSize: { desktop: 2048, mobile: 1536 },
+        // The covered square is pushed ahead in the view direction as far as
+        // it can while it still covers these points around the car (meters
+        // forward, meters to the side), where the chase camera sees the ground
+        // right next to the car.
+        mustCover: [[-15, 20], [5, 32]] as [number, number][],
+        lookAhead: { min: 10, max: 90 },
+        // Shadows fade out over this part of the map towards its border, so
+        // the end of the covered area is a soft falloff, not a hard line.
+        edgeFade: 0.12,
         // Distance of the light from the covered center along the sun direction
-        distance: 150,
+        distance: 180,
         near: 1,
-        far: 250,
-        bias: -0.0004,
-        normalBias: 0.03,
-        mapSize: { desktop: 2048, mobile: 1024 }
+        far: 360,
+        bias: -0.0003,
+        normalBias: 0.03
     },
     contactShadow: {
         opacity: 0.7,
@@ -57,16 +80,19 @@ export const SUN_DIRECTION = new THREE.Vector3();
     ).normalize();
 }
 
-// Shadow camera basis (see Matrix4.lookAt): texel snapping works in these axes
+// Shadow camera basis (see Matrix4.lookAt): texel snapping and the coverage
+// test work in these axes
 const _lightX = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), SUN_DIRECTION).normalize();
 const _lightY = new THREE.Vector3().crossVectors(SUN_DIRECTION, _lightX);
 
 let sun: THREE.DirectionalLight | null = null;
 let skyDome: THREE.Mesh | null = null;
+let shadowHalfExtent = 0;
 let shadowTexel = 0;
 
 const _focus = new THREE.Vector3();
 const _viewDirection = new THREE.Vector3();
+const _side = new THREE.Vector3();
 const _snapped = new THREE.Vector3();
 
 /**
@@ -79,18 +105,22 @@ export function setupLighting(scene: THREE.Scene, renderer: THREE.WebGLRenderer)
     renderer.toneMappingExposure = LIGHTING.exposure;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    patchShadowChunks();
 
     // Sky, fog and clear color share the horizon color
     scene.background = new THREE.Color(SKY_COLORS.horizon);
     scene.fog = new THREE.Fog(SKY_COLORS.horizon, LIGHTING.fogNear, LIGHTING.fogFar);
     skyDome = createSkyDome(SUN_DIRECTION);
     scene.add(skyDome);
-    scene.environment = createSkyEnvironment(renderer, SUN_DIRECTION, LIGHTING.environmentIntensity);
+    const createEnvironment = () => createSkyEnvironment(
+        renderer, SUN_DIRECTION, LIGHTING.environmentIntensity, LIGHTING.environmentColors
+    );
+    scene.environment = createEnvironment();
     // A lost context takes the rendered environment map with it; three.js
     // restores its own state first (its listener was registered earlier).
     renderer.domElement.addEventListener('webglcontextrestored', () => {
         scene.environment?.dispose();
-        scene.environment = createSkyEnvironment(renderer, SUN_DIRECTION, LIGHTING.environmentIntensity);
+        scene.environment = createEnvironment();
     });
 
     // No flat ambient term: the hemisphere and the environment map fill the
@@ -98,21 +128,23 @@ export function setupLighting(scene: THREE.Scene, renderer: THREE.WebGLRenderer)
     scene.add(new THREE.HemisphereLight(LIGHTING.hemiSkyColor, LIGHTING.hemiGroundColor, LIGHTING.hemiIntensity));
 
     const shadow = LIGHTING.shadow;
+    const tier = detectRenderTier();
+    shadowHalfExtent = shadow.halfExtent[tier];
+    const mapSize = shadow.mapSize[tier];
     sun = new THREE.DirectionalLight(LIGHTING.sunColor, LIGHTING.sunIntensity);
     sun.castShadow = true;
-    const mapSize = shadow.mapSize[detectRenderTier()];
     sun.shadow.mapSize.set(mapSize, mapSize);
     const camera = sun.shadow.camera;
-    camera.left = -shadow.halfExtent;
-    camera.right = shadow.halfExtent;
-    camera.top = shadow.halfExtent;
-    camera.bottom = -shadow.halfExtent;
+    camera.left = -shadowHalfExtent;
+    camera.right = shadowHalfExtent;
+    camera.top = shadowHalfExtent;
+    camera.bottom = -shadowHalfExtent;
     camera.near = shadow.near;
     camera.far = shadow.far;
     camera.updateProjectionMatrix();
     sun.shadow.bias = shadow.bias;
     sun.shadow.normalBias = shadow.normalBias;
-    shadowTexel = (2 * shadow.halfExtent) / mapSize;
+    shadowTexel = (2 * shadowHalfExtent) / mapSize;
     scene.add(sun);
     scene.add(sun.target);
     placeSun(_focus.set(0, 0, 0));
@@ -133,11 +165,49 @@ export function updateLighting(): void {
     else _focus.copy(camera.position).setY(0);
     camera.getWorldDirection(_viewDirection).setY(0);
     if (_viewDirection.lengthSq() > 1e-6) {
-        _focus.addScaledVector(_viewDirection.normalize(), LIGHTING.shadow.lookAhead);
+        _viewDirection.normalize();
+        _focus.addScaledVector(_viewDirection, shadowLookAhead(_viewDirection));
     }
     placeSun(_focus);
 
     updateCars();
+}
+
+/**
+ * Re-centers sky dome and shadows on a camera that was moved after
+ * updateLighting() ran (fixed screenshot views, see e2eHook.ts): the dome on
+ * the camera, the shadow map on `focus`.
+ */
+export function focusLightingOn(camera: THREE.Camera, focus: THREE.Vector3): void {
+    if (skyDome) updateSkyDome(skyDome, camera);
+    placeSun(_focus.copy(focus));
+}
+
+// How far to push the shadow square ahead of the car in `view` (horizontal,
+// unit length). Along the sun direction the square covers much more ground
+// than across it, so the push depends on the angle between view and sun: when
+// driving across the sun it stays small, when driving towards or away from the
+// sun the covered area reaches far ahead. Every mustCover point has to stay
+// inside the square, which bounds the push from above.
+function shadowLookAhead(view: THREE.Vector3): number {
+    const { mustCover, lookAhead } = LIGHTING.shadow;
+    _side.set(-view.z, 0, view.x);
+    const viewX = view.dot(_lightX);
+    const viewY = view.dot(_lightY);
+    let limit = lookAhead.max;
+    for (const [forward, sideways] of mustCover) {
+        for (const sign of [-1, 1]) {
+            // Light-space position of the point relative to the car
+            const px = forward * viewX + sign * sideways * _side.dot(_lightX);
+            const py = forward * viewY + sign * sideways * _side.dot(_lightY);
+            // Inside while |p - d * view| <= halfExtent on both axes
+            if (viewX > 1e-4) limit = Math.min(limit, (px + shadowHalfExtent) / viewX);
+            else if (viewX < -1e-4) limit = Math.min(limit, (px - shadowHalfExtent) / viewX);
+            if (viewY > 1e-4) limit = Math.min(limit, (py + shadowHalfExtent) / viewY);
+            else if (viewY < -1e-4) limit = Math.min(limit, (py - shadowHalfExtent) / viewY);
+        }
+    }
+    return Math.max(lookAhead.min, limit);
 }
 
 // Moves sun and shadow camera over `focus`, snapped to whole shadow texels in
@@ -153,6 +223,53 @@ function placeSun(focus: THREE.Vector3): void {
     sun.target.position.copy(_snapped);
     sun.position.copy(_snapped).addScaledVector(SUN_DIRECTION, LIGHTING.shadow.distance);
     sun.target.updateMatrixWorld();
+}
+
+// --- Shadow lookup --------------------------------------------------------------
+
+const SHADOW_PATCH_MARKER = '// bulli: shadow edge fade';
+
+/**
+ * Two changes to three's shadow lookup, patched into the shared shader chunks
+ * before any material compiles:
+ * - Shadows fade out towards the border of the shadow map instead of ending
+ *   at a hard line (the only shadow-casting light is the sun).
+ * - Materials that define BULLI_GRAZING_SHADOW_FADE (the terrain) drop the
+ *   shadow where the sun only grazes the surface, and fade it out with
+ *   distance. The terrain casts no shadow itself, so without this, tree
+ *   shadows on slopes facing away from the low sun become long, dark streaks
+ *   on otherwise lit grass, and on distant, hazy hills they look like dark
+ *   tree silhouettes hanging in the air.
+ */
+function patchShadowChunks(): void {
+    const chunks = THREE.ShaderChunk as unknown as Record<string, string>;
+    if (chunks.shadowmap_pars_fragment.includes(SHADOW_PATCH_MARKER)) return;
+
+    // The first return in the chunk is the one of getShadow()
+    chunks.shadowmap_pars_fragment = chunks.shadowmap_pars_fragment.replace(
+        'return shadow;',
+        /* glsl */`${SHADOW_PATCH_MARKER}
+		vec2 bulliShadowEdge = min( shadowCoord.xy, 1.0 - shadowCoord.xy );
+		shadow = mix( 1.0, shadow, smoothstep( 0.0, ${LIGHTING.shadow.edgeFade.toFixed(3)}, min( bulliShadowEdge.x, bulliShadowEdge.y ) ) );
+		return shadow;`
+    );
+
+    const directional = 'directLight.color *= ( directLight.visible && receiveShadow ) ? getShadow( directionalShadowMap[ i ], directionalLightShadow.shadowMapSize, directionalLightShadow.shadowBias, directionalLightShadow.shadowRadius, vDirectionalShadowCoord[ i ] ) : 1.0;';
+    if (!chunks.lights_fragment_begin.includes(directional)) {
+        console.warn('lighting: shadow chunk changed, grazing shadow fade disabled');
+        return;
+    }
+    chunks.lights_fragment_begin = chunks.lights_fragment_begin.replace(
+        directional,
+        /* glsl */`{
+			float bulliShadow = ( directLight.visible && receiveShadow ) ? getShadow( directionalShadowMap[ i ], directionalLightShadow.shadowMapSize, directionalLightShadow.shadowBias, directionalLightShadow.shadowRadius, vDirectionalShadowCoord[ i ] ) : 1.0;
+			#ifdef BULLI_GRAZING_SHADOW_FADE
+			bulliShadow = mix( 1.0, bulliShadow, smoothstep( 0.05, 0.3, dot( geometryNormal, directLight.direction ) ) );
+			bulliShadow = mix( bulliShadow, 1.0, smoothstep( ${LIGHTING.terrainShadowFade.start.toFixed(1)}, ${LIGHTING.terrainShadowFade.end.toFixed(1)}, length( vViewPosition ) ) );
+			#endif
+			directLight.color *= bulliShadow;
+		}`
+    );
 }
 
 // --- Contact shadows --------------------------------------------------------
@@ -262,10 +379,17 @@ function writeContactShadow(index: number, car: any): boolean {
 const rimShields = new WeakSet<THREE.Material>();
 
 /**
- * Turns the car's shield bubble into an additive Fresnel rim: nearly clear
- * over the car, glowing at the silhouette. The material stays a
- * MeshStandardMaterial, so the existing opacity/emissiveIntensity animation
- * in main.ts, Bulli.ts and websocket.ts keeps driving it.
+ * Turns the car's shield bubble into a Fresnel rim: nearly clear over the car,
+ * a saturated cyan edge at the silhouette plus a little additive glow. The
+ * material stays a MeshStandardMaterial, so the existing
+ * opacity/emissiveIntensity animation in main.ts, Bulli.ts and websocket.ts
+ * keeps driving it.
+ *
+ * Blending is premultiplied (ONE, ONE_MINUS_SRC_ALPHA): the rim covers the
+ * background with cyan instead of only adding to it, so it stays cyan over
+ * the bright, warm sky and facades (pure additive blending turned it white).
+ * Fog fades the whole contribution out rather than mixing in the fog color,
+ * which would otherwise add a bright disc for far-away cars.
  */
 function applyShieldRim(material: THREE.Material): void {
     if (rimShields.has(material)) return;
@@ -273,20 +397,43 @@ function applyShieldRim(material: THREE.Material): void {
     material.transparent = true;
     material.depthWrite = false;
     material.side = THREE.FrontSide;
-    material.blending = THREE.AdditiveBlending;
-    // Clamp instead of tone mapping keeps the glow cyan rather than white
+    material.blending = THREE.CustomBlending;
+    material.blendEquation = THREE.AddEquation;
+    material.blendSrc = THREE.OneFactor;
+    material.blendDst = THREE.OneMinusSrcAlphaFactor;
+    material.premultipliedAlpha = false;
+    // The rim color is used as is (tone mapping would wash out the cyan)
     material.toneMapped = false;
     material.onBeforeCompile = shader => {
-        shader.fragmentShader = shader.fragmentShader.replace(
-            '#include <opaque_fragment>',
-            /* glsl */`
+        shader.fragmentShader = shader.fragmentShader
+            .replace(
+                '#include <opaque_fragment>',
+                /* glsl */`
 float shieldFacing = abs(dot(normalize(normal), normalize(vViewPosition)));
 float shieldRim = pow(1.0 - shieldFacing, 2.0);
-vec3 shieldGlow = diffuseColor.rgb + totalEmissiveRadiance;
-gl_FragColor = vec4(shieldGlow * (0.04 + shieldRim * 1.5), diffuseColor.a);`
-        );
+vec3 shieldColor = diffuseColor.rgb + totalEmissiveRadiance;
+// Keep the hue, but no channel above 1 (the colors are not tone mapped)
+shieldColor /= max(1.0, max(shieldColor.r, max(shieldColor.g, shieldColor.b)));
+float shieldCover = clamp(diffuseColor.a * (0.15 + shieldRim * 2.4), 0.0, 0.85);
+float shieldGlow = diffuseColor.a * shieldRim * (0.6 + length(totalEmissiveRadiance));
+gl_FragColor = vec4(shieldColor, shieldCover);`
+            )
+            .replace(
+                '#include <fog_fragment>',
+                /* glsl */`
+// Premultiply (after the color space conversion) and add the glow
+gl_FragColor.rgb *= gl_FragColor.a + shieldGlow;
+#ifdef USE_FOG
+    #ifdef FOG_EXP2
+        float shieldFog = 1.0 - exp(-fogDensity * fogDensity * vFogDepth * vFogDepth);
+    #else
+        float shieldFog = smoothstep(fogNear, fogFar, vFogDepth);
+    #endif
+    gl_FragColor *= 1.0 - shieldFog;
+#endif`
+            );
     };
-    material.customProgramCacheKey = () => 'bulli-shield-rim-v1';
+    material.customProgramCacheKey = () => 'bulli-shield-rim-v2';
     material.needsUpdate = true;
 }
 
