@@ -24,6 +24,9 @@ export const LIGHTING = {
     hemiIntensity: 0.6,
     // Brightness of the sky in the environment map (diffuse fill + reflections)
     environmentIntensity: 0.85,
+    // Without the environment map (software WebGL) the hemisphere gets this
+    // share of environmentIntensity on top
+    softwareFillShare: 0.6,
     // The environment map lights the scene with a muted, lilac upper sky: the
     // saturated blue of the visible dome tinted every shadow steel blue.
     environmentColors: {
@@ -40,10 +43,11 @@ export const LIGHTING = {
         // Half size of the square the shadow map covers (in light space,
         // meters). On the ground it reaches 1 / sin(sunElevation) times as far
         // along the sun's direction.
-        halfExtent: { desktop: 55, mobile: 50 },
+        halfExtent: { desktop: 55, mobile: 50, software: 50 },
         // Texels on the ground: desktop 5 x 11 cm, mobile 7 x 14 cm (across x
-        // along the sun direction; the old steep-sun setup had 12 x 14 cm)
-        mapSize: { desktop: 2048, mobile: 1536 },
+        // along the sun direction; the old steep-sun setup had 12 x 14 cm);
+        // software WebGL (no GPU) gets the smallest map
+        mapSize: { desktop: 2048, mobile: 1536, software: 1024 },
         // The covered square is pushed ahead in the view direction as far as
         // it can while it still covers these points around the car (meters
         // forward, meters to the side), where the chase camera sees the ground
@@ -103,8 +107,10 @@ export function setupLighting(scene: THREE.Scene, renderer: THREE.WebGLRenderer)
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = LIGHTING.exposure;
+    const tier = detectRenderTier(renderer);
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Soft shadows take more shadow map lookups per pixel than a CPU affords
+    renderer.shadowMap.type = tier === 'software' ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
     patchShadowChunks();
 
     // Sky, fog and clear color share the horizon color
@@ -115,20 +121,26 @@ export function setupLighting(scene: THREE.Scene, renderer: THREE.WebGLRenderer)
     const createEnvironment = () => createSkyEnvironment(
         renderer, SUN_DIRECTION, LIGHTING.environmentIntensity, LIGHTING.environmentColors
     );
-    scene.environment = createEnvironment();
-    // A lost context takes the rendered environment map with it; three.js
-    // restores its own state first (its listener was registered earlier).
-    renderer.domElement.addEventListener('webglcontextrestored', () => {
-        scene.environment?.dispose();
+    // Software WebGL renders without the environment map: sampling it in
+    // every lit pixel costs a CPU rasterizer about a quarter of its frame
+    // rate. The hemisphere fill makes up for its share of the light.
+    const useEnvironment = tier !== 'software';
+    if (useEnvironment) {
         scene.environment = createEnvironment();
-    });
+        // A lost context takes the rendered environment map with it; three.js
+        // restores its own state first (its listener was registered earlier).
+        renderer.domElement.addEventListener('webglcontextrestored', () => {
+            scene.environment?.dispose();
+            scene.environment = createEnvironment();
+        });
+    }
 
     // No flat ambient term: the hemisphere and the environment map fill the
     // shadows with sky and ground colors instead.
-    scene.add(new THREE.HemisphereLight(LIGHTING.hemiSkyColor, LIGHTING.hemiGroundColor, LIGHTING.hemiIntensity));
+    const hemiIntensity = LIGHTING.hemiIntensity + (useEnvironment ? 0 : LIGHTING.environmentIntensity * LIGHTING.softwareFillShare);
+    scene.add(new THREE.HemisphereLight(LIGHTING.hemiSkyColor, LIGHTING.hemiGroundColor, hemiIntensity));
 
     const shadow = LIGHTING.shadow;
-    const tier = detectRenderTier();
     shadowHalfExtent = shadow.halfExtent[tier];
     const mapSize = shadow.mapSize[tier];
     sun = new THREE.DirectionalLight(LIGHTING.sunColor, LIGHTING.sunIntensity);
