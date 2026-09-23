@@ -240,6 +240,49 @@ describe('v2 contact rules', () => {
         expect(local.state).toStrictEqual(localBefore);
     });
 
+    it('a car hit from the side slides on its tyres, not stopped dead (90° like 60°)', () => {
+        // A pickup at 40 m/s into a standing beetle; the pickup stops after
+        // the hit. Measures how far the beetle slides.
+        const slide = (angle: number) => {
+            const world = createFlatWorld();
+            const beetle = spawnCar(world, 'b', 'beetle', 0, 0, 0);
+            const heading = Math.PI / 2 + (90 * DEG - angle);
+            const pickup = spawnCar(world, 'a', 'pickup', -8 * Math.sin(heading), -8 * Math.cos(heading), heading, 40);
+            const cars = [pickup, beetle];
+            let hit = false, distance = 0;
+            for (let tick = 0; tick < 300; tick++) {
+                const { x, z } = beetle.state;
+                stepWorld(cars, world);
+                if (!hit && beetle.events.carImpact > 0) {
+                    hit = true;
+                    pickup.state.vx = pickup.state.vz = pickup.state.yawRate = 0;
+                    pickup.state.x -= 20;
+                }
+                distance += Math.hypot(beetle.state.x - x, beetle.state.z - z);
+            }
+            expect(hit).toBe(true);
+            return distance;
+        };
+        const side = slide(90 * DEG), angled = slide(60 * DEG);
+        expect(side).toBeGreaterThan(10);
+        expect(side).toBeGreaterThan(angled / 5);
+    });
+
+    it('slows a car sliding sideways at 70 m/s smoothly (u ≈ 0 is no low-speed case)', () => {
+        const world = createFlatWorld();
+        const car = spawnCar(world, 'a', 'bulli', 0, 0, 0);
+        car.state.vx = 70;
+        let prev = 70, maxDrop = 0;
+        for (let tick = 0; tick < 30; tick++) {
+            stepWorld([car], world);
+            maxDrop = Math.max(maxDrop, prev - speedOf(car));
+            prev = speedOf(car);
+        }
+        // At most a few g from the sliding tyres, not 12 m/s in one tick
+        expect(maxDrop).toBeLessThan(1);
+        expect(speedOf(car)).toBeGreaterThan(50);
+    });
+
     it('gives the same result whatever order the cars come in', () => {
         const build = () => {
             const world = createFlatWorld();

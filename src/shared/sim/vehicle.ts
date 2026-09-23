@@ -314,8 +314,10 @@ export function integrateForces(car: SimCar, world: SimWorld): void {
     let nw = w + (Fw / m + awSlope) * DT;
     s.loadX += ((nu - u) / DT - s.loadX) * (1 - Math.exp(-DT / T.LOAD_TAU));
     let nr = r + tau / I * DT;
-    // Kinematic blend at low speed, where the slip angles are ill-defined
-    const k = clamp(1 - Math.abs(nu) / T.V_LOW, 0, 1);
+    // Kinematic blend at low speed, where the slip angles are ill-defined.
+    // It hangs on the total speed: a car sliding sideways (u ≈ 0) after a
+    // hit from the side is slowed by its tyres, not stopped dead.
+    const k = clamp(1 - Math.sqrt(nu * nu + nw * nw) / T.V_LOW, 0, 1);
     nr += (nu * Math.tan(delta) / L - nr) * k;
     nw -= nw * k * Math.min(1, 10 * DT);
     if (Math.abs(nu) < 0.05 && th === 0 && br === 0) {
