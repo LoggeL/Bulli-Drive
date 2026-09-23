@@ -26,10 +26,12 @@ import { watchWebGLContext, isWebGLContextLost } from './ui/contextLoss.js';
 import { installPerfMonitor, type PerfMonitor } from './debug/perfMonitor.js';
 import { setupLighting, updateLighting } from './render/lighting.js';
 import { ChaseCamera, LEGACY_CAMERA, RACE_CAMERA, RACE_CAMERA_SLIP_BLEND, type ChaseTarget } from './camera/ChaseCamera.js';
-import { PHYSICS_V2 } from './flags.js';
+import { PHYSICS_V2, SANDBOX } from './flags.js';
+import { gameHooks } from './game/hooks.js';
 import type { LocalVehicle } from './vehicle/LocalVehicle.js';
 
 const chaseCamera = new ChaseCamera(PHYSICS_V2 ? RACE_CAMERA : LEGACY_CAMERA);
+gameHooks.camera = chaseCamera;
 const _chaseTarget: ChaseTarget = { position: new THREE.Vector3(), yaw: 0, speedRatio: 0, boost: false };
 
 let renderQuality: AdaptiveRenderQuality;
@@ -120,8 +122,15 @@ function init() {
         }
     });
 
-    // Init WebSocket
-    initWebSocket();
+    // Init WebSocket, or with ?sandbox=1 the offline test pad of the v2
+    // physics instead (its own chunk, only loaded with the flag)
+    if (SANDBOX) {
+        import('./sandbox/sandbox.js')
+            .then(sandbox => sandbox.startSandbox())
+            .catch(error => console.error('Sandbox failed to load', error));
+    } else {
+        initWebSocket();
+    }
 
     // Event Listeners
     window.addEventListener('resize', onWindowResize, false);
@@ -306,6 +315,9 @@ function animate(frameTime: number) {
             }
         }
     }
+
+    // Sandbox dummies and cones (game/hooks.ts, empty in the game)
+    for (const hook of gameHooks.frame) hook(dt);
 
     // Animate world objects
     animateCoins(time);

@@ -2620,3 +2620,92 @@ body.physics-v2 .hint-row {
         top: max(1.4rem, calc(env(safe-area-inset-top, 0px) + 0.9rem));
     }
 }
+
+/* ==========================================================================
+   SANDBOX (?sandbox=1): offline test pad of the v2 physics
+   ========================================================================== */
+
+/* No city map and no other players offline; body.sandbox is set by sandbox.ts */
+body.sandbox #map-panel,
+body.sandbox #player-list {
+    display: none !important;
+}
+
+#sandbox-banner {
+    position: fixed;
+    top: max(1.25rem, env(safe-area-inset-top, 0px));
+    left: max(1.25rem, env(safe-area-inset-left, 0px));
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.4rem;
+    padding: 0.6rem 0.8rem;
+    background: var(--glass);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-md);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    pointer-events: auto;
+}
+
+#sandbox-banner .sandbox-title {
+    font-family: var(--font-display);
+    font-size: 0.9rem;
+    letter-spacing: 2px;
+    color: var(--sunset-gold);
+}
+
+#sandbox-banner button {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.25rem 0.5rem 0.25rem 0.25rem;
+    font-family: var(--font-body);
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+
+#sandbox-banner button .key {
+    min-width: 1.4rem;
+    padding: 0.1rem 0.3rem;
+    font-size: 0.68rem;
+    text-align: center;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.16);
+}
+
+/* Phones: small, in the corner the (hidden) radar uses, clear of the HUD */
+@media (max-width: 768px), (pointer: coarse) {
+    #sandbox-banner {
+        top: max(0.65rem, env(safe-area-inset-top, 0px));
+        left: max(0.65rem, env(safe-area-inset-left, 0px));
+        width: 96px;
+        padding: 0.4rem;
+        gap: 0.3rem;
+    }
+
+    #sandbox-banner .sandbox-title {
+        font-size: 0.7rem;
+        letter-spacing: 1px;
+    }
+
+    #sandbox-banner button {
+        width: 100%;
+        padding: 0.3rem 0.4rem;
+        font-size: 0.62rem;
+        line-height: 1.15;
+        text-align: left;
+    }
+
+    /* No keyboard on a phone */
+    #sandbox-banner button .key {
+        display: none;
+    }
+}

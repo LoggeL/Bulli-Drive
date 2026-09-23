@@ -490,7 +490,7 @@ function updateRemotePlayer(data: { id: string; x: number; z: number; y?: number
     }
 }
 
-function removeLoader() {
+export function removeLoader() {
     const loader = document.getElementById('loading-screen');
     const splash = document.getElementById('splash-screen');
     

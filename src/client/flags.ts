@@ -5,7 +5,13 @@ function queryFlag(name: string): string | null {
     return new URLSearchParams(window.location.search).get(name);
 }
 
+// ?sandbox=1 opens the offline test pad of the v2 physics instead of the
+// city: ramps, walls, cones and dummy cars, no server connection
+// (docs/phase-1a-design.md, 12.7). Implies ?physics=v2.
+export const SANDBOX = queryFlag('sandbox') === '1';
+
 // ?physics=v2 drives the local car with the fixed-step v2 simulation in
 // src/shared/sim (docs/phase-1a-design.md). Without it the game behaves
 // exactly as before.
-export const PHYSICS_V2 = queryFlag('physics') === 'v2';
+export const PHYSICS_V2 = queryFlag('physics') === 'v2' || SANDBOX;
+

@@ -6,6 +6,7 @@ import { createSimCar, placeVehicle, resetVehicle } from '../../shared/sim/vehic
 import { isCarClassId } from '../../shared/sim/vehicleClasses.js';
 import { stepWorld } from '../../shared/sim/world.js';
 import type { SimWorld } from '../../shared/world/colliders.js';
+import { gameHooks } from '../game/hooks.js';
 import { FixedStepLoop } from '../game/loop.js';
 import { inputManager } from '../input/InputManager.js';
 import { state } from '../state.js';
@@ -104,7 +105,8 @@ export class LocalVehicle {
     private tiltRoll = 0;
 
     readonly classId: CarClassId;
-    readonly profile: AssistProfile;
+    // Assist profile; the tuning panel may switch it (then refreshCarParams)
+    profile: AssistProfile;
     // Remote players in the contact set of the last tick
     proxyCount = 0;
 
@@ -198,8 +200,12 @@ export class LocalVehicle {
         cars.push(car);
         collectRemoteProxies(now, this.world, cars);
         this.proxyCount = cars.length - 1;
+        // Sandbox dummies (game/hooks.ts), empty in the game
+        for (const hook of gameHooks.beforeTick) hook(this);
+        for (const extra of gameHooks.extraCars) cars.push(extra);
         stepWorld(cars, this.world);
         this.ticks++;
+        for (const hook of gameHooks.afterTick) hook(this);
 
         const tickEvents = car.events;
         const ev = this.events;

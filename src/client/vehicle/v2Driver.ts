@@ -2,6 +2,7 @@ import { DEFAULT_TERRAIN_CONFIG } from '../../shared/constants.js';
 import type { Bulli } from '../entities/Bulli.js';
 import { playCollisionSound, playJumpSound } from '../effects/sounds.js';
 import { spawnParticles } from '../effects/particles.js';
+import { gameHooks } from '../game/hooks.js';
 import { createPadState, findStandardPad, readPad } from '../input/gamepad.js';
 import { inputManager } from '../input/InputManager.js';
 import { state } from '../state.js';
@@ -44,7 +45,8 @@ inputManager.onAction = (action) => {
 };
 
 export function driveLocalCar(car: Bulli, dt: number): void {
-    const world = simWorldFor(state.terrainConfig ?? DEFAULT_TERRAIN_CONFIG, state.obstacles);
+    // The sandbox brings its own world (game/hooks.ts)
+    const world = gameHooks.world ?? simWorldFor(state.terrainConfig ?? DEFAULT_TERRAIN_CONFIG, state.obstacles);
     if (!car.vehicle) car.vehicle = LocalVehicle.forHost(car, world);
     const vehicle = car.vehicle;
     vehicle.world = world;
