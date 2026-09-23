@@ -8,10 +8,10 @@ test('the v2 physics drives, steers, jumps, drifts and resets', async ({ openPla
     const { page } = player;
     await joinGame(player, 'E2E V2', '&physics=v2');
 
-    const initial = await snapshot(page);
-    expect(initial.physics).toBe('v2');
-    expect(initial.v2?.classId).toBeTruthy();
-    expect(initial.v2?.profile).toBe('standard');
+    expect((await snapshot(page)).physics).toBe('v2');
+    const initial = await v2(page);
+    expect(initial.classId).toBeTruthy();
+    expect(initial.profile).toBe('standard');
     // The race camera sits low and close behind the car (legacy: 23 m up)
     await expect.poll(async () => {
         const { camera, local } = await snapshot(page);
