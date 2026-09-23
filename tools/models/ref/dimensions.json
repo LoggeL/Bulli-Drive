@@ -1,0 +1,99 @@
+{
+  "_meta": {
+    "units": "Meter",
+    "stand": "2026-09-23",
+    "hinweise": [
+      "Werte sind Werksangaben ueber Sekundaerquellen (Wikipedia, Datenbanken, Fachhandel); Abweichungen je nach Baujahr/Stossstange von 1-3 cm sind normal.",
+      "tire_diameter_m = Aussendurchmesser des montierten Reifens (Rad inkl. Reifen), nicht Felge.",
+      "track_* = Spurweite (Mitte Reifenaufstandsflaeche links bis rechts).",
+      "Alle 5 Fahrzeuge teilen sich den VW-Radstand 2.400 m -> Klassen unterscheiden sich ueber Ueberhaenge, Breite, Hoehe und Spur.",
+      "Blaupausen: <id>_blueprint.png im selben Ordner (t1_blueprint.png = Samba)."
+    ],
+    "sources": {
+      "dewiki_t1": "https://de.wikipedia.org/wiki/VW_T1",
+      "fahrzeugseiten_t1_pritsche": "http://www.fahrzeugseiten.de/Nutzfahrzeuge/VW/Bulli_T1_Pritsche/bulli_t1_pritsche.html",
+      "pickuptrucks_de_t1": "https://pick-up-trucks.de/vw-t1-pickup/",
+      "carsized_samba": "https://www.carsized.com/en/cars/volkswagen-transporter-1963-van-samba/",
+      "type2_tires": "https://www.type2.com/library/tires/kabayo.html",
+      "conceptcarz_beetle_1963": "https://www.conceptcarz.com/s7533/volkswagen-beetle.aspx",
+      "conceptcarz_beetle_1965": "https://www.conceptcarz.com/s12213/volkswagen-beetle-1200.aspx",
+      "dewiki_kaefer": "https://de.wikipedia.org/wiki/VW_K%C3%A4fer",
+      "coker_560_15": "https://cokertire.com/tires/firestone-560-15.html",
+      "conceptcarz_kg_1965": "https://www.conceptcarz.com/s9324/volkswagen-karmann-ghia.aspx",
+      "dewiki_kg": "https://de.wikipedia.org/wiki/VW_Karmann-Ghia_Typ_14",
+      "enwiki_181": "https://en.wikipedia.org/wiki/Volkswagen_Type_181",
+      "dewiki_181": "https://de.wikipedia.org/wiki/VW_Typ_181",
+      "adac_181": "https://www.adac.de/rund-ums-fahrzeug/autokatalog/marken-modelle/vw/181-kurierwagen/typ-181/348563/",
+      "militaerfahrzeuge_181": "https://militaerfahrzeuge.ch/unterkategorie_11_5_133.html",
+      "jbugs_tires": "https://www.jbugs.com/VW-Tech-Article-VW-Tires.html"
+    }
+  },
+  "vehicles": {
+    "bus": {
+      "name": "VW T1 Samba (Sondermodell, 21/23 Fenster), MJ 1964-67",
+      "blueprint": "t1_blueprint.png",
+      "length_m":        { "value": 4.280, "source": "dewiki_t1", "note": "Wikipedia: 4280/4290 mm (Stand 1961); carsized: 4.30 m" },
+      "width_m":         { "value": 1.800, "source": "dewiki_t1", "note": "1800 mm Sondermodell (Zierleisten/Stossstangen), sonst 1750 mm; carsized: 1.80 m" },
+      "height_m":        { "value": 1.940, "source": "dewiki_t1", "note": "1940 mm Kastenwagen/Bus leer; carsized: 1.94 m" },
+      "wheelbase_m":     { "value": 2.400, "source": "dewiki_t1" },
+      "track_front_m":   { "value": 1.375, "source": "dewiki_t1", "note": "Wikipedia: 1370 (1375) mm" },
+      "track_rear_m":    { "value": 1.360, "source": "dewiki_t1" },
+      "tire_size":       { "value": "7.00-14 (14-Zoll-Rad)", "source": "fahrzeugseiten_t1_pritsche", "note": "ab 1963 7.00-14; vorher 6.40-15 auf 15 Zoll" },
+      "tire_diameter_m": { "value": 0.666, "source": "type2_tires", "note": "7.00-14: 26.22 in +/-0.24; alternativ 6.40-15: 27.16 in = 0.690 m" }
+    },
+    "beetle": {
+      "name": "VW 1200 Kaefer (Typ 1, Export), 1963",
+      "blueprint": "beetle_blueprint.png",
+      "length_m":        { "value": 4.079, "source": "conceptcarz_beetle_1963", "note": "Wikipedia-Spanne ueber alle Baujahre 4070-4140 mm" },
+      "width_m":         { "value": 1.540, "source": "conceptcarz_beetle_1965", "note": "1539 mm (1965) bzw. Wikipedia 1540 mm; conceptcarz 1963 nennt 1585 mm (vermutlich inkl. Anbauteilen) -> 1.54 verwenden" },
+      "height_m":        { "value": 1.500, "source": "conceptcarz_beetle_1963", "note": "1501 mm; Wikipedia 1500 mm" },
+      "wheelbase_m":     { "value": 2.400, "source": "conceptcarz_beetle_1963" },
+      "track_front_m":   { "value": 1.306, "source": "conceptcarz_beetle_1965", "note": "51.4 in" },
+      "track_rear_m":    { "value": 1.288, "source": "conceptcarz_beetle_1965", "note": "50.7 in (Pendelachse bis MJ 1967; ab 1967 1350 mm)" },
+      "tire_size":       { "value": "5.60-15", "source": "conceptcarz_beetle_1965" },
+      "tire_diameter_m": { "value": 0.655, "source": "coker_560_15", "note": "Firestone 5.60-15: 25.79 in" }
+    },
+    "pickup": {
+      "name": "VW T1 Pritschenwagen Einzelkabine (Typ 261), ab 1958/MJ 1964",
+      "blueprint": "pickup_blueprint.png",
+      "length_m":        { "value": 4.290, "source": "fahrzeugseiten_t1_pritsche", "note": "ab 1958: 4290 mm; fruehe Serie 4140-4150 mm (pick-up-trucks.de nennt 4150)" },
+      "width_m":         { "value": 1.750, "source": "fahrzeugseiten_t1_pritsche", "note": "ab 1958: 1750 mm; frueh 1660-1710 mm" },
+      "height_m":        { "value": 1.920, "source": "dewiki_t1", "note": "1920 mm Pritschenwagen (Wikipedia und fahrzeugseiten.de)" },
+      "wheelbase_m":     { "value": 2.400, "source": "fahrzeugseiten_t1_pritsche" },
+      "track_front_m":   { "value": 1.370, "source": "fahrzeugseiten_t1_pritsche" },
+      "track_rear_m":    { "value": 1.360, "source": "fahrzeugseiten_t1_pritsche" },
+      "bed_length_m":    { "value": 2.600, "source": "fahrzeugseiten_t1_pritsche", "note": "Ladeflaeche L/B 2600/1570 mm (Einzelkabine); Doppelkabine 1755x1570" },
+      "bed_width_m":     { "value": 1.570, "source": "fahrzeugseiten_t1_pritsche" },
+      "side_board_height_m": { "value": 0.375, "source": "pickuptrucks_de_t1", "note": "drei klappbare Bordwaende" },
+      "tire_size":       { "value": "7.00-14 (14-Zoll-Rad)", "source": "fahrzeugseiten_t1_pritsche", "note": "ab 1963; 1955-1963 6.40-15" },
+      "tire_diameter_m": { "value": 0.666, "source": "type2_tires", "note": "26.22 in" }
+    },
+    "sport": {
+      "name": "VW Karmann Ghia Typ 14 Coupe, 1965",
+      "blueprint": "sport_blueprint.png",
+      "length_m":        { "value": 4.140, "source": "conceptcarz_kg_1965", "note": "Wikipedia-Tabelle nennt 4210 mm (spaetere Stossstangen)" },
+      "width_m":         { "value": 1.634, "source": "conceptcarz_kg_1965", "note": "1636 mm conceptcarz, 1634 mm Wikipedia" },
+      "height_m":        { "value": 1.330, "source": "conceptcarz_kg_1965", "note": "1331 mm; Wikipedia 1330 mm" },
+      "wheelbase_m":     { "value": 2.400, "source": "conceptcarz_kg_1965" },
+      "track_front_m":   { "value": 1.306, "source": "conceptcarz_kg_1965", "note": "51.4 in; Wikipedia (spaeteres MJ) 1315 mm" },
+      "track_rear_m":    { "value": 1.288, "source": "conceptcarz_kg_1965", "note": "50.7 in; Wikipedia (spaeteres MJ) 1360 mm" },
+      "tire_size":       { "value": "5.60-15", "source": "conceptcarz_kg_1965" },
+      "tire_diameter_m": { "value": 0.655, "source": "coker_560_15", "note": "25.79 in" }
+    },
+    "jeep": {
+      "name": "VW Typ 181 Kurierwagen / Thing (1968-1983, Referenz ~1973)",
+      "blueprint": "jeep_blueprint.png",
+      "length_m":        { "value": 3.780, "source": "enwiki_181", "note": "ebenso ADAC, de.wikipedia, militaerfahrzeuge.ch" },
+      "width_m":         { "value": 1.640, "source": "enwiki_181" },
+      "height_m":        { "value": 1.620, "source": "enwiki_181", "note": "mit Verdeck geschlossen; offen/Scheibe geklappt deutlich niedriger" },
+      "wheelbase_m":     { "value": 2.400, "source": "enwiki_181" },
+      "overhang_front_m":{ "value": 0.600, "source": "militaerfahrzeuge_181" },
+      "overhang_rear_m": { "value": 0.780, "source": "militaerfahrzeuge_181" },
+      "track_front_m":   { "value": 1.324, "source": "militaerfahrzeuge_181", "note": "Schweizer Armee Gelpw 4x2; US-Quellen nennen 53.3 in = 1.354 m" },
+      "track_rear_m":    { "value": 1.416, "source": "militaerfahrzeuge_181", "note": "Portalachse; US-Quellen 56.9 in = 1.445 m" },
+      "ground_clearance_m": { "value": 0.205, "source": "adac_181" },
+      "tire_size":       { "value": "165 SR 15", "source": "militaerfahrzeuge_181", "note": "ab 1973 185 R 14 (dewiki_181, ADAC 185R14S)" },
+      "tire_diameter_m": { "value": 0.645, "source": "jbugs_tires", "note": "165R15 = 25.4 in; 185R14 berechnet (82% Querschnitt): 0.659 m" }
+    }
+  }
+}

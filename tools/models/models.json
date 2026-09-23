@@ -1,0 +1,10 @@
+{
+  "_doc": "Car models built by tools/models/build-all.mjs. id = CarType in src/client/vehicle/CarModel.ts; script = Blender build under tools/models/vehicles. The other car types (beetle, pickup, sport, jeep) get added here once their build scripts exist; until then the game keeps their procedural models.",
+  "models": {
+    "bulli": {
+      "name": "VW T1 Samba (1963, 23 windows)",
+      "script": "vehicles/bulli.py",
+      "lods": [0, 1, 2]
+    }
+  }
+}

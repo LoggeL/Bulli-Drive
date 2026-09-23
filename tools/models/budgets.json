@@ -1,0 +1,28 @@
+{
+  "_doc": "Budgets for the packed car GLBs in public/models, checked by tools/models/build-all.mjs and tests/client/modelBudgets.test.ts. Triangles and primitives include the hidden surfboard accessory. Mobile tier low (iPhone 12/13): <=150 draw calls incl. shadow pass and <=500k triangles for the whole frame, so remote cars use LOD1/LOD2 there.",
+  "lods": {
+    "0": { "maxTriangles": 25000, "maxPrimitives": 10, "maxBytes": 350000 },
+    "1": { "maxTriangles": 8000, "maxPrimitives": 10, "maxBytes": 160000 },
+    "2": { "maxTriangles": 2000, "maxPrimitives": 4, "maxBytes": 48000 }
+  },
+  "maxBytesPerModel": 560000,
+  "requiredNodes": [
+    "body",
+    "wheel_fl", "wheel_fr", "wheel_rl", "wheel_rr",
+    "wheel_fl_geo", "wheel_fr_geo", "wheel_rl_geo", "wheel_rr_geo",
+    "accessory_surfboard",
+    "socket_exhaust", "socket_nametag", "socket_underglow",
+    "socket_headlight_l", "socket_headlight_r", "socket_taillight_l", "socket_taillight_r"
+  ],
+  "requiredMaterials": ["paint_primary"],
+  "requiredExtensions": ["EXT_meshopt_compression", "KHR_mesh_quantization", "KHR_texture_basisu"],
+  "allowedExtensions": [
+    "EXT_meshopt_compression",
+    "KHR_mesh_quantization",
+    "KHR_texture_basisu",
+    "KHR_texture_transform",
+    "KHR_materials_clearcoat",
+    "KHR_materials_specular",
+    "KHR_materials_emissive_strength"
+  ]
+}

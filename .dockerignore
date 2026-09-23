@@ -9,3 +9,5 @@ public/build-version.txt
 screenshots
 test-results
 playwright-report
+# Offline asset tools (Blender/texture pipeline) are not part of the image
+tools
