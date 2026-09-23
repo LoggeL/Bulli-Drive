@@ -121,9 +121,12 @@ export const SIM_SCENARIOS: SimScenario[] = [
         name: 'wall-graze-10deg',
         ticks: 180,
         create() {
-            // Wall 0.5 m thick along z, inner face at x = 4.75
+            // Wall 0.5 m thick along z, inner face at x = 4.75. 49 m/s, not
+            // the Bulli's vtop of 50: at exactly vtop the full-throttle drive
+            // switches between covering the drag or not, so the last bit of
+            // sin/cos(10°) decided the whole run (scripts/sim-golden-drift.ts)
             const world = createFlatWorld([{ kind: 'box', x: 5, z: 0, hw: 0.25, hd: 150, top: Infinity }]);
-            return { world, cars: [spawnCar(world, 'a', 'bulli', 0, -100, 10 * DEG, 50)] };
+            return { world, cars: [spawnCar(world, 'a', 'bulli', 0, -100, 10 * DEG, 49)] };
         },
         drive(_tick, run) {
             setInput(run.cars[0], 255);
