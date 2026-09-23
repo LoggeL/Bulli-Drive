@@ -171,6 +171,7 @@ function createDummies(): void {
         dummies.push(dummy);
     });
     gameHooks.extraCars.push(...dummies.map(dummy => dummy.car));
+    gameHooks.extraModels.push(...dummies.map(dummy => dummy.model));
 }
 
 // Dummies and cones back to their spots

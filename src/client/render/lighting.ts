@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { state } from '../state.js';
+import { gameHooks } from '../game/hooks.js';
 import { detectRenderTier } from '../effects/renderQuality.js';
 import { SKY_COLORS, createSkyDome, createSkyEnvironment, updateSkyDome } from './sky.js';
 
@@ -287,7 +288,7 @@ function patchShadowChunks(): void {
 // --- Contact shadows --------------------------------------------------------
 
 const MAX_CONTACT_SHADOWS = 32;
-// Body footprint (width x length) per car type, see Bulli.build*()
+// Body footprint (width x length) per car type, see CarModel.build*()
 const CAR_FOOTPRINT: Record<string, [number, number]> = {
     bulli: [2.8, 4.0],
     pickup: [3.0, 5.0],
@@ -459,6 +460,8 @@ function updateCars(): void {
     };
     visit(state.bulli);
     for (const id in state.remotePlayers) visit(state.remotePlayers[id]);
+    // Sandbox dummies (?sandbox=1)
+    for (const model of gameHooks.extraModels) visit(model);
 
     if (!contactShadows) return;
     contactShadows.count = count;

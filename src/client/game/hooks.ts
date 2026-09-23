@@ -1,6 +1,7 @@
 import type { SimCar } from '../../shared/sim/types.js';
 import type { SimWorld } from '../../shared/world/colliders.js';
 import type { ChaseCamera } from '../camera/ChaseCamera.js';
+import type { CarModel } from '../vehicle/CarModel.js';
 import type { LocalVehicle } from '../vehicle/LocalVehicle.js';
 
 // Extension points for the v2 sandbox (?sandbox=1) and the tuning panel
@@ -12,6 +13,9 @@ export const gameHooks = {
     world: null as SimWorld | null,
     // More dynamic cars stepped in the same stepWorld as the local car
     extraCars: [] as SimCar[],
+    // Their models, which get contact shadows like the players' cars
+    // (render/lighting.ts)
+    extraModels: [] as CarModel[],
     // Once per sim tick, right before and after stepWorld
     beforeTick: [] as Array<(vehicle: LocalVehicle) => void>,
     afterTick: [] as Array<(vehicle: LocalVehicle) => void>,
