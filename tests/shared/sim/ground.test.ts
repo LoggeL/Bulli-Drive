@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { BTN_HANDBRAKE, BTN_JUMP, BTN_RESET, DT, SIM_TUNING } from '../../../src/shared/sim/constants.js';
 import { createFlatWorld, FLAT_TERRAIN } from '../../../src/shared/sim/scenarios.js';
 import { CAR_CLASS_IDS } from '../../../src/shared/sim/vehicleClasses.js';
-import { createSimWorld } from '../../../src/shared/world/colliders.js';
-import { getTerrainHeight } from '../../../src/shared/world/terrain.js';
+import { createSimWorld, rampEdgeColliders, type RampDef } from '../../../src/shared/world/colliders.js';
+import { CITY_TERRAIN_AREA, getTerrainHeight } from '../../../src/shared/world/terrain.js';
 import { DEFAULT_TERRAIN_CONFIG } from '../../../src/shared/constants.js';
-import { drive, forwardSpeed, spawnCar, speedOf } from './helpers.js';
+import { DEG, drive, forwardSpeed, spawnCar, speedOf } from './helpers.js';
 
 // Jump, flight, ramps, slopes and reset (docs/phase-1a-design.md, 6.4-6.7)
 
@@ -152,6 +152,102 @@ describe('v2 ramps and terrain', () => {
         // (The brake would start reversing after 8 ticks at a standstill)
         drive(braking, world, 60, { buttons: BTN_HANDBRAKE });
         expect(speedOf(braking)).toBeLessThan(0.1);
+    });
+});
+
+describe('v2 ramp edges and terrain kinks', () => {
+    // The 20° kicker of the sandbox, 8 m wide and 12 m long, with its walls
+    const kicker: RampDef = { x: 0, z: 0, yaw: 0, width: 8, length: 12, height: 12 * Math.tan(20 * DEG) };
+    const withWalls = () => createFlatWorld(rampEdgeColliders(kicker, 0).map(wall => ({ ...wall })), [kicker]);
+
+    it('does not launch the car at the kink of the city blend ring, out of town or into it', () => {
+        const world = createSimWorld(DEFAULT_TERRAIN_CONFIG, [], []);
+        const { centerX, centerZ, flatRadius, blendRadius } = CITY_TERRAIN_AREA;
+        let worst = 0;
+        for (let deg = 0; deg < 360; deg += 15) {
+            const ux = Math.cos(deg * DEG), uz = Math.sin(deg * DEG);
+            for (const dir of [1, -1]) {
+                const d0 = dir === 1 ? flatRadius + 10 : flatRadius + blendRadius + 40;
+                const car = spawnCar(world, 'a', 'bulli', centerX + ux * d0, centerZ + uz * d0, Math.atan2(ux * dir, uz * dir), 45);
+                drive(car, world, 90, { throttle: 255 }, () => {
+                    worst = Math.max(worst, car.state.y - world.groundHeight(car.state.x, car.state.z));
+                });
+            }
+        }
+        expect(worst).toBeLessThan(0.3);
+    });
+
+    it('reads the ramp slope, not the step at its edge: no push before take-off', () => {
+        const world = createFlatWorld([], [kicker]);
+        const car = spawnCar(world, 'a', 'beetle', 0, -20, 0, 20);
+        let prevU = forwardSpeed(car.state), maxGain = -Infinity;
+        drive(car, world, 90, {}, () => {
+            if (car.state.grounded && car.state.z > -6) maxGain = Math.max(maxGain, forwardSpeed(car.state) - prevU);
+            prevU = forwardSpeed(car.state);
+        });
+        // Coasting uphill only ever loses speed
+        expect(maxGain).toBeLessThan(0);
+    });
+
+    it('lands beside or on the edge of a ramp with the impact of its vertical speed', () => {
+        for (const x0 of [4.2, 4.6, 5.5]) {
+            const world = createFlatWorld([], [kicker]);
+            const car = spawnCar(world, 'a', 'beetle', x0, -3, -Math.PI / 2);
+            const onRamp = x0 < 4;
+            car.state.vx = -20;
+            car.state.vy = -5;
+            car.state.y = world.groundHeight(x0 - 0.5, -3) + 0.1;
+            car.state.grounded = false;
+            let impact = 0;
+            drive(car, world, 30, {}, () => {
+                if (!impact && car.events.landedImpact > 0) impact = car.events.landedImpact;
+            });
+            expect(impact, `x0 ${x0}${onRamp ? ' on the ramp' : ''}`).toBeGreaterThan(4);
+            expect(impact, `x0 ${x0}`).toBeLessThan(7);
+        }
+    });
+
+    it('the walls stop a car jumping at the front or side of the ramp below its top', () => {
+        const runs = [
+            { x: 0, z: 30, yaw: Math.PI },          // towards the high front face
+            { x: 25, z: 3, yaw: -Math.PI / 2 },     // towards a side, high part
+            { x: -25, z: 4, yaw: Math.PI / 2 }
+        ];
+        for (const run of runs) {
+            for (let jumpTick = 0; jumpTick <= 30; jumpTick += 5) {
+                const world = withWalls();
+                const car = spawnCar(world, 'a', 'beetle', run.x, run.z, run.yaw, 15);
+                let prevY = car.state.y, maxY = 0;
+                drive(car, world, 120, tick => ({ throttle: 255, buttons: tick === jumpTick ? BTN_JUMP : 0 }), () => {
+                    // The underside never pops up by more than the flight allows
+                    expect(car.state.y - prevY, `${run.x}/${run.z} jump at ${jumpTick}`)
+                        .toBeLessThanOrEqual(Math.max(0, car.state.vy) * DT + 0.2);
+                    prevY = car.state.y;
+                    maxY = Math.max(maxY, car.state.y);
+                });
+                // It never got onto the ramp: the jump alone reaches 3 m
+                expect(maxY).toBeLessThan(3.1);
+                expect(car.state.y).toBe(0);
+            }
+        }
+    });
+
+    it('rolls off a side of the ramp without a sideways jump', () => {
+        for (const classId of CAR_CLASS_IDS) {
+            for (const [speed, yawDeg] of [[8, 80], [20, 80], [8, 100], [20, 90]]) {
+                const low: RampDef = { x: 0, z: 0, yaw: 0, width: 8, length: 16, height: 16 * Math.tan(10 * DEG) };
+                const world = createFlatWorld(rampEdgeColliders(low, 0).map(wall => ({ ...wall })), [low]);
+                const car = spawnCar(world, 'a', classId, 0, -6.5, yawDeg * DEG, speed);
+                car.state.y = world.groundHeight(0, -6.5);
+                let { x, z } = car.state;
+                drive(car, world, 60, { throttle: 128 }, () => {
+                    const moved = Math.hypot(car.state.x - x, car.state.z - z);
+                    expect(moved, `${classId} ${speed} m/s ${yawDeg}°`).toBeLessThanOrEqual(speedOf(car) * DT + 0.05);
+                    ({ x, z } = car.state);
+                });
+                expect(car.state.x).toBeGreaterThan(4 + 1);
+            }
+        }
     });
 });
 

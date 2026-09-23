@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MEGA_SCALE } from '../../../src/shared/constants.js';
-import { BTN_JUMP, GHOST_EXIT_TICKS, V_SAFE } from '../../../src/shared/sim/constants.js';
+import { BTN_JUMP, DT, GHOST_EXIT_TICKS, V_SAFE } from '../../../src/shared/sim/constants.js';
 import { createFlatWorld } from '../../../src/shared/sim/scenarios.js';
 import type { CarClassId, SimCar } from '../../../src/shared/sim/types.js';
 import { CAR_CLASS_IDS } from '../../../src/shared/sim/vehicleClasses.js';
@@ -103,15 +103,70 @@ describe('v2 wall response', () => {
         expect(maxZ).toBeLessThan(30);
     });
 
-    it('cannot land on top of a collider: it gets pushed off instead', () => {
+    it('lands on top of a low collider instead of being pushed off sideways', () => {
         const world = createFlatWorld([{ kind: 'circle', x: 0, z: 0, r: 1.7, top: 1.2 }]);
         const car = spawnCar(world, 'a', 'bulli', 0.3, 0, 0);
         car.state.y = 3;
         car.state.grounded = false;
         drive(car, world, 60, {});
         expect(car.state.grounded).toBe(true);
-        const [[fx, fz], [rx, rz]] = circleCentres(car);
-        expect(Math.min(Math.hypot(fx, fz), Math.hypot(rx, rz))).toBeGreaterThanOrEqual(1.7 + 1.3 - 1e-6);
+        expect(car.state.y).toBe(1.2);
+        expect(car.state.x).toBe(0.3);
+        expect(car.state.z).toBe(0);
+    });
+
+    it('drives off the top of a low collider and drops down without a sideways jump', () => {
+        const world = createFlatWorld([{ kind: 'circle', x: 0, z: 0, r: 5, top: 1.5 }]);
+        const car = spawnCar(world, 'a', 'bulli', 0, 0, 0);
+        car.state.y = 1.5;
+        let lastZ = car.state.z, maxStep = 0;
+        drive(car, world, 150, { throttle: 255 }, () => {
+            maxStep = Math.max(maxStep, Math.abs(car.state.x), car.state.z - lastZ - speedOf(car) * DT);
+            lastZ = car.state.z;
+        });
+        expect(car.state.y).toBe(0);
+        expect(car.state.z).toBeGreaterThan(5 + 2);
+        expect(maxStep).toBeLessThan(0.05);
+    });
+
+    it('jumping onto a fountain or a pond never moves the car further than its speed allows', () => {
+        // Fountain (r 5, top 1.5), pond (r 5.7, top 0.8), bench and planter
+        const low: Extract<ColliderInput, { kind: 'circle' }>[] = [
+            { kind: 'circle', x: 0, z: 0, r: 5, top: 1.5 },
+            { kind: 'circle', x: 0, z: 0, r: 5.7, top: 0.8 },
+            { kind: 'circle', x: 0, z: 0, r: 1.7, top: 1.2 },
+            { kind: 'circle', x: 0, z: 0, r: 1.0, top: 1.0 }
+        ];
+        for (const collider of low) {
+            const world = createFlatWorld([collider]);
+            for (const speed of [8, 12, 16, 20]) {
+                for (let jumpAt = 0; jumpAt <= 8; jumpAt += 0.5) {
+                    const car = spawnCar(world, 'a', 'bulli', 0, -(collider.r + 20), 0, speed);
+                    let jumped = false;
+                    for (let tick = 0; tick < 240; tick++) {
+                        const jump: boolean = !jumped && car.state.z >= -(collider.r + jumpAt);
+                        jumped ||= jump;
+                        car.input.throttle = 160;
+                        car.input.buttons = jump ? BTN_JUMP : 0;
+                        const { x, z } = car.state;
+                        stepVehicle(car, world);
+                        const moved = Math.hypot(car.state.x - x, car.state.z - z);
+                        expect(moved, `r ${collider.r} at ${speed} m/s, jump ${jumpAt} m before`)
+                            .toBeLessThanOrEqual(speedOf(car) * DT + 0.5);
+                    }
+                }
+            }
+        }
+    });
+
+    it('a Party ghost does not stand on low colliders', () => {
+        const world = createFlatWorld([{ kind: 'circle', x: 0, z: 0, r: 5, top: 1.5 }]);
+        const car = spawnCar(world, 'a', 'bulli', 0, 0, 0);
+        car.mods.ghost = true;
+        car.state.y = 3;
+        car.state.grounded = false;
+        drive(car, world, 60, {});
+        expect(car.state.y).toBe(0);
     });
 });
 

@@ -8,7 +8,7 @@
 
 import { MEGA_SCALE } from '../constants.js';
 import type { RoadGrid, SimWorld } from '../world/colliders.js';
-import { pushOutOfColliders } from './collision.js';
+import { pushOutOfColliders, supportHeight } from './collision.js';
 import { BTN_BOOST, BTN_HANDBRAKE, BTN_JUMP, BTN_RESET, DEG, DT, SIM_TUNING as T, V_ABS, V_SAFE } from './constants.js';
 import { createVehicleParams } from './vehicleClasses.js';
 import { tireCurve } from './tire.js';
@@ -31,18 +31,32 @@ const AIR_FILL_AFTER_TICKS = 18;
 const SCALE_RATE = 6;
 const TICK_COUNTER_MAX = 255;
 const DRIFT_TICKS_MAX = 65535;
+// From terrain onto terrain the car takes off with at most the ground's
+// vertical speed ahead plus this (m/s), so a kink in the heightfield (the
+// edge of the city's blend ring) does not launch it; ramps keep their speed
+const TERRAIN_LAUNCH_MARGIN = 2;
 
 function clamp(value: number, min: number, max: number): number {
     return value < min ? min : value > max ? max : value;
 }
 
-// Ground gradient at (x, z) by central differences (module scratch)
+// Ground gradient at (x, z) (module scratch): the exact slope of the ramp
+// under the point, else central differences of the terrain alone, so the
+// vertical step at a ramp's edge never reads as a slope
 let gradX = 0;
 let gradZ = 0;
 function groundGradient(world: SimWorld, x: number, z: number): void {
+    const ramp = world.rampAt(x, z);
+    if (ramp >= 0) {
+        const r = world.ramps[ramp];
+        const slope = r.height / r.length;
+        gradX = slope * Math.sin(r.yaw);
+        gradZ = slope * Math.cos(r.yaw);
+        return;
+    }
     const inv = 1 / (2 * GRADIENT_STEP);
-    gradX = (world.groundHeight(x + GRADIENT_STEP, z) - world.groundHeight(x - GRADIENT_STEP, z)) * inv;
-    gradZ = (world.groundHeight(x, z + GRADIENT_STEP) - world.groundHeight(x, z - GRADIENT_STEP)) * inv;
+    gradX = (world.terrainHeight(x + GRADIENT_STEP, z) - world.terrainHeight(x - GRADIENT_STEP, z)) * inv;
+    gradZ = (world.terrainHeight(x, z + GRADIENT_STEP) - world.terrainHeight(x, z - GRADIENT_STEP)) * inv;
 }
 
 function clampHorizontalSpeed(s: VehicleState, max: number): void {
@@ -287,7 +301,9 @@ export function integrateForces(car: SimCar, world: SimWorld): void {
     if (u > 5 && absBeta > T.BETA_DAMP_FROM) tau += T.K_BD * I * (beta - s.betaPrev) / DT;
     if (T.yawDampHigh > 0 && u > 50) tau -= T.yawDampHigh * I * (r - u * Math.tan(delta) / L) * (u - 50) / 35;
     s.betaPrev = beta;
-    groundGradient(world, s.x, s.z);
+    // A car standing on a low collider (above the ground) stands on a flat top
+    if (s.y > world.groundHeight(s.x, s.z)) gradX = gradZ = 0;
+    else groundGradient(world, s.x, s.z);
     const auSlope = -T.G_SLOPE * (gradX * fx + gradZ * fz);
     const awSlope = -T.G_SLOPE * (gradX * lx + gradZ * lz);
 
@@ -317,10 +333,24 @@ export function integrateForces(car: SimCar, world: SimWorld): void {
 export function finishTick(car: SimCar, world: SimWorld): void {
     const s = car.state, P = car.params, ev = car.events;
 
-    // 5 Ground
-    const hN = world.groundHeight(s.x, s.z);
+    // 5 Ground: terrain or ramp, or the top of a low collider the car
+    // stands on or comes down onto (section 7.3)
+    let hN = world.groundHeight(s.x, s.z);
+    const hTop = supportHeight(car, world);
+    const onTop = hTop > hN;
+    if (onTop) hN = hTop;
     if (s.grounded) {
-        const yBall = s.y + s.vy * DT - 0.5 * (T.G_AIR + T.STICK) * DT * DT;
+        let yBall = s.y + s.vy * DT - 0.5 * (T.G_AIR + T.STICK) * DT * DT;
+        if (yBall > hN + T.AIR_GAP && !onTop
+            && world.rampAt(s.x, s.z) < 0 && world.rampAt(s.x - s.vx * DT, s.z - s.vz * DT) < 0) {
+            // Terrain onto terrain: keep at most the vertical speed of the
+            // ground ahead, so only a real crest lifts the car
+            const vyAhead = (world.terrainHeight(s.x + s.vx * DT, s.z + s.vz * DT) - hN) / DT;
+            if (s.vy > vyAhead + TERRAIN_LAUNCH_MARGIN) {
+                s.vy = vyAhead + TERRAIN_LAUNCH_MARGIN;
+                yBall = s.y + s.vy * DT - 0.5 * (T.G_AIR + T.STICK) * DT * DT;
+            }
+        }
         if (yBall > hN + T.AIR_GAP) {
             // Ramp edge or crest: the car takes off with its vertical speed
             s.grounded = false;
@@ -335,7 +365,8 @@ export function finishTick(car: SimCar, world: SimWorld): void {
         // vy was integrated in step 3 already
         s.y += s.vy * DT;
         if (s.y <= hN) {
-            groundGradient(world, s.x, s.z);
+            if (onTop) gradX = gradZ = 0;
+            else groundGradient(world, s.x, s.z);
             // Vertical speed relative to the surface
             const impact = -(s.vy - (gradX * s.vx + gradZ * s.vz));
             ev.landedImpact = impact;

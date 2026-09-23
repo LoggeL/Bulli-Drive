@@ -142,6 +142,9 @@ export interface SimWorld {
     roads: RoadGrid | null;      // reset target, null = reset in place
     bound: number;               // terrain.size/2 - 2 = 498 (as the legacy clamp)
     groundHeight(x: number, z: number): number;   // max(getTerrainHeight, ramps)
+    terrainHeight(x: number, z: number): number;  // getTerrainHeight alone
+    // Index of the ramp whose surface is the ground at (x, z), -1 = terrain
+    rampAt(x: number, z: number): number;
     // Scratch buffer for grid queries of the collision code
     queryBuffer: Int32Array;
 }
@@ -161,6 +164,14 @@ export function insideRamp(ramp: RampDef, x: number, z: number): boolean {
     return rampHeight(ramp, 0, x, z) > -Infinity;
 }
 
+// Height of a ramp's surface at the point of its footprint nearest to (x, z)
+export function rampSurfaceNear(world: SimWorld, index: number, x: number, z: number): number {
+    const ramp = world.ramps[index];
+    const along = (x - ramp.x) * Math.sin(ramp.yaw) + (z - ramp.z) * Math.cos(ramp.yaw);
+    const t = Math.max(-0.5, Math.min(0.5, along / ramp.length));
+    return world.terrainHeight(ramp.x, ramp.z) + ramp.height * (t + 0.5);
+}
+
 // Half thickness of a ramp's edge walls, the minimum of section 7.3
 export const RAMP_EDGE_THICKNESS = 0.25;
 // Side wall pieces lower than this are left out: a car simply rolls onto
@@ -174,8 +185,9 @@ const RAMP_SIDE_PIECE = 4;
  * Walls along the high (front) edge and both sides of a ramp, so a car
  * coming from behind or from the side hits the ramp instead of popping up
  * onto it (section 7.2). Each wall is as high as the ramp at that edge.
- * The collision skips them for a car on the ramp or above the ground next
- * to it (collision.ts), so a car taking off never snags the front wall.
+ * The collision skips them for a car on the ramp, one moving away from it
+ * and one level with the ramp's surface (collision.ts), so a car taking
+ * off or rolling off a side never snags a wall.
  * front = false leaves out the front wall, for two ramps put back to back
  * as a hill. Only for ramps facing along an axis (yaw a multiple of 90°),
  * since boxes are axis-aligned.
@@ -226,6 +238,7 @@ export function createSimWorld(
     const rampList = ramps.map(ramp => ({ ...ramp }));
     // Ramps sit on the terrain height under their centre
     const rampBases = rampList.map(ramp => getTerrainHeight(terrain, ramp.x, ramp.z));
+    const terrainHeight = (x: number, z: number): number => getTerrainHeight(terrain, x, z);
     const groundHeight = (x: number, z: number): number => {
         let height = getTerrainHeight(terrain, x, z);
         for (let i = 0; i < rampList.length; i++) {
@@ -233,6 +246,14 @@ export function createSimWorld(
             if (h > height) height = h;
         }
         return height;
+    };
+    const rampAt = (x: number, z: number): number => {
+        let height = getTerrainHeight(terrain, x, z), found = -1;
+        for (let i = 0; i < rampList.length; i++) {
+            const h = rampHeight(rampList[i], rampBases[i], x, z);
+            if (h > height) { height = h; found = i; }
+        }
+        return found;
     };
     const list: Collider[] = colliders.map(input => ({ ...input, base: groundHeight(input.x, input.z) }));
     return {
@@ -243,6 +264,8 @@ export function createSimWorld(
         roads,
         bound: terrain.size / 2 - 2,
         groundHeight,
+        terrainHeight,
+        rampAt,
         queryBuffer: new Int32Array(list.length)
     };
 }

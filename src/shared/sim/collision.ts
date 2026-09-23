@@ -4,25 +4,44 @@
 // out and answered with an impulse against an infinitely heavy wall, so a
 // grazing hit slides along instead of bouncing back.
 
-import { insideRamp, type Collider, type SimWorld } from '../world/colliders.js';
+import { insideRamp, rampSurfaceNear, type Collider, type SimWorld } from '../world/colliders.js';
 import { SIM_TUNING as T } from './constants.js';
 import type { SimCar, VehicleParams, VehicleState } from './types.js';
 
 const WORLD_ITERATIONS = 2;
 const PUSH_EPSILON = 0.001;
 const QUERY_MARGIN = 0.5;
-// A ramp's edge walls (rampEdgeColliders) only stop cars at ground level
-// beside the ramp: not a car on the ramp (centre over its footprint) and
-// not one above the ground next to it (taking off, flying past, falling
-// off the side). The overflight test alone would let the front wall catch
-// a car taking off, whose underside is still a little below the edge.
-const RAMP_WALL_CLEARANCE = 0.3;
+// A ramp's edge walls (rampEdgeColliders) stop a car that comes at the
+// ramp from outside, below its surface. They let through a car on the ramp
+// (centre over its footprint), one moving away from the ramp (taking off at
+// the front edge, rolling or falling off a side) and one at most this step
+// below the ramp's surface next to it (flying in to land on the ramp).
+const RAMP_WALL_STEP = 0.35;
+// Outward speed (m/s) from which a car counts as moving away from the ramp
+const RAMP_WALL_LEAVE_SPEED = 0.1;
+
+function passesRampWall(s: VehicleState, collider: Collider, index: number, world: SimWorld): boolean {
+    const ramp = world.ramps[index];
+    if (insideRamp(ramp, s.x, s.z)) return true;
+    // Outward normal of the wall: the front wall faces along the ramp's
+    // heading f, the side walls face ±l
+    const sin = Math.sin(ramp.yaw), cos = Math.cos(ramp.yaw);
+    const across = (collider.x - ramp.x) * cos - (collider.z - ramp.z) * sin;
+    let nx = sin, nz = cos;
+    if (Math.abs(across) > ramp.width / 2) {
+        const side = across > 0 ? 1 : -1;
+        nx = side * cos;
+        nz = -side * sin;
+    }
+    if (s.vx * nx + s.vz * nz > RAMP_WALL_LEAVE_SPEED) return true;
+    return s.y >= rampSurfaceNear(world, index, s.x, s.z) - RAMP_WALL_STEP;
+}
 
 // True when the car does not collide with this collider at its height
 function passes(s: VehicleState, collider: Collider, world: SimWorld): boolean {
     if (s.y >= collider.base + collider.top) return true;
     if (collider.ramp === undefined) return false;
-    return s.y > collider.base + RAMP_WALL_CLEARANCE || insideRamp(world.ramps[collider.ramp], s.x, s.z);
+    return passesRampWall(s, collider, collider.ramp, world);
 }
 
 // Result of the last narrow-phase test (module scratch, no allocation)
@@ -176,6 +195,27 @@ function resolveBorder(car: SimCar, world: SimWorld): void {
             applyWallImpulse(car, lever * fx - nx * r, lever * fz - nz * r, nx, nz);
         }
     }
+}
+
+// Top of the highest low collider (finite top, not a ramp wall) the car
+// stands on or comes down onto: one its circles overlap and whose top the
+// underside was at or above when the tick started (section 7.3). The car
+// lands on it instead of being pushed out sideways by the full depth.
+// -Infinity when there is none. A Party ghost stands on nothing.
+export function supportHeight(car: SimCar, world: SimWorld): number {
+    const s = car.state, p = car.params;
+    if (car.mods.ghost || s.ghostExit > 0) return -Infinity;
+    const fx = Math.sin(s.yaw), fz = Math.cos(s.yaw);
+    const count = queryCar(s, p, world);
+    let best = -Infinity;
+    for (let k = 0; k < count; k++) {
+        const collider = world.colliders[world.queryBuffer[k]];
+        if (collider.ramp !== undefined || collider.top === Infinity) continue;
+        const top = collider.base + collider.top;
+        if (top > s.y || top <= best) continue;
+        if (carVsCollider(s, p, fx, fz, collider) > 0) best = top;
+    }
+    return best;
 }
 
 // True when the car overlaps a static collider it cannot pass over
