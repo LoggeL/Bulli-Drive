@@ -17,6 +17,8 @@ interface Particle {
     initialScale: number;
     initialOpacity: number;
     color: number;
+    // Smoke puffs grow while they fade instead of shrinking
+    grows?: boolean;
     followTarget: THREE.Object3D | null;
     localX: number;
     localY: number;
@@ -34,9 +36,15 @@ const scratchRotation = new THREE.Quaternion();
 const scratchColor = new THREE.Color();
 const scratchDriftOffset = new THREE.Vector3();
 
+// Soft round sprites are drawn a bit larger than the cubes they replaced, so a
+// puff covers about the same area.
+const SPRITE_SIZE = 1.6;
+
 function ensureParticleBatch(): THREE.InstancedMesh {
     if (!particleMesh) {
-        const geometry = new THREE.BoxGeometry(1, 1, 1);
+        // Camera-facing quads (billboarded in the vertex shader) with a soft
+        // radial falloff: one draw call for all particles, as before.
+        const geometry = new THREE.PlaneGeometry(SPRITE_SIZE, SPRITE_SIZE);
         colorAttribute = new THREE.InstancedBufferAttribute(new Float32Array(MAX_PARTICLES * 3), 3);
         opacityAttribute = new THREE.InstancedBufferAttribute(new Float32Array(MAX_PARTICLES), 1);
         colorAttribute.setUsage(THREE.DynamicDrawUsage);
@@ -51,12 +59,18 @@ function ensureParticleBatch(): THREE.InstancedMesh {
                 attribute float particleOpacity;
                 varying vec3 vParticleColor;
                 varying float vParticleOpacity;
+                varying vec2 vParticleUv;
                 #include <fog_pars_vertex>
 
                 void main() {
                     vParticleColor = particleColor;
                     vParticleOpacity = particleOpacity;
-                    vec4 mvPosition = modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+                    vParticleUv = uv;
+                    // Billboard: offset the corners in view space around the
+                    // instance center, scaled by the instance scale.
+                    float particleScale = length(instanceMatrix[0].xyz);
+                    vec4 mvPosition = modelViewMatrix * vec4(instanceMatrix[3].xyz, 1.0);
+                    mvPosition.xy += position.xy * particleScale;
                     gl_Position = projectionMatrix * mvPosition;
                     #include <fog_vertex>
                 }
@@ -64,16 +78,21 @@ function ensureParticleBatch(): THREE.InstancedMesh {
             fragmentShader: `
                 varying vec3 vParticleColor;
                 varying float vParticleOpacity;
+                varying vec2 vParticleUv;
                 #include <fog_pars_fragment>
 
                 void main() {
-                    gl_FragColor = vec4(vParticleColor, vParticleOpacity);
+                    float r = length(vParticleUv * 2.0 - 1.0);
+                    float falloff = 1.0 - smoothstep(0.1, 1.0, r);
+                    if (falloff <= 0.0) discard;
+                    gl_FragColor = vec4(vParticleColor, vParticleOpacity * falloff * falloff);
                     #include <tonemapping_fragment>
                     #include <colorspace_fragment>
                     #include <fog_fragment>
                 }
             `,
             transparent: true,
+            depthWrite: false,
             fog: true
         });
 
@@ -192,7 +211,8 @@ export function updateParticles(dt: number) {
             p.vy -= 0.02 * frame;
         }
 
-        writeParticleInstance(i, p, p.initialScale * p.life, p.initialOpacity * p.life);
+        const scale = p.grows ? p.initialScale * (2.2 - 1.2 * p.life) : p.initialScale * p.life;
+        writeParticleInstance(i, p, scale, p.initialOpacity * p.life);
         i++;
     }
 
@@ -328,13 +348,24 @@ export function spawnDriftParticle() {
         const worldOffsetX = Math.sin(carAngle + Math.PI) * 2;
         const worldOffsetZ = Math.cos(carAngle + Math.PI) * 2;
 
-        spawnParticles(
-            carGroup.position.x + worldOffsetX + (Math.random() - 0.5),
-            carGroup.position.y + 0.2,
-            carGroup.position.z + worldOffsetZ + (Math.random() - 0.5),
-            0xEEEEEE,
-            1,
-            size, 0.2, 0.1
-        );
+        // Soft puff that rises slowly and grows while it fades
+        addParticle({
+            x: carGroup.position.x + worldOffsetX + (Math.random() - 0.5),
+            y: carGroup.position.y + 0.2,
+            z: carGroup.position.z + worldOffsetZ + (Math.random() - 0.5),
+            vx: (Math.random() - 0.5) * 0.2,
+            vy: (Math.random() * 0.5 + 0.2) * 0.2,
+            vz: (Math.random() - 0.5) * 0.2,
+            life: 1.0,
+            decay: 0.02 + Math.random() * 0.03,
+            initialScale: size,
+            initialOpacity: 0.55,
+            color: 0xF2EDE6,
+            grows: true,
+            followTarget: null,
+            localX: 0,
+            localY: 0,
+            localZ: 0
+        });
     }
 }

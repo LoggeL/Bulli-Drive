@@ -12,9 +12,11 @@ export function createTerrainMaterial(
     parameters: THREE.MeshStandardMaterialParameters = {}
 ): THREE.MeshStandardMaterial {
     const material = new THREE.MeshStandardMaterial(parameters);
+    // Fades tree shadows out on grazing slopes and in the distance (see
+    // patchShadowChunks in render/lighting.ts)
+    material.defines = { ...material.defines, BULLI_GRAZING_SHADOW_FADE: '' };
 
     material.onBeforeCompile = shader => {
-        shader.uniforms.uWorldShaderTime = worldShaderUniforms.time;
         shader.vertexShader = shader.vertexShader
             .replace(
                 '#include <common>',
@@ -30,21 +32,23 @@ vWorldShaderPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;`
             .replace(
                 '#include <common>',
                 `#include <common>
-uniform float uWorldShaderTime;
 varying vec3 vWorldShaderPosition;`
             )
             .replace(
                 '#include <color_fragment>',
                 `#include <color_fragment>
-float terrainDrift = sin(
-    vWorldShaderPosition.x * 0.075 + vWorldShaderPosition.z * 0.065 + uWorldShaderTime * 0.16
-);
-float terrainDetail = sin((vWorldShaderPosition.x - vWorldShaderPosition.z) * 0.19 - uWorldShaderTime * 0.08);
+// Static large-scale color variation (the ground does not shimmer over time)
+float terrainDrift = sin(vWorldShaderPosition.x * 0.075 + vWorldShaderPosition.z * 0.065);
+float terrainDetail = sin((vWorldShaderPosition.x - vWorldShaderPosition.z) * 0.19);
 float terrainVariation = terrainDrift * 0.045 + terrainDetail * 0.018;
-diffuseColor.rgb *= vec3(1.0 + terrainVariation, 1.0 + terrainVariation * 1.25, 1.0 + terrainVariation * 0.65);`
+diffuseColor.rgb = clamp(
+    diffuseColor.rgb * vec3(1.0 + terrainVariation, 1.0 + terrainVariation * 1.25, 1.0 + terrainVariation * 0.65),
+    0.0,
+    1.0
+);`
             );
     };
-    material.customProgramCacheKey = () => 'bulli-terrain-shader-v1';
+    material.customProgramCacheKey = () => 'bulli-terrain-shader-v2';
 
     return material;
 }

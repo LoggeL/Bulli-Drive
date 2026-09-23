@@ -24,6 +24,7 @@ import { ensureCurrentBuild } from './buildVersion.js';
 import { installE2EHook } from './e2eHook.js';
 import { watchWebGLContext, isWebGLContextLost } from './ui/contextLoss.js';
 import { installPerfMonitor, type PerfMonitor } from './debug/perfMonitor.js';
+import { setupLighting, updateLighting } from './render/lighting.js';
 
 // Reusable chase-camera state/vectors to avoid per-frame allocations.
 const _cameraTarget = new THREE.Vector3();
@@ -34,7 +35,6 @@ let cameraYaw = 0;
 let cameraRigReady = false;
 let useMobileCameraEnvelope = false;
 
-let dirLight: THREE.DirectionalLight;
 let renderQuality: AdaptiveRenderQuality;
 // Only set with ?debug=perf (FPS/draw call/bandwidth overlay)
 let perfMonitor: PerfMonitor | null = null;
@@ -45,8 +45,6 @@ const ramCooldowns: Record<string, number> = {};
 function init() {
     // Scene
     state.scene = new THREE.Scene();
-    state.scene.background = new THREE.Color(0x87CEEB);
-    state.scene.fog = new THREE.Fog(0x87CEEB, 60, 300);
 
     // Camera
     refreshCameraEnvelope();
@@ -61,8 +59,8 @@ function init() {
     // Renderer
     state.renderer = new THREE.WebGLRenderer({ antialias: true });
     renderQuality = new AdaptiveRenderQuality(state.renderer, window.innerWidth, window.innerHeight);
-    state.renderer.shadowMap.enabled = true;
-    state.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Tone mapping, sky, fog, environment, lights and shadows
+    setupLighting(state.scene, state.renderer);
     document.body.appendChild(state.renderer.domElement);
     // Show a notice and pause rendering if the browser drops the GL context
     watchWebGLContext(state.renderer.domElement);
@@ -121,26 +119,6 @@ function init() {
             splashScreen.inert = true;
         }
     });
-
-    // Lighting - Hemisphere light for natural outdoor sky/ground color blending
-    const hemiLight = new THREE.HemisphereLight(0x87CEEB, 0x3b7d3b, 0.4);
-    state.scene.add(hemiLight);
-
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-    state.scene.add(ambientLight);
-
-    dirLight = new THREE.DirectionalLight(0xFFF5E0, 0.9);
-    dirLight.position.set(50, 100, 50);
-    dirLight.castShadow = true;
-    dirLight.shadow.mapSize.width = CONFIG.shadowMapSize;
-    dirLight.shadow.mapSize.height = CONFIG.shadowMapSize;
-    dirLight.shadow.camera.near = 0.5;
-    dirLight.shadow.camera.far = 500;
-    dirLight.shadow.camera.left = -60;
-    dirLight.shadow.camera.right = 60;
-    dirLight.shadow.camera.top = 60;
-    dirLight.shadow.camera.bottom = -60;
-    state.scene.add(dirLight);
 
     // Init WebSocket
     initWebSocket();
@@ -273,11 +251,6 @@ function animate(frameTime: number) {
 
         // Effects based on speed
         const speed = Math.abs(state.bulli.speed);
-
-        // Move shadow camera to follow the player
-        dirLight.position.set(carPos.x + 50, 100, carPos.z + 50);
-        dirLight.target.position.set(carPos.x, carPos.y, carPos.z);
-        dirLight.target.updateMatrixWorld();
 
         // Drift particles
         if (speed > 0.1) {
@@ -503,6 +476,7 @@ function animate(frameTime: number) {
     // adaptive quality sampling too so the gap doesn't lower the resolution.
     if (state.renderer && state.scene && state.camera && !isWebGLContextLost()) {
         updateWorldShaders(state.clock.elapsedTime);
+        updateLighting();
         renderQuality.update(frameTime);
         state.renderer.render(state.scene, state.camera);
     }
