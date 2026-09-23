@@ -18,7 +18,7 @@ import { updateMinimap } from './ui/minimap.js';
 import { SPEED_BOOST_FACTOR } from '../shared/constants.js';
 import { Bulli, type CarType } from './entities/Bulli.js';
 import { sendToServer } from './network/socket.js';
-import { AdaptiveRenderQuality } from './effects/renderQuality.js';
+import { AdaptiveRenderQuality, detectRenderTier } from './effects/renderQuality.js';
 import { updateWorldShaders } from './effects/worldShaders.js';
 import { ensureCurrentBuild } from './buildVersion.js';
 import { installE2EHook } from './e2eHook.js';
@@ -57,13 +57,16 @@ function init() {
         chaseCamera.baseFov,
         window.innerWidth / window.innerHeight,
         0.1,
-        1000
+        // The rendered hills beyond the playable area reach 1.6 km out
+        2600
     );
     state.camera.position.set(0, CONFIG.cameraHeight, CONFIG.cameraDistance);
 
     // Renderer
     state.renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderQuality = new AdaptiveRenderQuality(state.renderer, window.innerWidth, window.innerHeight);
+    renderQuality = new AdaptiveRenderQuality(
+        state.renderer, window.innerWidth, window.innerHeight, detectRenderTier(state.renderer)
+    );
     // Tone mapping, sky, fog, environment, lights and shadows
     setupLighting(state.scene, state.renderer);
     document.body.appendChild(state.renderer.domElement);

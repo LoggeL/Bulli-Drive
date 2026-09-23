@@ -1,54 +1,33 @@
 import * as THREE from 'three';
 import { state } from '../state.js';
 import { gameHooks } from '../game/hooks.js';
-import { detectRenderTier } from '../effects/renderQuality.js';
-import { SKY_COLORS, createSkyDome, createSkyEnvironment, updateSkyDome } from './sky.js';
+import { detectRenderTier, type RenderTier } from '../effects/renderQuality.js';
+import { createSky, updateSkyDome } from './sky.js';
+import { LOOK, SUN_DIRECTION, WORLD_UNIFORMS, createSceneFog, installGrade, installHeightFog } from './look.js';
+import { initWorldTextures, worldTexture, whenWorldTextureLoaded } from '../world/textures.js';
 
-// Sunset lighting: ACES tone mapping, a low warm sun with a shadow camera that
-// follows the car, a warm hemisphere fill, the gradient sky (dome, fog and
-// environment map), soft contact shadows under every car and the shield rim.
-// main.ts only calls setupLighting() once and updateLighting() every frame.
+// Realistic sunset lighting (graphics G1, values in look.ts): ACES with a mild
+// grade, a low warm sun whose shadow camera follows the car, the HDRI sky
+// (dome and PMREM environment map), height fog, soft contact shadows under
+// every car and the shield rim. main.ts only calls setupLighting() once and
+// updateLighting() every frame.
+
+export { SUN_DIRECTION };
 
 export const LIGHTING = {
-    exposure: 0.95,
-    sunColor: 0xffe0b8,
-    sunIntensity: 3.2,
-    // Degrees above the horizon, and the compass direction the sun shines
-    // from (0 = +z, 90 = +x). Low enough for long, warm shadows; lower than
-    // about 25 degrees stretches tree shadows on slopes into long streaks.
-    sunElevation: 28,
-    sunAzimuth: 67,
-    // Fill for everything the sun does not reach: warm sky above, warm bounce
-    // from the ground below, so shadows stay readable (not blue-black)
-    hemiSkyColor: 0xffe3c6,
-    hemiGroundColor: 0x947258,
-    hemiIntensity: 0.6,
-    // Brightness of the sky in the environment map (diffuse fill + reflections)
-    environmentIntensity: 0.85,
-    // Without the environment map (software WebGL) the hemisphere gets this
-    // share of environmentIntensity on top
-    softwareFillShare: 0.6,
-    // The environment map lights the scene with a muted, lilac upper sky: the
-    // saturated blue of the visible dome tinted every shadow steel blue.
-    environmentColors: {
-        zenith: 0x8a8cae,
-        upper: 0xbdb6c6,
-        ground: 0x7e6550
-    },
     // Tree shadows on the terrain fade out between these camera distances
     // (meters). Streets and plazas are not terrain and keep their shadows.
     terrainShadowFade: { start: 55, end: 110 },
-    fogNear: 70,
-    fogFar: 340,
+    // Anisotropic filtering of the world textures per tier
+    anisotropy: { desktop: 8, mobile: 4, software: 1 } as Record<RenderTier, number>,
     shadow: {
         // Half size of the square the shadow map covers (in light space,
         // meters). On the ground it reaches 1 / sin(sunElevation) times as far
         // along the sun's direction.
-        halfExtent: { desktop: 55, mobile: 50, software: 50 },
-        // Texels on the ground: desktop 5 x 11 cm, mobile 7 x 14 cm (across x
-        // along the sun direction; the old steep-sun setup had 12 x 14 cm);
-        // software WebGL (no GPU) gets the smallest map
-        mapSize: { desktop: 2048, mobile: 1536, software: 1024 },
+        halfExtent: { desktop: 60, mobile: 45, software: 45 } as Record<RenderTier, number>,
+        // Texels across the sun direction: desktop 6 cm, mobile (the low
+        // tier: 1024 map) 9 cm, software 9 cm
+        mapSize: { desktop: 2048, mobile: 1024, software: 1024 } as Record<RenderTier, number>,
         // The covered square is pushed ahead in the view direction as far as
         // it can while it still covers these points around the car (meters
         // forward, meters to the side), where the chase camera sees the ground
@@ -58,12 +37,13 @@ export const LIGHTING = {
         // Shadows fade out over this part of the map towards its border, so
         // the end of the covered area is a soft falloff, not a hard line.
         edgeFade: 0.12,
-        // Distance of the light from the covered center along the sun direction
-        distance: 180,
+        // Distance of the light from the covered center along the sun
+        // direction: far enough for the tallest buildings (26 m) at the low sun
+        distance: 240,
         near: 1,
-        far: 360,
-        bias: -0.0003,
-        normalBias: 0.03
+        far: 480,
+        bias: -0.0004,
+        normalBias: 0.035
     },
     contactShadow: {
         opacity: 0.7,
@@ -72,18 +52,6 @@ export const LIGHTING = {
         color: 0x1d130c
     }
 };
-
-// Unit vector pointing from the scene towards the sun
-export const SUN_DIRECTION = new THREE.Vector3();
-{
-    const elevation = THREE.MathUtils.degToRad(LIGHTING.sunElevation);
-    const azimuth = THREE.MathUtils.degToRad(LIGHTING.sunAzimuth);
-    SUN_DIRECTION.set(
-        Math.sin(azimuth) * Math.cos(elevation),
-        Math.sin(elevation),
-        Math.cos(azimuth) * Math.cos(elevation)
-    ).normalize();
-}
 
 // Shadow camera basis (see Matrix4.lookAt): texel snapping and the coverage
 // test work in these axes
@@ -94,11 +62,23 @@ let sun: THREE.DirectionalLight | null = null;
 let skyDome: THREE.Mesh | null = null;
 let shadowHalfExtent = 0;
 let shadowTexel = 0;
+let renderTier: RenderTier = 'desktop';
+let skyReady: Promise<void> = Promise.resolve();
 
 const _focus = new THREE.Vector3();
 const _viewDirection = new THREE.Vector3();
 const _side = new THREE.Vector3();
 const _snapped = new THREE.Vector3();
+
+/** The render tier the lighting (and the world materials) were set up for. */
+export function lightingTier(): RenderTier {
+    return renderTier;
+}
+
+/** Resolves once the sky HDRIs are loaded and the environment map is final. */
+export function whenSkyReady(): Promise<void> {
+    return skyReady;
+}
 
 /**
  * Configures tone mapping, sky, fog, environment and lights. Call once after
@@ -107,44 +87,44 @@ const _snapped = new THREE.Vector3();
 export function setupLighting(scene: THREE.Scene, renderer: THREE.WebGLRenderer): void {
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = LIGHTING.exposure;
-    const tier = detectRenderTier(renderer);
+    renderer.toneMappingExposure = LOOK.exposure;
+    const tier = renderTier = detectRenderTier(renderer);
     renderer.shadowMap.enabled = true;
     // Soft shadows take more shadow map lookups per pixel than a CPU affords
     renderer.shadowMap.type = tier === 'software' ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
+    // Shader chunk patches, before any material compiles
+    installGrade();
+    installHeightFog();
     patchShadowChunks();
 
-    // Sky, fog and clear color share the horizon color
-    scene.background = new THREE.Color(SKY_COLORS.horizon);
-    scene.fog = new THREE.Fog(SKY_COLORS.horizon, LIGHTING.fogNear, LIGHTING.fogFar);
-    skyDome = createSkyDome(SUN_DIRECTION);
-    scene.add(skyDome);
-    const createEnvironment = () => createSkyEnvironment(
-        renderer, SUN_DIRECTION, LIGHTING.environmentIntensity, LIGHTING.environmentColors
-    );
+    initWorldTextures(renderer, LIGHTING.anisotropy[tier]);
+    const noise = worldTexture('generated/world_noise');
+    noise.colorSpace = THREE.NoColorSpace;
+    WORLD_UNIFORMS.uNoise.value = noise;
+
+    scene.background = new THREE.Color().setRGB(...LOOK.fogColor);
+    scene.fog = createSceneFog();
     // Software WebGL renders without the environment map: sampling it in
     // every lit pixel costs a CPU rasterizer about a quarter of its frame
-    // rate. The hemisphere fill makes up for its share of the light.
+    // rate. A hemisphere fill in the sky's colors takes over. Phones render
+    // it from the procedural sky without the 2.7 MB of HDRIs.
     const useEnvironment = tier !== 'software';
-    if (useEnvironment) {
-        scene.environment = createEnvironment();
-        // A lost context takes the rendered environment map with it; three.js
-        // restores its own state first (its listener was registered earlier).
-        renderer.domElement.addEventListener('webglcontextrestored', () => {
-            scene.environment?.dispose();
-            scene.environment = createEnvironment();
-        });
+    const sky = createSky(renderer, scene, {
+        environment: useEnvironment,
+        hdri: tier === 'desktop',
+        simple: tier === 'software',
+        beforeEnvironment: whenWorldTextureLoaded('generated/world_noise')
+    });
+    skyDome = sky.dome;
+    skyReady = sky.ready;
+    if (!useEnvironment) {
+        scene.add(new THREE.HemisphereLight(LOOK.hemiSky, LOOK.hemiGround, LOOK.hemiIntensity));
     }
-
-    // No flat ambient term: the hemisphere and the environment map fill the
-    // shadows with sky and ground colors instead.
-    const hemiIntensity = LIGHTING.hemiIntensity + (useEnvironment ? 0 : LIGHTING.environmentIntensity * LIGHTING.softwareFillShare);
-    scene.add(new THREE.HemisphereLight(LIGHTING.hemiSkyColor, LIGHTING.hemiGroundColor, hemiIntensity));
 
     const shadow = LIGHTING.shadow;
     shadowHalfExtent = shadow.halfExtent[tier];
     const mapSize = shadow.mapSize[tier];
-    sun = new THREE.DirectionalLight(LIGHTING.sunColor, LIGHTING.sunIntensity);
+    sun = new THREE.DirectionalLight(LOOK.sunColor, LOOK.sunIntensity);
     sun.castShadow = true;
     sun.shadow.mapSize.set(mapSize, mapSize);
     const camera = sun.shadow.camera;
