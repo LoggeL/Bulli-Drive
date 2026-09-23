@@ -216,6 +216,19 @@ async function captureDesktop(browser: Browser, baseURL: string, options: Option
         await hideHud(page, false);
     }
 
+    // The car on the light plaza tiles: contact shadow, reflections, shield
+    if (want('car-plaza')) {
+        const x = plaza.x - 9;
+        const z = plaza.z + 10;
+        await place(page, x, z, 0.8);
+        await hideHud(page, true);
+        await setCamera(page, { position: [x + 7.5, 4.2, z + 6.5], lookAt: [x, 1.0, z], fov: 42 });
+        await settle(page, 1200);
+        await shoot(page, options.out, 'car-plaza', stats);
+        await setCamera(page, null);
+        await hideHud(page, false);
+    }
+
     // Plaza with fountain, parasols and planters, seen from the south east
     if (want('plaza')) {
         await place(page, plaza.x + 2, plaza.z + 22, Math.PI);
