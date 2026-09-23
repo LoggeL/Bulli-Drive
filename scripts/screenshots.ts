@@ -225,6 +225,10 @@ async function clearSpawned(page: Page): Promise<void> {
 const MID_ROAD = roadLineCenter(2, 'x');
 const MID_CROSS = roadLineCenter(2, 'z');
 const EDGE_ROAD = roadLineCenter(4, 'x');
+// The showroom row stands across the boulevard on the crossing road one
+// block south of the city center: the whole row is on asphalt, and no palm
+// of the boulevard (at the block centers) stands among or right behind the cars
+const SHOWROOM_Z = roadLineCenter(1, 'z');
 const plaza = blockCenter(PLAZA_BLOCK.x, PLAZA_BLOCK.z);
 const park = blockCenter(PARK_BLOCK.x, PARK_BLOCK.z);
 
@@ -279,7 +283,7 @@ async function captureDesktop(browser: Browser, baseURL: string, options: Option
     if (want('showroom')) {
         await place(page, MID_ROAD, -120, 0);
         await hideHud(page, true);
-        const z = -70;
+        const z = SHOWROOM_Z;
         const types = ['jeep', 'sport', 'bulli', 'beetle', 'pickup'];
         const colors = [0x6B8E4E, 0xC0392B, 0xD9A441, 0x2E6FA8, 0x8E5B3A];
         const cars: SpawnSpec[] = types.map((type, i) => ({ type, color: colors[i], x: MID_ROAD - 13 + i * 5.2, z, yaw: 0 }));
@@ -311,7 +315,7 @@ async function captureDesktop(browser: Browser, baseURL: string, options: Option
     if (want('showroom-rear')) {
         await place(page, MID_ROAD, -120, 0);
         await hideHud(page, true);
-        const z = -70;
+        const z = SHOWROOM_Z;
         const types = ['jeep', 'sport', 'bulli', 'beetle', 'pickup'];
         const colors = [0x6B8E4E, 0xC0392B, 0xD9A441, 0x2E6FA8, 0x8E5B3A];
         await spawnCars(page, types.map((type, i) => ({ type, color: colors[i], x: MID_ROAD - 13 + i * 5.2, z, yaw: 0, brake: true })));

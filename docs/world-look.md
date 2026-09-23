@@ -118,13 +118,54 @@ Nach `webglcontextrestored` baut `sky.ts` die PMREM-Environment-Map neu. Texture
 - **Kein neues Textur-Asset:** Plaza-Platten, Wasser und Möbel-Oberflächen kommen aus dem vorhandenen Beton-PBR, dem Welt-Rauschen und Vertex-Attributen.
 - **Kollisionen:** Ein E2E-Test pinnt den SHA-1 der 241 Hindernisse des Clients auf den Stand vor diesem Schritt.
 
+## Nacharbeit nach dem Art-Review
+
+Ein Review der Screenshots und Messungen brachte 20 Befunde. Umgesetzt (Wirkung zuerst):
+
+**Laubbäume (`vegetation.ts`, `materials.ts` `cardMask`).** Die Kreuzkarten zerfielen in eine schwarze und eine helle Hälfte, mit heller Naht und blassen Geisterkarten. Ursachen und Lösung:
+
+- Die gebogenen Normalen drehten nicht mit der Kartenebene mit. Jetzt zeigen sie in jeder Ebene vom Stamm weg (oben mehr nach oben).
+- three.js drehte die Normalen auf Rückseiten um (DoubleSide). Die Karten behalten jetzt auf beiden Seiten dieselbe Normale. Normalen der abgewandten Kronenseite werden zur Kamera gespiegelt wie bei einer Kugel. Dazu kommt ein Wrap zur Sonne (Streulicht in der Krone), sonst ist jede Karte entweder ganz hell oder schwarz.
+- Die Karten beschatteten sich gegenseitig in harten Hälften, und an der Schnittlinie leckte Licht durch den Schatten-Bias. Die Bäume empfangen keine Schatten mehr. Die Vertexfarbe dunkelt den Fuß der Krone ab (gebackene Verdeckung).
+- Der „blasse Schemen“ war die Spiegelung des Abendhimmels auf der Karte, die zur Kamera zeigt. Laub ist jetzt matt: 10 % indirekte, 30 % direkte Spiegelung.
+- Karten, die man fast von der Kante sieht, blenden aus. Eichen haben eine waagerechte Kronenkarte, die nur von oben sichtbar ist. Breite und Höhe variieren pro Baum, die Hälfte ist gespiegelt. Ferne Kronen haben einen verrauschten Umriss statt einer Ellipse (kein „Lolli“) und sind etwas dunkler.
+
+**Bäume im Gelände (`environment.ts`).** Die Bäume standen auf der exakten Höhe, das Terrain-Mesh interpoliert aber über bis zu 110 m große Zellen. Auf Graten schwebten sie deshalb meterweise. Jetzt nimmt `GroundSampler` die Höhe aus dem Dreieck des gerenderten Gitters, für Bäume, Büsche und Felsen. Die Schattenkarte deckt die Hügel nicht ab. Deshalb standen Bäume auf den sonnenabgewandten Hängen voll beleuchtet als helle Punkte da. Ein Strahl von der Krone zur Sonne über das Gelände (`sunOver`) backt jetzt den Hügelschatten in die Instanzfarbe.
+
+**Stadt.**
+
+- Teich: Die Kieswege lagen unter dem Wasser, ihr Polygon-Offset (−2) zog sie aus der Ferne darüber. Die Wege enden jetzt unter der Einfassung. Das Wasser reicht bis zu deren Innenseite und hat selbst einen Offset.
+- Lichtlinie am Gebäudefuß: Das war kein Spalt, sondern Sonnenlicht auf dem Gehweg. three.js zeichnet die Schattentiefe der Wände von ihren Rückseiten, also der Schattenseite. Der Bias (rund 0,2 m) ließ direkt vor der Wand einen Streifen Licht durch. `M.facade.shadowSide = FrontSide` nimmt die sonnenzugewandten Wände. Die Wände reichen zudem 0,2 m unter das Pflaster.
+- Fassaden-Putz: Das Rauschen für die „Schmutzläufer“ war vertikal zwölffach gestreckt (Holzbretter-Optik). Jetzt gibt es richtungsloses Putz-Rauschen in zwei Größen und nur vereinzelte, schwache Läufer.
+
+**Farbstimmung (`look.ts`, `sky.ts`).** Der Dunst ist warm-grau-beige statt altrosa (0,60/0,52/0,46 statt 0,66/0,44/0,42), mit etwas weniger Dichte. Die Wolken sind beige statt rosa, oben grau statt violett, das Himmelsband zwischen Horizont und Zenit weniger rosa. Die Schatten-Tönung im Grade kippt nicht mehr ins Magenta. Der Asphalt wird dadurch neutraler.
+
+**Laden und Ausfall (`textures.ts`, `texturePlaceholders.ts`, `ui/assetGate.ts`, `CarModel.ts`).**
+
+- Jede Welttextur ist sofort ein neutraler 1×1-Platzhalter ihrer Art: mittlere Albedo, flache Normale, rau und nicht metallisch, Laub transparent. Schlägt das Laden fehl, bleibt der Platzhalter. Die Welt ist dann schlicht schattiert statt schwarz. Ein E2E-Test bricht alle KTX2-Anfragen ab und prüft die mittlere Bildfarbe.
+- Der Start-Button wartet auf Welttexturen und Automodelle (geladen und kompiliert), zeigt den Fortschritt („LOADING 63 %“) und startet nach 20 s trotzdem.
+- Ein Auto wechselt erst nach dem Shader-Warm-up auf das GLB, damit kein Frame mitten in der Fahrt kompiliert.
+
+**Auslieferung (`src/server/staticAssets.ts`).** Modelle und Texturen mit `?v=<hash>` werden ein Jahr lang `immutable` gecacht. Die Manifeste werden immer neu validiert. Die HDRIs gehen Brotli- bzw. gzip-komprimiert raus (1,06 → 0,54 MB, 1,68 → 1,33 MB), mit Inhalts-ETag statt mtime. Ein Deploy ohne Asset-Änderung lädt also nichts neu. Nicht mehr ausgeliefert werden die nie geladenen Texturen Straßenschilder, Diner-Innenraum und `asphalt_clean` (rund 0,57 MB). `tests/client/worldTextures.test.ts` hält Manifest und Client-Code deckungsgleich.
+
+**Handy-Budget mit Mitspielern.** Siehe [`docs/cars.md`](cars.md): Fremde Autos kosten auf Tier low 3–4 statt rund 14 Draw Calls. Gemessen im Hochformat: 88 Calls allein, 105 mit sieben Autos (vorher rund 190).
+
+**HUD (`style.css`).** Auf Handys ist das Boost-Label fett, voll deckend und hat einen dunklen Halo. Im Hochformat ab 375 px steht die Münz-/Lebens-Pille in der oberen Reihe zwischen Minimap und Rang, der Boost-Balken darunter. Die Straße vor dem Auto bleibt frei.
+
+**Verworfen bzw. offen:**
+
+- Die doppelten Atlas-Texturen in LOD0 und LOD1 sind nur teilweise gelöst: `ModelCache` teilt gleiche Texturen im GPU-Speicher. Der doppelte Download (rund 200 KB) bleibt, bis `tools/models/pack.mjs` die Atlanten auslagert.
+- Die Rohbilder der KI-Texturen liegen in einem Archiv außerhalb von git, mit Hash-Liste im Repo (`tools/textures/README.md`). Eine dauerhafte Ablage außerhalb dieses Rechners (Release-Asset) ist noch zu erledigen.
+
 ## Dateien
 
 - `src/client/render/look.ts`: Look-Parameter, Tonemapping-Grade, Höhennebel
 - `src/client/render/sky.ts`: Himmel und Environment-Map
 - `src/client/render/lighting.ts`: Sonne, Schatten, Tiers, Kontaktschatten
 - `src/client/render/frameStats.ts`: Draw Calls einschließlich Schatten-Pass
-- `src/client/world/textures.ts`: KTX2-Welttexturen
+- `src/client/world/textures.ts`, `texturePlaceholders.ts`: KTX2-Welttexturen und ihre neutralen Platzhalter
+- `src/client/ui/assetGate.ts`: Start wartet auf Texturen und Modelle
+- `src/server/staticAssets.ts`: Cache-Header, komprimierte HDRIs
 - `src/client/world/materials.ts`: Materialien und Shader-Blöcke
 - `src/client/world/batch.ts`: Geometrie pro Material zusammenführen
 - `src/client/world/vegetation.ts`: Baum- und Buschkarten
