@@ -1,4 +1,4 @@
-import { test, expect, joinGame, snapshot, distance } from './fixtures.js';
+import { test, expect, joinGame, snapshot, distance, placeOnClearRunway } from './fixtures.js';
 
 // Two software-rendered games at once; a smaller window keeps them fluid.
 test.use({ viewport: { width: 800, height: 500 } });
@@ -23,8 +23,9 @@ test('two players see each other and position updates arrive', async ({ openPlay
     await expect.poll(async () => (await snapshot(alice.page)).remotes[bobId]?.name).toBe('E2E Bob');
     await expect(bob.page.locator('.nametag-name', { hasText: 'E2E Alice' })).toHaveCount(1);
 
-    // Alice drives until she has covered some ground (a car spawned facing an
-    // obstacle may not get far, and software WebGL runs at a few FPS).
+    // Alice drives down a free stretch of road until she has covered some
+    // ground (software WebGL runs at a few FPS).
+    await placeOnClearRunway(alice.page);
     const aliceAtStart = (await snapshot(alice.page)).local!;
     await expect.poll(async () => distance(aliceAtStart, (await snapshot(bob.page)).remotes[aliceId]))
         .toBeLessThan(0.1);

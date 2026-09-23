@@ -1,4 +1,4 @@
-import { test, expect, joinGame, snapshot, distance } from './fixtures.js';
+import { test, expect, joinGame, snapshot, distance, placeOnClearRunway } from './fixtures.js';
 
 // Runs in the "mobile" project: iPhone 13 viewport with touch, in Chromium.
 test('touch controls drive the car on a phone', async ({ openPlayer }) => {
@@ -14,7 +14,8 @@ test('touch controls drive the car on a phone', async ({ openPlayer }) => {
     await expect(page.locator('.controls-hint')).toBeHidden();
     await expect(page.locator('#speedometer')).toBeHidden();
 
-    // Push the joystick up with a real touch sequence.
+    // Push the joystick up with a real touch sequence, on a free stretch of road.
+    await placeOnClearRunway(page);
     const start = (await snapshot(page)).local!;
     const joystick = (await page.locator('#joystick-move').boundingBox())!;
     const x = joystick.x + joystick.width / 2;

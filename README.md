@@ -66,7 +66,8 @@ every pull request and push to `main`.
 - `?debug=perf` shows a performance overlay (FPS, frame time, draw calls,
   triangles, geometries, textures, WebSocket bytes per second). Use it to
   measure on real devices.
-- `?e2e=1` installs a read-only state hook for the Playwright tests.
+- `?e2e=1` installs a state hook for the Playwright tests (read-only, apart
+  from placing the car on a free stretch of road).
 
 Without these flags the game behaves exactly the same.
 

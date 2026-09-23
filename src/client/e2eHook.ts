@@ -1,8 +1,11 @@
 import { state } from './state.js';
+import type { Obstacle } from './types.js';
 
-// Read-only hook for the Playwright smoke tests (tests/e2e). It is only
-// installed when the page is opened with ?e2e=1, so regular players never get
-// it and the game behaves exactly the same without the flag.
+// Hook for the Playwright smoke tests (tests/e2e). It is only installed when
+// the page is opened with ?e2e=1, so regular players never get it and the
+// game behaves exactly the same without the flag. Apart from placeLocalCar
+// (which lets a test start from a known free stretch of road instead of the
+// server's random spawn) it only reads state.
 
 interface CarSnapshot {
     x: number;
@@ -53,6 +56,21 @@ export function installE2EHook(): void {
                     triangles: state.renderer?.info.render.triangles ?? 0
                 }
             };
+        },
+        // Collision obstacles of the local car (buildings, trees, props)
+        obstacles(): Obstacle[] {
+            return state.obstacles.map(obstacle => ({ ...obstacle }));
+        },
+        // Puts the local car at rest at (x, z), facing angle. Like any move it
+        // reaches the server with the car's next position update.
+        placeLocalCar(x: number, z: number, angle: number): void {
+            const car = state.bulli;
+            if (!car) throw new Error('No local car yet');
+            car.group.position.x = x;
+            car.group.position.z = z;
+            car.angle = angle;
+            car.group.rotation.y = angle;
+            car.speed = 0;
         }
     };
 }
