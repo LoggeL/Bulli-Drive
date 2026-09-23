@@ -1,0 +1,170 @@
+{
+  "meta": {
+    "date": "2026-09-23T14:00:39.748Z",
+    "commit": "b899167",
+    "node": "v24.18.0",
+    "chromium": "153.0.8010.12",
+    "gl": "swiftshader",
+    "gpu": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+    "headless": true,
+    "device": "desktop",
+    "physics": "v2",
+    "sandbox": false,
+    "clients": 2,
+    "warmupS": 5,
+    "durationS": 15,
+    "note": "SwiftShader renders on the CPU: FPS and frame times are not representative. Draw calls, triangles and memory counters are; the upload rate only if fps >= 20."
+  },
+  "server": {
+    "rssMbStart": 74,
+    "rssMbEnd": 79
+  },
+  "clients": [
+    {
+      "name": "Perf 1",
+      "joinWs": {
+        "bytesIn": 20541,
+        "bytesOut": 3038,
+        "messagesIn": 5,
+        "messagesOut": 19
+      },
+      "drivenMeters": 252,
+      "remotesSeen": 1,
+      "durationMs": 16023.9,
+      "frames": 166,
+      "fps": 10.36,
+      "frameMs": {
+        "avg": 96.78,
+        "p50": 99.9,
+        "p95": 183.3,
+        "p99": 433.3,
+        "max": 450
+      },
+      "cpuMs": {
+        "avg": 1.29,
+        "p50": 1.3,
+        "p95": 1.8,
+        "p99": 1.9,
+        "max": 2.1
+      },
+      "drawCalls": {
+        "avg": 238.12,
+        "p50": 146,
+        "p95": 599,
+        "p99": 610,
+        "max": 610
+      },
+      "triangles": {
+        "avg": 55996.49,
+        "p50": 51132,
+        "p95": 77704,
+        "p99": 78952,
+        "max": 78976
+      },
+      "sim": {
+        "frames": 166,
+        "ticks": 854,
+        "ticksPerFrame": 5.14,
+        "msPerFrame": {
+          "avg": 0.061,
+          "p50": 0.1,
+          "p95": 0.2,
+          "p99": 0.2,
+          "max": 0.2
+        },
+        "msPerTick": 0.0118,
+        "cars": {
+          "avg": 2,
+          "max": 2
+        }
+      },
+      "geometries": 264,
+      "textures": 3,
+      "programs": 11,
+      "pixelRatio": 0.75,
+      "ws": {
+        "bytesIn": 22739,
+        "bytesOut": 23666,
+        "messagesIn": 101,
+        "messagesOut": 116,
+        "bytesInPerSec": 1419.07,
+        "bytesOutPerSec": 1476.92,
+        "messagesInPerSec": 6.3,
+        "messagesOutPerSec": 7.24
+      }
+    },
+    {
+      "name": "Perf 2",
+      "joinWs": {
+        "bytesIn": 21771,
+        "bytesOut": 634,
+        "messagesIn": 9,
+        "messagesOut": 6
+      },
+      "drivenMeters": 325,
+      "remotesSeen": 1,
+      "durationMs": 15760,
+      "frames": 153,
+      "fps": 9.71,
+      "frameMs": {
+        "avg": 108.17,
+        "p50": 100,
+        "p95": 216.6,
+        "p99": 816.6,
+        "max": 1350
+      },
+      "cpuMs": {
+        "avg": 9.92,
+        "p50": 1.2,
+        "p95": 1.9,
+        "p99": 2.2,
+        "max": 1336.9
+      },
+      "drawCalls": {
+        "avg": 161.73,
+        "p50": 136,
+        "p95": 377,
+        "p99": 399,
+        "max": 401
+      },
+      "triangles": {
+        "avg": 49388.41,
+        "p50": 49450,
+        "p95": 66366,
+        "p99": 67032,
+        "max": 67044
+      },
+      "sim": {
+        "frames": 151,
+        "ticks": 783,
+        "ticksPerFrame": 5.12,
+        "msPerFrame": {
+          "avg": 0.058,
+          "p50": 0.1,
+          "p95": 0.1,
+          "p99": 0.2,
+          "max": 0.2
+        },
+        "msPerTick": 0.0112,
+        "cars": {
+          "avg": 2,
+          "max": 2
+        }
+      },
+      "geometries": 183,
+      "textures": 3,
+      "programs": 11,
+      "pixelRatio": 0.75,
+      "ws": {
+        "bytesIn": 27833,
+        "bytesOut": 19517,
+        "messagesIn": 122,
+        "messagesOut": 98,
+        "bytesInPerSec": 1766.05,
+        "bytesOutPerSec": 1238.39,
+        "messagesInPerSec": 7.74,
+        "messagesOutPerSec": 6.22
+      }
+    }
+  ]
+}

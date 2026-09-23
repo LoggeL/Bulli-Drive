@@ -2,6 +2,8 @@
 
 **Stand:** 2026-09-23 · **Commit:** `20d7581` (Spielverhalten wie `1d39c07`, nur mit korrigiertem Tacho) · Rohdaten: [`docs/baseline/`](baseline/)
 
+Die Messung der v2-Fahrphysik aus Phase 1a (Sim-Kosten pro Frame, auch mit Dummy-Autos) steht weiter unten im Abschnitt [Phase 1a](#phase-1a-v2-fahrphysik-physicsv2).
+
 Diese Zahlen sind der Vergleichspunkt für alle späteren Phasen. Wer etwas am Rendering, an der Welt oder am Netzcode ändert, misst mit denselben Befehlen neu und vergleicht.
 
 > **Wichtig:** Headless-Chromium rendert standardmäßig mit **SwiftShader auf der CPU**. FPS und Frame-Times aus diesen Läufen sind **nicht repräsentativ** für echte Geräte. **Draw Calls, Dreiecke, Speicherzähler und die Bandbreite pro Update sind es** – sie hängen nicht von der GPU ab. Einschränkung: Der Client schickt höchstens ein Positions-Update pro Frame. Die **Upload-Rate** stimmt deshalb nur, wenn die Clients mindestens 20 FPS schaffen; im SwiftShader-Lauf ist sie zu niedrig. Für realistische Raten gibt es `--gl=gpu`.
@@ -13,6 +15,8 @@ npm run perf:baseline                                   # Build, 2 Clients, Swif
 npm run perf:baseline -- --gl=gpu                       # lokale GPU statt SwiftShader
 npm run perf:baseline -- --gl=gpu --device=mobile       # iPhone-13-Viewport (390×844, DPR 3)
 npm run perf:baseline -- --clients=4 --duration=60 --out=perf.json
+npm run perf:baseline -- --gl=gpu --physics=v2          # v2-Fahrphysik (?physics=v2), ab Phase 1a
+npm run perf:baseline -- --gl=gpu --sandbox --clients=1 # v2 in der Offline-Sandbox mit 5 Dummy-Autos
 ```
 
 Das Skript (`scripts/perf-baseline.ts`) startet den Produktions-Server, lässt die Clients über den echten Beitritt (`/?e2e=1&debug=perf`) ins Spiel gehen und fährt dann mit allen gleichzeitig: W gehalten, abwechselnd kurz links und rechts lenken. Bleibt ein Auto an einer Wand hängen, setzt es mit Lenkeinschlag zurück. Aufgezeichnet wird über `window.__bulliPerf`, die Ausgabe ist JSON auf stdout.
@@ -91,8 +95,56 @@ In diesem Lauf sind beide Autos früh aus der Stadt gefahren, deshalb die niedri
 - **Die Upload-Rate hängt an der Framerate.** Der Client schickt nur innerhalb von `update()`, also höchstens einmal pro Frame. Bei 7–13 FPS (SwiftShader) sind es nur 7–8 Updates/s statt ca. 17. Auf schwachen Handys ist das genauso. Der feste Netz-Tick aus Phase 1b macht das unabhängig von der Framerate.
 - **Headless mit GPU** ist näher an einem echten Desktop, hat aber keinen Compositor und kein echtes VSync. `requestAnimationFrame` ist auf 60 Hz begrenzt, deshalb liegt die Frame-Time p50 fest bei 16,7 ms.
 
+## Phase 1a: v2-Fahrphysik (`?physics=v2`)
+
+**Stand:** 2026-09-23 · **Commit:** `b899167` (Branch `refactor/phase-1a-driving`) · Rohdaten: `docs/baseline/2026-09-23-1a-*.json` · Setup wie oben, 5 s Warm-up + 15 s Messung.
+
+```bash
+npm run perf:baseline -- --gl=gpu                                 # Legacy zum Vergleich in derselben Sitzung
+npm run perf:baseline -- --gl=gpu --physics=v2                    # Stadt, 2 Clients mit v2
+npm run perf:baseline -- --gl=gpu --sandbox --clients=1           # Sandbox, eigenes Auto + 5 Dummies
+npm run perf:baseline -- --gl=gpu --sandbox --clients=1 --device=mobile
+npm run perf:baseline -- --physics=v2                             # SwiftShader, Stadt
+npm run perf:baseline -- --sandbox --clients=1                    # SwiftShader, Sandbox
+```
+
+**Was neu gemessen wird:** Mit der v2-Physik liefert jeder Client zusätzlich `sim`. Das ist die CPU-Zeit aller Sim-Ticks eines Frames in `LocalVehicle.update`: Eingabe, Remote-Proxies, Dummy-Fahrer und `stepWorld` für alle Autos. Die Darstellung (Interpolation, Pose, Räder) zählt nicht dazu. Dazu kommen Ticks pro Frame, ms pro Tick und die Zahl der Autos in `stepWorld`. Das Overlay (`?debug=perf`) zeigt dieselbe Zahl als Zeile `sim`. Mit der Legacy-Physik ist `sim` `null`.
+
+**Genauigkeit:** `performance.now()` ist in Chromium ohne Cross-Origin-Isolation auf 100 µs gerastert. Einzelwerte (p50, p95) gibt es deshalb nur in Stufen von 0,1 ms. Die Mittelwerte stimmen trotzdem: Eine Probe mit 5 µs echter Arbeit pro Frame ergab über 300 Frames im Mittel 3,7 µs.
+
+### Sim-Kosten im Spiel
+
+| Lauf | Autos in `stepWorld` | FPS | Ticks/Frame | Sim pro Frame Ø (p95) | Sim pro Tick | CPU Game-Loop Ø (p95) |
+|---|---|---|---|---|---|---|
+| Stadt, GPU, Desktop, 2 Clients | 2 (eigenes + 1 Proxy) | 60,0 / 59,9 | 1,0 | 0,044 (0,1) ms | 0,044 ms | 1,30 (1,8) / 1,04 (1,5) ms |
+| Sandbox, GPU, Desktop | 6 (eigenes + 5 Dummies) | 60,0 | 1,0 | 0,087 (0,2) ms | 0,087 ms | 0,62 (1,1) ms |
+| Sandbox, GPU, iPhone 13 | 6 | 60,0 | 1,0 | 0,089 (0,2) ms | 0,089 ms | 0,73 (1,1) ms |
+| Sandbox, SwiftShader, Desktop | 6 | 42,0 | 1,41 | 0,077 (0,2) ms | 0,054 ms | 0,48 (0,7) ms |
+| Stadt, SwiftShader, Desktop, 2 Clients | 2 | 10,4 / 9,7 | 5,1 | 0,061 / 0,058 (0,2) ms | 0,012 / 0,011 ms | 1,29 (1,8) / 9,92 (1,9) ms |
+
+Zum Vergleich die Sim allein im heißen Loop, ohne Rendern dazwischen:
+
+| Messung | pro Tick |
+|---|---|
+| Sandbox, 6 Autos, `stepWorld` 3000 Ticks am Stück, Chromium (Dev-Build) | 0,019 ms |
+| dasselbe mit `LocalVehicle.update` (ein Tick pro Aufruf) | 0,023 ms |
+| Sandbox, 6 Autos, `stepWorld`, Node | 0,009 ms |
+| Golden-Szenario mit drei Autos, Chromium (Produktions-Build) / Node | 0,0023 / 0,0035 ms |
+| 32 Autos, `stepWorld`, Node (Schritt „sim-core“) | 0,17 ms |
+
+Die übrigen Werte der v2-Läufe (Draw Calls, Dreiecke, Speicher, Bandbreite) liegen im Rahmen von Phase 0. Die Draw Calls hängen wie dort an der Route: Im Legacy-Vergleichslauf fuhren beide Autos durch die Stadt (Ø 265 bzw. 459 Draw Calls, CPU Game-Loop 1,28 bzw. 1,74 ms), im v2-Lauf eher am Rand (Ø 108 bzw. 38). Die CPU-Zeiten der Game-Loop sind deshalb zwischen Legacy und v2 nicht direkt vergleichbar. Die Sandbox ist eine kleine Szene (Ø 48 Draw Calls, 8 k Dreiecke). Der Mittelwert von 9,92 ms beim zweiten SwiftShader-Client kommt von einem einzelnen Frame mit 1,3 s CPU-Zeit; p95 liegt bei 1,9 ms.
+
+### Einordnung
+
+- **Die Sim spielt im Frame-Budget keine Rolle.** Sie kostet im Mittel höchstens 0,09 ms pro Frame, einzelne Frames bis 0,4 ms. Das ist gut 0,5 % eines 60-FPS-Frames (16,7 ms), auch mit 6 Autos in der Sandbox. Der Engpass bleiben die Draw Calls (siehe Phase 0).
+- **Im Spiel kostet ein Tick etwa 4–5-mal so viel wie im heißen Loop** (Sandbox: 0,087 statt 0,019 ms). Pro Frame läuft nur ein Tick, und dazwischen rendert three.js; die Caches sind kalt. Laufen mehrere Ticks am Stück (SwiftShader, 5 Ticks pro Frame), sinkt der Preis pro Tick auf 0,012 ms.
+- **Bei niedriger Framerate bleibt die v2-Sim nahe an der Echtzeit.** Der Fixed-Step-Loop holt bis zu 8 Ticks pro Frame nach und verwirft nur den Rest längerer Frames (Spezifikation 12.1). Im SwiftShader-Lauf mit ~10 FPS liefen 854 bzw. 783 Ticks in 16,0 bzw. 15,8 s, also 89 bzw. 83 % der Echtzeit. Die Legacy-Physik rechnet pro Frame höchstens 1/30 s und fährt bei 10 FPS nur mit einem Drittel des Tempos. Solange kein Frame länger als 133 ms dauert (8 Ticks), läuft v2 in Echtzeit; der Sandbox-Lauf mit 42 FPS kam auf 59,2 Ticks/s, bei einzelnen Frames bis 333 ms.
+- **Die Upload-Rate hängt in 1a weiter an der Framerate** (7,2 bzw. 6,2 Updates/s bei ~10 FPS). Das Protokoll ist in 1a unverändert; erst der feste Netz-Tick in Phase 1b löst das.
+- **Für Phase 1b** (Replay von 9–12 Ticks pro Snapshot für die Autos im Kontaktradius) heißt das: Am Stück kosten 6 Autos rund 0,02 ms pro Tick, ein Replay also etwa 0,2–0,25 ms auf dem M5 Pro. Wie viel langsamer ein Handy ist, zeigt erst die Messung auf dem Referenz-Handy.
+
 ## Offen
 
 - **Referenz-Handy:** noch nicht festgelegt (siehe Plan, Phase 0). Messung dort: Spiel mit `?debug=perf` öffnen, eine Minute durch die Stadt fahren, die Overlay-Werte (FPS, Frame-Time, CPU, Draw Calls, Pixel-Ratio) hier ergänzen.
 - **Desktop mit echter GPU im normalen Browserfenster**, ebenfalls über das Overlay.
-- **Reproduzierbarer Blickpunkt:** Wegen des zufälligen Spawns streuen die Draw Calls stark. Für genaue Vorher/Nachher-Vergleiche beim Rendering braucht es eine feste Kamerafahrt, z. B. in der Sandbox aus Phase 1a.
+- **Reproduzierbarer Blickpunkt:** Wegen des zufälligen Spawns streuen die Draw Calls stark. Für genaue Vorher/Nachher-Vergleiche beim Rendering braucht es eine feste Kamerafahrt. Die Sandbox aus Phase 1a (`--sandbox`) hat einen festen Start, zeigt aber nicht die Stadt.
+- **Sim-Kosten auf dem Referenz-Handy:** `?physics=v2&debug=perf` bzw. `?sandbox=1&debug=perf` öffnen und die Zeile `sim` im Overlay ablesen.
