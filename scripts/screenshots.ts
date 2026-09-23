@@ -4,18 +4,21 @@
 //
 //   npm run screenshots -- --out=shots/after                 # build + capture
 //   npm run screenshots -- --out=shots/after --gl=swiftshader
+//   npm run screenshots -- --out=shots/legacy --physics=legacy   # the old physics and camera
 //   npx tsx scripts/screenshots.ts --compare=shots/before,shots/after --out=shots/compare
 //
 // --gl=gpu (default) renders on the machine's GPU (ANGLE/Metal on macOS) and
 // falls back to SwiftShader when no GPU context comes up. --compare writes one
 // side-by-side image per view that exists in both folders (compare-<view>.png).
+// For the chase camera views stats.json also records how much of the frame
+// the car takes (carWidth/carHeight, fractions of the image).
 
 import { spawn, type ChildProcess } from 'node:child_process';
 import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
 import { chromium, devices, type Browser, type BrowserContextOptions, type Page } from '@playwright/test';
-import type { BulliDebugSnapshot, CameraPose } from '../src/client/e2eHook.js';
+import type { BulliDebugSnapshot, CameraPose, ScreenBox } from '../src/client/e2eHook.js';
 import { PARK_BLOCK, PLAZA_BLOCK, blockCenter, roadLineCenter } from '../src/shared/world/cityGen.js';
 
 interface Options {
@@ -24,16 +27,18 @@ interface Options {
     port: number;
     only: string[] | null;
     compare: [string, string] | null;
+    physics: 'v2' | 'legacy';
 }
 
 function parseArgs(argv: string[]): Options {
-    const options: Options = { out: 'screenshots', gl: 'gpu', port: 8260, only: null, compare: null };
+    const options: Options = { out: 'screenshots', gl: 'gpu', port: 8260, only: null, compare: null, physics: 'v2' };
     for (const arg of argv) {
         const [key, value = ''] = arg.replace(/^--/, '').split('=');
         if (key === 'out') options.out = value;
         else if (key === 'gl' && (value === 'gpu' || value === 'swiftshader')) options.gl = value;
         else if (key === 'port') options.port = Number(value);
         else if (key === 'only') options.only = value.split(',').filter(Boolean);
+        else if (key === 'physics' && (value === 'v2' || value === 'legacy')) options.physics = value;
         else if (key === 'compare') {
             const [before, after] = value.split(',');
             if (!before || !after) throw new Error('--compare needs two folders: --compare=before,after');
@@ -115,6 +120,7 @@ type Debug = {
     snapshot(): BulliDebugSnapshot;
     placeLocalCar(x: number, z: number, angle: number): void;
     setCameraOverride(pose: CameraPose | null): void;
+    localCarScreenBox(): ScreenBox | null;
 };
 
 function snapshot(page: Page): Promise<BulliDebugSnapshot> {
@@ -152,7 +158,7 @@ async function settle(page: Page, minMs: number): Promise<void> {
     while ((await snapshot(page)).render.frame < start + 10 && Date.now() < deadline) await sleep(100);
 }
 
-async function join(browser: Browser, contextOptions: BrowserContextOptions, baseURL: string, name: string): Promise<Page> {
+async function join(browser: Browser, contextOptions: BrowserContextOptions, baseURL: string, name: string, physics: Options['physics']): Promise<Page> {
     const context = await browser.newContext({ ...contextOptions, baseURL });
     await context.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, route =>
         route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
@@ -160,7 +166,7 @@ async function join(browser: Browser, contextOptions: BrowserContextOptions, bas
     page.on('pageerror', error => log(`page error: ${error.message}`));
     page.on('console', message => { if (message.type() === 'error') log(`console.error: ${message.text()}`); });
 
-    await page.goto('/?e2e=1');
+    await page.goto(physics === 'legacy' ? '/?e2e=1&physics=legacy' : '/?e2e=1');
     await page.locator('#loading-screen').waitFor({ state: 'detached', timeout: 90_000 });
     await page.locator('.car-card[data-car="bulli"]').click();
     await page.locator('#splash-name-input').fill(name);
@@ -174,18 +180,30 @@ async function join(browser: Browser, contextOptions: BrowserContextOptions, bas
     return page;
 }
 
-interface ShotStats { view: string; calls: number; triangles: number }
+interface ShotStats { view: string; calls: number; triangles: number; carWidth?: number; carHeight?: number }
 
-async function shoot(page: Page, out: string, view: string, stats: ShotStats[]): Promise<void> {
+// chase: the view comes from the chase camera, so the car's share of the
+// frame is worth recording
+async function shoot(page: Page, out: string, view: string, stats: ShotStats[], chase = false): Promise<void> {
     const file = path.join(out, `${view}.png`);
+    const box = chase
+        ? await page.evaluate(() => (window as unknown as { __bulliDebug: Debug }).__bulliDebug.localCarScreenBox())
+        : null;
     await page.screenshot({ path: file });
     const { render } = await snapshot(page);
-    stats.push({ view, calls: render.calls, triangles: render.triangles });
-    log(`${view}: ${render.calls} calls, ${render.triangles} triangles`);
+    const entry: ShotStats = { view, calls: render.calls, triangles: render.triangles };
+    if (box) {
+        entry.carWidth = Number(box.width.toFixed(3));
+        entry.carHeight = Number(box.height.toFixed(3));
+    }
+    stats.push(entry);
+    const car = box ? `, car ${(box.width * 100).toFixed(1)} % wide, ${(box.height * 100).toFixed(1)} % high` : '';
+    log(`${view}: ${render.calls} calls, ${render.triangles} triangles${car}`);
 }
 
 // Road center lines run at -98, -46, 6, 58, 110 on both axes.
 const MID_ROAD = roadLineCenter(2, 'x');
+const MID_CROSS = roadLineCenter(2, 'z');
 const EDGE_ROAD = roadLineCenter(4, 'x');
 const plaza = blockCenter(PLAZA_BLOCK.x, PLAZA_BLOCK.z);
 const park = blockCenter(PARK_BLOCK.x, PARK_BLOCK.z);
@@ -194,7 +212,7 @@ async function captureDesktop(browser: Browser, baseURL: string, options: Option
     const want = (view: string) => !options.only || options.only.includes(view);
     const page = await join(browser, {
         ...devices['Desktop Chrome'], viewport: { width: 1600, height: 900 }, deviceScaleFactor: 1
-    }, baseURL, 'Shots');
+    }, baseURL, 'Shots', options.physics);
 
     // Chase camera on the middle road looking north towards the plaza, HUD
     // visible (checks UI legibility too). The car is fresh, so the respawn
@@ -202,7 +220,7 @@ async function captureDesktop(browser: Browser, baseURL: string, options: Option
     if (want('street')) {
         await place(page, MID_ROAD, -60, 0);
         await settle(page, 2500);
-        await shoot(page, options.out, 'street', stats);
+        await shoot(page, options.out, 'street', stats, true);
     }
 
     // Close-up of the car and its shield: materials, contact shadow, rim
@@ -271,7 +289,7 @@ async function captureDesktop(browser: Browser, baseURL: string, options: Option
     if (want('outskirts')) {
         await place(page, EDGE_ROAD, 100, 0);
         await settle(page, 2000);
-        await shoot(page, options.out, 'outskirts', stats);
+        await shoot(page, options.out, 'outskirts', stats, true);
     }
 
     // Driving: chase camera in motion with exhaust/drift smoke
@@ -284,8 +302,16 @@ async function captureDesktop(browser: Browser, baseURL: string, options: Option
         await sleep(450);
         await page.keyboard.up('d');
         await sleep(250);
-        await shoot(page, options.out, 'drive', stats);
+        await shoot(page, options.out, 'drive', stats, true);
         await page.keyboard.up('w');
+    }
+
+    // Turning at a crossing: the car mid-corner, the cross street ahead has
+    // to stay readable with the chase camera
+    if (want('corner')) {
+        await place(page, MID_ROAD - 3, MID_CROSS - 14, Math.PI / 4);
+        await settle(page, 1500);
+        await shoot(page, options.out, 'corner', stats, true);
     }
 
     await page.context().close();
@@ -299,10 +325,10 @@ async function captureMobile(browser: Browser, baseURL: string, options: Options
         const viewport = orientation === 'portrait'
             ? iphone.viewport
             : { width: iphone.viewport.height, height: iphone.viewport.width };
-        const page = await join(browser, { ...iphone, viewport, screen: viewport }, baseURL, 'Mobile');
+        const page = await join(browser, { ...iphone, viewport, screen: viewport }, baseURL, 'Mobile', options.physics);
         await place(page, MID_ROAD, -60, 0);
         await settle(page, 2500);
-        await shoot(page, options.out, view, stats);
+        await shoot(page, options.out, view, stats, true);
         await page.context().close();
     }
 }
@@ -383,7 +409,7 @@ async function main() {
         const stats: ShotStats[] = [];
         await captureDesktop(browser, baseURL, options, stats);
         await captureMobile(browser, baseURL, options, stats);
-        const summary = { date: new Date().toISOString(), renderer, shots: stats };
+        const summary = { date: new Date().toISOString(), renderer, physics: options.physics, shots: stats };
         fs.writeFileSync(path.join(options.out, 'stats.json'), JSON.stringify(summary, null, 2) + '\n');
         log(`wrote ${stats.length} screenshots to ${options.out}`);
     } finally {

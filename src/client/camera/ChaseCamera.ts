@@ -24,6 +24,9 @@ export interface ChaseProfile {
     maxFov: number;
     mobileDistanceScale: number;
     mobileHeightScale: number;
+    // Distance and height in a portrait window (narrower than high), where
+    // the car would otherwise fill half the width
+    portraitScale: number;
     yawDamping: number;
     positionDamping: number;
     lookDamping: number;
@@ -48,15 +51,18 @@ export const LEGACY_CAMERA: ChaseProfile = {
     maxFov: CONFIG.cameraMaxFov,
     mobileDistanceScale: CONFIG.cameraMobileDistanceScale,
     mobileHeightScale: CONFIG.cameraMobileHeightScale,
+    portraitScale: 1,
     yawDamping: CONFIG.cameraYawDamping,
     positionDamping: CONFIG.cameraPositionDamping,
     lookDamping: CONFIG.cameraLookDamping,
     fovDamping: CONFIG.cameraFovDamping
 };
 
-// Lower racing camera of the v2 physics (docs/phase-1a-design.md, 12.5)
+// Lower racing camera of the v2 physics (docs/phase-1a-design.md, 12.5).
+// Standing on a 16:9 screen the car is about 16 % of the image wide (legacy
+// camera: 4 %), 12 % at 70 km/h; measured with npm run screenshots.
 export const RACE_CAMERA: ChaseProfile = {
-    height: 5.5,
+    height: 4.8,
     distance: 11,
     lookAtY: 1.5,
     lookAhead: 4,
@@ -65,13 +71,15 @@ export const RACE_CAMERA: ChaseProfile = {
     heightSpeedGain: 0,
     distanceBoostGain: 0.06,
     heightBoostGain: 0,
-    baseFov: 64,
-    mobileFov: 66,
+    baseFov: 60,
+    mobileFov: 62,
     speedFov: 10,
     boostFov: 4,
     maxFov: 80,
-    mobileDistanceScale: 0.9,
-    mobileHeightScale: 0.9,
+    // Phones in landscape: as on the desktop, the car is already 16 % wide
+    mobileDistanceScale: 1,
+    mobileHeightScale: 1,
+    portraitScale: 1.5,
     // Tighter than the legacy camera, which trails far behind at 50 m/s
     yawDamping: 7,
     positionDamping: 12,
@@ -146,8 +154,9 @@ export class ChaseCamera {
             this.cameraYaw = dampAngle(this.cameraYaw, target.yaw, dampingFactor(p.yawDamping, dt));
         }
 
-        const distanceScale = this.mobile ? p.mobileDistanceScale : 1;
-        const heightScale = this.mobile ? p.mobileHeightScale : 1;
+        const portraitScale = camera.aspect < 1 ? p.portraitScale : 1;
+        const distanceScale = (this.mobile ? p.mobileDistanceScale : 1) * portraitScale;
+        const heightScale = (this.mobile ? p.mobileHeightScale : 1) * portraitScale;
         const distance = p.distance * distanceScale
             * (1 + speedRatio * p.distanceSpeedGain + (boostActive ? p.distanceBoostGain : 0));
         const height = p.height * heightScale

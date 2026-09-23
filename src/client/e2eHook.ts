@@ -22,7 +22,7 @@ interface CarSnapshot {
     speed: number;
 }
 
-// State of the local v2 sim car (?physics=v2), null with the legacy physics
+// State of the local v2 sim car, null with the legacy physics (?physics=legacy)
 export interface V2Snapshot {
     // Sim pose: y is the height above the ground under the car
     x: number;
@@ -104,6 +104,50 @@ function v2Snapshot(vehicle: LocalVehicle | undefined): V2Snapshot | null {
         autoGas: vehicle.autoGas,
         proxies: vehicle.proxyCount
     };
+}
+
+// Screen box of the local car's body (flip group, without shield and
+// nametag) as fractions of the canvas, from the current camera
+export interface ScreenBox {
+    left: number;
+    right: number;
+    top: number;
+    bottom: number;
+    width: number;
+    height: number;
+}
+
+const _meshBox = new THREE.Box3();
+const _corner = new THREE.Vector3();
+
+function localCarScreenBox(): ScreenBox | null {
+    const car = state.bulli;
+    const camera = state.camera;
+    if (!car || !camera) return null;
+    car.group.updateMatrixWorld(true);
+    camera.updateMatrixWorld();
+    let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
+    car.flipGroup.traverse((child: THREE.Object3D) => {
+        const mesh = child as THREE.Mesh;
+        if (!mesh.isMesh || !mesh.visible || mesh === car.shieldMesh) return;
+        if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+        _meshBox.copy(mesh.geometry.boundingBox!);
+        for (let i = 0; i < 8; i++) {
+            _corner.set(
+                i & 1 ? _meshBox.max.x : _meshBox.min.x,
+                i & 2 ? _meshBox.max.y : _meshBox.min.y,
+                i & 4 ? _meshBox.max.z : _meshBox.min.z
+            ).applyMatrix4(mesh.matrixWorld).project(camera);
+            left = Math.min(left, _corner.x);
+            right = Math.max(right, _corner.x);
+            top = Math.min(top, -_corner.y);
+            bottom = Math.max(bottom, -_corner.y);
+        }
+    });
+    if (!Number.isFinite(left)) return null;
+    // NDC (-1..1) to fractions of the canvas (0..1, top left origin)
+    const box = { left: (left + 1) / 2, right: (right + 1) / 2, top: (top + 1) / 2, bottom: (bottom + 1) / 2 };
+    return { ...box, width: box.right - box.left, height: box.bottom - box.top };
 }
 
 // Fixed camera pose for screenshots, in world coordinates
@@ -196,9 +240,11 @@ export function installE2EHook(): void {
             car.angle = angle;
             car.group.rotation.y = angle;
             car.speed = 0;
-            // ?physics=v2: the sim car is the source of the pose
+            // v2 physics: the sim car is the source of the pose
             car.vehicle?.place(x, z, angle);
         },
+        // Where the local car is on screen (screenshot script: car size)
+        localCarScreenBox,
         // Renders from a fixed pose instead of the chase camera (null restores
         // the chase camera, which snaps back on the next frame).
         setCameraOverride(pose: CameraPose | null): void {
