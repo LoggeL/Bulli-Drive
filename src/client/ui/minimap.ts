@@ -1,6 +1,7 @@
 import { state } from '../state.js';
 import type { CityData } from '../../shared/protocol.js';
 import { CITY_LAYOUT } from '../../shared/constants.js';
+import { blockCenter, CITY_BOUNDS, PARK_BLOCK, PLAZA_BLOCK } from '../../shared/world/cityGen.js';
 
 const MAP_SIZE = 180;
 const MAP_PADDING = 10;
@@ -20,15 +21,15 @@ const colorCssCache = new Map<number, string>();
 let pixelRatio = 1;
 let lastUpdate = -Infinity;
 
+// Margin around the city footprint on the overview map
+const CITY_MAP_MARGIN = 7;
+
 function cityBounds() {
-    const { blockSize, roadWidth, gridSize } = CITY_LAYOUT;
-    const totalBlockSize = blockSize + roadWidth;
-    const halfCity = (gridSize * totalBlockSize) / 2;
     return {
-        minX: -halfCity - 7,
-        maxX: halfCity + roadWidth + 7,
-        minZ: -halfCity - 7,
-        maxZ: halfCity + roadWidth + 7
+        minX: CITY_BOUNDS.minX - CITY_MAP_MARGIN,
+        maxX: CITY_BOUNDS.maxX + CITY_MAP_MARGIN,
+        minZ: CITY_BOUNDS.minZ - CITY_MAP_MARGIN,
+        maxZ: CITY_BOUNDS.maxZ + CITY_MAP_MARGIN
     };
 }
 
@@ -167,16 +168,13 @@ function drawStaticMap(city: CityData) {
         ctx.stroke();
     }
 
-    const { blockSize, roadWidth, gridSize } = CITY_LAYOUT;
-    const totalBlockSize = blockSize + roadWidth;
-    const halfCity = (gridSize * totalBlockSize) / 2;
-    const blockPoint = (bx: number, bz: number) => worldToMap(
-        -halfCity + roadWidth + bx * totalBlockSize + blockSize / 2,
-        -halfCity + roadWidth + bz * totalBlockSize + blockSize / 2
-    );
-    const plazaIndex = Math.floor(gridSize / 2) - 1;
-    const plaza = blockPoint(plazaIndex, plazaIndex);
-    const park = blockPoint(gridSize - 1, gridSize - 1);
+    const { blockSize } = CITY_LAYOUT;
+    const blockPoint = (block: { x: number; z: number }) => {
+        const center = blockCenter(block.x, block.z);
+        return worldToMap(center.x, center.z);
+    };
+    const plaza = blockPoint(PLAZA_BLOCK);
+    const park = blockPoint(PARK_BLOCK);
 
     ctx.fillStyle = '#cc7d5c';
     ctx.fillRect(
