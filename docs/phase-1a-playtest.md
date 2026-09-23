@@ -2,7 +2,7 @@
 
 **Stand:** 2026-09-23 · **Branch:** `refactor/phase-1a-driving` · Bezug: [`refactor-plan.md`](refactor-plan.md) (Phase 1a, Exit-Kriterium), [`phase-1a-design.md`](phase-1a-design.md)
 
-Die neue Fahrphysik v2 ist live und ohne URL-Parameter Standard. Auf Wunsch des Nutzers gehen neue Features direkt live, deshalb ist der Blindtest kein Gate mehr. Die alte Physik lässt sich vorerst mit `?physics=legacy` öffnen, als Notausgang und zum Vergleich.
+Die neue Fahrphysik v2 ist live und ohne URL-Parameter Standard. Auf Wunsch des Nutzers gehen neue Features direkt live, deshalb ist der Blindtest kein Gate mehr. Die alte Physik (`?physics=legacy`) ist mit Phase 1b gelöscht (Server-Sim, [phase-1b-design.md](phase-1b-design.md) Abschnitt 10); der Vergleich unten ist damit nur noch historisch.
 
 Der Vergleich unten ist freiwillig. Er hilft beim Tuning und zeigt, ob v2 irgendwo schlechter ist als die alte Physik. Die Anleitung für einen blinden Vergleich bleibt stehen, falls er sich lohnt. Läuft v2 einige Tage ohne Probleme, wird die Legacy-Physik gelöscht (Abschnitt 6).
 

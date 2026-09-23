@@ -709,7 +709,7 @@ Jeder Schritt ist ein Commit (oder eine kleine Folge) mit grünem `npm run ci` u
 10. **FreeRoamRoom und Menü:** Room-Wahl im Splash, Wechsel im Spiel, `body.room-freeroam`, automatische Instanzen im Client sichtbar; `rooms.spec.ts`. *Merge-Punkt I.*
 11. **Bots vollständig und Budgets:** alle Bot-Modi, `npm run bots`, Integrationstest-Job in der CI, 32-Bot-Messung und Soak lokal, Werte in `docs/baseline.md`; Plan-Status und ein Abschnitt „Umsetzung: Abweichungen und Messwerte“ in diesem Dokument. *Merge-Punkt J* = Phase 1b fertig.
 
-**Stand der Umsetzung:** Schritt 3, Schritt 4 und der Room-Teil von Schritt 10 (FreeRoamRoom, Auswahl im Splash, Wechsel im Spiel) sind als ein Arbeitsschritt „Rooms und Collider“ vor Schritt 2 umgesetzt, noch auf Protokoll v1. Was dabei anders läuft als oben beschrieben, steht in Abschnitt 20.
+**Stand der Umsetzung:** Schritt 3, Schritt 4 und der Room-Teil von Schritt 10 (FreeRoamRoom, Auswahl im Splash, Wechsel im Spiel) sind als ein Arbeitsschritt „Rooms und Collider“ vor Schritt 2 umgesetzt, noch auf Protokoll v1 (Abschnitt 20.1). Danach folgten im Arbeitsschritt „Server-Sim und Protokoll“ Schritt 2, Schritt 7, 8a und 8c vollständig sowie Teile von 6, 8b und 8d (Abschnitt 20.2). Offen sind die Dev-Netsim und `?debug=net` (8b), der Rest von 8d (E2E `net-contact.spec.ts` mit Netsim, Bots in der CI), Schritt 5 (Betrieb), Schritt 9 (Reconnect) und Schritt 11.
 
 Schritt 8 ist bewusst ein einziger Merge: Zwischen 8a und 8d wäre der Party-Modus live schlechter als heute (alte Timer, lineare Interpolation). Jeder Commit in 8 bleibt trotzdem für sich lauffähig und getestet.
 
@@ -769,3 +769,61 @@ Umgesetzt in den Commits „Port the static colliders to shared world code“, �
 - Der Splash-Screen scrollt jetzt bei zu wenig Höhe (Handy quer), statt START abzuschneiden.
 - E2E: `rooms.spec.ts` (Desktop) und `rooms-mobile.spec.ts` (iPhone 13, Layout in drei Viewports).
 
+### 20.2 Server-Sim und Protokoll v2 (Schritte 2, 7, 8a, 8c, Teile von 6, 8b, 8d)
+
+Umgesetzt in den Commits „Delete the legacy physics“ und „Let the server simulate every car“. Die Clients schicken nur noch Eingaben; `update` gibt es nicht mehr.
+
+**Legacy gelöscht (Schritt 2).** Wie in Abschnitt 10, mit diesen Abweichungen:
+
+- `body.physics-v2` bleibt als feste Klasse in `index.html` stehen. Sie trägt nur noch die Spezifität der bisherigen Regeln in `style.css`; `.v2-only` und `.legacy-only` sind weg. Ein altes `?physics=legacy` bewirkt nichts mehr.
+- `desktop.spec.ts` prüft jetzt dasselbe (Canvas, HUD, Scoreboard, Tacho) mit der v2-Physik. `mobile.spec.ts` und `multiplayer.spec.ts` (Legacy-Form) sind gelöscht, `v2-mobile.spec.ts` und `v2-multiplayer.spec.ts` decken sie ab.
+- `collidersToObstacles`, `state.obstacles`, `Obstacle` und `__bulliDebug.obstacles()` sind entfernt; `placeOnClearRunway` liest `__bulliDebug.colliders()`.
+- `PROXY_CONTACT_SCALE` ist aus dem Tuning entfernt (Golden-Tuning angepasst). Das Golden-Szenario `proxy-bump-sport` bleibt als kinematisches Auto mit `contactScale = 0.7` bestehen, weil die Prediction genau diesen Fall für weit extrapolierte Remote-Autos nutzt (8.5).
+- Die Tuning-Sperre aus Abschnitt 7 ist mit drin: `?tune=1` lädt das Panel nur mit `?sandbox=1`, sonst zeigt die Seite einen Hinweis. Vor dem `hello` setzt der Client ein verändertes Tuning zurück, der Server startet nicht mit abweichendem Tuning.
+
+**Protokoll v2.** `PROTOCOL_VERSION = 2`, Schemas in `shared/protocol.ts`, Binärrahmen in `shared/net/codec.ts`, Handshake in `server/handshake.ts`. Abweichungen von 3.2 bis 3.6:
+
+- `roomState` trägt `room {id, kind, index}` statt `roomId`/`kind`, außerdem `preview {x, z, yaw}`: eine freie Stelle, auf die die Kamera hinter dem Splash-Screen schaut, bis das Auto spawnt. `items` ist in Free Roam `null`.
+- `welcome` enthält zusätzlich `color` und `name` (der Server bereinigt den Namen), `reject` zusätzlich `serverProtocol`. Der Reload-Schutz für `reject {reload}`, den Build-Abgleich nach `welcome` und einen abweichenden `worldHash` läuft je über einen eigenen `sessionStorage`-Schlüssel; der Build-Abgleich nutzt denselben Schlüssel wie `buildVersion.ts`, damit eine Seite nicht zweimal neu lädt.
+- `playerJoined {member}` mit dem vollständigen `MemberInfo` (inklusive `profile`), gesendet, sobald das Mitglied `ready` ist. `playerUpdated` trägt auch `profile`.
+- Im Event `pickup` heißt der Powerup-Typ `powerupType` (`type` ist der Event-Typ).
+- Der Self-Block trägt zusätzlich die Auto-Flags (u16), damit der Client Idle, Lag und Schild seines eigenen Autos kennt: 149 B statt ≈ 150 B.
+- `debugPlace` merkt sich der Server, bis das Auto existiert (ein Test darf direkt nach `ready` platzieren). Ohne `E2E=1` zählt die Nachricht als ungültig.
+- `joinRoom` ist unverändert, die Antwort ist jetzt `roomState` (statt `roomJoined` aus 20.1), der Spawn kommt als Event. Der URL-Parameter `?room=` entfällt, die Room-Art steht in `hello.room`.
+- Ohne `SESSION_SECRET`, Grace und Resume (Schritt 9): Das Token wird vergeben und im `sessionStorage` abgelegt, aber noch nicht ausgewertet. Nach einer Trennung zeigt der Client einen Hinweis mit „Reload“-Button (`#net-notice`).
+
+**Server-Tick (5.1–5.6).** `server/tick.ts` wie spezifiziert, `RoomManager.stepAll` stuft die Rooms mit Mitgliedern nach `id`. `Room.step` in der Reihenfolge aus 5.3; neu dazu kommt am Ende des Ticks `spawnAndPlace` (Spawn, Wagenwechsel, `debugPlace`), damit der Zustand nach Tick T der Startzustand ist, den auch der Client für T einsetzt.
+
+- **Spawn:** Jeder Spawn und Respawn nutzt `spawnVehicle` aus `shared/sim/vehicle.ts` (alles auf Anfang, auf den Boden, Kontakt-Ghost `RESET_GHOST_TICKS`), in Party wie in Free Roam. Die Richtung folgt der Straße unter dem Spawnpunkt (zufällig eine der beiden Fahrtrichtungen), auf der Plaza und auf Kreuzungen eine der vier Achsen.
+- **Input-Puffer:** `inputSlack` ist das Minimum über **alle neuen** Inputs eines Snapshot-Fensters (Tick über dem höchsten bisher empfangenen), auch über die verspäteten mit Wert ≤ 0, nicht nur über den jeweils neuesten eines Pakets. Kamen nach einem Hänger zwei oder mehr Ticks in einem Paket, war sonst nur der neueste sichtbar, und der Client erfuhr nie, dass die älteren zu spät kamen (gemessen: ein Viertel der Ticks verpasst bei gemeldetem Slack 1). Redundante Kopien schon empfangener Inputs zählen nicht.
+- **Lag-Ghost:** Fenster 5 s (300 Ticks) statt 2 s, gleiche Quote von 20 %; verpasste Inputs zählen erst ab dem ersten Input nach dem Spawn (vorher startet der Client noch, dafür gibt es die Idle-Regel). In E2E-Läufen mit Software-WebGL hängt eine Seite mehrmals für 300–500 ms (Shader beim ersten Einsatz, GC, zwei Seiten auf einer GPU); mit 2 s wurde dadurch fast jeder Spieler zeitweise zum Ghost, und Rempeln fiel zufällig aus. Die RTT kommt aus WebSocket-Pings alle 2 s (Median der letzten fünf), damit ein einzelner Hänger des Servers niemanden zum Ghost macht. Die Pings dienen zugleich als Heartbeat (Abbruch nach 20 s ohne Pong).
+- **Idle:** Ein Paket ohne `HIDDEN` beendet auch den per `visibility` gemeldeten Hintergrund.
+- **Party (5.5):** wie spezifiziert, Timer als Fenster in Ticks (`server/party/state.ts`, Zahlen in `shared/party/rules.ts`). Die Ram-Abklingzeit je Paar läuft auch dann an, wenn ein Schild den Schaden verhindert (wie beim Schuss). Schüsse werden beim Eintreffen gegen den aktuellen Server-Zustand geprüft.
+
+**Client (8).** Die reine Netzlogik liegt in `shared/net/` (Codec, Clock, Lead, Prediction mit Kontakt-Set, Interpolation) und in der gemeinsamen Klasse `NetClient` (`shared/net/client.ts`: Clock, Lead, Prediction, Input-Pakete, Slots, Powerup-Fenster), die Browser, Node-Tests und später die Bots gleich nutzen. `client/net/netDriver.ts` ergänzt nur Eingaben, `LocalVehicle`-Anbindung und den Render-Offset; `client/net/remotes.ts` stellt die Remote-Autos dar. `network/websocket.ts` bleibt der JSON-Router (ein eigenes `client/net/dispatch.ts` hätte nur Dateinamen verschoben). Abweichungen:
+
+- **Tick-Zählung statt Zeitdehnung des `FixedStepLoop`:** C folgt `anker + jetzt/DT + lead`. Der Anker ist der Clock-Offset beim Start (nach drei Pongs, weil der erste Pong in einer gerade ladenden Seite lange liegen bleibt) und wird danach nicht mehr verschoben; nur der Lead-Regler bewegt `lead`. Vorteil gegenüber dem Frame-Akkumulator: Ein Frame, der wegen der Obergrenze von 8 Ticks oder 250 ms Zeit verliert, lässt C nicht hinter die Server-Zeit fallen.
+- **Lead-Regler asymmetrisch:** Kommen Inputs zu spät (e ≤ −2), steigt der Lead sofort um den Fehlbetrag; zu früh senkt ihn nur mit höchstens 5 % der Tick-Zeit pro Snapshot (±5 % Tempo), außer bei mehr als 16 Ticks (Uhrsprung). Nach einem Sprung ignoriert er die Meldungen eine RTT plus 250 ms lang, weil sie noch Inputs von vor dem Sprung beschreiben; ohne diese Totzeit schaukelte er sich zwischen +18 und −18 Ticks auf. Ein Client, dessen Seite immer wieder kurz hängt, behält so den Vorlauf, den er braucht, statt nach jedem Hänger wieder zu knapp zu werden.
+- **Ticks auch zwischen den Frames:** Ein Timer (alle 4 ms) rechnet die fälligen Ticks und schickt die Inputs, auch wenn der nächste Frame auf sich warten lässt. Mit Software-WebGL liefen zwei Seiten mit 4–8 FPS; die Inputs kamen dann in Stößen von bis zu 15 Ticks und größtenteils zu spät. Auf schwachen Handys hilft das genauso. Pro Aufruf höchstens 20 Ticks, weiter hinten springt C nach vorn. Die Frame-Ereignisse (Sound, Partikel) sammelt `LocalVehicle` bis zum nächsten Frame.
+- **Kontakt-Set:** in `prediction.ts` statt eines eigenen `contactSet.ts`. Sind Autos im Set, wird jeder Snapshot nachgerechnet (auch bei exakter Übereinstimmung), damit die Remote-Autos wieder auf C kommen.
+- **Doppelte Ereignisse:** Bringt eine Korrektur einen Sprung oder Reset, den der Spieler schon gesehen hat, ein paar Ticks später noch einmal (der Server bekam den Input zu spät), zählt `LocalVehicle` ihn nicht erneut (Abstand kleiner als Sprung-Cooldown bzw. Reset-Haltezeit).
+- **Respawn-Schild in der Prediction:** Bis zum ersten Snapshot nach einem Spawn nimmt der Client den Schild an, danach gilt das Flag des letzten Snapshots (8.4, Schritt 2). Der Schild ändert nur Kontaktmasse und Wand-Restitution; ohne Kontakt entsteht keine Korrektur.
+- **Remote-Darstellung:** Hermite mit adaptiver Verzögerung und die Überblendung zum Kontakt-Set (300 ms) sind schon da (Teil von 8d). Idle-Autos werden grau mit „ZZZ“ (Flag statt AFK-Hack).
+- **`__bulliNet`** (Teil von 8b) liefert Lead, Slack, Korrekturen, Snaps, verpasste Inputs und die Flags der Remote-Autos für die Tests. Das Overlay `?debug=net` und die Netsim fehlen noch.
+
+**Tests.** Unit: Codec und Quantisierung, valibot-Schemas v2, Handshake (Version 1 und 3 → 4000 mit Reload, kaputtes hello → 4001), Scheduler (10 min ohne Drift, höchstens 4 Nachhol-Ticks, Hänger), Input-Puffer, `stopInput`, Rooms und Party im Tick (Pickups, Fenster, Schüsse, Mega-Ram aus Δv, Respawn-Schild, Idle-/Lag-Ghost, Kontakt-Events), Clock und Lead, Interpolation. Die Reconciliation-Tests (`tests/shared/net/reconcile.test.ts`) verbinden die echten Rooms mit `NetClient`-Clients über Links mit Latenz, Jitter und TCP-Verlust in simulierter Zeit (`harness.ts`):
+
+| Fall | Ergebnis |
+|---|---|
+| 0 Latenz, 1000 Ticks Slalom mit Handbremse und Boost | jede Korrektur exakt 0, keine verpassten Inputs |
+| 9 Ticks je Richtung, ±2 Ticks Jitter | jede Korrektur exakt 0 (bitgleich) |
+| RTT 150 ms, 30 ms Jitter, 3 % Verlust (TCP-Modus, Exit-Kriterium) | mittlere Korrektur 2–8 cm (60 s, drei Seeds), p99 6–6,5 cm, 2–5 Snaps auf 1200 Snapshots |
+| RTT 300 ms, ±2 Ticks, 3 % Verlust | Mittel 3–3,5 cm, 2 Snaps auf 1200 Snapshots |
+| RTT 150 ms, 30 ms Jitter, kein Verlust, 60 s | jede Korrektur exakt 0, kein verpasster Input |
+| Frontal mit 5 Ticks Latenz | beide Clients spüren den Stoß in einem eigenen Vorhersage-Tick, danach wieder exakt 0; der Server endet bitgleich mit einem Lauf ohne Netz |
+| Turbo-Pickup mit 9 Ticks Latenz | eine Korrektur, danach exakt 0 |
+| Uhr des Clients springt um 500 ms | Lead springt, danach wieder exakt 0 |
+
+Die Vorgabe „keine Snaps“ bei 3 % Verlust (15.1, Fall 3) ist nicht erreichbar: Ein verlorenes Paket hält im TCP-Modus alles Folgende 200 ms + RTT auf; bei 60 Paketen pro Sekunde steht der Uplink damit gut die Hälfte der Zeit. Nach 250 ms Wiederholung bremst der Server das Auto (5.3), und die Abweichung zum weiterfahrenden Client überschreitet gelegentlich 4 m. Der Test verlangt deshalb höchstens 1 % Snaps; die mittlere Korrektur bleibt unter 10 cm.
+
+E2E: `joinGame` wartet, bis der Server das Auto gespawnt hat und die Prediction läuft. `v2-multiplayer.spec.ts` prüft den Stoß jetzt gegen den Server (Bob wird geschoben, Bob ist bei Alice im Kontakt-Set, die Autos durchdringen sich auf ihrem Bildschirm nicht) und fährt den Anlauf bis zu dreimal, wenn eine hängende Seite zwischendurch zum Lag-Ghost wurde. Die Tacho-Vergleiche nutzen die Geschwindigkeit des gezeigten Frames, weil die Sim online auch zwischen den Frames rechnet. Playwright und die Skripte (`screenshots`, `perf:baseline`) starten den Server mit `E2E=1`.
