@@ -109,6 +109,10 @@ export class LocalVehicle {
     profile: AssistProfile;
     // Remote players in the contact set of the last tick
     proxyCount = 0;
+    // For ?debug=perf: CPU time of all ticks so far (ms) and the cars
+    // stepped in the last one (perfMonitor turns them into per-frame costs)
+    simMsTotal = 0;
+    simCars = 0;
 
     constructor(id: string, classId: CarClassId, profile: AssistProfile, world: SimWorld) {
         this.car = createSimCar(id, classId, profile);
@@ -171,7 +175,9 @@ export class LocalVehicle {
         ev.wallImpact = ev.carImpact = ev.landedImpact = 0;
         ev.jumped = ev.boostStarted = ev.reset = false;
         this.hintChanged = false;
+        const start = performance.now();
         this.alpha = this.loop.advance(dt, () => this.tick(host, now));
+        this.simMsTotal += performance.now() - start;
         this.applyPose(dt, host);
     }
 
@@ -203,6 +209,7 @@ export class LocalVehicle {
         // Sandbox dummies (game/hooks.ts), empty in the game
         for (const hook of gameHooks.beforeTick) hook(this);
         for (const extra of gameHooks.extraCars) cars.push(extra);
+        this.simCars = cars.length;
         stepWorld(cars, this.world);
         this.ticks++;
         for (const hook of gameHooks.afterTick) hook(this);
