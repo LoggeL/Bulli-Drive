@@ -50,7 +50,7 @@ reachable from the LAN as well: `npm run build && npm start`, then
 | `npm run typecheck` | Type-checks client, server, tests, scripts and build config |
 | `npm test` | Vitest unit tests in `tests/` (golden tests for world generation, terrain and RNG, protocol validation, server handlers, speedometer scale) |
 | `npm run test:e2e` | Builds, then runs the Playwright smoke tests in `tests/e2e` against the production server (port 8799, `E2E_PORT` to override) |
-| `npm run perf:baseline` | Builds, then drives two headless Chromium clients for 20 s and prints FPS, draw calls and WebSocket bandwidth as JSON (see [docs/baseline.md](docs/baseline.md)) |
+| `npm run perf:baseline` | Builds, then drives two headless Chromium clients for 20 s and prints FPS, draw calls and WebSocket bandwidth as JSON (see [docs/baseline.md](docs/baseline.md)); `-- --physics=v2` or `-- --sandbox` measure the v2 physics and its sim time per frame |
 | `npm run ci` | typecheck, unit tests and build in one go |
 
 The Playwright tests cover desktop join and drive, two players seeing each other
@@ -75,8 +75,8 @@ every pull request and push to `main`.
 - `?tune=1` adds the live tuning panel with telemetry to the v2 physics
   (together with `?sandbox=1` or `?physics=v2`). It is loaded on demand.
 - `?debug=perf` shows a performance overlay (FPS, frame time, draw calls,
-  triangles, geometries, textures, WebSocket bytes per second). Use it to
-  measure on real devices.
+  triangles, geometries, textures, WebSocket bytes per second, and with the
+  v2 physics the sim time per frame). Use it to measure on real devices.
 - `?e2e=1` installs a state hook for the Playwright tests (read-only, apart
   from placing the car on a free stretch of road).
 
@@ -136,7 +136,7 @@ src/shared/           Code for both sides: protocol schemas (valibot), constants
                       layout (world/)
 tests/                Vitest (shared/, server/, client/) and Playwright (e2e/)
 scripts/              perf-baseline.ts
-docs/                 Refactor plan, performance baseline
+docs/                 Refactor plan, performance baseline, phase 1a spec and blind test guide
 ```
 
 The server generates the world from a fixed seed and sends it to every client

@@ -1,6 +1,6 @@
 # Phase 1a: Fahrphysik v2 – verbindliche Spezifikation
 
-**Stand:** 2026-09-23 · **Branch:** `refactor/phase-1a-driving` · **Flag:** `?physics=v2` · Bezug: [`refactor-plan.md`](refactor-plan.md) Abschnitt 0, 5 (Phase 1a) und 6 (Netcode)
+**Stand:** 2026-09-23 · **Branch:** `refactor/phase-1a-driving` · **Flag:** `?physics=v2` · Bezug: [`refactor-plan.md`](refactor-plan.md) Abschnitt 0, 5 (Phase 1a) und 6 (Netcode) · Blindtest: [`phase-1a-playtest.md`](phase-1a-playtest.md)
 
 Dieses Dokument ist die eine verbindliche Grundlage für die Umsetzung von Phase 1a. Es ersetzt die beiden Entwürfe, aus denen es entstanden ist. Zahlen sind Startwerte für das Tuning; Struktur, Konventionen, Zustandsfelder und die Reihenfolge im Tick sind verbindlich, weil Phase 1b (Server-Sim, Prediction, Replay) darauf aufbaut.
 
@@ -847,6 +847,8 @@ Zusätzliche Aussagen zu den Kontakt-Szenarien: frontal → beide \|v\| ≤ 4 m/
 
 Ein Input-Skript pro **Tick-Index**, `FixedStepLoop` mit Frame-Folgen 1/30, 1/60, 1/144 s und einer gejitterten Folge (feste Seeds) über dieselbe Gesamtzeit → identische Zustandsfolge pro Tick (bitgleich). Zusätzlich: Hitch von 0,5 s → höchstens 8 Ticks, Rest verworfen.
 
+*Ergänzt um `tests/client/fpsIndependence.test.ts`: derselbe Nachweis für den ganzen Client-Tick über `LocalVehicle.update` (Abschnitt 22).*
+
 ### 14.7 Client-Einheiten
 
 `InputManager`-Mapping (Quantisierung, Latch, Deadzone/Kurve, Touch-Brems-Schwelle, Vorrang der Quellen), `obstaclesToColliders` (Formen, `top`), Grid-Query (Dedup, Sortierung, keine Allokation nach dem Aufbau), Speedo-Skala v2.
@@ -862,6 +864,8 @@ Ein Input-Skript pro **Tick-Index**, `FixedStepLoop` mit Frame-Folgen 1/30, 1/60
 ### 14.9 Leistung
 
 Messung (geloggt, nicht als harte CI-Schranke): 32 Autos × 60 Ticks `stepWorld` in Node; Ziel < 2 ms pro Tick. Harte, großzügige Schranke gegen Ausreißer: 60 Ticks < 120 ms.
+
+*Im Browser gemessen mit `npm run perf:baseline -- --physics=v2` bzw. `--sandbox` (Abschnitt 22, Werte in [`baseline.md`](baseline.md)).*
 
 ---
 
@@ -881,7 +885,7 @@ Kleine Commits, jeweils mit grünen Tests:
 10. Remote-Proxies (halbseitiger Kontakt).
 11. HUD (Skala, Boost, Drift, Reset-Hinweis), Touch-Buttons, Race-Kamera.
 12. Sandbox + lil-gui + Browser-Golden.
-13. E2E v2 Desktop/Mobile/Multiplayer; Plan-Status aktualisieren.
+13. E2E v2 Desktop/Mobile/Multiplayer; Plan-Status aktualisieren. *Plan-Status erledigt im Schritt „fps-and-docs“ (Abschnitt 22).*
 
 ---
 
@@ -1116,3 +1120,52 @@ Es enthält nur die Werte, die von den Defaults abweichen. Winkel stehen darin i
   - `v2-sandbox-mobile.spec.ts` (iPhone 13): Der Sandbox-Kasten überdeckt keine Touch-Bedienelemente, Auto-Gas fährt, und der Knopf zum Karossenwechsel funktioniert per Tippen.
   - `sim-golden.spec.ts`: Alle 10 Golden-Szenarien laufen im Browser über `__bulliSim.runGolden` und stimmen mit den JSON-Dateien auf 1 mm bzw. 1e-4 rad überein (14.4).
 - **Bundle:** Ohne Flags lädt die Seite nur `index` und `three`. Die Sandbox (~11 kB), das Panel mit lil-gui (~39 kB) und das gemeinsame Tuning-Modul (~2 kB) sind eigene Chunks.
+
+## 22. Absicherung und Doku: FPS-Test, Leistung, Blindtest
+
+Stand nach dem Schritt „fps-and-docs“. Damit ist Phase 1a umgesetzt und wartet auf den Blindtest durch den Nutzer. Danach folgt das Löschen der Legacy-Physik; beides ist nicht Teil dieses Laufs.
+
+### 22.1 FPS-Unabhängigkeit des ganzen Client-Ticks
+
+`tests/client/loop.test.ts` (14.6) prüft den `FixedStepLoop` mit `stepVehicle`. Neu ist `tests/client/fpsIndependence.test.ts`: Er fährt den echten Client-Pfad, also `LocalVehicle.update` einmal pro Frame, in Node mit:
+
+- Tastatur über den `InputManager`, einschließlich eines Sprungs, der zwischen zwei Ticks gedrückt und wieder losgelassen wird (Pulse-Latch)
+- Powerup-Timer, die pro Tick zählen (Turbo läuft nach 1 s aus)
+- Sandbox-Welt mit Rampen und Wänden und die fünf Dummy-Autos im selben `stepWorld` (über `gameHooks`)
+- Rammstoß gegen den geparkten Käfer, Handbremsen-Drift, Sprung und Boost
+
+Frames von 1/30, 1/60 und 1/144 s und zwei unregelmäßige Folgen (4–45 ms, feste Seeds) über 5 s ergeben pro Tick bitgleiche Zustände aller sechs Autos, dieselben Inputs, dieselben Turbo-Zustände und genau einen Sprung. Die Zahl der Ticks weicht um höchstens einen ab, weil die Summe der Frame-Zeiten in Gleitkomma knapp unter oder über 300 Ticks landen kann.
+
+**Gegenprobe:** Zwei typische Fehler testweise eingebaut, beide schlagen an: die Render-Pose schreibt den interpolierten Yaw in die Sim zurück, und die Powerup-Timer zählen mit der Frame-Zeit statt mit `DT`.
+
+**Warum pro Tick-Index:** Eine Taste, die zu einer Wanduhr-Zeit gedrückt wird, erreicht die Sim mit dem nächsten Tick nach dem Frame, der sie sieht. Bei anderer Framerate kann das ein Tick später sein. Das ist die Eingabelatenz des Frames, keine Abhängigkeit der Sim von der Framerate.
+
+**Abweichung:** Den Akkumulator als Funktion zu extrahieren war nicht nötig. `FixedStepLoop` ist schon eine Klasse ohne DOM, und `LocalVehicle` lässt sich mit einem `VehicleHost` aus `THREE.Group`s in Node betreiben.
+
+### 22.2 Sim-Kosten pro Frame
+
+- `LocalVehicle` summiert die CPU-Zeit aller Ticks (`simMsTotal`) und merkt sich die Zahl der Autos im letzten `stepWorld` (`simCars`). Das sind zwei Aufrufe von `performance.now()` pro Frame, auch ohne Flag.
+- `?debug=perf` zeigt daraus die Zeile `sim` (ms pro Frame, Autos). `__bulliPerf.stopRecording()` liefert `sim` mit Ticks, Ticks pro Frame, ms pro Frame (Verteilung, auf 0,001 ms), ms pro Tick und Autos. Mit der Legacy-Physik ist `sim` `null`.
+- `npm run perf:baseline` hat die Optionen `--physics=v2` und `--sandbox` (impliziert v2; jeder Client fährt seine eigene Offline-Sandbox).
+- E2E (`perf-overlay.spec.ts`): Legacy ohne `sim`; Sandbox mit `sim`, 6 Autos und gezählten Ticks.
+
+**Messwerte** (M5 Pro, Headless-Chromium, Einzelheiten in [`baseline.md`](baseline.md)):
+
+- Im Spiel pro Frame im Mittel 0,044 ms in der Stadt (eigenes Auto + 1 Proxy) und 0,087–0,089 ms in der Sandbox (eigenes Auto + 5 Dummies), Desktop wie iPhone-Viewport. Das ist gut 0,5 % eines 60-FPS-Frames.
+- Im heißen Loop kosten dieselben 6 Autos 0,019 ms pro Tick (Chromium) bzw. 0,009 ms (Node). Im Spiel kostet ein Tick 4–5-mal so viel, weil zwischen zwei Ticks gerendert wird.
+- Bei ~10 FPS (SwiftShader) laufen 5 Ticks pro Frame, die Sim hält 83–89 % der Echtzeit (Frames über 133 ms werden gekappt, 12.1). Die Legacy-Physik schafft bei 10 FPS nur ein Drittel.
+
+### 22.3 Doku und Blindtest
+
+- [`phase-1a-playtest.md`](phase-1a-playtest.md): Anleitung für den Blindtest auf Deutsch mit URLs, Blindschaltung per Münzwurf, Fragebogen, Beobachtungspunkten, einer Tabelle „Eindruck → Regler“ und der Rückmeldung als JSON-Export aus dem Panel.
+- [`refactor-plan.md`](refactor-plan.md): Phase-1a-Status mit Deliverables und Exit-Stand; die Topspeed-Entscheidung steht als Entscheidung 7 in Abschnitt 0.
+- [`baseline.md`](baseline.md): Abschnitt Phase 1a mit den Sim-Kosten, Rohdaten unter `docs/baseline/2026-09-23-1a-*.json`.
+
+**Außerhalb des Auftrags, für den Blindtest nötig:** Der Startbildschirm zeigte auch mit `?physics=v2` „SPACE jump“. Mit v2 steht dort jetzt „SPACE drift · Q jump“ (`.v2-only`); „F honk“ entfällt in v2, damit die Zeile wie bei Legacy vier Einträge hat. Die Hupe steht weiter im ABOUT-Fenster. Ohne Flag ist der Startbildschirm unverändert.
+
+### 22.4 Offen nach Phase 1a
+
+1. **Blindtest durch den Nutzer** (4 von 5, auch auf dem Handy), getunte Werte als JSON übernehmen und die Golden-Dateien neu erzeugen.
+2. **Legacy-Physik löschen**, wenn v2 gewinnt: `vehicle/legacyPhysics.ts`, die Legacy-Zweige in `controls/keyboard.ts`, `controls/mobile.ts` und `main.ts`, die `.legacy-only`-Elemente in `index.html`; `?physics=v2` wird Standard.
+3. E2E-Test für eine gemischte Session aus v2 und Legacy (20.12).
+4. Messung auf dem Referenz-Handy (FPS, Sim-Zeit, Touch-Gefühl) und Feinschliff von Renn-Kamera und visueller Feder auf echten Geräten.
