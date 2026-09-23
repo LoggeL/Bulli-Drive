@@ -153,7 +153,7 @@ public/textures/      KTX2 world textures, HDRIs + manifest.json
 tools/                Offline asset pipeline (own package.json): Blender car builds,
                       gltfpack/KTX2 packing, texture download and encoding
 docs/                 Refactor plan, performance baseline, phase 1a spec, blind test
-                      guide, asset provenance and licences (assets.md)
+                      guide, asset provenance and licences (assets.md), world look (world-look.md)
 ```
 
 The server generates the world from a fixed seed and sends it to every client
@@ -168,7 +168,10 @@ Bulli Drive is being rebuilt into an open-world multiplayer racing game
 (party mode with the current combat, car contact, a curated map, full mobile
 support, 24/7 hosting). The plan, decisions and phases are in
 [docs/refactor-plan.md](docs/refactor-plan.md); the performance baseline the
-rebuild is measured against is in [docs/baseline.md](docs/baseline.md).
+rebuild is measured against is in [docs/baseline.md](docs/baseline.md). The
+realistic world look (HDRI sky, height fog, PBR materials, quality tiers, draw
+call budgets; `?tier=high|low|software` forces a tier) is described in
+[docs/world-look.md](docs/world-look.md).
 
 ## Controls
 - **WASD or arrows:** Drive, brake/reverse and steer

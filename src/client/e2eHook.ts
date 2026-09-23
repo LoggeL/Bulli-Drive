@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { state } from './state.js';
-import { focusLightingOn } from './render/lighting.js';
+import { focusLightingOn, lightingTier, whenSkyReady } from './render/lighting.js';
+import { textureStats, whenWorldTexturesLoaded } from './world/textures.js';
 import { frameStats } from './render/frameStats.js';
 import type { Obstacle } from './types.js';
 import { PHYSICS_V2 } from './flags.js';
@@ -93,6 +94,25 @@ export interface ModelInfo {
     hiddenNodes: string[];
     // Bounding box of the visible opaque meshes (m)
     size: [number, number, number];
+}
+
+// State of the realistic world look (render/look.ts, world/textures.ts)
+export interface WorldInfo {
+    tier: string;
+    textures: { requested: number; loaded: number; failed: number };
+    // uuid of scene.environment (the PMREM of the sky), null without one
+    environment: string | null;
+    // Named top level scene objects of the world
+    groups: string[];
+}
+
+function worldInfo(): WorldInfo {
+    return {
+        tier: lightingTier(),
+        textures: { ...textureStats },
+        environment: state.scene?.environment?.uuid ?? null,
+        groups: (state.scene?.children ?? []).map(child => child.name).filter(Boolean)
+    };
 }
 
 // A standalone texture from public/textures, loaded through the game's KTX2Loader
@@ -347,10 +367,34 @@ export function installE2EHook(): void {
         },
         modelInfo,
         loadTextureProbe,
+        worldInfo,
+        // Resolves once the world textures and the sky HDRIs are in and the
+        // environment map is final
+        async worldSettled(): Promise<WorldInfo> {
+            await whenWorldTexturesLoaded();
+            await whenSkyReady();
+            return worldInfo();
+        },
         // Puts an instance of a cached model on the ground at (x, z) (screenshots
         // of the models before the game uses them); false if it is not loaded
         spawnModel,
         clearModels,
+        // Visible meshes (draw call sources) per top level scene object,
+        // named by the object's name or type, for draw call budgets
+        sceneMeshes(): Record<string, number> {
+            const counts: Record<string, number> = {};
+            for (const child of state.scene?.children ?? []) {
+                if (!child.visible) continue;
+                let meshes = 0;
+                child.traverseVisible(object => {
+                    if ((object as THREE.Mesh).isMesh || (object as THREE.Points).isPoints || (object as THREE.Line).isLine) meshes++;
+                });
+                if (!meshes) continue;
+                const key = child.name || child.type;
+                counts[key] = (counts[key] ?? 0) + meshes;
+            }
+            return counts;
+        },
         // Collision obstacles of the local car (buildings, trees, props)
         obstacles(): Obstacle[] {
             return state.obstacles.map(obstacle => ({ ...obstacle }));
