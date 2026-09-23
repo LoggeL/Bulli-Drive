@@ -9,6 +9,7 @@ import type { LocalVehicle } from './vehicle/LocalVehicle.js';
 import type { VehicleInput } from '../shared/sim/types.js';
 import { models } from './assets/gameModels.js';
 import { getTerrainHeight } from './world/environment.js';
+import { palmStats, setPalmImpostorDistance, updatePalms, whenPalmImpostorsReady } from './world/palms.js';
 import { getKTX2Loader } from './assets/gltfLoader.js';
 import type { ModelCacheSnapshot } from './assets/ModelCache.js';
 
@@ -104,6 +105,11 @@ export interface WorldInfo {
     environment: string | null;
     // Named top level scene objects of the world
     groups: string[];
+    // Palms drawn as geometry and as impostors at the last frame, and
+    // whether the impostor atlas is baked (null before the city exists)
+    palms: { near: number; impostors: number; baked: boolean } | null;
+    // Instances per street furniture kind
+    furniture: Record<string, number>;
 }
 
 function worldInfo(): WorldInfo {
@@ -111,7 +117,10 @@ function worldInfo(): WorldInfo {
         tier: lightingTier(),
         textures: { ...textureStats },
         environment: state.scene?.environment?.uuid ?? null,
-        groups: (state.scene?.children ?? []).map(child => child.name).filter(Boolean)
+        groups: (state.scene?.children ?? []).map(child => child.name).filter(Boolean),
+        palms: palmStats(),
+        furniture: Object.fromEntries((state.scene?.getObjectByName('furniture')?.children ?? [])
+            .map(mesh => [mesh.name.replace('furniture-', ''), (mesh as THREE.InstancedMesh).count]))
     };
 }
 
@@ -307,6 +316,8 @@ function patchRenderForCameraOverride(): void {
             // Sky dome and shadows followed the chase camera; move them to
             // the fixed view so the sky and shadows look like in the game
             focusLightingOn(state.camera, _overrideFocus.set(...pose.lookAt));
+            // Palm LOD (near geometry or impostor) for the fixed view as well
+            updatePalms(state.camera);
         }
         render(scene, camera);
     };
@@ -373,7 +384,13 @@ export function installE2EHook(): void {
         async worldSettled(): Promise<WorldInfo> {
             await whenWorldTexturesLoaded();
             await whenSkyReady();
+            await whenPalmImpostorsReady();
             return worldInfo();
+        },
+        // Palms farther than `meters` from the camera become impostors (null:
+        // the tier's distance), to look at the impostors up close
+        setPalmImpostorDistance(meters: number | null): void {
+            setPalmImpostorDistance(meters, lightingTier());
         },
         // Puts an instance of a cached model on the ground at (x, z) (screenshots
         // of the models before the game uses them); false if it is not loaded

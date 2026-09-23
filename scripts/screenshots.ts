@@ -282,6 +282,16 @@ async function captureDesktop(browser: Browser, baseURL: string, options: Option
         await shoot(page, options.out, 'props', stats);
     }
 
+    // A plain street light corner at the south edge: hydrant and trash can
+    // next to the posts (they stand inside the posts' colliders)
+    if (want('props-curb')) {
+        await place(page, MID_ROAD + 3, -60, Math.PI);
+        await hideHud(page, true);
+        await setCamera(page, { position: [MID_ROAD, 2.0, -81], lookAt: [MID_ROAD, 0.9, -92], fov: 70 });
+        await settle(page, 1500);
+        await shoot(page, options.out, 'props-curb', stats);
+    }
+
     // Looking up at the boulevard palms (crowns against the sky)
     if (want('palms')) {
         await place(page, MID_ROAD, -96, 0);
@@ -289,6 +299,17 @@ async function captureDesktop(browser: Browser, baseURL: string, options: Option
         await setCamera(page, { position: [MID_ROAD - 4, 2.5, -40], lookAt: [MID_ROAD + 8.2, 10, -20], fov: 55 });
         await settle(page, 1500);
         await shoot(page, options.out, 'palms', stats);
+    }
+
+    // The same palms with every palm beyond 12 m drawn as impostor (far LOD)
+    if (want('palms-lod')) {
+        await place(page, MID_ROAD, -96, 0);
+        await hideHud(page, true);
+        await page.evaluate(() => (window as unknown as { __bulliDebug: { setPalmImpostorDistance(m: number | null): void } }).__bulliDebug.setPalmImpostorDistance(12));
+        await setCamera(page, { position: [MID_ROAD - 4, 2.5, -40], lookAt: [MID_ROAD + 8.2, 10, -20], fov: 55 });
+        await settle(page, 1500);
+        await shoot(page, options.out, 'palms-lod', stats);
+        await page.evaluate(() => (window as unknown as { __bulliDebug: { setPalmImpostorDistance(m: number | null): void } }).__bulliDebug.setPalmImpostorDistance(null));
     }
 
     // Close-up of the plaza fountain (water shader)

@@ -53,6 +53,12 @@ test('the world loads its textures and sky and keeps every collider', async ({ o
     const obstacles = await page.evaluate(() => (window as unknown as { __bulliDebug: WorldHook }).__bulliDebug.obstacles());
     expect(obstacles).toHaveLength(241);
     expect(createHash('sha1').update(JSON.stringify(obstacles)).digest('hex')).toBe(OBSTACLES_SHA1);
+
+    // Instanced street furniture (streetLayout.ts) inside those colliders,
+    // and the 12 palms with a baked impostor atlas
+    expect(info.furniture).toEqual({ lamp: 12, signal: 20, hydrant: 6, trashCan: 7, bench: 4 });
+    expect(info.palms?.baked).toBe(true);
+    expect((info.palms?.near ?? 0) + (info.palms?.impostors ?? 0)).toBe(12);
 });
 
 test('the phone tier stays within 150 draw calls including shadows', async ({ openPlayer }) => {
@@ -71,6 +77,10 @@ test('the phone tier stays within 150 draw calls including shadows', async ({ op
     expect(render.shadowCalls).toBeGreaterThan(0);
     expect(render.calls).toBeLessThanOrEqual(150);
     expect(render.triangles).toBeLessThanOrEqual(500_000);
+    // Palms beyond 110 m (the phone tier's impostor distance) are cards
+    const { palms } = await page.evaluate(() => (window as unknown as { __bulliDebug: WorldHook }).__bulliDebug.worldInfo());
+    expect(palms?.impostors).toBeGreaterThan(0);
+    expect(palms?.near).toBeGreaterThan(0);
 });
 
 // Mean color of the rendered view without the HUD, decoded in the page (no
