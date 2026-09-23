@@ -31,7 +31,7 @@ export interface WsTotals {
     messagesOut: number;
 }
 
-// Sim ticks of the local v2 car (?physics=v2), sandbox dummies included.
+// Sim ticks of the local v2 car, sandbox dummies included.
 // performance.now() is coarsened in the browser (100 µs with jitter without
 // cross-origin isolation), so single frames are coarse; the averages over
 // many frames are not.

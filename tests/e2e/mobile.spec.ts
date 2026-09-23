@@ -1,10 +1,11 @@
 import { test, expect, joinGame, snapshot, distance, placeOnClearRunway } from './fixtures.js';
 
-// Runs in the "mobile" project: iPhone 13 viewport with touch, in Chromium.
-test('touch controls drive the car on a phone', async ({ openPlayer }) => {
+// Runs in the "mobile" project: iPhone 13 viewport with touch, in Chromium,
+// with the old physics (?physics=legacy). The v2 controls: v2-mobile.spec.ts.
+test('legacy touch controls drive the car on a phone', async ({ openPlayer }) => {
     const player = await openPlayer('phone');
     const { page } = player;
-    await joinGame(player, 'E2E Phone');
+    await joinGame(player, 'E2E Phone', '&physics=legacy');
 
     // Mobile HUD: joystick and action buttons instead of keyboard hints and speedometer.
     await expect(page.locator('#mobile-controls')).toBeVisible();
@@ -13,6 +14,8 @@ test('touch controls drive the car on a phone', async ({ openPlayer }) => {
     }
     await expect(page.locator('.controls-hint')).toBeHidden();
     await expect(page.locator('#speedometer')).toBeHidden();
+    // No v2 buttons (DRIFT, BOOST, AUTO) with the legacy physics
+    await expect(page.locator('.drive-buttons')).toBeHidden();
 
     // Push the joystick up with a real touch sequence, on a free stretch of road.
     await placeOnClearRunway(page);

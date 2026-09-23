@@ -60,10 +60,11 @@ async function measureCruise(): Promise<Cruise> {
     };
 }
 
-test('loads, joins and drives on desktop', async ({ openPlayer }) => {
+test('loads, joins and drives on desktop with the legacy physics', async ({ openPlayer }) => {
     const player = await openPlayer('desktop');
     const { page } = player;
-    const myId = await joinGame(player, 'E2E Solo');
+    // The old physics stays reachable as an escape hatch (?physics=legacy)
+    const myId = await joinGame(player, 'E2E Solo', '&physics=legacy');
 
     // The three.js canvas fills the window and keeps rendering the scene.
     const canvas = page.locator('body > canvas');

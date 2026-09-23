@@ -1,12 +1,13 @@
 import { test, expect, joinGame, snapshot, distance, placeOnClearRunway, v2 } from './fixtures.js';
 
-// ?physics=v2 on the desktop: the fixed-step sim drives, steers, jumps,
-// drifts and resets the local car (docs/phase-1a-design.md, 14.8).
+// The v2 physics (the default, no URL parameter) on the desktop: the
+// fixed-step sim drives, steers, jumps, drifts and resets the local car
+// (docs/phase-1a-design.md, 14.8).
 
 test('the v2 physics drives, steers, jumps, drifts and resets', async ({ openPlayer }) => {
     const player = await openPlayer('desktop-v2');
     const { page } = player;
-    await joinGame(player, 'E2E V2', '&physics=v2');
+    await joinGame(player, 'E2E V2');
 
     expect((await snapshot(page)).physics).toBe('v2');
     const initial = await v2(page);

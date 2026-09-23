@@ -3,11 +3,12 @@ import { test, expect, joinGame, snapshot, distance, placeOnClearRunway } from '
 // Two software-rendered games at once; a smaller window keeps them fluid.
 test.use({ viewport: { width: 800, height: 500 } });
 
-test('two players see each other and position updates arrive', async ({ openPlayer }) => {
+test('two legacy players see each other and position updates arrive', async ({ openPlayer }) => {
     const alice = await openPlayer('alice');
     const bob = await openPlayer('bob');
-    const aliceId = await joinGame(alice, 'E2E Alice');
-    const bobId = await joinGame(bob, 'E2E Bob');
+    // The old physics (?physics=legacy); two v2 players: v2-multiplayer.spec.ts
+    const aliceId = await joinGame(alice, 'E2E Alice', '&physics=legacy');
+    const bobId = await joinGame(bob, 'E2E Bob', '&physics=legacy');
 
     // Both scoreboards list both drivers.
     for (const [viewer, me, other] of [[alice, 'E2E Alice', 'E2E Bob'], [bob, 'E2E Bob', 'E2E Alice']] as const) {

@@ -42,8 +42,9 @@ let perfMonitor: PerfMonitor | null = null;
 const ramCooldowns: Record<string, number> = {};
 
 function init() {
-    // Shows the v2 HUD and control hints (style.css: .v2-only, .legacy-only)
-    if (PHYSICS_V2) document.body.classList.add('physics-v2');
+    // index.html starts with body.physics-v2 (v2 HUD and control hints,
+    // style.css: .v2-only, .legacy-only); ?physics=legacy swaps them back
+    document.body.classList.toggle('physics-v2', PHYSICS_V2);
 
     // Scene
     state.scene = new THREE.Scene();

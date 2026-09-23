@@ -41,7 +41,26 @@ test('?debug=perf shows the overlay and records frame and bandwidth stats', asyn
     // Driving sends position updates
     expect(recording.ws.messagesOut).toBeGreaterThan(0);
     expect(recording.ws.bytesOut).toBeGreaterThan(0);
-    // The legacy physics has no sim ticks to count
+    // The v2 physics (the default) counts the sim ticks of the own car
+    expect(recording.sim).not.toBeNull();
+    expect(recording.sim!.ticks).toBeGreaterThan(0);
+    expect(recording.sim!.cars.max).toBe(1);
+    await expect(overlay).toContainText(/sim\s+\d+\.\d+ ms\s+1 cars/);
+});
+
+test('?debug=perf has no sim line with the legacy physics', async ({ openPlayer }) => {
+    const player = await openPlayer('perf-legacy');
+    const { page } = player;
+    await joinGame(player, 'E2E Perf Legacy', '&debug=perf&physics=legacy');
+
+    const overlay = page.locator('#perf-overlay');
+    await expect(overlay).toContainText(/FPS\s+\d/);
+    await page.evaluate(() => (window as unknown as { __bulliPerf: PerfHook }).__bulliPerf.startRecording());
+    const startFrame = (await snapshot(page)).render.frame;
+    await expect.poll(async () => (await snapshot(page)).render.frame).toBeGreaterThan(startFrame + 5);
+    const recording = await page.evaluate(() =>
+        (window as unknown as { __bulliPerf: PerfHook }).__bulliPerf.stopRecording()) as PerfRecording;
+    expect(recording.frames).toBeGreaterThan(3);
     expect(recording.sim).toBeNull();
     await expect(overlay).not.toContainText('sim');
 });

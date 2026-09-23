@@ -298,7 +298,7 @@ export function updateSpeedometer() {
     speedoCtx.stroke();
 }
 
-// ?physics=v2: boost meter (bar on desktop and phones, ring around the
+// v2 physics: boost meter (bar on desktop and phones, ring around the
 // touch BOOST button) and the drift light
 let driveMeter: HTMLElement | null = null;
 let boostFill: HTMLElement | null = null;

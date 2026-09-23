@@ -1,9 +1,10 @@
 import type { Page } from '@playwright/test';
 import { test, expect, joinGame, snapshot, distance, placeOnClearRunway, v2 } from './fixtures.js';
 
-// Two ?physics=v2 players: each sees the other, and a bump pushes the car
-// that is hit. In 1a the remote car is a kinematic proxy in each client's
-// own sim, so each side only pushes its own car (docs/phase-1a-design.md, 8.5).
+// Two v2 players (the default physics): each sees the other, and a bump
+// pushes the car that is hit. In 1a the remote car is a kinematic proxy in
+// each client's own sim, so each side only pushes its own car
+// (docs/phase-1a-design.md, 8.5).
 
 test.use({ viewport: { width: 800, height: 500 } });
 
@@ -16,8 +17,8 @@ async function place(page: Page, x: number, z: number) {
 test('two v2 players see each other and bump into each other', async ({ openPlayer }) => {
     const alice = await openPlayer('alice-v2');
     const bob = await openPlayer('bob-v2');
-    const aliceId = await joinGame(alice, 'E2E Alice V2', '&physics=v2');
-    const bobId = await joinGame(bob, 'E2E Bob V2', '&physics=v2');
+    const aliceId = await joinGame(alice, 'E2E Alice V2');
+    const bobId = await joinGame(bob, 'E2E Bob V2');
 
     await expect.poll(async () => (await snapshot(bob.page)).remotes[aliceId]?.name).toBe('E2E Alice V2');
     await expect.poll(async () => (await snapshot(alice.page)).remotes[bobId]?.name).toBe('E2E Bob V2');

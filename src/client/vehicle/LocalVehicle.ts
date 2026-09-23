@@ -15,7 +15,7 @@ import { collectRemoteProxies } from './remoteProxies.js';
 // The local car on the v2 physics (docs/phase-1a-design.md, 12.2/12.3): the
 // sim car, the fixed-step loop, the prev/curr pair for the render
 // interpolation and the pose, springs and legacy adapter fields written
-// onto the Bulli model. Only exists with ?physics=v2.
+// onto the Bulli model. Not created with ?physics=legacy.
 
 const TWO_PI = Math.PI * 2;
 const POWERUP_KEYS = ['speed', 'size', 'jump', 'shield', 'magnet', 'ghost'] as const;

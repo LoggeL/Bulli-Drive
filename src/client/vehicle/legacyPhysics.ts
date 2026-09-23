@@ -8,8 +8,9 @@ import { MEGA_SCALE, SPEED_BOOST_FACTOR } from '../../shared/constants.js';
 import type { Bulli } from '../entities/Bulli.js';
 
 // The frame-based driving physics the game shipped with, moved out of
-// entities/Bulli.ts unchanged. It runs whenever the page is opened without
-// ?physics=v2 and goes away once the v2 physics has won the blind test.
+// entities/Bulli.ts unchanged. Since the v2 physics went live it only runs
+// with ?physics=legacy (escape hatch) and is deleted once v2 has run for a
+// few days without problems.
 
 // Reusable vectors to avoid per-frame allocations
 const _scaleBig = new THREE.Vector3(MEGA_SCALE, MEGA_SCALE, MEGA_SCALE);

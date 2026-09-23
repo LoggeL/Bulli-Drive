@@ -1,7 +1,8 @@
 import type { CDPSession, Page } from '@playwright/test';
 import { test, expect, joinGame, snapshot, distance, placeOnClearRunway, v2 } from './fixtures.js';
 
-// Runs in the "mobile" project: iPhone 13 with touch, ?physics=v2. Auto-gas
+// Runs in the "mobile" project: iPhone 13 with touch, v2 physics (the
+// default). Auto-gas
 // drives, the stick steers, DRIFT holds the handbrake and the flip button
 // jumps on a tap and resets when held (docs/phase-1a-design.md, 11.2/14.8).
 
@@ -14,10 +15,21 @@ async function touch(cdp: CDPSession, type: 'touchStart' | 'touchMove' | 'touchE
     await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points });
 }
 
+test('the splash shows the touch controls instead of the keys', async ({ openPlayer }) => {
+    const { page } = await openPlayer('phone-splash');
+    await page.goto('/?e2e=1');
+    await expect(page.locator('#loading-screen')).toHaveCount(0, { timeout: 60_000 });
+    await expect(page.locator('#splash-screen')).toBeVisible();
+    const touch = page.locator('.preview-touch');
+    await expect(touch).toBeVisible();
+    for (const label of ['STICK', 'AUTO', 'DRIFT', 'BOOST']) await expect(touch).toContainText(label);
+    await expect(page.locator('.preview-keyboard')).toBeHidden();
+});
+
 test('v2 touch controls: auto-gas, steering, drift, jump and reset', async ({ openPlayer }) => {
     const player = await openPlayer('phone-v2');
     const { page } = player;
-    await joinGame(player, 'E2E Phone V2', '&physics=v2');
+    await joinGame(player, 'E2E Phone V2');
 
     const initial = await v2(page);
     expect(initial.profile).toBe('touch');
@@ -122,7 +134,7 @@ const VIEWPORTS = [
 test('v2 touch HUD: nothing overlaps on narrow phones and in landscape, prompt included', async ({ openPlayer }) => {
     const player = await openPlayer('phone-v2-layout');
     const { page } = player;
-    await joinGame(player, 'E2E Phone Layout', '&physics=v2');
+    await joinGame(player, 'E2E Phone Layout');
     await page.evaluate(() => {
         const prompt = document.getElementById('interaction-prompt')!;
         prompt.textContent = 'HOLD JUMP TO RESET';

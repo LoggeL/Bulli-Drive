@@ -51,7 +51,7 @@ export class Bulli {
     health: number = 100;
     // State of the legacy physics (vehicle/legacyPhysics.ts)
     readonly legacy: LegacyPhysicsState = createLegacyPhysicsState();
-    // The v2 sim car; only the local car with ?physics=v2 gets one
+    // The v2 sim car; only the local car gets one (none with ?physics=legacy)
     vehicle?: LocalVehicle;
     shieldMesh?: THREE.Mesh;
     wheels: THREE.Group[];

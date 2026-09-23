@@ -5,7 +5,7 @@
 //   npm run perf:baseline                       # build, 2 clients, 20 s
 //   npm run perf:baseline -- --duration=30 --clients=3 --device=mobile --out=perf.json
 //   npm run perf:baseline -- --gl=gpu           # use the machine's GPU instead
-//   npm run perf:baseline -- --physics=v2       # the v2 driving sim (?physics=v2)
+//   npm run perf:baseline -- --physics=legacy   # the old driving physics (?physics=legacy)
 //   npm run perf:baseline -- --sandbox          # v2 in the offline sandbox with its 5 dummy cars
 //
 // By default headless Chromium renders with SwiftShader (CPU), so FPS and
@@ -13,7 +13,7 @@
 // counters do not depend on the GPU. The client sends at most one position
 // update per frame, so the upload rate is only representative when the
 // clients reach at least 20 FPS (check "fps"; --gl=gpu usually does).
-// With the v2 physics each client also reports "sim": the CPU time of the
+// With the v2 physics (the default) each client also reports "sim": the CPU time of the
 // sim ticks per frame and per tick and how many cars stepWorld ran. In the
 // sandbox every client drives its own offline pad (no server traffic).
 
@@ -39,7 +39,7 @@ interface Options {
 function parseArgs(argv: string[]): Options {
     const options: Options = {
         durationS: 20, warmupS: 5, clients: 2, device: 'desktop', gl: 'swiftshader',
-        physics: 'legacy', sandbox: false, port: 8798, out: null
+        physics: 'v2', sandbox: false, port: 8798, out: null
     };
     for (const arg of argv) {
         const [key, value = ''] = arg.replace(/^--/, '').split('=');
@@ -137,7 +137,7 @@ function contextOptions(device: Options['device'], baseURL: string): BrowserCont
 
 function pagePath(options: Options): string {
     if (options.sandbox) return '/?e2e=1&debug=perf&sandbox=1';
-    return options.physics === 'v2' ? '/?e2e=1&debug=perf&physics=v2' : '/?e2e=1&debug=perf';
+    return options.physics === 'legacy' ? '/?e2e=1&debug=perf&physics=legacy' : '/?e2e=1&debug=perf';
 }
 
 async function joinClient(browser: Browser, options: Options, baseURL: string, index: number): Promise<Page> {

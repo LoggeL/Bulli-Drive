@@ -2410,13 +2410,30 @@ canvas {
 }
 
 /* ==========================================================================
-   PHYSICS V2 (?physics=v2): drive HUD and touch buttons
+   PHYSICS V2 (default; ?physics=legacy switches back): drive HUD and touch
+   buttons
    ========================================================================== */
 
-/* Elements for one physics only; body.physics-v2 is set by main.ts */
+/* Elements for one physics only; index.html starts with body.physics-v2 and
+   main.ts removes it for ?physics=legacy */
 body:not(.physics-v2) .v2-only,
 body.physics-v2 .legacy-only {
     display: none !important;
+}
+
+/* Splash: touch controls instead of the keys on phones */
+.preview-touch {
+    display: none;
+}
+
+@media (pointer: coarse) {
+    body.physics-v2 .preview-keyboard {
+        display: none;
+    }
+
+    body.physics-v2 .preview-touch {
+        display: flex;
+    }
 }
 
 /* Seven hints instead of four: as wide as its content */

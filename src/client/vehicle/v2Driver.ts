@@ -11,7 +11,7 @@ import { showInteractionPrompt } from '../ui/hud.js';
 import { LocalVehicle } from './LocalVehicle.js';
 import { simWorldFor } from './simWorldClient.js';
 
-// The frame of the local car with ?physics=v2 (docs/phase-1a-design.md,
+// The frame of the local car on the v2 physics (docs/phase-1a-design.md,
 // 12.3): gamepad poll, fixed-step ticks, pose, sounds and particles from
 // the sim events, then the unchanged position update to the server.
 

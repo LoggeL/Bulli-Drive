@@ -83,7 +83,7 @@ export function snapshot(page: Page): Promise<BulliDebugSnapshot> {
 export async function v2(page: Page): Promise<V2Snapshot> {
     let state = await snapshot(page);
     if (!state.v2) {
-        expect(state.physics, 'the page runs the legacy physics (no ?physics=v2)').toBe('v2');
+        expect(state.physics, 'the page runs the legacy physics (?physics=legacy)').toBe('v2');
         await expect.poll(async () => (state = await snapshot(page)).v2).not.toBeNull();
     }
     return state.v2!;
