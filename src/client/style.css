@@ -1705,7 +1705,9 @@ canvas {
     position: fixed;
     left: max(2rem, env(safe-area-inset-left, 0px));
     bottom: max(2rem, env(safe-area-inset-bottom, 0px));
-    width: clamp(410px, 32vw, 500px);
+    /* Seven hints: as wide as its content */
+    width: max-content;
+    max-width: calc(100vw - 14rem);
     padding: 0.75rem 1rem;
     background: linear-gradient(145deg, rgba(31, 49, 42, 0.83), rgba(24, 32, 30, 0.72));
     border: 1px solid rgba(243, 210, 142, 0.55);
@@ -1726,20 +1728,12 @@ canvas {
 .hint-row {
     position: relative;
     min-height: 62px;
-    padding: 0 1rem;
+    padding: 0 0.6rem;
     flex: 1 1 0;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 0.55rem;
-}
-
-.hint-row:first-child {
-    padding-left: 0.25rem;
-}
-
-.hint-row:last-child {
-    padding-right: 0.25rem;
 }
 
 .hint-row + .hint-row {
@@ -2410,8 +2404,7 @@ canvas {
 }
 
 /* ==========================================================================
-   DRIVE HUD AND TOUCH BUTTONS (body.physics-v2 is static in index.html and
-   only keeps the specificity of these rules)
+   DRIVE HUD AND TOUCH BUTTONS
    ========================================================================== */
 
 /* Splash: touch controls instead of the keys on phones */
@@ -2420,23 +2413,13 @@ canvas {
 }
 
 @media (pointer: coarse) {
-    body.physics-v2 .preview-keyboard {
+    .preview-keyboard {
         display: none;
     }
 
-    body.physics-v2 .preview-touch {
+    .preview-touch {
         display: flex;
     }
-}
-
-/* Seven hints instead of four: as wide as its content */
-body.physics-v2 .controls-hint {
-    width: max-content;
-    max-width: calc(100vw - 14rem);
-}
-
-body.physics-v2 .hint-row {
-    padding: 0 0.6rem;
 }
 
 .hint-text {
@@ -2661,12 +2644,12 @@ body.physics-v2 .hint-row {
 /* 320 px phones: a smaller stick and DRIFT, so DRIFT stays clear of the
    stick, and a narrower meter clear of the minimap */
 @media (max-width: 340px) and (orientation: portrait) {
-    body.physics-v2 .joystick-base {
+    .joystick-base {
         width: 104px;
         height: 104px;
     }
 
-    body.physics-v2 .joystick-stick {
+    .joystick-stick {
         width: 46px;
         height: 46px;
     }
@@ -2694,9 +2677,10 @@ body.physics-v2 .hint-row {
 
 /* Touch: the reset and powerup prompt moves above the drive buttons, which
    stand where it was at the bottom centre. On one line: it shows exactly
-   when the player is stuck ("HOLD JUMP TO RESET") */
+   when the player is stuck ("HOLD JUMP TO RESET"). The body prefix puts
+   these above the base and touch rules of #interaction-prompt */
 @media (max-width: 768px), (pointer: coarse) {
-    body.physics-v2 #interaction-prompt {
+    body #interaction-prompt {
         bottom: calc(max(1.1rem, env(safe-area-inset-bottom, 0px)) + 236px);
         max-width: calc(100vw - 2rem);
         white-space: nowrap;
@@ -2707,7 +2691,7 @@ body.physics-v2 .hint-row {
    the prompt stays at the bottom, between the stick (108 px) and DRIFT,
    and wraps where that gap is narrow */
 @media (max-width: 900px) and (orientation: landscape) {
-    body.physics-v2 #interaction-prompt {
+    body #interaction-prompt {
         left: auto;
         right: calc(max(0.75rem, env(safe-area-inset-right, 0px)) + 248px);
         bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
@@ -2717,13 +2701,13 @@ body.physics-v2 .hint-row {
         text-align: center;
     }
 
-    body.physics-v2 #interaction-prompt.hidden {
+    body #interaction-prompt.hidden {
         transform: translateY(80px);
     }
 }
 
 @media (max-width: 600px) and (orientation: portrait) {
-    body.physics-v2 #interaction-prompt {
+    body #interaction-prompt {
         bottom: calc(max(1.1rem, env(safe-area-inset-bottom, 0px)) + 222px);
     }
 }

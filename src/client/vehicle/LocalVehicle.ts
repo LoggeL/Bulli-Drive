@@ -1,8 +1,7 @@
 import * as THREE from 'three';
-import { MEGA_SCALE } from '../../shared/constants.js';
 import { DT, SIM_TUNING } from '../../shared/sim/constants.js';
 import { copyVehicleState, createVehicleState, type AssistProfile, type CarClassId, type SimCar, type VehicleState } from '../../shared/sim/types.js';
-import { createSimCar, placeVehicle, resetVehicle } from '../../shared/sim/vehicle.js';
+import { createSimCar, placeVehicle } from '../../shared/sim/vehicle.js';
 import { isCarClassId } from '../../shared/sim/vehicleClasses.js';
 import { stepWorld } from '../../shared/sim/world.js';
 import type { SimWorld } from '../../shared/world/colliders.js';
@@ -155,18 +154,6 @@ export class LocalVehicle {
         placeVehicle(this.car.state, this.world, x, z, yaw);
         this.car.state.flipAngle = 0;
         this.syncPrev();
-    }
-
-    // Server respawn (Party mode): full reset at the new spot
-    respawn(x: number, z: number): void {
-        const s = this.car.state;
-        s.x = x;
-        s.z = z;
-        s.scale = 1;
-        s.boostMeter = 0;
-        resetVehicle(s, this.car.params, this.world);
-        this.syncPrev();
-        this.loop.reset();
     }
 
     private syncPrev(): void {
@@ -410,16 +397,5 @@ export class LocalVehicle {
         host.angle = pose.yaw;
         host.isFlipping = curr.flipAngle > 0;
         host.canRecover = this.resetHint;
-    }
-
-    // Anything left for the server to see move
-    get moving(): boolean {
-        const s = this.car.state;
-        return Math.hypot(s.vx, s.vz) > 0.01
-            || Math.abs(s.yawRate) > 0.001
-            || !s.grounded
-            || s.flipAngle > 0
-            || this.visualFlip > 0
-            || Math.abs(s.scale - (this.car.mods.mega ? MEGA_SCALE : 1)) > 0.001;
     }
 }

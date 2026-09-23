@@ -140,7 +140,7 @@ export interface SimWorld {
     grid: SpatialGrid;
     ramps: RampDef[];
     roads: RoadGrid | null;      // reset target, null = reset in place
-    bound: number;               // terrain.size/2 - 2 = 498 (as the legacy clamp)
+    bound: number;               // terrain.size/2 - 2 = 498 (the old client clamp)
     groundHeight(x: number, z: number): number;   // max(getTerrainHeight, ramps)
     terrainHeight(x: number, z: number): number;  // getTerrainHeight alone
     // Index of the ramp whose surface is the ground at (x, z), -1 = terrain

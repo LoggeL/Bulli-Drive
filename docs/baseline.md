@@ -15,8 +15,7 @@ npm run perf:baseline                                   # Build, 2 Clients, Swif
 npm run perf:baseline -- --gl=gpu                       # lokale GPU statt SwiftShader
 npm run perf:baseline -- --gl=gpu --device=mobile       # iPhone-13-Viewport (390×844, DPR 3)
 npm run perf:baseline -- --clients=4 --duration=60 --out=perf.json
-npm run perf:baseline -- --gl=gpu --physics=v2          # v2-Fahrphysik (?physics=v2), ab Phase 1a
-npm run perf:baseline -- --gl=gpu --sandbox --clients=1 # v2 in der Offline-Sandbox mit 5 Dummy-Autos
+npm run perf:baseline -- --gl=gpu --sandbox --clients=1 # Offline-Sandbox mit 5 Dummy-Autos
 ```
 
 Das Skript (`scripts/perf-baseline.ts`) startet den Produktions-Server, lässt die Clients über den echten Beitritt (`/?e2e=1&debug=perf`) ins Spiel gehen und fährt dann mit allen gleichzeitig: W gehalten, abwechselnd kurz links und rechts lenken. Bleibt ein Auto an einer Wand hängen, setzt es mit Lenkeinschlag zurück. Aufgezeichnet wird über `window.__bulliPerf`, die Ausgabe ist JSON auf stdout.
@@ -99,6 +98,8 @@ In diesem Lauf sind beide Autos früh aus der Stadt gefahren, deshalb die niedri
 
 **Stand:** 2026-09-23 · **Commit:** `b899167` (Branch `refactor/phase-1a-driving`) · Rohdaten: `docs/baseline/2026-09-23-1a-*.json` · Setup wie oben, 5 s Warm-up + 15 s Messung.
 
+Die Befehle sind der Stand von damals. Seit Phase 1b gibt es nur noch die v2-Physik: `--physics=` und `?physics=` sind entfernt, ein Lauf ohne `--sandbox` misst die v2-Physik mit Server-Sim ([phase-1b-design.md](phase-1b-design.md), Abschnitt 10). Ein Legacy-Vergleich ist nicht mehr möglich.
+
 ```bash
 npm run perf:baseline -- --gl=gpu                                 # Legacy zum Vergleich in derselben Sitzung
 npm run perf:baseline -- --gl=gpu --physics=v2                    # Stadt, 2 Clients mit v2
@@ -147,4 +148,4 @@ Die übrigen Werte der v2-Läufe (Draw Calls, Dreiecke, Speicher, Bandbreite) li
 - **Referenz-Handy:** noch nicht festgelegt (siehe Plan, Phase 0). Messung dort: Spiel mit `?debug=perf` öffnen, eine Minute durch die Stadt fahren, die Overlay-Werte (FPS, Frame-Time, CPU, Draw Calls, Pixel-Ratio) hier ergänzen.
 - **Desktop mit echter GPU im normalen Browserfenster**, ebenfalls über das Overlay.
 - **Reproduzierbarer Blickpunkt:** Wegen des zufälligen Spawns streuen die Draw Calls stark. Für genaue Vorher/Nachher-Vergleiche beim Rendering braucht es eine feste Kamerafahrt. Die Sandbox aus Phase 1a (`--sandbox`) hat einen festen Start, zeigt aber nicht die Stadt.
-- **Sim-Kosten auf dem Referenz-Handy:** `?physics=v2&debug=perf` bzw. `?sandbox=1&debug=perf` öffnen und die Zeile `sim` im Overlay ablesen.
+- **Sim-Kosten auf dem Referenz-Handy:** `?debug=perf` bzw. `?sandbox=1&debug=perf` öffnen und die Zeile `sim` im Overlay ablesen.

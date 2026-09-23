@@ -4,7 +4,7 @@
 
 Die neue Fahrphysik v2 ist live und ohne URL-Parameter Standard. Auf Wunsch des Nutzers gehen neue Features direkt live, deshalb ist der Blindtest kein Gate mehr. Die alte Physik (`?physics=legacy`) ist mit Phase 1b gelöscht (Server-Sim, [phase-1b-design.md](phase-1b-design.md) Abschnitt 10); der Vergleich unten ist damit nur noch historisch.
 
-Der Vergleich unten ist freiwillig. Er hilft beim Tuning und zeigt, ob v2 irgendwo schlechter ist als die alte Physik. Die Anleitung für einen blinden Vergleich bleibt stehen, falls er sich lohnt. Läuft v2 einige Tage ohne Probleme, wird die Legacy-Physik gelöscht (Abschnitt 6).
+Die Anleitung unten ist historisch: Einen Vergleich mit der alten Physik gibt es nicht mehr, `?physics=legacy` bewirkt nichts. Die Fragebögen und Fahrstrecken bleiben als Vorlage für Playtests der v2-Physik stehen.
 
 ## 1. Vorbereitung
 
@@ -19,8 +19,8 @@ Handys im selben WLAN öffnen `http://<LAN-IP-des-Macs>:8000/…`. Zum Tunen mit
 | Zweck | URL |
 |---|---|
 | Variante „neu“ (v2, Standard) | `/` |
-| Variante „alt“ (Legacy) | `/?physics=legacy` |
-| Neu mit Tuning-Panel und Telemetrie | `/?tune=1` |
+| Variante „alt“ (Legacy) | entfällt seit Phase 1b |
+| Neu mit Tuning-Panel und Telemetrie | nur noch offline: `/?sandbox=1&tune=1` (online gilt das Standard-Tuning des Servers) |
 | Sandbox (offline, Rampen, Wand, Pfosten, 5 Dummy-Autos) | `/?sandbox=1` bzw. `/?sandbox=1&tune=1` |
 | Leistung ablesen (FPS, Draw Calls, Sim-Zeit) | zusätzlich `&debug=perf` |
 
@@ -119,4 +119,4 @@ Die zurückgemeldeten Werte werden danach fest in `SIM_TUNING` (`src/shared/sim/
 ## 6. Nach dem Vergleich
 
 - **Rückmeldungen einarbeiten:** getunte Werte übernehmen (Abschnitt 5). Zeigt der Vergleich, dass v2 irgendwo schlechter ist (Tuning, Kamera, Touch, Rempeln), wird nachgetunt; v2 bleibt dabei Standard.
-- **Legacy löschen:** Wenn v2 einige Tage ohne Probleme live läuft, fliegen `src/client/vehicle/legacyPhysics.ts`, die Legacy-Zweige in `src/client/controls/keyboard.ts`, `src/client/controls/mobile.ts`, `src/client/main.ts` und `src/client/ui/hud.ts`, die `.legacy-only`-Elemente in `index.html`, `LEGACY_CAMERA`, die Legacy-E2E-Tests und der Parameter `?physics=legacy` raus. Danach beginnt Phase 1b.
+- **Legacy löschen:** erledigt mit Phase 1b (`legacyPhysics.ts`, die Legacy-Zweige, `.legacy-only`, `LEGACY_CAMERA`, die Legacy-E2E-Tests und `?physics=legacy` sind gelöscht).

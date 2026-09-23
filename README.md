@@ -124,7 +124,7 @@ in `src/shared/sim/vehicleClasses.ts`).
 index.html            Vite entry (HUD markup, loading and splash screens)
 src/client/           Browser game (three.js)
   main.ts             Bootstrap, render loop, chase camera
-  entities/Bulli.ts   Cars: models, local driving physics, nametags
+  entities/Bulli.ts   Cars: model, powerup looks, shooting, nametags
   world/              City, terrain, coins, powerups, projectiles
   network/            WebSocket, handshake, room state and events
   net/                The own car's prediction (NetDriver) and the remote cars
@@ -141,7 +141,8 @@ src/shared/           Code for both sides: protocol schemas (valibot), constants
                       seeded RNG, city/world generation, terrain height, the v2
                       driving sim (sim/) and its collision world and sandbox
                       layout (world/), the netcode (net/: binary codec, clock,
-                      lead control, prediction, interpolation) and the Party
+                      lead control, prediction with the contact set, render
+                      offsets, interpolation) and the Party
                       rules in ticks (party/)
 tests/                Vitest (shared/, server/, client/) and Playwright (e2e/)
 scripts/              perf-baseline.ts

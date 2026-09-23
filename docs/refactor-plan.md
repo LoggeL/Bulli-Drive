@@ -1,6 +1,6 @@
 # Plan: Bulli Drive als Open-World-Multiplayer-Rennspiel
 
-**Stand:** 2026-09-23 · **Aktuelle Phase:** Phase 1a – live: v2 ist auf Wunsch des Nutzers ohne URL-Parameter Standard, `?physics=legacy` bleibt vorerst als Notausgang. Der Blindtest entfällt als Gate ([Vergleich mit Legacy](phase-1a-playtest.md) freiwillig); die Legacy-Physik wird gelöscht, wenn v2 einige Tage ohne Probleme läuft. Phase 0 ist gemergt (PR #7, CI grün); offen ist dort nur noch die Messung auf echten Geräten (Referenz-Handy, Desktop im Browserfenster).
+**Stand:** 2026-09-23 · **Aktuelle Phase:** Phase 1b in Arbeit (Branch `net/phase-1b`, Spezifikation und Stand: [`phase-1b-design.md`](phase-1b-design.md)): Server-Sim, Protokoll v2 und Client-Prediction stehen, die Legacy-Physik und `?physics=legacy` sind gelöscht. Phase 1a ist live, v2 ist die einzige Physik. Phase 0 ist gemergt (PR #7, CI grün); offen ist dort nur noch die Messung auf echten Geräten (Referenz-Handy, Desktop im Browserfenster).
 
 ## 0. Entscheidungen (2026-09-23)
 
@@ -120,7 +120,7 @@ Die Dauer ist in Wochen fokussierter Arbeit angegeben, im Kalender wird es läng
 - Kampf, Coins, Powerups und Sprung bleiben in Phase 0 unverändert im Spiel.
 - **Exit:** Das Spiel verhält sich auf Desktop und Mobile identisch zu `1d39c07` (bis auf den Tacho), der Stale-Client-Reload funktioniert, und die CI ist grün.
 
-**Phase 1a – Fahrgefühl und Kontakt (3–4 Wochen) · Status: live, v2 ist Standard; Legacy (`?physics=legacy`) wird nach einigen Tagen ohne Probleme gelöscht**
+**Phase 1a – Fahrgefühl und Kontakt (3–4 Wochen) · Status: live, v2 ist Standard; Legacy (`?physics=legacy`) ist mit Phase 1b gelöscht**
 
 Verbindliche Spezifikation, Abweichungen und Messwerte: [`phase-1a-design.md`](phase-1a-design.md). Playtest und Vergleich mit Legacy: [`phase-1a-playtest.md`](phase-1a-playtest.md). Entwickelt hinter `?physics=v2`; seit dem Livegang (Nutzerwunsch: neue Features direkt live, nicht hinter Flags) ist v2 Standard und `?physics=legacy` der Notausgang (Spezifikation, Abschnitt 25). Das Protokoll ist unverändert, Multiplayer funktioniert in beiden Modi, auch gemischt.
 
@@ -144,9 +144,9 @@ Verbindliche Spezifikation, Abweichungen und Messwerte: [`phase-1a-design.md`](p
   - [x] Tunneling-Test grün, auch Auto gegen Auto frontal mit 2 × 85 m/s und T-Bone mit 85 m/s; seit dem Review mit Sweep der Startphase, sodass er mit nur einem Substep anschlägt
   - [x] Golden-Tests für 19 Szenarien (darunter frontal, T-Bone, PIT, drei Autos, Mega gegen Käfer, Boost, Sprung und Reset, Touch-Profil, Proxy-Rempler, Bremsen in den Rückwärtsgang je Klasse) plus die ausgelieferte Abstimmung als Golden in Node und im Browser mit derselben Toleranz (1e-9 relativ, Zähler exakt; plattformrobust, siehe phase-1a-design.md 24.2)
   - [x] v2 ist Standard (ohne URL-Parameter), `?physics=legacy` schaltet die alte Physik ein; E2E prüft beides (`physics-default.spec.ts`)
-  - [ ] **Legacy-Physik löschen** (Aufräumpunkt) — wenn v2 einige Tage ohne Probleme live läuft: `vehicle/legacyPhysics.ts`, die Legacy-Zweige in `controls/keyboard.ts`, `controls/mobile.ts`, `main.ts` und `ui/hud.ts`, die `.legacy-only`-Elemente in `index.html`, `LEGACY_CAMERA`, die Legacy-E2E-Tests und `?physics=legacy`
+  - [x] **Legacy-Physik löschen** — mit Phase 1b (Server-Sim, [`phase-1b-design.md`](phase-1b-design.md) Abschnitt 10 und 20.2): `vehicle/legacyPhysics.ts`, die Legacy-Zweige in `controls/keyboard.ts`, `controls/mobile.ts`, `main.ts` und `ui/hud.ts`, die `.legacy-only`-Elemente und die Klasse `physics-v2` in `index.html`, `LEGACY_CAMERA`, die Legacy-E2E-Tests und `?physics=legacy`
 - **Review nach 1a:** 21 bestätigte Befunde (Sim, Netcode-Tauglichkeit, Mobile, Tests) behoben bzw. für 1b festgehalten, siehe [`phase-1a-design.md`](phase-1a-design.md), Abschnitt 23.
-- **Außerdem noch offen:** E2E-Test für eine gemischte Session aus v2- und Legacy-Client (funktioniert per Konstruktion, weil das Protokoll unverändert ist; drei Software-WebGL-Seiten gleichzeitig sind in der CI zu langsam), Messung der Sim-Kosten und Feinschliff von Renn-Kamera und Touch auf dem Referenz-Handy.
+- **Außerdem noch offen:** Messung der Sim-Kosten und Feinschliff von Renn-Kamera und Touch auf dem Referenz-Handy. (Der E2E-Test für eine gemischte Session aus v2- und Legacy-Client entfällt mit dem Löschen der Legacy-Physik.)
 
 **Phase 1b – Server-autoritativer Netz-Kern (3–4 Wochen)**
 - **Deliverables:**
