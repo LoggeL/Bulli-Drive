@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { state } from '../state.js';
 import { TreeData } from '../types.js';
 import { CITY_LAYOUT } from '../../shared/constants.js';
+import { mulberry32 } from '../../shared/math/rng.js';
 import { createTerrainMaterial } from '../effects/worldShaders.js';
 
 const CITY_GRID_HALF_SPAN = CITY_LAYOUT.gridSize * (CITY_LAYOUT.blockSize + CITY_LAYOUT.roadWidth) / 2;
@@ -13,17 +14,6 @@ const CITY_CLEARANCE = CITY_LAYOUT.roadWidth / 2;
 const CITY_FLAT_RADIUS = Math.SQRT2 * (CITY_HALF_EXTENT + CITY_CLEARANCE);
 const CITY_SCENERY_HALF_EXTENT = CITY_HALF_EXTENT + CITY_CLEARANCE;
 const SCENERY_SEED = 0x42554c4c; // "BULL"
-
-function createSeededRandom(seed: number): () => number {
-    let value = seed >>> 0;
-    return () => {
-        value = (value + 0x6D2B79F5) >>> 0;
-        let mixed = value;
-        mixed = Math.imul(mixed ^ (mixed >>> 15), mixed | 1);
-        mixed ^= mixed + Math.imul(mixed ^ (mixed >>> 7), mixed | 61);
-        return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
-    };
-}
 
 function isInsideCitySceneryExclusion(x: number, z: number): boolean {
     return Math.abs(x - CITY_CENTER) < CITY_SCENERY_HALF_EXTENT &&
@@ -63,7 +53,7 @@ export function createEnvironment(treeData: TreeData[]) {
     const { size, segments } = state.terrainConfig;
     // Reset on every environment build so every client and reconnect produces
     // exactly the same procedural scenery.
-    const sceneryRandom = createSeededRandom(SCENERY_SEED);
+    const sceneryRandom = mulberry32(SCENERY_SEED);
 
     // Ground Plane
     const geometry = new THREE.PlaneGeometry(size, size, segments, segments);

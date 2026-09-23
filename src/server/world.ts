@@ -1,5 +1,6 @@
 import { Powerup, Tree, Coin, CityData } from './types.js';
 import { POWERUP_TYPES, CITY_LAYOUT } from '../shared/constants.js';
+import { mulberry32, type RandomSource } from '../shared/math/rng.js';
 
 export const powerups: Powerup[] = [];
 export const powerupsById = new Map<number, Powerup>();
@@ -8,22 +9,9 @@ export const coins: Coin[] = [];
 export const coinsById = new Map<number, Coin>();
 export const cityData: CityData = { buildings: [], roads: [] };
 
-type RandomSource = () => number;
-
 // Re-created for every initWorld call so a restart or regeneration produces
 // exactly the same authoritative world payload.
 const WORLD_SEED = 0xB0111D;
-
-function createSeededRandom(seed: number): RandomSource {
-    let state = seed >>> 0;
-    return () => {
-        state = (state + 0x6D2B79F5) >>> 0;
-        let value = state;
-        value = Math.imul(value ^ (value >>> 15), value | 1);
-        value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
-        return ((value ^ (value >>> 14)) >>> 0) / 0x100000000;
-    };
-}
 
 // City configuration (grid dimensions are shared with the client)
 const CITY_CONFIG = {
@@ -185,7 +173,7 @@ export function initWorld() {
     cityData.buildings.length = 0;
     cityData.roads.length = 0;
 
-    const random = createSeededRandom(WORLD_SEED);
+    const random = mulberry32(WORLD_SEED);
     generateCity(random);
 
     // Init Powerups: keep them within reach of the action - on city roads or in
