@@ -136,14 +136,15 @@ Verbindliche Spezifikation, Abweichungen und Messwerte: [`phase-1a-design.md`](p
   - [x] Sandbox-Strecke mit **Rampen**, Kurven, Wand und **Dummy-Autos zum Rempeln** sowie ein lil-gui-Tuning-Panel — `?sandbox=1` (offline) und `?tune=1`, Export der Werte als JSON
   - [x] Niedrigere Renn-Kamera
   - [x] Reset statt der toten Recovery-Logik — R halten bzw. Flip-Button halten setzt auf die nächste Straße
-  - [x] Messung der Sim-Kosten: `npm run perf:baseline -- --physics=v2` bzw. `--sandbox`, höchstens 0,09 ms pro Frame auch mit 6 Autos ([`baseline.md`](baseline.md), Abschnitt Phase 1a)
+  - [x] Messung der Sim-Kosten: `npm run perf:baseline -- --physics=v2` bzw. `--sandbox`, im Mittel höchstens 0,09 ms pro Frame auch mit 6 Autos, p95 0,2 ms, einzelne Frames bis 0,4 ms ([`baseline.md`](baseline.md), Abschnitt Phase 1a)
 - **Exit:** Mindestens 4 von 5 Testern ziehen das neue Fahren im Blindtest vor, auch auf dem Handy. Die Trajektorie ist bei 30, 60 und 144 FPS identisch. Der Tunneling-Test ist grün, auch für Auto gegen Auto bei Frontalzusammenstoß mit Topspeed. Ein Golden-Test für Kontaktszenarien (frontal, seitlich, Heck, drei Autos) läuft in Node und im Browser mit Toleranz gleich. Die Legacy-Physik ist gelöscht.
 - **Stand des Exits:**
   - [ ] **Blindtest durch den Nutzer** (4 von 5, auch auf dem Handy) — offen, Anleitung in [`phase-1a-playtest.md`](phase-1a-playtest.md); getunte Werte kommen als JSON aus dem Panel zurück
-  - [x] Trajektorie bei 30, 60 und 144 FPS identisch — bitgleich pro Tick, auch bei unregelmäßigen Frames: `tests/client/loop.test.ts` (Loop und Sim) und `tests/client/fpsIndependence.test.ts` (der ganze Client-Tick mit InputManager, Powerup-Timern, Sandbox-Welt und Dummies)
-  - [x] Tunneling-Test grün, auch Auto gegen Auto frontal mit 2 × 85 m/s und T-Bone mit 85 m/s
+  - [x] Trajektorie bei 30, 60 und 144 FPS identisch — bitgleich pro Tick, auch bei unregelmäßigen Frames: `tests/client/loop.test.ts` (Loop und Sim) und `tests/client/fpsIndependence.test.ts` (der ganze Client-Tick mit InputManager, Powerup-Timern, Sandbox-Welt und Dummies, seit dem Review auch Rempeln eines fahrenden Mitspielers als Proxy)
+  - [x] Tunneling-Test grün, auch Auto gegen Auto frontal mit 2 × 85 m/s und T-Bone mit 85 m/s; seit dem Review mit Sweep der Startphase, sodass er mit nur einem Substep anschlägt
   - [x] Golden-Tests für 10 Szenarien (darunter frontal, T-Bone, PIT, drei Autos, Mega gegen Käfer) in Node exakt und im Browser auf 1 mm bzw. 1e-4 rad
   - [ ] **Legacy-Physik löschen** — erst nach dem Blindtest: `vehicle/legacyPhysics.ts`, die Legacy-Zweige in `controls/keyboard.ts`, `controls/mobile.ts` und `main.ts`, die `.legacy-only`-Elemente in `index.html`; `?physics=v2` wird Standard
+- **Review nach 1a:** 21 bestätigte Befunde (Sim, Netcode-Tauglichkeit, Mobile, Tests) behoben bzw. für 1b festgehalten, siehe [`phase-1a-design.md`](phase-1a-design.md), Abschnitt 23.
 - **Außerdem noch offen:** E2E-Test für eine gemischte Session aus v2- und Legacy-Client (funktioniert per Konstruktion, weil das Protokoll unverändert ist; drei Software-WebGL-Seiten gleichzeitig sind in der CI zu langsam), Messung der Sim-Kosten und Feinschliff von Renn-Kamera und Touch auf dem Referenz-Handy.
 
 **Phase 1b – Server-autoritativer Netz-Kern (3–4 Wochen)**

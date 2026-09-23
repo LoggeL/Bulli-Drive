@@ -400,7 +400,7 @@ für jedes nicht-kinematische car: finishTick(car, world)        // Schritte 5�
        w' = w + (Fw/m + aw_s)·DT
        loadX += ((u' − u)/DT − loadX)·(1 − e^(−DT/0,08))
        r' = r + τ/I·DT
-       k = clamp(1 − |u'|/V_LOW, 0, 1)                      // kinematische Überblendung
+       k = clamp(1 − |(u', w')|/V_LOW, 0, 1)                // kinematische Überblendung (Gesamttempo, 23.2)
        r' += (u'·tanδ/L − r')·k;  w' −= w'·k·min(1, 10·DT)
        wenn |u'| < 0,05 && th == 0 && br == 0: u' = 0; wenn |w'| < 0,05: w' = 0
        yawRate = clamp(r', ±R_MAX); (vx, vz) = f·u' + l·w'; |v_xz| ≤ V_SAFE
@@ -424,9 +424,10 @@ In `stepWorld`, 3 feste Substeps (6.3). Die Anzahl hängt weder vom Tempo noch v
 
 ```
 5  Boden und Vertikale (mit finaler xz-Position)
-   hN = ground(x, z)
+   hN = ground(x, z), bzw. Oberkante eines niedrigen Colliders, auf dem das Auto steht oder landet (23.1)
    wenn grounded:
        yBall = y + vy·DT − ½·(G_AIR + STICK)·DT²
+       von Terrain auf Terrain: vy ≤ vy des Bodens voraus + 2 m/s    // Knick im Höhenfeld ist keine Schanze (23.1)
        wenn yBall > hN + AIR_GAP:                       // Rampenkante, Kuppe
            grounded = false; airTicks = 0
            y += vy·DT − ½·G_AIR·DT²; vy −= G_AIR·DT
@@ -435,7 +436,7 @@ In `stepWorld`, 3 feste Substeps (6.3). Die Anzahl hängt weder vom Tempo noch v
    sonst:
        y += vy·DT                                         // vy wurde in Schritt 3 schon integriert
        wenn y ≤ hN:
-           ev.landedImpact = −(vy − ∇h·v_xz); y = hN; grounded = true; airTicks = 0
+           ev.landedImpact = −(vy − ∇h·v_xz); y = hN; grounded = true; airTicks = 0   // ∇h: exakte Rampensteigung bzw. nur Terrain (23.1)
            wenn landedImpact > 10: v_xz ·= 1 − 0,15·clamp((landedImpact − 10)/15, 0, 1)
            vy = 0; flipAngle = 0   // Darstellung dreht den Rest über 6 Frames zu Ende
    wenn flipAngle > 0: flipAngle += flipRate·DT; bei ≥ 2π: flipAngle = 0
@@ -493,7 +494,7 @@ export interface SimWorld {
 export function createSimWorld(terrain: TerrainConfig, colliders: ColliderInput[], ramps: RampDef[]): SimWorld;
 ```
 
-`base` berechnet `createSimWorld` aus `groundHeight` am Mittelpunkt. `top` ist die Höhe der Oberkante über `base`. Ein Collider wird übersprungen, wenn die Unterkante des Autos `y ≥ base + top` ist. Das ersetzt das heutige „airborne > 1 m ignoriert alles“ (`Bulli.ts:844`). Man kann nicht auf Collidern landen: Sinkt das Auto über einem Collider unter dessen Oberkante, schiebt die normale Auflösung es seitlich heraus.
+`base` berechnet `createSimWorld` aus `groundHeight` am Mittelpunkt. `top` ist die Höhe der Oberkante über `base`. Ein Collider wird übersprungen, wenn die Unterkante des Autos `y ≥ base + top` ist. Das ersetzt das heutige „airborne > 1 m ignoriert alles“ (`Bulli.ts:844`). Auf niedrigen Collidern (endliches `top`, keine Rampenwand) kann man landen: War die Unterkante zu Tickbeginn auf oder über der Oberkante und überlappt ein Kreis den Collider, ist dessen Oberkante der Boden. *Geändert nach dem Review (23.1);* vorher hieß es hier „man kann nicht auf Collidern landen, die Auflösung schiebt das Auto seitlich heraus“, und dieser Push-out versetzte das Auto um bis zu 8 m in einem Tick.
 
 | Collider (Quelle) | Form | top |
 |---|---|---|
@@ -513,7 +514,7 @@ export function createSimWorld(terrain: TerrainConfig, colliders: ColliderInput[
 
 - `Obstacle` in `client/types.ts` bekommt ein optionales Feld `top`. Die `push`-Stellen in `city.ts` und `environment.ts` setzen es nach der Tabelle. Legacy ignoriert das Feld (verhaltensneutral).
 - `client/vehicle/simWorldClient.ts` baut nach dem Weltaufbau (`init`) einmal `createSimWorld(state.terrainConfig, obstaclesToColliders(state.obstacles), [])`.
-- In 1b braucht der Server dieselben Collider. Die Platzierung ist schon deterministisch (cityGen, `mulberry32(SCENERY_SEED)`, `positionHash`) und wird dann nach `shared/world` verschoben, abgesichert durch einen Paritätstest gegen `window.__bulliDebug.obstacles()`. **Nicht Teil von 1a.**
+- In 1b braucht der Server dieselben Collider. Die Platzierung ist schon deterministisch (cityGen, `mulberry32(SCENERY_SEED)`, `positionHash`) und wird dann nach `shared/world` verschoben, abgesichert durch einen Paritätstest gegen `window.__bulliDebug.obstacles()`. **Nicht Teil von 1a.** Zwei Punkte dafür aus dem Review (Abschnitt 18): Die Felsen ziehen Position und Größe aus demselben Zufallsstrom wie ihre rein optischen Werte, und die Reihenfolge der Collider ist ergebnisrelevant.
 - Rampen gibt es nur in der Sandbox. Seiten und Rückseite jeder Rampe bekommen Box-Collider mit `top` = Rampenhöhe an dieser Kante, damit man nicht von hinten „hochpoppt“. Der Überflug-Test nutzt eine Höhe für das ganze Auto (Unterkante am Schwerpunkt); ein Collider direkt an der Absprungkante würde abspringende Autos streifen. **Gelöst im Sandbox-Schritt** mit `rampEdgeColliders` und einer eigenen Regel für Rampenwände (Abschnitt 21, Punkt 3). `createSimWorld` selbst legt keine Wände an; die Sandbox gibt sie als Collider mit.
 
 ### 7.3 SpatialGrid und Auflösung
@@ -522,7 +523,7 @@ export function createSimWorld(terrain: TerrainConfig, colliders: ColliderInput[
 
 **Auto-Form:** zwei Kreise mit Mitte `p ± c·f`, Radius `r` (Klasse, ×scale bei Mega). Abfrage-AABB: `p ± (c + r)·scale + 0,5`.
 
-**Tunneling:** Bei 85 m/s sind es 0,47 m pro Substep. Kleinster Collider (Pfosten, r 0,35) plus kleinster Autokreis (Käfer, r 1,1) = 1,45 m. Die Eindringtiefe bleibt immer kleiner als der Radius, der Push-out geht nie zur falschen Seite. Kein Swept-Test nötig. Bedingung für Sandbox-Wände: halbe Dicke ≥ 0,25 m.
+**Tunneling:** Bei 85 m/s sind es 0,47 m pro Substep. Kleinster Collider (Pfosten, r 0,35) plus kleinster Autokreis (Käfer, r 1,1) = 1,45 m. Die Eindringtiefe bleibt immer kleiner als der Radius, der Push-out geht nie zur falschen Seite. Kein Swept-Test nötig. Bedingung für Sandbox-Wände: halbe Dicke ≥ 0,25 m. Das gilt für die horizontale Annäherung; von oben auf einen niedrigen Collider landet das Auto (7.1, 23.1).
 
 **Pro Substep und Auto, 2 Iterationen** (Party-Ghost oder `ghostExit > 0`: nur Weltrand):
 
@@ -652,7 +653,7 @@ Mittelwert vtop 49,8 m/s (179 km/h). Der Sprung ist für alle Klassen gleich (fa
 
 ## 10. Powerup-Modifikatoren (`sim/modifiers.ts`)
 
-`applyModifiers(base, mods, scale, out)` schreibt die effektiven Params in ein wiederverwendetes Objekt. Die Timer bleiben Party-Regel: In 1a zählt der Client `Bulli.powerups[*].timer` im v2-Pfad **pro Sim-Tick um DT** herunter (nicht pro Frame); in 1b macht das der Server (Dauer in Ticks = `POWERUP_DURATIONS_MS/1000·60`). Die Sim bekommt pro Tick nur `VehicleModifiers`; in 1b gehören die Mods deshalb pro Tick in die Input-Historie.
+`applyModifiers(base, mods, scale, out)` schreibt die effektiven Params in ein wiederverwendetes Objekt. Die Timer bleiben Party-Regel: In 1a zählt der Client `Bulli.powerups[*].timer` im v2-Pfad **pro Sim-Tick um DT** herunter (nicht pro Frame), und während die Sim eingefroren ist (12.1) pro Frame, damit sie wie bei Legacy auch dann ablaufen (23.3); in 1b macht das der Server (Dauer in Ticks = `POWERUP_DURATIONS_MS/1000·60`). Die Sim bekommt pro Tick nur `VehicleModifiers`; in 1b gehören die Mods deshalb pro Tick in die Input-Historie.
 
 | Powerup | heute (Legacy) | v2 |
 |---|---|---|
@@ -708,7 +709,7 @@ export class FixedStepLoop {
 }
 ```
 
-Während Modal, Tod oder Kontextverlust läuft kein Tick, und der Akkumulator wird zurückgesetzt (wie die heutige Legacy-Semantik „Auto eingefroren“).
+Während Modal, Tod oder Kontextverlust läuft kein Tick, und der Akkumulator wird zurückgesetzt (wie die heutige Legacy-Semantik „Auto eingefroren“). Nur die Powerup-Timer laufen mit der Frame-Zeit weiter (10, 23.3). Für 1b ist das Einfrieren eine offene Regel (Abschnitt 18).
 
 ### 12.2 Render-Interpolation
 
@@ -842,6 +843,7 @@ Zusätzliche Aussagen zu den Kontakt-Szenarien: frontal → beide \|v\| ≤ 4 m/
 
 - Alle Klassen, normal und Mega, mit 85 und 90 m/s auf: Pfosten (r 0,35), Box mit halber Dicke 0,25 m, Gebäudeecke; seitliche Versätze in 0,1-m-Schritten, Winkel 0–80° in 10°-Schritten → das Auto endet nie auf der anderen Seite.
 - Auto gegen Auto frontal: 2 × Käfer (kleinste Kreise) mit je 85 m/s, Versätze wie oben, plus T-Bone mit 85 m/s → die Reihenfolge entlang der Annäherungsachse kippt nie.
+- *Ergänzt nach dem Review (23.4):* Ob ein Auto durchtunnelt, entscheidet die Eindringtiefe im ersten Kontakt-Substep, also die Startphase innerhalb eines Ticks. Die Matrix variiert deshalb zusätzlich den Startabstand über eine Tick-Strecke in 0,05-m-Schritten; jeder Pfosten- und Wandlauf muss die Wand auch berühren.
 
 ### 14.6 FPS-Unabhängigkeit (`tests/client/loop.test.ts`)
 
@@ -923,6 +925,14 @@ Kleine Commits, jeweils mit grünen Tests:
 - Assist-Profil und Klasse verändern die Sim; sie gehören in die serverseitig bekannten Spieler-Settings.
 - `sin/cos/atan2/exp/sqrt/pow` können zwischen V8 und JSC im letzten Ulp abweichen; die Reconciliation fängt das ab (Plan Abschnitt 6).
 
+*Ergänzt nach dem Review (Abschnitt 23):*
+
+- **Globales Tuning:** Die Sim liest `SIM_TUNING`, `VEHICLE_CLASSES` und `ASSIST_PROFILES` als veränderliche Modul-Globals, und das Panel (`?physics=v2&tune=1`) ist in 1a auch online nutzbar. Mit Server-Sim sagt ein Client mit geändertem oder importiertem Tuning jeden Tick anders voraus als der Server, und die Reconciliation korrigiert dauernd (sieht aus wie Netz-Jitter). Regel für 1b: Online gilt nur das Default-Tuning. Das Panel ist online gesperrt (nur Sandbox/offline), oder der Client prüft beim Verbinden `tuningIsDefault()` und setzt sonst zurück. Langfristig wird das Tuning als Parameter an `stepWorld` übergeben bzw. hängt an `SimWorld`, statt als Global gelesen zu werden.
+- **Einfrieren:** Modal, Tod und Kontextverlust halten in 1a nur die Client-Sim an (12.1), das Auto behält sein Tempo. Mit Server-Sim rechnet der Server weiter (letzter Input höchstens 250 ms, dann neutral mit Bremse), und beim Schließen springt das Auto per Reconciliation. 1b braucht eine serverseitige Regel: ein Input-Flag „eingefroren“, das der Server wie einen Stillstand behandelt (Auto hält an, wird Ghost), oder der Client tickt im eingefrorenen Zustand mit Null-Input weiter und sendet. Der Tod ist ohnehin Server-Zustand.
+- **Collider-Parität:** Die Felsen (`environment.ts`) ziehen Position und Größe aus demselben `mulberry32(SCENERY_SEED)`-Strom wie Material, Rotationen, y-Skala und den optionalen zweiten Stein (7 oder 9 Ziehungen pro Fels). Bei der Portierung nach `shared/world` bekommen die Collider einen eigenen Strom (nur Position und Größe) und die Optik einen abgeleiteten Seed. Sonst verschiebt jede Änderung an der Optik alle folgenden Fels-Collider, nur auf dem Client. Eine Umstellung schon in 1a würde die Felsen verschieben und damit das Spiel ohne Flag verändern, deshalb erst mit der Portierung.
+- **Collider-Reihenfolge:** `resolveColliders` schiebt das Auto nacheinander in Indexreihenfolge heraus, das Ergebnis hängt also von der Reihenfolge ab. Heute entsteht sie implizit: `createEnvironment` setzt `state.obstacles = []` und legt Bäume (aus `treeData` des Servers), dann Felsen an, danach hängt `createCity` die Stadt an (`websocket.ts`). Diese Reihenfolge (Bäume, Felsen, Stadt) ist Vertrag, und der Paritätstest vergleicht die **geordnete Liste Index für Index**, nicht als Menge.
+- **NaN:** `stepWorld` setzt ein Auto mit nicht endlichem Zustand zurück, und die Kontakttests lassen NaN nicht durch (23.2). Die Validierung am Protokollrand bleibt trotzdem nötig.
+
 ## 19. Umsetzung des Sim-Kerns: Abweichungen und Messwerte
 
 Stand nach dem Schritt „sim-core“ (`src/shared/sim/*`, `src/shared/world/colliders.ts`, Tests unter `tests/shared/sim/`). Die Werte aus 1.2 werden exakt reproduziert (0–100 km/h, vtop, Bremsweg, Radius, Handbremsen-Kick je Klasse). Begründete Abweichungen von den Abschnitten oben:
@@ -937,7 +947,7 @@ Stand nach dem Schritt „sim-core“ (`src/shared/sim/*`, `src/shared/world/col
 8. **Zähler sättigen** (`airTicks`, `reverseHold`, `wallTicks` bei 255, `driftTicks` bei 65535, `resetHold` bei `RESET_HOLD_TICKS + 1`), damit der 1b-Snapshot kompakte Felder bekommt.
 9. **Szenarien:** PIT-Geometrie geändert (14.4, Punkt 7): Beim geraden Auffahren mit 1,5 m Versatz dreht die Reibung den Impuls fast durch den Schwerpunkt des Bulli (gemessen Δω 0,004 rad/s), das ist kein PIT. Unter 20° am hinteren Viertel: Δω ≈ 2,3 rad/s, β max 18°, nach 90 Ticks mit Gegenlenken wieder < 10°.
 10. **Collider-Platzierung** bleibt wie in 7.2 und 17 festgelegt im Client (Portierung nach `shared/world` in 1b). Der Sim-Kern nimmt `ColliderInput[]` entgegen; die `top`-Werte der Tabelle 7.1 stehen als `COLLIDER_TOPS` in `shared/world/colliders.ts`, damit Client-Adapter und spätere Server-Portierung dieselben Zahlen nutzen.
-11. **Kein Swept-Test:** Die Tunneling-Matrix aus 14.5 (alle Klassen, normal und Mega, 85 und 90 m/s, Pfosten r 0,35, Wand mit halber Dicke 0,25, Gebäudeecke, Versätze in 0,1-m-Schritten, 0–80°) und Auto gegen Auto (2 × Käfer frontal mit je 85 m/s, 0–30°, T-Bone mit 85 m/s) laufen mit den 3 festen Substeps ohne Durchtunneln. Die Prüfungen wurden gegengetestet: Mit abgeschalteter Kollision schlagen sie an.
+11. **Kein Swept-Test:** Die Tunneling-Matrix aus 14.5 (alle Klassen, normal und Mega, 85 und 90 m/s, Pfosten r 0,35, Wand mit halber Dicke 0,25, Gebäudeecke, Versätze in 0,1-m-Schritten, 0–80°) und Auto gegen Auto (2 × Käfer frontal mit je 85 m/s, 0–30°, T-Bone mit 85 m/s) laufen mit den 3 festen Substeps ohne Durchtunneln. Die Prüfungen wurden gegengetestet: Mit abgeschalteter Kollision schlagen sie an. *Korrektur nach dem Review (23.4):* Diese Gegenprobe zeigte nicht, dass 3 Substeps nötig sind; mit `SUBSTEPS = 1` blieb die Matrix grün, weil sie immer mit derselben Startphase fuhr. Seit dem Sweep der Startphase schlägt sie mit `SUBSTEPS = 1` an und ist mit 3 grün.
 
 **Messwerte:** 32 Autos × `stepWorld` in Node ≈ 0,17 ms pro Tick (Ziel < 2 ms). Störungsabbau (1 m/s quer + 0,8 rad/s) bei 10–85 m/s in allen Klassen, beiden Assist-Profilen und `gripScale` 1,0/1,5: \|r\| nach 3 s < 0,05 rad/s, keine wachsende Amplitude. Beim gehaltenen Handbremsen-Drift mit Vollgas und Volleinschlag verliert Sport bei `gripScale` 1,5 in 3 s fast alles Tempo (β ~60°), dreht sich aber nicht; das ist das Risiko „Drift verliert viel Tempo bei hohem `gripScale`“ aus Abschnitt 16.
 
@@ -970,7 +980,7 @@ Neu dazugekommen sind zwei Module:
    - Die Golden-Szenarien haben `roads = null` und bleiben unverändert.
 2. **Touch, Flip-Button:** Ein kurzer Druck springt beim Loslassen. Hält man den Button 30 Ticks (0,5 s), setzt er zurück, und es gibt keinen Sprung. Der Sprung kommt dadurch um die Tippdauer später. Die Alternative, beim Drücken zu springen und bei längerem Halten zusätzlich zurückzusetzen, würde vor jedem Reset einen Hopser erzeugen.
 3. **Auto-Gas startet erst mit der ersten Berührung des Sticks** nach Spawn, Respawn oder Tod. Sonst fährt das Auto schon beim Beitreten los. Der Umschalter AUTO wird unter `localStorage['bulli-auto-gas']` gespeichert.
-4. **Vorrang der Quellen (11.1):** Die Achsen kommen aus der aktiven Quelle mit dem höchsten Rang, also Touch vor Gamepad vor Tastatur. Die Buttons aller Quellen werden per ODER zusammengefasst. Touch gilt als aktiv, solange der Stick berührt wird oder Auto-Gas läuft. Das Gamepad gilt als aktiv, sobald Stick oder Trigger außerhalb der Deadzone sind.
+4. **Vorrang der Quellen (11.1):** Die Achsen kommen aus der aktiven Quelle mit dem höchsten Rang, also Touch vor Gamepad vor Tastatur. Die Buttons aller Quellen werden per ODER zusammengefasst. Touch gilt als aktiv, solange der Stick berührt wird oder Auto-Gas läuft. Das Gamepad gilt als aktiv, sobald Stick oder Trigger außerhalb der Deadzone sind. *Nach dem Review (23.3):* Auto-Gas allein (Stick losgelassen) weicht einem benutzten Gamepad oder einer gedrückten Fahrtaste, z. B. einem Controller am Tablet.
 5. **Race-Kamera:**
    - Position gedämpft mit 12/s, Yaw mit 7/s (Legacy: 6,5/s und 6/s). Mit den Legacy-Werten hinge die Kamera bei 50 m/s rund 8 m weiter hinten.
    - Look-ahead 4 m + 6 m · Tempoverhältnis.
@@ -985,7 +995,7 @@ Neu dazugekommen sind zwei Module:
    - Ein Sprung von mehr als 20 m zwischen zwei Updates gilt als Teleport und setzt die Geschwindigkeit auf 0.
    - Mitspieler ohne Update werden an ihrer `init`-Position geführt.
    - Tote Mitspieler (ausgeblendet) nehmen nicht teil.
-8. **Powerups:** Im v2-Pfad werden die Timer pro Tick heruntergezählt. Das Respawn-Schild zählt als `mods.shield`. Der Legacy-Mega-Ram bleibt unverändert.
+8. **Powerups:** Im v2-Pfad werden die Timer pro Tick heruntergezählt, bei eingefrorener Sim pro Frame (23.3). Das Respawn-Schild zählt als `mods.shield`. Der Legacy-Mega-Ram bleibt unverändert.
 9. **Darstellung:**
    - Nicken aus `loadX` mit 0,2°/(m/s²), höchstens 4°.
    - Rollen aus u · r mit 0,26°/(m/s²), höchstens 5°.
@@ -1086,8 +1096,8 @@ Es enthält nur die Werte, die von den Defaults abweichen. Winkel stehen darin i
 
 1. **`?sandbox=1` statt eigenem Einstieg `sandbox.html`** (4.2, 12.7). Der Auftrag verlangt das Flag. Außerdem nutzt die Sandbox so genau den Client, den man später fährt: Renderer, HUD, Eingabe mit Touch und Gamepad, Kamera, Automodell und Effekte. Einen zweiten Bootstrap gibt es nicht. Der Sandbox-Code ist ein eigener, dynamisch geladener Chunk (~11 kB).
 2. **Offline statt mit Server-Verbindung.** Das ist die robustere Wahl: Die Sandbox braucht keinen Server (auch nicht unter `npx vite`), es gibt keine Mitspieler, Respawns oder Party-Effekte, die dazwischenfunken, und der Ablauf ist reproduzierbar. Kontakt gegen echte Mitspieler bleibt im normalen Spiel testbar.
-3. **Kanten-Collider der Rampen (7.2).** `rampEdgeColliders(ramp, index, front)` legt eine Wand an die hohe Vorderkante und Wandstücke von höchstens 4 m an beide Seiten. Jedes Stück ist so hoch wie die Rampe an seinem oberen Ende; Stücke unter 0,3 m fallen weg. Das geht nur für Rampen längs einer Achse, weil die Boxen achsparallel sind. Zusätzlich zum Überflug-Test überspringt die Kollision Rampenwände, wenn die Unterkante des Autos mehr als 0,3 m über dem Boden an der Wand liegt oder der Schwerpunkt über der Rampe steht. Nur so streift die Vorderwand ein abspringendes Auto nicht, dessen Unterkante im Absprung noch knapp unter der Kante liegt. `createSimWorld` legt selbst keine Wände an, die Golden-Dateien bleiben unverändert.
-4. **Landehügel aus zwei Rampen** (Flag `hill`, ohne Wand an der gemeinsamen Kante). Eine einzelne, zum Kicker gewandte Rampe hätte eine senkrechte Stirnfläche im Höhenfeld. Landete ein Auto genau auf deren Kante, maß die Zentraldifferenz einen riesigen Gradienten; gemessen wurde ein Landeaufprall von 94 m/s.
+3. **Kanten-Collider der Rampen (7.2).** `rampEdgeColliders(ramp, index, front)` legt eine Wand an die hohe Vorderkante und Wandstücke von höchstens 4 m an beide Seiten. Jedes Stück ist so hoch wie die Rampe an seinem oberen Ende; Stücke unter 0,3 m fallen weg. Das geht nur für Rampen längs einer Achse, weil die Boxen achsparallel sind. Zusätzlich zum Überflug-Test überspringt die Kollision Rampenwände, wenn die Unterkante des Autos mehr als 0,3 m über dem Boden an der Wand liegt oder der Schwerpunkt über der Rampe steht. Nur so streift die Vorderwand ein abspringendes Auto nicht, dessen Unterkante im Absprung noch knapp unter der Kante liegt. *Geändert nach dem Review (23.1):* Die 0,3-m-Regel ließ fliegende Autos durch die Wand, die dann per Landung auf die Rampe gehoben wurden. Jetzt lässt eine Wand ein Auto durch, das auf der Rampe steht, sich von ihr weg bewegt (> 0,1 m/s nach außen) oder höchstens 0,35 m unter der Rampenfläche an der nächsten Stelle des Grundrisses ist. `createSimWorld` legt selbst keine Wände an, die Golden-Dateien bleiben unverändert.
+4. **Landehügel aus zwei Rampen** (Flag `hill`, ohne Wand an der gemeinsamen Kante). Eine einzelne, zum Kicker gewandte Rampe hätte eine senkrechte Stirnfläche im Höhenfeld. Landete ein Auto genau auf deren Kante, maß die Zentraldifferenz einen riesigen Gradienten; gemessen wurde ein Landeaufprall von 94 m/s. *Seit 23.1 nimmt der Gradient die exakte Rampensteigung bzw. nur das Terrain; der Hügel bleibt trotzdem so.*
 5. **Flache Kurven statt Steilkurven.** Der Boden der Sim ist ein Höhenfeld aus Terrain und Keilrampen. Eine Steilkurve bräuchte eine neue Flächenart in shared, und das 2,5D-Modell hat kein Rollen; nur der Hangabtrieb würde wirken. Die aufgemalten Kreise R 40 und R 80 zeigen den Kurvenradius, die kreisenden Dummies nutzen sie. Steilkurven sind möglich, sobald der Blindtest sie verlangt.
 6. **Hütchen nur optisch.** Ein statischer Collider mit r 0,35 wäre ein Pfosten, an dem man mit 50 m/s hängen bleibt. Die Hütchen kippen um, wenn ein Auto sie berührt, und stehen mit N wieder.
 7. **Dummies geparkt oder kreisend.** Die Spezifikation nannte zusätzlich „geradeaus“. Auf einer 400-m-Fläche wäre ein geradeaus fahrender Dummy nach wenigen Sekunden am Rand; die kreisenden decken bewegte Ziele ab.
@@ -1138,6 +1148,8 @@ Frames von 1/30, 1/60 und 1/144 s und zwei unregelmäßige Folgen (4–45 ms, fe
 
 **Gegenprobe:** Zwei typische Fehler testweise eingebaut, beide schlagen an: die Render-Pose schreibt den interpolierten Yaw in die Sim zurück, und die Powerup-Timer zählen mit der Frame-Zeit statt mit `DT`.
 
+**Remote-Proxies (nach dem Review, 23.3):** Früher bekamen alle Ticks eines Frames dieselbe Zeit für `collectRemoteProxies`. Bei 30 FPS setzte der zweite Tick eines Frames einen fahrenden Proxy um v·DT zurück, und das Rempeln eines fahrenden Mitspielers hing von der Framerate ab. Jetzt sagt `FixedStepLoop.advance` jedem Tick, wie weit sein Zeitpunkt vor dem Frame-Ende liegt, und ein Test rammt einen Proxy bei 30, 60, 144 FPS und unregelmäßigen Frames mit bitgleichem Ergebnis.
+
 **Warum pro Tick-Index:** Eine Taste, die zu einer Wanduhr-Zeit gedrückt wird, erreicht die Sim mit dem nächsten Tick nach dem Frame, der sie sieht. Bei anderer Framerate kann das ein Tick später sein. Das ist die Eingabelatenz des Frames, keine Abhängigkeit der Sim von der Framerate.
 
 **Abweichung:** Den Akkumulator als Funktion zu extrahieren war nicht nötig. `FixedStepLoop` ist schon eine Klasse ohne DOM, und `LocalVehicle` lässt sich mit einem `VehicleHost` aus `THREE.Group`s in Node betreiben.
@@ -1169,3 +1181,41 @@ Frames von 1/30, 1/60 und 1/144 s und zwei unregelmäßige Folgen (4–45 ms, fe
 2. **Legacy-Physik löschen**, wenn v2 gewinnt: `vehicle/legacyPhysics.ts`, die Legacy-Zweige in `controls/keyboard.ts`, `controls/mobile.ts` und `main.ts`, die `.legacy-only`-Elemente in `index.html`; `?physics=v2` wird Standard.
 3. E2E-Test für eine gemischte Session aus v2 und Legacy (20.12).
 4. Messung auf dem Referenz-Handy (FPS, Sim-Zeit, Touch-Gefühl) und Feinschliff von Renn-Kamera und visueller Feder auf echten Geräten.
+
+## 23. Review nach Phase 1a: Korrekturen und bewusst offene Punkte
+
+Ein adversarielles Review (Sim-Korrektheit, Netcode-Tauglichkeit, Client-Parität und Mobile, Tests und Doku) hat 21 Befunde bestätigt. Alle Korrekturen gelten nur mit `?physics=v2` bzw. nur für v2-Elemente; ohne Flag verhält sich das Spiel wie vorher.
+
+### 23.1 Bodenkontakt
+
+- **Knick im Stadt-Übergangsring:** Das Terrain wird mit `t²` eingeblendet, an der Außenkante (d ≈ 204 m) springt die Steigung. Früher warf dieser Knick das Auto mit der vollen Steigungsgeschwindigkeit ab (bis 25 m/s, 7–12 m Flughöhe bei 45 m/s). Jetzt behält ein Auto, das von Terrain auf Terrain fährt, beim Abheben höchstens die Vertikalgeschwindigkeit des Bodens voraus plus 2 m/s. Rampen behalten ihre Absprunggeschwindigkeit. Test: Überfahrt des Rings alle 15°, hinein und hinaus, Bulli mit 45 m/s und Vollgas → höchstens 0,3 m über dem Boden. Den Blend auf Smoothstep umzustellen hätte auch Legacy und die Optik verändert und bleibt deshalb aus.
+- **Gradient:** Statt der Zentraldifferenz über `groundHeight` (±0,5 m über Rampenkanten hinweg, bis 4,4 Scheinsteigung) nimmt die Sim die exakte Steigung der Rampe unter dem Auto, sonst die Zentraldifferenz des Terrains allein. Kein Vorwärtsstoß mehr vor der Absprungkante, und eine Landung neben oder auf der Rampenkante hat den Aufprall ihrer Vertikalgeschwindigkeit (Test: 4–7 m/s bei vy = −5).
+- **Rampenwände:** Neue Regel siehe 21.3, Punkt 3. Ein Sprung gegen Front oder Seite wird von der Wand gestoppt, statt das Auto in einem Tick auf die Rampe zu heben, und wer seitlich von der Rampe rollt, bewegt sich pro Tick höchstens um |v|·DT + 5 cm.
+- **Niedrige Collider** (Brunnen, Teich, Bank, Kübel, Fels): Man landet auf ihrer Oberkante (7.1) und fährt wieder herunter, statt um bis zu 8 m in einem Tick herausgeschoben zu werden. `SimWorld` hat dafür `terrainHeight` und `rampAt`. Ein Party-Ghost steht auf nichts. Test: Sprung auf Brunnen und Teich über viele Absprungpunkte, der Versatz pro Tick bleibt ≤ |v|·DT + 0,5 m.
+
+### 23.2 Dynamik und Robustheit
+
+- **Kinematische Überblendung am Gesamttempo** (6.4): `k` hing an |u|. Ein Auto, das mit hohem Tempo quer rutscht (u ≈ 0), verlor 1/6 seiner Quergeschwindigkeit pro Tick. Ein von der Seite gerammter Käfer blieb nach 2 m kleben, unter 60° rutschte er 60 m. Jetzt bremsen die Reifen das Querrutschen. Die Golden-Datei `contact-t-bone` ist neu erzeugt.
+- **NaN:** Nicht endliche oder nicht numerische Eingabeachsen zählen als 0. Die Kontakttests in `contact.ts` sind so formuliert, dass NaN sie nicht besteht. `stepWorld` setzt ein Auto mit nicht endlichem Zustand zurück (Event `reset`). Vorher machte ein NaN-Lenkwert in zwei Ticks jedes Auto der Welt zu NaN, egal wie weit entfernt.
+- **Kontaktmasse:** `contactMass` wird in `applyModifiers` aus `base.mass` abgeleitet (×3 Mega, ×2 Schild). Vorher wirkten der Masse-Regler des Panels und importierte Tunings nicht auf das Rempeln.
+
+### 23.3 Client
+
+- **Gehaltene Tasten:** Fahrtasten, Leertaste und Shift nehmen auch Tastenwiederholungen an, sodass eine über Respawn, Modal oder Fokuswechsel gehaltene Taste sofort wieder wirkt (wie bei Legacy). Sprung und Reset bleiben flankengesteuert.
+- **Gamepad am Touch-Gerät:** Auto-Gas bei losgelassenem Stick weicht einem benutzten Gamepad oder einer Fahrtaste (20, Punkt 4).
+- **Powerup-Timer bei eingefrorener Sim** zählen pro Frame weiter (10, 12.1). Vorher überdauerten Ghost, Turbo und Super-Jump ein offenes Modal oder den Respawn-Countdown.
+- **Remote-Proxies pro Tick** (22.1).
+- **Touch-HUD:** Der Hinweis „HOLD JUMP TO RESET“ und die Powerup-Meldungen lagen unten mittig unter DRIFT und dem Joystick. Mit v2 stehen sie auf Touch-Geräten jetzt über den Fahrbuttons, im Querformat unten zwischen Stick und DRIFT (umbrechend, wo die Lücke schmal ist). Auf 320 px breiten Phones sind Stick, DRIFT, BOOST und Boost-Leiste etwas kleiner, damit DRIFT den Stick und die Leiste die Minimap nicht mehr überdeckt. Der E2E-Test `v2-mobile.spec.ts` prüft das ganze Touch-HUD mit Hinweis auf 320, 360 und 390 px, im Querformat und auf dem Tablet.
+
+### 23.4 Tests
+
+- **Tunneling-Matrix mit Startphase** (14.5, 19.11): Gegenprobe mit `SUBSTEPS = 1` schlägt jetzt an.
+- **Schild an der Wand:** Der Test verlangt einen Treffer und dass das Auto vor der Wand bleibt. Vorher lief ohne Treffer keine einzige Prüfung, und ein Schild, der Wände ganz abschaltet, blieb grün.
+- **Drift-Hysterese:** Der Test setzt β und prüft das Ende genau am zehnten Tick unter 6° sowie eine kurze Senke, die den Drift hält.
+- **`sandbox.spec.ts`:** Vor dem Reset der Dummies wird das eigene Auto weggesetzt. Es konnte noch direkt hinter dem Käfer rollen und ihn nach dem Reset wieder wegschieben (flaky, etwa 1 von 13 Läufen).
+
+### 23.5 Nur dokumentiert, nicht im Code geändert
+
+- **Felsen-RNG und Collider-Reihenfolge:** Eine eigene Zufallsfolge für die Fels-Collider würde die Felsen verschieben und damit das Spiel ohne Flag ändern. Beides steht als Vorgabe für die Portierung in Abschnitt 18.
+- **Globales Tuning und Einfrieren** betreffen erst die Server-Sim von 1b; die Regeln stehen in Abschnitt 18.
+- **Sim-Kosten:** Der Plan nennt jetzt wie `baseline.md` den Mittelwert ≤ 0,09 ms pro Frame, p95 0,2 ms, Spitzen bis 0,4 ms.
