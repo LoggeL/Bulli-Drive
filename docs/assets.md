@@ -8,27 +8,30 @@ Dieses Dokument listet jede Binärdatei unter `public/models` und `public/textur
 
 | Bereich | Quelle | Lizenz | Im Repo | Größe |
 |---|---|---|---|---|
-| Automodelle (`public/models`) | eigene prozedurale Blender-Skripte (`tools/models`) | eigenes Werk des Projekts | GLB (meshopt + KTX2), 3 LODs je Auto | 333 KB (Bulli) |
+| Automodelle (`public/models`) | eigene prozedurale Blender-Skripte (`tools/models`) | eigenes Werk des Projekts | GLB (meshopt + KTX2), 3 LODs je Auto, 5 Autos | 1,4 MB (Bulli 0,34 MB, die anderen 0,22–0,30 MB) |
 | Car-Select-Icons (`public/icons`) | Eevee-Render der eigenen Modelle (`build-all.mjs --icons`) | eigenes Werk des Projekts | WebP mit Alpha, 156×96 | 7 KB (Bulli) |
 | PBR-Texturen (`public/textures/pbr`) | Poly Haven | CC0 1.0 | KTX2 | 3,3 MB |
 | Generierte Texturen (`public/textures/generated`) | KI-generiert (Codex CLI, imagegen-Skill, OpenAI `image_gen`), eigene Nachbearbeitung | Nutzungsrechte beim Projekt, **kein** CC0 | KTX2 + JSON | 2,3 MB |
 | HDRIs (`public/textures/hdri`) | Poly Haven | CC0 1.0 | Radiance `.hdr`, 1k | 2,7 MB |
 | Referenzen (`tools/models/ref`) | KI-generierte Blaupausen, Maße aus Sekundärquellen | nur Arbeitsmaterial, nicht im Spiel | JPG + JSON | 1,5 MB |
-| Nummernschild-Decal (`tools/models/src`) | KI-generiert, eigene Nachbearbeitung | wie oben | PNG 512×256 | 0,2 MB |
+| Nummernschild-Decals (`tools/models/src`) | KI-generiert, eigene Nachbearbeitung | wie oben | PNG 512×256, 5 Stück | 1,2 MB |
 
-Summe der neuen Binär-Assets: rund 10,3 MB, davon 8,6 MB ausgeliefert (Obergrenze laut Plan ~30 MB). Ein Unit-Test (`tests/client/modelBudgets.test.ts`) hält `public/models` + `public/textures` unter 30 MB.
+Summe der neuen Binär-Assets: rund 12,4 MB, davon 9,6 MB ausgeliefert (Stand Schritt „vier Autos“; vorher 10,3 / 8,6 MB) (Obergrenze laut Plan ~30 MB). Ein Unit-Test (`tests/client/modelBudgets.test.ts`) hält `public/models` + `public/textures` unter 30 MB.
 
 Quelltexturen in voller Auflösung liegen nicht im Repo. `npm --prefix tools run textures:fetch` lädt sie reproduzierbar (MD5-geprüft) nach `tools/textures/.cache`.
 
 ## 2. Automodelle
 
 - **VW T1 Samba (1963, 23 Fenster)**, `bulli_lod{0,1,2}.glb`: vollständig prozedural aus `tools/models/vehicles/bulli.py` (Blender 5.2 LTS). Maße nach `tools/models/ref/dimensions.json` (Werksangaben über Sekundärquellen, Quellen in der Datei). Keine fremden Meshes, keine gekauften oder heruntergeladenen Modelle.
-- **VW-Logo:** das echte VW-Rundzeichen als Geometrie (Front, Heck) und als Normal-Map-Prägung auf den Radkappen. Das ist eine bewusste Nutzerentscheidung für dieses private Projekt (Plan, Entscheidung 5). Die Marke gehört der Volkswagen AG.
-- **Nummernschild:** kalifornisches Schild im Stil 1963–69 mit dem erfundenen Kennzeichen „BULLI“ (KI-generiert, siehe Abschnitt 4).
+- **Käfer 1963, T1-Pritsche, Porsche 356 B T6 und Typ 181** (`beetle`, `pickup`, `sport`, `jeep`, je `_lod{0,1,2}.glb`): ebenso vollständig prozedural aus `tools/models/vehicles/<id>.py` auf der gemeinsamen Bibliothek `tools/models/lib/bd_car.py`. Die Pritsche nutzt die T1-Karosserie aus `bulli.py`. Maße in `tools/models/ref/dimensions.json`; für den 356 ersetzen die Werte der de.wikipedia (356 B T6: 4,01 × 1,67 × 1,31 m, Radstand 2,10 m) die bisherigen Karmann-Ghia-Werte des Eintrags `sport`.
+- **Blaupausen:** `tools/models/ref/*_blueprint.jpg` sind KI-generierte orthografische Referenzbögen (Codex-imagegen). `sport_blueprint.jpg` zeigt seit diesem Schritt den Porsche 356 B T6 (vorher Karmann Ghia); der Prompt steht in `tools/models/README.md`. Die Pixel-Zuordnung der Ansichten steht in `tools/models/ref/blueprints.json`.
+- **VW-Logo:** das echte VW-Rundzeichen als Geometrie (Front, Heck) und als Normal-Map-Prägung auf den Radkappen. Käfer (Haube, Radkappen), Pritsche (Front, Radkappen) und Typ 181 (Frontblech, Nabenkappen) tragen es ebenso.
+- **Porsche 356:** kein fotografisches oder originalgetreues Markenlogo. Auf der Haube sitzt ein stilisiertes Wappen, das `bd_car.crest_pixels` prozedural in den Atlas malt (goldener Schild, rot-schwarze Streifen, schwarze Geweihstangen, ohne Schriftzug und ohne Pferd). Die Radkappen haben nur eine gepresste Ringsicke. Das ist eine bewusste Nutzerentscheidung für dieses private Projekt (Plan, Entscheidung 5). Die Marke gehört der Volkswagen AG.
+- **Nummernschilder:** kalifornische Schilder im Stil 1963–69 mit erfundenen Kennzeichen: „BULLI“, „KAEFER“, „PICKUP“, „356 B“ und „THING“ (KI-generiert, siehe Abschnitt 4).
 - **Surfbrett:** Teil jedes Modells, standardmäßig ausgeblendet (freischaltbares Zubehör).
 - **Im Spiel** seit Schritt „Bulli T1“: Maßstab 1,15 (passend zur Sim-Hülle), LOD nach Entfernung, Lampen und Material-Klone pro Auto. Details in [`docs/cars.md`](cars.md).
-- **Icon:** `public/icons/car-bulli.webp` ist ein Render von LOD0 für die Autoauswahl im Startbildschirm.
-- Käfer, T1-Pritsche, Porsche 356 und Typ 181 folgen in späteren Schritten. Bis dahin bleiben sie prozedural im Spiel (`src/client/vehicle/CarModel.ts`).
+- **Icons:** `public/icons/car-<id>.webp` sind Renders von LOD0 für die Autoauswahl im Startbildschirm (5 × 5–7 KB).
+- Die prozeduralen Kasten-Autos in `src/client/vehicle/CarModel.ts` bleiben nur noch als Rückfall, falls die Modelle nicht laden.
 
 ## 3. Poly-Haven-Texturen und HDRIs (CC0 1.0)
 
@@ -69,6 +72,7 @@ Die Sonnenhöhe beider HDRIs liegt bei 4–6°. Das DirectionalLight des Spiels 
 | `street_signs` (+ `street_signs_atlas_1k.json`) | 8 Schilder: STOP, 35 mph, Kurve, ONE WAY, OCEAN AVE, PCH, Chevron, CA-1 | `street_signs` |
 | `world_noise` | kachelbares Makro-Rauschen (prozedural erzeugt, keine KI) | – |
 | `tools/models/src/license_plate_bulli_512.png` | Nummernschild „BULLI“ | `license_plate` |
+| `tools/models/src/license_plate_{beetle,pickup,sport,jeep}_512.png` | Nummernschilder „KAEFER“, „PICKUP“, „356 B“, „THING“ | `license_plate` mit ersetztem Kennzeichen; Zuschnitt `tools/textures/generated/prep/plates.py` |
 
 Die KTX2-Dateien sind die kanonischen Kopien. Die aufbereiteten Quellen (1–2 MB je Bild) sind nicht im Repo; wer eine Textur ändert, erzeugt sie neu (siehe `tools/textures/README.md`).
 
@@ -90,7 +94,7 @@ Die KTX2-Dateien sind die kanonischen Kopien. Die aufbereiteten Quellen (1–2 M
 | LOD1 | 8 000 Dreiecke, 10 Primitives, 160 KB | 7 965, 9, 111 KB |
 | LOD2 | 2 000 Dreiecke, 4 Primitives, 48 KB | 1 960, 4, 24 KB |
 | alle LODs eines Autos | 560 KB | 341 KB |
-| `public/models` + `public/textures` | 30 MB | 8,6 MB |
+| `public/models` + `public/textures` | 30 MB | 9,6 MB |
 | Mobile Tier low (iPhone 12/13), ganzes Bild | ≤ 150 Draw Calls inkl. Schatten, ≤ 500k Dreiecke, KTX2 Pflicht, kein Post | Straßenansicht quer mit T1: 119 Calls, 237k Dreiecke |
 
 Grenzwerte pro LOD stehen maschinenlesbar in `tools/models/budgets.json` und werden beim Packen und im Unit-Test geprüft.
