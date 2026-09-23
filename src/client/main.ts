@@ -25,6 +25,7 @@ import { installE2EHook } from './e2eHook.js';
 import { watchWebGLContext, isWebGLContextLost } from './ui/contextLoss.js';
 import { installPerfMonitor, type PerfMonitor } from './debug/perfMonitor.js';
 import { setupLighting, updateLighting } from './render/lighting.js';
+import { renderFrame } from './render/frameStats.js';
 import { startModelPreload } from './assets/gameModels.js';
 import { ChaseCamera, LEGACY_CAMERA, RACE_CAMERA, RACE_CAMERA_SLIP_BLEND, type ChaseTarget } from './camera/ChaseCamera.js';
 import { PHYSICS_V2, SANDBOX, TUNE_PANEL } from './flags.js';
@@ -462,7 +463,8 @@ function animate(frameTime: number) {
         updateWorldShaders(state.clock.elapsedTime);
         updateLighting();
         renderQuality.update(frameTime);
-        state.renderer.render(state.scene, state.camera);
+        // Counters include the shadow pass (perf overlay, e2e snapshot)
+        renderFrame(state.renderer, state.scene, state.camera);
     }
 
     perfMonitor?.endFrame(frameTime);

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { state } from './state.js';
 import { focusLightingOn } from './render/lighting.js';
+import { frameStats } from './render/frameStats.js';
 import type { Obstacle } from './types.js';
 import { PHYSICS_V2 } from './flags.js';
 import type { LocalVehicle } from './vehicle/LocalVehicle.js';
@@ -72,7 +73,8 @@ export interface BulliDebugSnapshot {
     // (THREE.Clock.getDelta), in ms; the dt the physics really got
     frameTime: number;
     // three.js counters of the last rendered frame
-    render: { frame: number; calls: number; triangles: number };
+    // calls/triangles include the shadow pass, shadowCalls is its share
+    render: { frame: number; calls: number; triangles: number; shadowCalls: number; shadowTriangles: number };
     camera: { x: number; y: number; z: number; fov: number };
     v2: V2Snapshot | null;
     // Car model cache (assets/ModelCache.ts)
@@ -321,7 +323,9 @@ export function installE2EHook(): void {
                 render: {
                     frame: state.renderer?.info.render.frame ?? 0,
                     calls: state.renderer?.info.render.calls ?? 0,
-                    triangles: state.renderer?.info.render.triangles ?? 0
+                    triangles: state.renderer?.info.render.triangles ?? 0,
+                    shadowCalls: frameStats.shadowCalls,
+                    shadowTriangles: frameStats.shadowTriangles
                 },
                 camera: {
                     x: state.camera?.position.x ?? 0,

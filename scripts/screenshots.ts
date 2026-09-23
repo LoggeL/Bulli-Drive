@@ -180,7 +180,7 @@ async function join(browser: Browser, contextOptions: BrowserContextOptions, bas
     return page;
 }
 
-interface ShotStats { view: string; calls: number; triangles: number; carWidth?: number; carHeight?: number }
+interface ShotStats { view: string; calls: number; triangles: number; shadowCalls?: number; carWidth?: number; carHeight?: number }
 
 // chase: the view comes from the chase camera, so the car's share of the
 // frame is worth recording
@@ -191,14 +191,15 @@ async function shoot(page: Page, out: string, view: string, stats: ShotStats[], 
         : null;
     await page.screenshot({ path: file });
     const { render } = await snapshot(page);
-    const entry: ShotStats = { view, calls: render.calls, triangles: render.triangles };
+    // calls/triangles: the whole frame including the shadow pass (shadowCalls)
+    const entry: ShotStats = { view, calls: render.calls, triangles: render.triangles, shadowCalls: render.shadowCalls };
     if (box) {
         entry.carWidth = Number(box.width.toFixed(3));
         entry.carHeight = Number(box.height.toFixed(3));
     }
     stats.push(entry);
     const car = box ? `, car ${(box.width * 100).toFixed(1)} % wide, ${(box.height * 100).toFixed(1)} % high` : '';
-    log(`${view}: ${render.calls} calls, ${render.triangles} triangles${car}`);
+    log(`${view}: ${render.calls} calls (${render.shadowCalls} shadow), ${render.triangles} triangles${car}`);
 }
 
 // Road center lines run at -98, -46, 6, 58, 110 on both axes.
@@ -213,6 +214,11 @@ async function captureDesktop(browser: Browser, baseURL: string, options: Option
     const page = await join(browser, {
         ...devices['Desktop Chrome'], viewport: { width: 1600, height: 900 }, deviceScaleFactor: 1
     }, baseURL, 'Shots', options.physics);
+    // Collision obstacles as the client built them, to check that a visual
+    // change of the world left the gameplay alone (compare before/after)
+    const obstacles = await page.evaluate(() =>
+        (window as unknown as { __bulliDebug: { obstacles(): unknown[] } }).__bulliDebug.obstacles());
+    fs.writeFileSync(path.join(options.out, 'obstacles.json'), JSON.stringify(obstacles) + '\n');
 
     // Chase camera on the middle road looking north towards the plaza, HUD
     // visible (checks UI legibility too). The car is fresh, so the respawn
