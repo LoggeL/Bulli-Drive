@@ -15,7 +15,7 @@ city, collect coins and powerups, and shoot it out with other drivers.
 ## Getting Started
 
 ### Prerequisites
-- Node.js 20.19+ or 22.12+ (required by Vite)
+- Node.js 22.12+ (required by Vite, Vitest and concurrently)
 
 ### Install, build and run
 ```bash

@@ -19,7 +19,7 @@
   "license": "ISC",
   "description": "",
   "engines": {
-    "node": "^20.19.0 || >=22.12.0"
+    "node": ">=22.12.0"
   },
   "dependencies": {
     "express": "^5.2.1",
