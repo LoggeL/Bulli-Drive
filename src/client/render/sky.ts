@@ -110,7 +110,7 @@ void main() {
 		cd = cloudDensity( d, edge ) * ( 1.0 - 0.85 * pow( sd, 400.0 ) );
 		#endif
 		c += mix( uSunColor, vec3( 1.0, 0.93, 0.78 ), 0.8 ) * disk * uSunDisk * ( 1.0 - cd * 0.9 );
-		// Clouds: gold near the sun, peach to the side, grey violet above
+		// Clouds: gold near the sun, beige to the side, grey above
 		vec3 cl = mix( uCloudFar, uCloudSun, pow( sd, 4.0 ) );
 		cl = mix( cl, uCloudTop, smoothstep( 0.1, 0.45, y ) * ( 1.0 - pow( sd, 3.0 ) ) );
 		cl += uSunColor * edge * ( pow( sd, 12.0 ) * 2.5 + 0.12 );
@@ -233,9 +233,9 @@ function createSkyMaterial(textures: SkyTextures, environment: boolean, simple =
             uGroundTint: { value: new THREE.Color().setRGB(...LOOK.groundTint) },
             uGroundGain: { value: LOOK.groundGain },
             uCloudCov: { value: LOOK.cloudCoverage },
-            uCloudSun: { value: new THREE.Color().setRGB(3.2, 1.5, 0.55) },
-            uCloudFar: { value: new THREE.Color().setRGB(1.25, 0.55, 0.5) },
-            uCloudTop: { value: new THREE.Color().setRGB(0.42, 0.34, 0.44) }
+            uCloudSun: { value: new THREE.Color().setRGB(...LOOK.cloudSun) },
+            uCloudFar: { value: new THREE.Color().setRGB(...LOOK.cloudFar) },
+            uCloudTop: { value: new THREE.Color().setRGB(...LOOK.cloudTop) }
         }
     });
 }

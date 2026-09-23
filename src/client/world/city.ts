@@ -358,6 +358,11 @@ function addBuilding(B: CityBatches, building: BuildingData, blockMid: { x: numb
     const x0 = building.x - building.width / 2, x1 = building.x + building.width / 2;
     const z0 = building.z - building.depth / 2, z1 = building.z + building.depth / 2;
     const base = getTerrainHeight(building.x, building.z);
+    // The walls reach 0.2 m under the pavement (block height, lowest corner):
+    // the bottom rows of the facade atlas (and their mip bleeding from the
+    // band below, lit windows of the emissive map) stay out of sight
+    const foot = Math.min(base, getTerrainHeight(x0, z0), getTerrainHeight(x1, z0), getTerrainHeight(x0, z1), getTerrainHeight(x1, z1),
+        getTerrainHeight(blockMid.x, blockMid.z)) - 0.2;
     const H = building.height;
     const top = base + H;
     const T = tintOf(building.color);
@@ -387,7 +392,7 @@ function addBuilding(B: CityBatches, building: BuildingData, blockMid: { x: numb
         const axes = Math.max(1, Math.round(length / AXIS));
         const u0 = PIER_U + shift, u1 = u0 + axes / 3;
         for (let floor = 0; floor < floors; floor++) {
-            const ya = base + (floor === 0 ? 0 : groundHeight + (floor - 1) * upperHeight);
+            const ya = floor === 0 ? foot : base + groundHeight + (floor - 1) * upperHeight;
             const yb = floor === 0 ? base + groundHeight : ya + upperHeight;
             const band = floor === 0 ? groundBand : (floor % 2 === 1 ? upperBand : 0);
             const [va, vb] = bandV(band);
@@ -550,7 +555,8 @@ function createPark(B: CityBatches, extras: CityExtras) {
     const terrainY = getTerrainHeight(parkX, parkZ);
     const half = (blockSize - 2) / 2;
     const path = 1.6;
-    const pondRadius = 5.2;
+    // Water up to the inner face of the stone coping (fountain.ts addPondRim)
+    const pondRadius = 5.12;
 
     // Lawn in four quadrants around a cross of decomposed granite paths
     // with concrete edging
@@ -561,9 +567,13 @@ function createPark(B: CityBatches, extras: CityExtras) {
     for (const [x0, x1] of [[-half, -path], [path, half]]) {
         for (const [z0, z1] of [[-half, -path], [path, half]]) flat(B.lawn, x0, x1, z0, z1, 0.03, [0.78, 0.95, 0.66], 2);
     }
-    flat(B.sand, -half, half, -path, path, 0.04, [1, 0.94, 0.86], 5);
-    flat(B.sand, -path, path, -half, -path, 0.04, [1, 0.94, 0.86], 5);
-    flat(B.sand, -path, path, path, half, 0.04, [1, 0.94, 0.86], 5);
+    // The paths end under the pond coping (outer radius 5.66): the polygon
+    // offset of the path surface would otherwise pull it over the water
+    const pathEnd = 5.3;
+    flat(B.sand, -half, -pathEnd, -path, path, 0.04, [1, 0.94, 0.86], 5);
+    flat(B.sand, pathEnd, half, -path, path, 0.04, [1, 0.94, 0.86], 5);
+    flat(B.sand, -path, path, -half, -pathEnd, 0.04, [1, 0.94, 0.86], 5);
+    flat(B.sand, -path, path, pathEnd, half, 0.04, [1, 0.94, 0.86], 5);
     const edging = (x0: number, x1: number, z0: number, z1: number) => {
         const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
         B.sidewalk.box(Math.max(0.14, x1 - x0), 0.08, Math.max(0.14, z1 - z0), parkX + cx, terrainY + 0.04, parkZ + cz, rgb(0xDDD6CA), { box: 2.5 });

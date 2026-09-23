@@ -1,13 +1,17 @@
 import * as THREE from 'three';
 import { getKTX2Loader } from '../assets/gltfLoader.js';
+import { placeholderTexel } from './texturePlaceholders.js';
 
 // KTX2 world textures from public/textures (tools/textures/build.mjs).
 //
-// worldTexture() hands out a placeholder CompressedTexture right away, so the
-// world materials and meshes can be built synchronously when the server's
-// 'init' arrives; the file loads in the background and is copied into the
-// placeholder (same object, so no material recompiles). Until then the
-// texture samples as black, which only happens behind the splash screen.
+// worldTexture() hands out a placeholder right away, so the world materials
+// and meshes can be built synchronously when the server's 'init' arrives;
+// the file loads in the background and is copied into the placeholder (same
+// object, so no material recompiles). The placeholder is a neutral 1 x 1
+// texel of the texture's kind (mean albedo, flat normal, rough non-metal,
+// transparent foliage), so a world whose textures are late (the start
+// button waits for them, with a time limit) or failed to load (network,
+// transcoder) is plainly shaded, never black.
 // A lost WebGL context needs nothing here: three.js uploads the kept
 // mipmaps again on the restored context.
 
@@ -26,6 +30,8 @@ export interface WorldTextureOptions {
     repeat?: boolean;
     // Anisotropic filtering (default: the tier's maximum)
     anisotropy?: number;
+    // sRGB color of the placeholder of a color texture (default by name)
+    fallback?: number;
 }
 
 const BASE = `${import.meta.env.BASE_URL}textures/`;
@@ -37,6 +43,7 @@ const pending: Promise<void>[] = [];
 const jobs = new Map<string, Promise<void>>();
 // Clones (own repeat, same image) that must follow their source once loaded
 const clones = new Map<THREE.Texture, THREE.Texture[]>();
+const loaded = new Set<THREE.Texture>();
 let maxAnisotropy = 4;
 
 export const textureStats = { requested: 0, loaded: 0, failed: 0 };
@@ -51,18 +58,34 @@ export function initWorldTextures(target: THREE.WebGLRenderer, anisotropy: numbe
     });
 }
 
-function copyInto(placeholder: THREE.Texture, loaded: THREE.Texture): void {
+function copyInto(placeholder: THREE.Texture, source: THREE.Texture): void {
     const { wrapS, wrapT, anisotropy } = placeholder;
     const repeat = placeholder.repeat.clone();
     const offset = placeholder.offset.clone();
-    loaded.userData = {};
-    placeholder.copy(loaded);
+    source.userData = {};
+    placeholder.copy(source);
     placeholder.wrapS = wrapS;
     placeholder.wrapT = wrapT;
     placeholder.anisotropy = anisotropy;
     placeholder.repeat.copy(repeat);
     placeholder.offset.copy(offset);
     placeholder.needsUpdate = true;
+}
+
+function placeholder(name: string, fallback?: number): THREE.CompressedTexture {
+    const { rgba, srgb } = placeholderTexel(name, fallback);
+    // An uncompressed level in a CompressedTexture (three uploads RGBA
+    // levels with texImage2D). Nearest filtering: the loaded texture always
+    // gets another cache key in three, so a new GL texture instead of a
+    // second texStorage2D on the immutable 1 x 1 one.
+    const texture = new THREE.CompressedTexture(
+        [{ data: new Uint8Array(rgba), width: 1, height: 1 }] as unknown as ImageData[],
+        1, 1, THREE.RGBAFormat as unknown as THREE.CompressedPixelFormat, THREE.UnsignedByteType
+    );
+    texture.minFilter = texture.magFilter = THREE.NearestFilter;
+    texture.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+    texture.needsUpdate = true;
+    return texture;
 }
 
 /**
@@ -73,7 +96,7 @@ export function worldTexture(name: string, options: WorldTextureOptions = {}): T
     const cached = cache.get(name);
     if (cached) return cached;
     if (!renderer || !manifest) throw new Error('initWorldTextures() first');
-    const texture = new THREE.CompressedTexture([], 1, 1, THREE.RGBA_ASTC_4x4_Format);
+    const texture = placeholder(name, options.fallback);
     texture.name = name;
     const wrap = options.repeat === false ? THREE.ClampToEdgeWrapping : THREE.RepeatWrapping;
     texture.wrapS = texture.wrapT = wrap;
@@ -86,14 +109,16 @@ export function worldTexture(name: string, options: WorldTextureOptions = {}): T
         .then(async ([list, loader]) => {
             const entry = list.textures[name];
             if (!entry) throw new Error(`texture ${name} is not in the manifest`);
-            const loaded = await loader.loadAsync(`${BASE}${entry.file}?v=${entry.hash}`);
-            copyInto(texture, loaded);
+            const file = await loader.loadAsync(`${BASE}${entry.file}?v=${entry.hash}`);
+            copyInto(texture, file);
+            loaded.add(texture);
             for (const clone of clones.get(texture) ?? []) copyInto(clone, texture);
             textureStats.loaded++;
         })
         .catch(error => {
+            // The placeholder stays: a neutral texel instead of black
             textureStats.failed++;
-            console.warn(`World texture ${name} failed to load`, error);
+            console.warn(`World texture ${name} failed to load, keeping its neutral placeholder`, error);
         });
     pending.push(job);
     jobs.set(name, job);
@@ -107,21 +132,26 @@ export function whenWorldTextureLoaded(name: string): Promise<void> {
 
 /** Same image (and GPU texture) with its own repeat/offset. */
 export function cloneWorldTexture(source: THREE.Texture): THREE.Texture {
-    // Not source.clone(): Texture.copy() flags the copy for upload, which
-    // fails while the placeholder has no mipmaps yet
+    // Starts as a copy of the source (its placeholder or the loaded image)
+    // with its own wrapping; follows the source once that has loaded
     const clone = new THREE.CompressedTexture([], 1, 1, THREE.RGBA_ASTC_4x4_Format);
     clone.name = source.name;
     clone.wrapS = source.wrapS;
     clone.wrapT = source.wrapT;
     clone.anisotropy = source.anisotropy;
-    if ((source as THREE.CompressedTexture).mipmaps?.length) {
-        copyInto(clone, source);
-    } else {
+    copyInto(clone, source);
+    if (!loaded.has(source)) {
         const list = clones.get(source) ?? [];
         list.push(clone);
         clones.set(source, list);
     }
     return clone;
+}
+
+/** Share of the requested textures that loaded or failed (1 with none requested). */
+export function worldTextureProgress(): number {
+    const { requested, loaded: done, failed } = textureStats;
+    return requested ? (done + failed) / requested : 1;
 }
 
 /** Resolves once every texture requested so far has loaded (or failed). */

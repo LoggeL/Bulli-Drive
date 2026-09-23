@@ -6,6 +6,7 @@ import { CITY_TERRAIN_AREA, getTerrainHeight as getSharedTerrainHeight } from '.
 import { COLLIDER_TOPS } from '../../shared/world/colliders.js';
 import { WORLD_BOUND } from '../../shared/constants.js';
 import { lightingTier } from '../render/lighting.js';
+import { SUN_DIRECTION } from '../render/look.js';
 import { Batch, rng } from './batch.js';
 import { worldMaterials } from './worldMaterials.js';
 import { addShrub, createTreeCards, type TreeSpot } from './vegetation.js';
@@ -97,7 +98,42 @@ function gridLines(step: number): number[] {
     return [...outer.map(v => -v).reverse(), ...inner, ...outer];
 }
 
-function createTerrain(step: number): THREE.Mesh {
+/**
+ * Height of the rendered terrain mesh at (x, z): the triangle of the grid
+ * cell interpolated like the GPU does. Away from the playable area the cells
+ * grow to 110 m, and on crests the exact height stands meters above the mesh,
+ * so everything placed on the visible ground takes this height.
+ */
+export type GroundSampler = (x: number, z: number) => number;
+
+function cellOf(lines: number[], v: number): number {
+    let lo = 0, hi = lines.length - 2;
+    if (v <= lines[0]) return 0;
+    if (v >= lines[hi + 1]) return hi;
+    while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (lines[mid] <= v) lo = mid;
+        else hi = mid - 1;
+    }
+    return lo;
+}
+
+function meshSampler(xs: number[], heights: Float32Array): GroundSampler {
+    const n = xs.length;
+    return (x, z) => {
+        const i = cellOf(xs, x), j = cellOf(xs, z);
+        const fx = Math.min(1, Math.max(0, (x - xs[i]) / (xs[i + 1] - xs[i])));
+        const fz = Math.min(1, Math.max(0, (z - xs[j]) / (xs[j + 1] - xs[j])));
+        const a = heights[j * n + i], b = heights[j * n + i + 1];
+        const c = heights[(j + 1) * n + i], d = heights[(j + 1) * n + i + 1];
+        // Triangles (a, c, b) and (b, c, d): the diagonal runs from b to c
+        return fx + fz <= 1
+            ? a + fx * (b - a) + fz * (c - a)
+            : d + (1 - fx) * (c - d) + (1 - fz) * (b - d);
+    };
+}
+
+function createTerrain(step: number): { mesh: THREE.Mesh; ground: GroundSampler } {
     const xs = gridLines(step);
     const nx = xs.length, nz = xs.length;
     const positions = new Float32Array(nx * nz * 3);
@@ -148,11 +184,27 @@ function createTerrain(step: number): THREE.Mesh {
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geometry.computeBoundingSphere();
 
-    const ground = new THREE.Mesh(geometry, worldMaterials().terrain);
-    ground.name = 'terrain';
-    ground.receiveShadow = true;
-    ground.matrixAutoUpdate = false;
-    return ground;
+    const mesh = new THREE.Mesh(geometry, worldMaterials().terrain);
+    mesh.name = 'terrain';
+    mesh.receiveShadow = true;
+    mesh.matrixAutoUpdate = false;
+    const heights = new Float32Array(nx * nz);
+    for (let k = 0; k < nx * nz; k++) heights[k] = positions[k * 3 + 1];
+    return { mesh, ground: meshSampler(xs, heights) };
+}
+
+/** 1 when the sun reaches (x, y, z) over the rendered ground, 0 behind a hill (soft over a few meters). */
+function sunOver(ground: GroundSampler, x: number, y: number, z: number): number {
+    const d = SUN_DIRECTION;
+    const horizontal = Math.hypot(d.x, d.z);
+    let lit = 1;
+    for (let t = 8; t < 900; t *= 1.25) {
+        const clearance = y + t * d.y - ground(x + d.x * t, z + d.z * t);
+        // Terrain within ~4 m of the ray (scaled by the distance) is penumbra
+        lit = Math.min(lit, smoothstep(-2, 4 + t * 0.01 * horizontal, clearance));
+        if (lit <= 0) return 0;
+    }
+    return lit;
 }
 
 // A rough rock: a subdivided icosahedron with deterministic bumps
@@ -189,7 +241,10 @@ export function createEnvironment(treeData: TreeData[]) {
     group.name = 'environment';
 
     // Software WebGL also pays for every vertex: a coarser grid
-    group.add(createTerrain(tier === 'desktop' ? 8 : tier === 'mobile' ? 10 : 16));
+    const terrain = createTerrain(tier === 'desktop' ? 8 : tier === 'mobile' ? 10 : 16);
+    group.add(terrain.mesh);
+    // Scenery stands on the rendered mesh, not on the exact height
+    const ground = terrain.ground;
 
     const oaks: TreeSpot[] = [];
     const cypresses: TreeSpot[] = [];
@@ -198,8 +253,7 @@ export function createEnvironment(treeData: TreeData[]) {
     // Obstacles (Trees) - server-driven, keep all
     state.obstacles = [];
     treeData.forEach(t => {
-        const y = getTerrainHeight(t.x, t.z);
-        const spot = { x: t.x, y, z: t.z, scale: (t.height + 4) / 10 };
+        const spot = { x: t.x, y: ground(t.x, t.z), z: t.z, scale: (t.height + 4) / 10 };
         if (t.id % 5 === 0) cypresses.push({ ...spot, scale: spot.scale * 1.1 });
         else oaks.push(spot);
         state.obstacles.push({ x: t.x, z: t.z, radius: 1.5, top: COLLIDER_TOPS.tree });
@@ -216,7 +270,7 @@ export function createEnvironment(treeData: TreeData[]) {
         // Skip city area
         if (isInsideCitySceneryExclusion(rx, rz)) continue;
 
-        const h = getTerrainHeight(rx, rz);
+        const h = ground(rx, rz);
         const rockSize = 0.8 + sceneryRandom() * 2.0;
         const shade = sceneryRandom() > 0.5 ? 1 : 0.8;
         euler.set(sceneryRandom() * 0.5, sceneryRandom() * Math.PI, 0);
@@ -251,7 +305,7 @@ export function createEnvironment(treeData: TreeData[]) {
         sceneryRandom();
         sceneryRandom();
         sceneryRandom();
-        addShrub(shrubs, shrubRandom, bx, getTerrainHeight(bx, bz) - 0.1, bz, bushSize * 1.8, 1);
+        addShrub(shrubs, shrubRandom, bx, ground(bx, bz) - 0.1, bz, bushSize * 1.8, 1);
     }
 
     // Wildflower patches become low flowering shrubs
@@ -267,7 +321,7 @@ export function createEnvironment(treeData: TreeData[]) {
             sceneryRandom();
             sceneryRandom();
         }
-        addShrub(shrubs, shrubRandom, fx, getTerrainHeight(fx, fz) - 0.05, fz, 1.2 + shrubRandom() * 0.8, 0);
+        addShrub(shrubs, shrubRandom, fx, ground(fx, fz) - 0.05, fz, 1.2 + shrubRandom() * 0.8, 0);
     }
     const shrubMesh = shrubs.mesh(M.shrub, { cast: false });
     if (shrubMesh) group.add(shrubMesh);
@@ -285,7 +339,7 @@ export function createEnvironment(treeData: TreeData[]) {
             const scrub = fbm(px * 0.0042 + 11, pz * 0.0042 + 5, 3);
             const roll = R(), roll2 = R();
             if (r < CITY_TERRAIN_AREA.halfExtent * 1.25 || r > 1450) continue;
-            const y = visualTerrainHeight(px, pz);
+            const y = ground(px, pz);
             if (r > HILLS.start) {
                 // Hills: groves of oaks, a few cypresses
                 if (grove > 0.5 && roll < (grove - 0.5) * 4.5) oaks.push({ x: px, y, z: pz, scale: 0.75 + roll2 * 0.55 });
@@ -298,6 +352,9 @@ export function createEnvironment(treeData: TreeData[]) {
             }
         }
     }
+    // Trees in the shadow of a hill (the shadow map only covers the area
+    // around the car): march from the crown towards the sun over the ground
+    for (const spot of [...oaks, ...cypresses, ...bushes]) spot.sun = sunOver(ground, spot.x, spot.y + 5 * spot.scale, spot.z);
     for (const [kind, list, seed] of [['oak', oaks, 11], ['cypress', cypresses, 12], ['bush', bushes, 13]] as const) {
         const mesh = createTreeCards(M, kind, list, seed);
         if (mesh) group.add(mesh);

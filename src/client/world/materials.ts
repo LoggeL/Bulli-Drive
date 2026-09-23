@@ -72,9 +72,11 @@ interface PatchOptions {
     translucency?: number;
     // Alpha test that keeps its coverage over mip levels (foliage cards)
     alphaCoverage?: boolean;
-    // The geometry has a cardUv attribute (0..1 over each card): far away,
+    // Foliage cards with a cardUv attribute (0..1 over each card): far away,
     // where the averaged alpha of the low mip levels would let the whole
-    // card rectangle pass, the cut-out becomes a soft rounded crown
+    // card rectangle pass, the cut-out becomes a soft, irregular crown;
+    // cards seen edge-on fade out (no pale ghost planes), and the bent
+    // normals of the geometry are kept on back faces as well
     cardMask?: boolean;
     // Code after metalnessmap_fragment (metalnessFactor)
     metal?: string;
@@ -140,6 +142,53 @@ const SURFACE_ROUGH = /* glsl */`
 const SURFACE_METAL = 'metalnessFactor = vSurface.y;';
 const SURFACE_EMISSIVE = 'totalEmissiveRadiance += diffuseColor.rgb * vSurface.z * signalLit;';
 
+// Foliage cards (PatchOptions.cardMask). z of vCardUv: a random number per
+// instance, so the far crowns do not all share one outline.
+const CARD_VERTEX = /* glsl */`
+	vCardUv = vec3( cardUv, 0.0 );
+	#ifdef USE_INSTANCING
+	vCardUv.z = fract( dot( instanceMatrix[ 3 ].xz, vec2( 0.0713, 0.1131 ) ) );
+	#endif`;
+// The bent normals stand for a round crown: the same normal on both faces,
+// and normals of the crown's far side (seen through the crossing cards) are
+// mirrored to the near side, as on a sphere, where every visible normal
+// faces the viewer (else the far halves of the cards glow against the sun)
+const CARD_NORMAL = /* glsl */`#include <normal_fragment_begin>
+	#if defined( DOUBLE_SIDED ) && ! defined( FLAT_SHADED )
+	{
+		normal = normalize( vNormal );
+		vec3 toViewer = normalize( vViewPosition );
+		float away = dot( normal, toViewer );
+		if ( away < 0.0 ) normal = normalize( normal - 2.0 * away * toViewer );
+		// Wrap: light scattered in the crown reaches its shaded side too, so
+		// the normals lean towards the sun (else each card is either lit or
+		// black, and a crown falls apart into flat halves)
+		normal = normalize( normal + 0.5 * ( viewMatrix * vec4( uSunDir, 0.0 ) ).xyz );
+		nonPerturbedNormal = normal;
+	}
+	#endif`;
+const CARD_ALPHA = /* glsl */`{
+			// Far away: crown and trunk silhouette of the card, the crown
+			// outline broken up by noise
+			vec2 c = ( vCardUv.xy - vec2( 0.5, 0.62 ) ) / vec2( 0.45, 0.38 );
+			float wobble = texture2D( uNoise, vCardUv.xy * vec2( 1.7, 1.4 ) + vCardUv.z * vec2( 0.61, 0.37 ) ).r - 0.5;
+			float crown = 1.0 - smoothstep( 0.62, 0.9, length( c ) + wobble * 0.5 );
+			float trunk = ( 1.0 - smoothstep( 0.03, 0.06, abs( vCardUv.x - 0.5 ) ) ) * step( vCardUv.y, 0.35 );
+			float far = smoothstep( 3.0, 5.0, mip );
+			diffuseColor.a = mix( diffuseColor.a, min( diffuseColor.a * 1.5, max( crown, trunk ) ), far );
+			// Far crowns are dense: their shaded inside and less scattered
+			// light (see translucency) keep them darker than the sunlit grass
+			cardFar = far;
+			diffuseColor.rgb *= 1.0 - 0.2 * far;
+			// Cards seen edge-on fade out instead of showing a thin pale plane
+			vec3 cardFace = normalize( cross( dFdx( vWPos ), dFdy( vWPos ) ) );
+			vec3 toCamera = normalize( cameraPosition - vWPos );
+			diffuseColor.a *= smoothstep( 0.05, 0.2, abs( dot( cardFace, toCamera ) ) );
+			// The horizontal top card only from well above (from below it
+			// would be a lit disc in the crown)
+			if ( abs( cardFace.y ) > 0.9 ) diffuseColor.a *= smoothstep( 0.4, 0.65, toCamera.y );
+		}`;
+
 const MACRO = (strength: number, scale: number) => /* glsl */`
 	{
 		vec4 nz = texture2D( uNoise, vWPos.xz / ${scale.toFixed(1)} );
@@ -167,9 +216,9 @@ export function patchWorldMaterial<T extends THREE.Material>(material: T, option
         Object.assign(shader.uniforms, WORLD_UNIFORMS, options.uniforms ?? {});
         shader.vertexShader = shader.vertexShader
             .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nuniform float uTime;\n' + vertexDecl.join('\n') + (options.cardMask
-                ? '\nattribute vec2 cardUv;\nvarying vec2 vCardUv;'
+                ? '\nattribute vec2 cardUv;\nvarying vec3 vCardUv;'
                 : ''))
-            .replace('#include <uv_vertex>', '#include <uv_vertex>' + (options.cardMask ? '\nvCardUv = cardUv;' : ''))
+            .replace('#include <uv_vertex>', '#include <uv_vertex>' + (options.cardMask ? CARD_VERTEX : ''))
             .replace('#include <begin_vertex>', '#include <begin_vertex>\n' + vertexCode.join('\n'))
             .replace('#include <project_vertex>', /* glsl */`#include <project_vertex>
 	{
@@ -185,7 +234,7 @@ uniform vec3 uSunColor;
 uniform sampler2D uNoise;
 uniform float uTime;
 varying vec3 vWPos;
-${options.cardMask ? 'varying vec2 vCardUv;' : ''}
+${options.cardMask ? 'varying vec3 vCardUv;\nfloat cardFar = 0.0;' : ''}
 ${options.surface ? SURFACE_FRAGMENT_DECL : ''}
 ${options.decl ?? ''}`);
         const colorBlocks: string[] = [];
@@ -208,6 +257,12 @@ ${options.decl ?? ''}`);
         f = f.replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\n' + metal);
         f = f.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + emissive);
         if (options.normal) f = f.replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n' + options.normal);
+        if (options.cardMask) {
+            f = f.replace('#include <normal_fragment_begin>', CARD_NORMAL);
+            // Leaves are matte: the reflected sunset sky would lay a pale
+            // sheen over every card that faces the camera
+            f = f.replace('#include <aomap_fragment>', 'reflectedLight.indirectSpecular *= 0.1;\n\treflectedLight.directSpecular *= 0.3;\n\t#include <aomap_fragment>');
+        }
         if (options.alphaCoverage) {
             // Raise alpha per mip level so cards do not thin out in the
             // distance; with MSAA a sharpened alpha to coverage edge
@@ -221,16 +276,7 @@ ${options.decl ?? ''}`);
 		vec2 dx = dFdx( vMapUv * texSize ), dy = dFdy( vMapUv * texSize );
 		float mip = max( 0.0, 0.5 * log2( max( dot( dx, dx ), dot( dy, dy ) ) ) );
 		diffuseColor.a *= 1.0 + min( mip, 2.0 ) * 0.3;
-		${options.cardMask ? `{
-			// Crown and trunk silhouette of the card
-			vec2 c = ( vCardUv - vec2( 0.5, 0.62 ) ) / vec2( 0.45, 0.38 );
-			float crown = 1.0 - smoothstep( 0.75, 1.0, length( c ) );
-			float trunk = ( 1.0 - smoothstep( 0.03, 0.06, abs( vCardUv.x - 0.5 ) ) ) * step( vCardUv.y, 0.35 );
-			float far = smoothstep( 3.0, 5.0, mip );
-			diffuseColor.a = mix( diffuseColor.a, min( diffuseColor.a * 1.5, max( crown, trunk ) ), far );
-			// The dark cut-out cards would read as black blobs far away
-			diffuseColor.rgb *= 1.0 + 0.2 * far;
-		}` : ''}
+		${options.cardMask ? CARD_ALPHA : ''}
 		#endif
 		${a2c
         ? `a2cAlpha = clamp( ( diffuseColor.a - alphaTest ) / max( fwidth( diffuseColor.a ), 1e-4 ) + 0.5, 0.0, 1.0 );
@@ -245,7 +291,10 @@ ${options.decl ?? ''}`);
 	{
 		vec3 viewDirection = normalize( vWPos - cameraPosition );
 		float backLight = pow( max( dot( viewDirection, uSunDir ), 0.0 ), 3.0 );
-		totalEmissiveRadiance += diffuseColor.rgb * uSunColor * ( ${options.translucency.toFixed(2)} * backLight );
+		${options.cardMask ? `// Crowns: light scattered through the leaves also reaches the shaded
+		// side (wrap), not only the view against the sun
+		backLight = backLight * 0.7 + 0.3 * clamp( 0.5 - 0.5 * dot( normal, ( viewMatrix * vec4( uSunDir, 0.0 ) ).xyz ), 0.0, 1.0 );` : ''}
+		totalEmissiveRadiance += diffuseColor.rgb * uSunColor * ( ${options.translucency.toFixed(2)} * backLight${options.cardMask ? ' * ( 1.0 - 0.7 * cardFar )' : ''} );
 	}`);
         }
         shader.fragmentShader = f;
@@ -277,7 +326,8 @@ interface PbrSet {
 }
 
 // Mean albedo (sRGB) of the tiling PBR sets: the software tier shades the
-// large surfaces with it instead of sampling the textures
+// large surfaces with it instead of sampling the textures, and it is the
+// placeholder texel of the albedo maps until they have loaded
 const MEAN_ALBEDO: Record<string, number> = {
     asphalt: 0x55524e,
     sidewalk: 0xb9b2a8,
@@ -306,7 +356,7 @@ export function createWorldMaterials(tier: RenderTier): WorldMaterials {
     const pbr = (name: string): PbrSet => (software
         ? { color: new THREE.Color(MEAN_ALBEDO[name] ?? 0xffffff) }
         : {
-            map: worldTexture(`pbr/${name}_albedo`),
+            map: worldTexture(`pbr/${name}_albedo`, { fallback: MEAN_ALBEDO[name] }),
             normalMap: normals ? worldTexture(`pbr/${name}_normal`) : undefined,
             arm: worldTexture(`pbr/${name}_arm`)
         });
@@ -485,12 +535,24 @@ export function createWorldMaterials(tier: RenderTier): WorldMaterials {
             baseAO: 0.72,
             color: /* glsl */`
 	{
-		// Vertical dirt streaks
-		float streak = texture2D( uNoise, vec2( ( vWPos.x + vWPos.z ) / 5.0, vWPos.y / 60.0 ) ).b;
-		diffuseColor.rgb *= 1.0 - 0.14 * smoothstep( 0.45, 0.85, streak );
+		// Lime plaster: blotchy, direction-free variation at two scales
+		// (the same scale along and across the wall)
+		vec2 wall = vec2( vWPos.x + vWPos.z, vWPos.y );
+		float blotch = texture2D( uNoise, wall / 3.1 ).b * 0.6 + texture2D( uNoise, wall / 0.83 + 0.4 ).g * 0.4;
+		diffuseColor.rgb *= mix( 0.93, 1.04, blotch );
+		// A few faint rain streaks, only in patches and fading downwards
+		float streak = texture2D( uNoise, vec2( wall.x / 1.7, wall.y / 9.0 ) ).b;
+		float streakPatch = smoothstep( 0.55, 0.75, texture2D( uNoise, wall / 23.0 + 0.7 ).a );
+		diffuseColor.rgb *= 1.0 - 0.06 * smoothstep( 0.6, 0.9, streak ) * streakPatch;
 	}`
         });
     }
+
+    // The walls cast their shadow from the faces towards the sun: with the
+    // default (back faces) the stored depth is the shaded wall itself, and
+    // the shadow bias (about 0.2 m at the 480 m depth range) left a lit strip
+    // of pavement along the foot of every wall on the shaded side
+    M.facade.shadowSide = THREE.FrontSide;
 
     // Smooth plaster: ledges, cornices, parapets, eaves, fountain
     M.stucco = patch(withPbr(stucco, {
@@ -648,7 +710,8 @@ export function createWorldMaterials(tier: RenderTier): WorldMaterials {
     }), { wind: true });
     M.fan = card('generated/fan_fronds', { alphaTest: 0.5, roughness: 0.66 }, 0.3, false, true);
     M.frond = card('generated/palm_fronds', { alphaTest: 0.45, roughness: 0.72 }, 0.34, false, true);
-    M.tree = card('generated/tree_cards', { alphaTest: 0.5, roughness: 0.85, envMapIntensity: 0.5 }, 0.35, true);
+    // Leaves scatter light into the shaded side of the crown: more ambient
+    M.tree = card('generated/tree_cards', { alphaTest: 0.5, roughness: 0.85, envMapIntensity: 0.85 }, 0.4, true);
     M.shrub = card('generated/shrubs', { alphaTest: 0.45, roughness: 0.8 }, 0.5, true);
 
     // Ponds and the fountain basin: dark, glossy water with moving normals
@@ -656,7 +719,11 @@ export function createWorldMaterials(tier: RenderTier): WorldMaterials {
         color: new THREE.Color(0.03, 0.11, 0.12),
         roughness: 0.08,
         metalness: 0,
-        envMapIntensity: 0.9
+        envMapIntensity: 0.9,
+        // Above the lawn under the pond (offset -1) at any distance
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -2
     }), {
         normal: /* glsl */`
 	{
