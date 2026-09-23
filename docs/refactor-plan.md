@@ -103,7 +103,7 @@ Die Dauer ist in Wochen fokussierter Arbeit angegeben, im Kalender wird es läng
 **Phase 0 – Fundament und Baseline (ca. 1 Woche) · Status: in Arbeit**
 - **Ziel:** Sicher iterieren können, ohne dass sich für Spieler etwas ändert.
 - **Deliverables:**
-  - [ ] Vite mit `three@0.160.0` über npm, Importmap und `scripts/*.mjs` gelöscht; `build-version.txt` und der Reload bei neuer Version funktionieren weiter
+  - [x] Vite mit `three@0.160.0` über npm, Importmap und `scripts/*.mjs` gelöscht; `build-version.txt` und der Reload bei neuer Version funktionieren weiter
   - [ ] Vitest, CI (typecheck, test, build, docker), Playwright-Smoke mit 2 Tabs, einmal Desktop und einmal Mobile mit Touch-Emulation (Joystick, Action-Buttons)
   - [ ] Die eine Protokollquelle, `screens.ts:132` nutzt `sendToServer`
   - [ ] rng, terrain und cityGen nach shared, mit Golden-Test (Seed 0xB0111D ergibt 30 Gebäude und 120 Bäume)
