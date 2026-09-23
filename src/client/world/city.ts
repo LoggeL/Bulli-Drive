@@ -530,13 +530,11 @@ function addDoor(group: THREE.Group, building: BuildingData, seed3: number) {
     // Door frame
     const doorFrameTop = new THREE.Mesh(sharedDoorFrameGeo, sharedDoorFrameMat);
     doorFrameTop.position.set(0, 2.45, building.depth / 2 + 0.08);
-    doorFrameTop.castShadow = true;
     group.add(doorFrameTop);
 
     // Door overhang / small awning
     const doorAwning = new THREE.Mesh(sharedDoorAwningGeo, sharedDoorAwningMat);
     doorAwning.position.set(0, 2.55, building.depth / 2 + 0.35);
-    doorAwning.castShadow = true;
     group.add(doorAwning);
 }
 
@@ -588,7 +586,6 @@ function addRoofProps(group: THREE.Group, building: BuildingData, seed: number, 
             const acX = (positionHash(building.x, building.z, 10 + i) - 0.5) * (building.width * 0.6);
             const acZ = (positionHash(building.x, building.z, 20 + i) - 0.5) * (building.depth * 0.6);
             ac.position.set(acX, roofY + 0.4, acZ);
-            ac.castShadow = true;
             group.add(ac);
         }
     }
@@ -601,7 +598,6 @@ function addRoofProps(group: THREE.Group, building: BuildingData, seed: number, 
             roofY + 0.75,
             (seed2 - 0.5) * building.depth * 0.4
         );
-        tank.castShadow = true;
         group.add(tank);
 
         // Tank legs (shared geometry/material)
@@ -629,7 +625,6 @@ function addRoofProps(group: THREE.Group, building: BuildingData, seed: number, 
                 roofY + 0.3,
                 (positionHash(building.x, building.z, 50 + b) - 0.5) * (building.depth * 0.7)
             );
-            bush.castShadow = true;
             group.add(bush);
         }
     }
@@ -683,7 +678,6 @@ function addBuildingShapeDetails(group: THREE.Group, building: BuildingData, see
             })
         );
         sign.position.set(0, 3.05, building.depth / 2 + 0.14);
-        sign.castShadow = true;
         group.add(sign);
     } else {
         const balconyMat = new THREE.MeshStandardMaterial({ color: 0xdbc9aa, roughness: 0.8 });
@@ -795,7 +789,6 @@ function createPark() {
     );
     pondRim.rotation.x = Math.PI / 2;
     pondRim.position.set(parkX, terrainY + 0.17, parkZ);
-    pondRim.castShadow = true;
     state.scene.add(pondRim);
 
     const benchMat = new THREE.MeshStandardMaterial({ color: 0x5D4037, roughness: 0.8 });
@@ -813,13 +806,11 @@ function createPark() {
         const seatGeo = new THREE.BoxGeometry(3, 0.2, 0.8);
         const seat = new THREE.Mesh(seatGeo, benchMat);
         seat.position.y = 0.5;
-        seat.castShadow = true;
         benchGroup.add(seat);
 
         const back = new THREE.Mesh(new THREE.BoxGeometry(3, 0.7, 0.16), benchMat);
         back.position.set(0, 0.92, 0.34);
         back.rotation.x = -0.12;
-        back.castShadow = true;
         benchGroup.add(back);
 
         // Legs
@@ -827,7 +818,6 @@ function createPark() {
         [-1.2, 1.2].forEach(xOff => {
             const leg = new THREE.Mesh(legGeo, benchMat);
             leg.position.set(xOff, 0.25, 0);
-            leg.castShadow = true;
             benchGroup.add(leg);
         });
 
@@ -951,16 +941,17 @@ function createStreetDetails() {
     const lampGeo = new THREE.SphereGeometry(0.28, 8, 6);
     const cornerOffset = blockSize / 2 - 2.1;
 
+    // Small props (lamps, sign posts, benches, door trims, roof clutter) do
+    // not cast shadows: at chase-camera distance their shadows are barely
+    // visible, but each one costs a draw call in the shadow pass.
     function addStreetLight(x: number, z: number, rotation: number) {
         const light = new THREE.Group();
         const pole = new THREE.Mesh(poleGeo, poleMat);
         pole.position.y = 2.6;
-        pole.castShadow = true;
         light.add(pole);
 
         const arm = new THREE.Mesh(armGeo, poleMat);
         arm.position.set(0.5, 5.08, 0);
-        arm.castShadow = true;
         light.add(arm);
 
         const bulb = new THREE.Mesh(lampGeo, lampMat);
@@ -1038,7 +1029,6 @@ function createDistrictSigns() {
         for (const postX of [-2.6, 2.6]) {
             const post = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.13, 3.3, 7), postMat);
             post.position.set(postX, 1.65, 0);
-            post.castShadow = true;
             sign.add(post);
             state.obstacles.push({
                 x: x + Math.cos(rotation) * postX,
