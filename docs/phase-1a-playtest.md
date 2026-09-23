@@ -1,14 +1,14 @@
-# Phase 1a: Blindtest der Fahrphysik v2
+# Phase 1a: Playtest der Fahrphysik v2 und Vergleich mit Legacy
 
 **Stand:** 2026-09-23 · **Branch:** `refactor/phase-1a-driving` · Bezug: [`refactor-plan.md`](refactor-plan.md) (Phase 1a, Exit-Kriterium), [`phase-1a-design.md`](phase-1a-design.md)
 
-Die neue Fahrphysik v2 ist fertig und läuft hinter dem URL-Flag `?physics=v2`. Ohne Flag fährt das Spiel wie bisher. Jetzt entscheidet der Blindtest, ob v2 die alte Physik ersetzt.
+Die neue Fahrphysik v2 ist live und ohne URL-Parameter Standard. Auf Wunsch des Nutzers gehen neue Features direkt live, deshalb ist der Blindtest kein Gate mehr. Die alte Physik lässt sich vorerst mit `?physics=legacy` öffnen, als Notausgang und zum Vergleich.
 
-**Exit-Kriterium:** Mindestens 4 von 5 Testern ziehen v2 vor, auch auf dem Handy. Erst danach wird die Legacy-Physik gelöscht.
+Der Vergleich unten ist freiwillig. Er hilft beim Tuning und zeigt, ob v2 irgendwo schlechter ist als die alte Physik. Die Anleitung für einen blinden Vergleich bleibt stehen, falls er sich lohnt. Läuft v2 einige Tage ohne Probleme, wird die Legacy-Physik gelöscht (Abschnitt 6).
 
 ## 1. Vorbereitung
 
-Für den Blindtest am besten den Produktions-Build nehmen. Er ist schneller als der Dev-Server und entspricht dem, was später läuft:
+Für den Vergleich am besten den Produktions-Build nehmen (oder direkt https://bulli.logge.top). Er ist schneller als der Dev-Server und entspricht dem, was später läuft:
 
 ```bash
 npm run build && npm start        # Port 8000, auch im LAN erreichbar
@@ -18,9 +18,9 @@ Handys im selben WLAN öffnen `http://<LAN-IP-des-Macs>:8000/…`. Zum Tunen mit
 
 | Zweck | URL |
 |---|---|
-| Variante „alt“ | `/` |
-| Variante „neu“ | `/?physics=v2` |
-| Neu mit Tuning-Panel und Telemetrie | `/?physics=v2&tune=1` |
+| Variante „neu“ (v2, Standard) | `/` |
+| Variante „alt“ (Legacy) | `/?physics=legacy` |
+| Neu mit Tuning-Panel und Telemetrie | `/?tune=1` |
 | Sandbox (offline, Rampen, Wand, Pfosten, 5 Dummy-Autos) | `/?sandbox=1` bzw. `/?sandbox=1&tune=1` |
 | Leistung ablesen (FPS, Draw Calls, Sim-Zeit) | zusätzlich `&debug=perf` |
 
@@ -44,7 +44,7 @@ Handys im selben WLAN öffnen `http://<LAN-IP-des-Macs>:8000/…`. Zum Tunen mit
 1. Variante 1 etwa 5 Minuten frei durch die Stadt fahren. Ein paar Aufgaben helfen: einmal um den Block, eine 90°-Kreuzung mit Tempo, an einer Wand entlangschrammen, springen, einen Mitspieler anrempeln.
 2. Variante 2 genauso lange, mit denselben Aufgaben.
 3. Fragebogen (unten) ausfüllen lassen, erst danach auflösen.
-4. Das Exit-Kriterium gilt ausdrücklich auch auf dem Handy. Am besten fährt jeder Tester beide Varianten zusätzlich auf dem Handy und beantwortet die erste Frage für beide Geräte getrennt.
+4. Das Handy zählt genauso wie der Desktop. Am besten fährt jeder Tester beide Varianten zusätzlich auf dem Handy und beantwortet die erste Frage für beide Geräte getrennt.
 
 Rempeln braucht zwei Geräte am selben Server, beide mit derselben Variante. Gemischte Sessions (einer alt, einer neu) funktionieren auch, sind für den Vergleich aber ungeeignet.
 
@@ -116,7 +116,7 @@ Mit „Import ← Zwischenablage“ lässt sich ein solches JSON auf einem ander
 
 Die zurückgemeldeten Werte werden danach fest in `SIM_TUNING` (`src/shared/sim/constants.ts`), `VEHICLE_CLASSES` bzw. `ASSIST_PROFILES` (`src/shared/sim/vehicleClasses.ts`) eingetragen, und die Golden-Dateien werden mit `UPDATE_GOLDEN=1 npm test` neu erzeugt.
 
-## 6. Nach dem Blindtest
+## 6. Nach dem Vergleich
 
-- **v2 gewinnt (mindestens 4 von 5, auch auf dem Handy):** getunte Werte übernehmen, dann die Legacy-Physik löschen: `src/client/vehicle/legacyPhysics.ts`, die Legacy-Zweige in `src/client/controls/keyboard.ts`, `src/client/controls/mobile.ts` und `src/client/main.ts` sowie die `.legacy-only`-Elemente in `index.html`. `?physics=v2` wird zum Standard. Danach beginnt Phase 1b.
-- **v2 verliert:** Die Rückmeldungen zeigen, woran es liegt (Tuning, Kamera, Touch, Rempeln). Nach dem Nachtunen folgt ein zweiter Blindtest. Die Legacy-Physik bleibt so lange erhalten.
+- **Rückmeldungen einarbeiten:** getunte Werte übernehmen (Abschnitt 5). Zeigt der Vergleich, dass v2 irgendwo schlechter ist (Tuning, Kamera, Touch, Rempeln), wird nachgetunt; v2 bleibt dabei Standard.
+- **Legacy löschen:** Wenn v2 einige Tage ohne Probleme live läuft, fliegen `src/client/vehicle/legacyPhysics.ts`, die Legacy-Zweige in `src/client/controls/keyboard.ts`, `src/client/controls/mobile.ts`, `src/client/main.ts` und `src/client/ui/hud.ts`, die `.legacy-only`-Elemente in `index.html`, `LEGACY_CAMERA`, die Legacy-E2E-Tests und der Parameter `?physics=legacy` raus. Danach beginnt Phase 1b.

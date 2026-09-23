@@ -1,12 +1,12 @@
 # Phase 1a: Fahrphysik v2 – verbindliche Spezifikation
 
-**Stand:** 2026-09-23 · **Branch:** `refactor/phase-1a-driving` · **Flag:** `?physics=v2` · Bezug: [`refactor-plan.md`](refactor-plan.md) Abschnitt 0, 5 (Phase 1a) und 6 (Netcode) · Blindtest: [`phase-1a-playtest.md`](phase-1a-playtest.md)
+**Stand:** 2026-09-23 · **Branch:** `refactor/phase-1a-driving` · **Flag:** v2 ist seit dem Livegang Standard, `?physics=legacy` schaltet die alte Physik zurück (Abschnitt 25) · Bezug: [`refactor-plan.md`](refactor-plan.md) Abschnitt 0, 5 (Phase 1a) und 6 (Netcode) · Blindtest: [`phase-1a-playtest.md`](phase-1a-playtest.md)
 
 Dieses Dokument ist die eine verbindliche Grundlage für die Umsetzung von Phase 1a. Es ersetzt die beiden Entwürfe, aus denen es entstanden ist. Zahlen sind Startwerte für das Tuning; Struktur, Konventionen, Zustandsfelder und die Reihenfolge im Tick sind verbindlich, weil Phase 1b (Server-Sim, Prediction, Replay) darauf aufbaut.
 
 **Rahmen (nicht verhandelbar):**
 
-- Ohne `?physics=v2` verhält sich das Spiel exakt wie heute. Die Legacy-Physik in `Bulli.ts` bleibt, bis der Nutzer im Blindtest entschieden hat. Ihr Löschen ist **nicht** Teil dieses Laufs.
+- Ohne `?physics=v2` verhält sich das Spiel exakt wie heute. Die Legacy-Physik in `Bulli.ts` bleibt, bis der Nutzer im Blindtest entschieden hat. Ihr Löschen ist **nicht** Teil dieses Laufs. *Überholt durch den Livegang (Abschnitt 25):* v2 ist Standard, die alte Physik gibt es nur noch mit `?physics=legacy`.
 - Das Protokoll bleibt in 1a unverändert: Der Client sendet weiter `update` mit seiner Position. Gemischte Sessions (Legacy- und v2-Clients) funktionieren.
 - `src/shared` importiert weder three noch DOM (Scan `tests/shared/purity.test.ts`). In der Sim gibt es kein `Math.random` und kein `Date.now`. Die Sim läuft mit festem Takt `DT = 1/60 s`.
 - Maßstab 1 u = 1 m. Basis-Topspeed je Karosse 45–55 m/s, mit Boost ~70 m/s. Turbo darf darüber, mit harter Obergrenze.
@@ -59,7 +59,7 @@ Zusätzlich geprüft (für diese Spezifikation): Stoß mit 1 m/s quer + 0,8 rad/
 5. **Pulse-Latch im InputManager:** Eine Tastenflanke zwischen zwei Ticks geht nicht verloren; sie wird bis zum nächsten Tick gehalten.
 6. **Weicher 1a-Kontakt gegen Remote-Proxies:** e = 0 und 70 % Stärke (Regler), gegen Zittern durch 20-Hz-Updates.
 7. **Akkumulator-Kappe pro Auto und Tick:** Σ\|Δv\| aus Kontakten ≤ 30 m/s (zusätzlich zur Δω-Kappe).
-8. **Renn-Kamera:** niedriger (Höhe 5,5 m, Abstand 11 m), Yaw im Drift zur Geschwindigkeitsrichtung geblendet.
+8. **Renn-Kamera:** niedriger (Höhe 4,8 m, Abstand 11 m; ursprünglich 5,5 m, siehe 12.5), Yaw im Drift zur Geschwindigkeitsrichtung geblendet.
 9. **Visuelle Feder im Renderer** (nicht in der Sim): Nicken aus Längsbeschleunigung ≤ 4°, Rollen aus Querbeschleunigung ≤ 5°, Stauchen bei der Landung.
 10. **Mini-Turbo** nach längerem Drift als optionaler Regler (Standard aus), statt als fester Bestandteil.
 11. **Paritätstest der Collider** über `window.__bulliDebug` – in 1a für den Adapter, in 1b für die Portierung nach shared.
@@ -745,11 +745,13 @@ Nach dem Blindtest (nicht in diesem Lauf) schrumpft `Bulli` auf eine dünne Fass
 
 | Wert | race | Mobile-Faktor |
 |---|---|---|
-| Höhe | 5,5 m | ×0,9 |
-| Abstand | 11 m (+12 % bei vtop) | ×0,9 |
+| Höhe | 4,8 m | ×1 (Hochformat ×1,5) |
+| Abstand | 11 m (+12 % bei vtop) | ×1 (Hochformat ×1,5) |
 | LookAt-Höhe | 1,5 m | |
-| FOV | 64° + 10°·speedRatio + 4° Boost, max 80° | Basis 66° |
+| FOV | 60° + 10°·speedRatio + 4° Boost, max 80° | Basis 62° |
 | Yaw-Ziel | `yaw + 0,5·β·clamp(u/10, 0, 1)` | |
+
+*Angepasst beim Livegang von v2 (Abschnitt 25):* Ursprünglich 5,5 m Höhe, FOV 64°/66° und Mobile-Faktor 0,9. Mit `npm run screenshots` gemessen (Anteil des Autos an der Bildbreite, `carWidth` in `stats.json`): Die Legacy-Kamera zeigt den Bulli mit 4 % der Bildbreite, die ursprüngliche Renn-Kamera mit 14 %, die jetzige mit 16 % im Stand und 12 % bei 70 km/h (1600 × 900). Auf dem Handy quer 16 %. Im Hochformat füllte der Bulli mit 47 % die halbe Bildbreite; dort rückt die Kamera jetzt um den Faktor 1,5 weiter weg und höher (28 %). Straßen in Kurven und Kreuzungen bleiben lesbar (Ansicht `corner`).
 
 Ein Profilwechsel ist im Tuning-Panel möglich (für den Blindtest: v2 auch mit Legacy-Kamera fahrbar).
 
@@ -1237,3 +1239,13 @@ Die Toleranz 1e-9 · max(1, |Wert|) liegt damit drei Größenordnungen über dem
 
 Die Messung fand einen echten Kipppunkt: `wall-graze-10deg` startete den Bulli genau mit seinem vtop von 50 m/s bei Vollgas. Dort springt der Antrieb zwischen „deckt den Fahrwiderstand“ (xs < 1) und „nichts“ (xs ≥ 1), und ob u = 50·(sin²+cos²) auf 50 oder knapp darunter rundet, hing vom letzten Bit von sin/cos(10°) ab: 5 cm Unterschied nach 3 s, bei jeder Toleranz ein Fehlschlag. Das Szenario startet jetzt mit 49 m/s, die Datei ist neu erzeugt. Die Unstetigkeit in der Sim selbst bleibt (sie betrifft nur Autos, die exakt auf vtop gesetzt werden; mit Vollgas von unten bleibt der Bulli nach 100 s rund 5e-13 m/s unter vtop stehen); für 1b ist sie ein Kandidat, wenn Server und Client auf verschiedenen Plattformen rechnen.
 
+## 25. Livegang: v2 ist Standard
+
+Auf Wunsch des Nutzers gehen neue Features direkt live statt hinter Flags. Der Blindtest entfällt deshalb als Gate; v2 ist ohne URL-Parameter aktiv.
+
+- **Flags (`client/flags.ts`):** `PHYSICS_V2` ist wahr, außer bei `?physics=legacy` (Notausgang). `?physics=v2` bleibt gültig und ändert nichts. `?sandbox=1` läuft immer mit v2, auch zusammen mit `?physics=legacy`.
+- **HUD und Hinweise:** `index.html` startet mit `body.physics-v2`, `main.ts` entfernt die Klasse bei `?physics=legacy`. So zeigt die Seite schon vor dem ersten Skript die v2-Elemente (`.v2-only`), und „SPACE jump“ erscheint nur noch im Legacy-Modus. Startbildschirm v2: „WASD drive · SPACE drift · SHIFT boost · Q jump · E shoot“, auf Touch-Geräten stattdessen „STICK steer · AUTO gas · DRIFT · BOOST“. Das ABOUT-Fenster listet mit v2 zusätzlich die Touch-Steuerung.
+- **Kamera:** Die Renn-Kamera sitzt niedriger (4,8 m, FOV 60°) und im Hochformat weiter weg (12.5).
+- **Werkzeuge:** `npm run perf:baseline` misst ohne Option v2 (`--physics=legacy` für die alte Physik). `npm run screenshots` nimmt v2 auf, `--physics=legacy` die alte Physik, und schreibt für die Ansichten der Verfolgerkamera den Anteil des Autos am Bild in `stats.json` (`__bulliDebug.localCarScreenBox()`). Neue Ansicht `corner`: das Auto schräg an einer Kreuzung.
+- **E2E:** Die v2-Tests laufen ohne Parameter. Die bisherigen Tests der alten Physik (Desktop mit Tempo-Messung, Touch, zwei Spieler, Perf-Overlay ohne `sim`) öffnen die Seite mit `?physics=legacy`. `physics-default.spec.ts` prüft, dass ohne Parameter und mit `?physics=v2` v2 aktiv ist (Startbildschirm, ABOUT, Sim-Auto, Kamera) und dass `?physics=legacy` die alte Physik mit ihren Hinweisen und ihrer Kamera einschaltet. Das Perf-Overlay in der Stadt zählt jetzt die Sim-Ticks des eigenen Autos.
+- **Aufräumen:** Wenn v2 einige Tage ohne Probleme live läuft, wird die Legacy-Physik gelöscht (`vehicle/legacyPhysics.ts`, die Legacy-Zweige in `controls/keyboard.ts`, `controls/mobile.ts`, `main.ts`, `ui/hud.ts`, `.legacy-only` in `index.html`, `LEGACY_CAMERA`, die Legacy-E2E-Tests und `?physics=legacy`).

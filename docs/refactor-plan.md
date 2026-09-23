@@ -1,6 +1,6 @@
 # Plan: Bulli Drive als Open-World-Multiplayer-Rennspiel
 
-**Stand:** 2026-09-23 · **Aktuelle Phase:** Phase 1a – umgesetzt hinter `?physics=v2` (Branch `refactor/phase-1a-driving`), wartet auf den Blindtest durch den Nutzer ([Anleitung](phase-1a-playtest.md)); danach wird die Legacy-Physik gelöscht. Phase 0 ist gemergt (PR #7, CI grün); offen ist dort nur noch die Messung auf echten Geräten (Referenz-Handy, Desktop im Browserfenster).
+**Stand:** 2026-09-23 · **Aktuelle Phase:** Phase 1a – live: v2 ist auf Wunsch des Nutzers ohne URL-Parameter Standard, `?physics=legacy` bleibt vorerst als Notausgang. Der Blindtest entfällt als Gate ([Vergleich mit Legacy](phase-1a-playtest.md) freiwillig); die Legacy-Physik wird gelöscht, wenn v2 einige Tage ohne Probleme läuft. Phase 0 ist gemergt (PR #7, CI grün); offen ist dort nur noch die Messung auf echten Geräten (Referenz-Handy, Desktop im Browserfenster).
 
 ## 0. Entscheidungen (2026-09-23)
 
@@ -120,9 +120,9 @@ Die Dauer ist in Wochen fokussierter Arbeit angegeben, im Kalender wird es läng
 - Kampf, Coins, Powerups und Sprung bleiben in Phase 0 unverändert im Spiel.
 - **Exit:** Das Spiel verhält sich auf Desktop und Mobile identisch zu `1d39c07` (bis auf den Tacho), der Stale-Client-Reload funktioniert, und die CI ist grün.
 
-**Phase 1a – Fahrgefühl und Kontakt (3–4 Wochen, Flag `?physics=v2`) · Status: umgesetzt hinter `?physics=v2`, wartet auf den Blindtest; danach Legacy-Physik löschen**
+**Phase 1a – Fahrgefühl und Kontakt (3–4 Wochen) · Status: live, v2 ist Standard; Legacy (`?physics=legacy`) wird nach einigen Tagen ohne Probleme gelöscht**
 
-Verbindliche Spezifikation, Abweichungen und Messwerte: [`phase-1a-design.md`](phase-1a-design.md). Anleitung für den Blindtest: [`phase-1a-playtest.md`](phase-1a-playtest.md). Ohne Flag verhält sich das Spiel wie vorher, das Protokoll ist unverändert, Multiplayer funktioniert in beiden Modi.
+Verbindliche Spezifikation, Abweichungen und Messwerte: [`phase-1a-design.md`](phase-1a-design.md). Playtest und Vergleich mit Legacy: [`phase-1a-playtest.md`](phase-1a-playtest.md). Entwickelt hinter `?physics=v2`; seit dem Livegang (Nutzerwunsch: neue Features direkt live, nicht hinter Flags) ist v2 Standard und `?physics=legacy` der Notausgang (Spezifikation, Abschnitt 25). Das Protokoll ist unverändert, Multiplayer funktioniert in beiden Modi, auch gemischt.
 
 - **Deliverables:**
   - [x] `stepVehicle` mit Längs- und Quergrip, Handbremse, Drift, die ein Boost-Meter füllt, und echter Gravitation — Einspurmodell mit Reifenkennlinie und drei Fahrassists in `src/shared/sim`, fester Takt 1/60 s
@@ -134,16 +134,17 @@ Verbindliche Spezifikation, Abweichungen und Messwerte: [`phase-1a-design.md`](p
   - [x] `Bulli.ts` zerlegt — `CarModel`, `Nametag`, `ChaseCamera`, `LocalVehicle`; die Legacy-Physik liegt unverändert in `vehicle/legacyPhysics.ts`
   - [x] InputManager mit Tastatur, Touch (bestehender Joystick und Buttons) und Gamepad; Option Auto-Gas für Touch — dazu großer DRIFT- und BOOST-Button, Gamepad mit Standard-Mapping
   - [x] Sandbox-Strecke mit **Rampen**, Kurven, Wand und **Dummy-Autos zum Rempeln** sowie ein lil-gui-Tuning-Panel — `?sandbox=1` (offline) und `?tune=1`, Export der Werte als JSON
-  - [x] Niedrigere Renn-Kamera
+  - [x] Niedrigere Renn-Kamera — 4,8 m hoch, 11 m hinter dem Auto, FOV 60°; der Bulli nimmt 16 % der Bildbreite ein (Legacy 4 %), im Hochformat rückt sie weiter weg
   - [x] Reset statt der toten Recovery-Logik — R halten bzw. Flip-Button halten setzt auf die nächste Straße
-  - [x] Messung der Sim-Kosten: `npm run perf:baseline -- --physics=v2` bzw. `--sandbox`, im Mittel höchstens 0,09 ms pro Frame auch mit 6 Autos, p95 0,2 ms, einzelne Frames bis 0,4 ms ([`baseline.md`](baseline.md), Abschnitt Phase 1a)
-- **Exit:** Mindestens 4 von 5 Testern ziehen das neue Fahren im Blindtest vor, auch auf dem Handy. Die Trajektorie ist bei 30, 60 und 144 FPS identisch. Der Tunneling-Test ist grün, auch für Auto gegen Auto bei Frontalzusammenstoß mit Topspeed. Ein Golden-Test für Kontaktszenarien (frontal, seitlich, Heck, drei Autos) läuft in Node und im Browser mit Toleranz gleich. Die Legacy-Physik ist gelöscht.
+  - [x] Messung der Sim-Kosten: `npm run perf:baseline` (seit dem Livegang Standard; damals `-- --physics=v2`) bzw. `--sandbox`, im Mittel höchstens 0,09 ms pro Frame auch mit 6 Autos, p95 0,2 ms, einzelne Frames bis 0,4 ms ([`baseline.md`](baseline.md), Abschnitt Phase 1a)
+- **Exit:** ~~Mindestens 4 von 5 Testern ziehen das neue Fahren im Blindtest vor, auch auf dem Handy.~~ (entfällt: v2 ist auf Nutzerwunsch direkt live) Die Trajektorie ist bei 30, 60 und 144 FPS identisch. Der Tunneling-Test ist grün, auch für Auto gegen Auto bei Frontalzusammenstoß mit Topspeed. Ein Golden-Test für Kontaktszenarien (frontal, seitlich, Heck, drei Autos) läuft in Node und im Browser mit Toleranz gleich. Die Legacy-Physik ist gelöscht.
 - **Stand des Exits:**
-  - [ ] **Blindtest durch den Nutzer** (4 von 5, auch auf dem Handy) — offen, Anleitung in [`phase-1a-playtest.md`](phase-1a-playtest.md); getunte Werte kommen als JSON aus dem Panel zurück
+  - [x] ~~Blindtest durch den Nutzer~~ — entfällt als Gate: v2 ist live Standard auf Nutzerwunsch. Ein Vergleich mit `?physics=legacy` bleibt freiwillig möglich ([`phase-1a-playtest.md`](phase-1a-playtest.md)); getunte Werte kommen als JSON aus dem Panel zurück
   - [x] Trajektorie bei 30, 60 und 144 FPS identisch — bitgleich pro Tick, auch bei unregelmäßigen Frames: `tests/client/loop.test.ts` (Loop und Sim) und `tests/client/fpsIndependence.test.ts` (der ganze Client-Tick mit InputManager, Powerup-Timern, Sandbox-Welt und Dummies, seit dem Review auch Rempeln eines fahrenden Mitspielers als Proxy)
   - [x] Tunneling-Test grün, auch Auto gegen Auto frontal mit 2 × 85 m/s und T-Bone mit 85 m/s; seit dem Review mit Sweep der Startphase, sodass er mit nur einem Substep anschlägt
   - [x] Golden-Tests für 10 Szenarien (darunter frontal, T-Bone, PIT, drei Autos, Mega gegen Käfer) in Node und im Browser mit derselben Toleranz (1e-9 relativ, Zähler exakt; plattformrobust, siehe phase-1a-design.md 24.2)
-  - [ ] **Legacy-Physik löschen** — erst nach dem Blindtest: `vehicle/legacyPhysics.ts`, die Legacy-Zweige in `controls/keyboard.ts`, `controls/mobile.ts` und `main.ts`, die `.legacy-only`-Elemente in `index.html`; `?physics=v2` wird Standard
+  - [x] v2 ist Standard (ohne URL-Parameter), `?physics=legacy` schaltet die alte Physik ein; E2E prüft beides (`physics-default.spec.ts`)
+  - [ ] **Legacy-Physik löschen** (Aufräumpunkt) — wenn v2 einige Tage ohne Probleme live läuft: `vehicle/legacyPhysics.ts`, die Legacy-Zweige in `controls/keyboard.ts`, `controls/mobile.ts`, `main.ts` und `ui/hud.ts`, die `.legacy-only`-Elemente in `index.html`, `LEGACY_CAMERA`, die Legacy-E2E-Tests und `?physics=legacy`
 - **Review nach 1a:** 21 bestätigte Befunde (Sim, Netcode-Tauglichkeit, Mobile, Tests) behoben bzw. für 1b festgehalten, siehe [`phase-1a-design.md`](phase-1a-design.md), Abschnitt 23.
 - **Außerdem noch offen:** E2E-Test für eine gemischte Session aus v2- und Legacy-Client (funktioniert per Konstruktion, weil das Protokoll unverändert ist; drei Software-WebGL-Seiten gleichzeitig sind in der CI zu langsam), Messung der Sim-Kosten und Feinschliff von Renn-Kamera und Touch auf dem Referenz-Handy.
 
