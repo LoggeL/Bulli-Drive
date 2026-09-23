@@ -77,6 +77,8 @@ test('a Free Roam player who leaves disappears for the others in the room', asyn
     // Both land in the fullest Free Roam room
     expect(b.room).toEqual(a.room);
     await expect.poll(async () => (await snapshot(second.page)).remotes[firstId]?.name).toBe('E2E Roam A');
+    // The car waits as an idle ghost for the grace time (3 s on the e2e
+    // server, 30 s live), then it is gone
     await first.page.context().close();
     await expect.poll(async () => (await snapshot(second.page)).remotes[firstId]).toBeUndefined();
 });

@@ -213,6 +213,14 @@ export type GameEvent =
     | { type: 'carChanged'; id: string; carType: string; profile: ProfileId; tick: number }
     | { type: 'honk'; id: string };
 
+// The own car of a resumed session: whether it is in the sim, the tick it
+// last spawned (respawn shield) and its powerup windows
+export interface ResumeState {
+    alive: boolean;
+    spawnTick: number;
+    powerups: { type: string; startTick: number; endTick: number }[];
+}
+
 export interface RoomStateItems {
     powerups: { id: number; collected: boolean }[];
     coins: { id: number; collected: boolean }[];
@@ -233,6 +241,9 @@ export type ServerMessage =
         health: Record<string, number>;
         // Where the camera looks while the splash screen is up
         preview: { x: number; z: number; yaw: number };
+        // Only for a resumed session (11.1): the own car goes on as the
+        // server has it; the client takes its state from the next snapshot
+        resume?: ResumeState;
     }
     | { type: 'playerJoined'; member: MemberInfo }
     | { type: 'playerLeft'; id: string; reason: LeaveReason }

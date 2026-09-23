@@ -12,7 +12,8 @@ import { LeadControl } from './leadControl.js';
 import { Prediction, type PredictedRemote, type ReconcileResult, type SlotInfo } from './prediction.js';
 import { createPose, interpolatePose, RenderOffset, type Pose } from './renderOffset.js';
 import { isPowerupType, POWERUP_TYPE_IDS, RESPAWN_SHIELD_MAX_TICKS, type PowerupType } from '../party/rules.js';
-import type { GameEvent, MemberInfo } from '../protocol.js';
+import type { GameEvent, MemberInfo, ResumeState } from '../protocol.js';
+import { OFFLINE_PREDICT_MS } from './reconnect.js';
 import type { SimCar, VehicleInput } from '../sim/types.js';
 import { isCarClassId } from '../sim/vehicleClasses.js';
 import type { SimWorld } from '../world/colliders.js';
@@ -87,6 +88,9 @@ export class NetClient {
     private readonly posePool: Pose[] = [];
     // The last tick whose input went out
     protected sentTick = -1;
+    // Since when the connection is gone (ms), -1 while connected: the own
+    // car is predicted OFFLINE_PREDICT_MS further, then held (11.1)
+    suspendedAt = -1;
     // Server tick at local time 0 as the clock said at the last (re)start.
     // C follows this anchor plus the lead, not the clock's later estimates,
     // so the clock's own corrections do not move C; the lead control
@@ -124,6 +128,32 @@ export class NetClient {
         this.sentTick = -1;
         this.lead.start(0, BUFFER_TARGET_MIN);
         this.offset.clear();
+        this.suspendedAt = -1;
+    }
+
+    /**
+     * Back in the room after a lost connection with the same session: the
+     * car goes on as the server has it (taken from the next snapshot), with
+     * its powerup windows and spawn tick (11.1).
+     */
+    resumeOwn(resume: ResumeState): void {
+        const p = this.prediction;
+        if (!p) return;
+        this.clearWindows();
+        for (const w of resume.powerups) {
+            if (isPowerupType(w.type)) this.setWindow(w.type, w.startTick, w.endTick);
+        }
+        this.spawnTick = resume.spawnTick;
+        p.adoptNext = resume.alive;
+    }
+
+    /** The connection is gone: the prediction runs out shortly after now. */
+    suspend(now: number): void {
+        if (this.suspendedAt < 0) this.suspendedAt = now;
+    }
+
+    get suspended(): boolean {
+        return this.suspendedAt >= 0;
     }
 
     setMember(member: MemberInfo): void {
@@ -202,6 +232,8 @@ export class NetClient {
     advanceFrame(now: number, runTick: () => void): number {
         const p = this.prediction;
         if (!p || !this.clock.ready || this.clock.count < START_AFTER_PONGS) return 0;
+        // Disconnected: a moment more of prediction, then the car holds
+        if (this.suspendedAt >= 0 && now - this.suspendedAt > OFFLINE_PREDICT_MS) return this.renderAlpha(now);
         this.stats.frames++;
         if (p.tick < 0) this.resync(now);
         const target = this.targetTick(now);
@@ -305,13 +337,15 @@ export class NetClient {
         }
         const result = this.reconcileOnly(snap, now);
         this.smoothRemotes(alpha, now, result?.contact ?? false);
-        if (!result || result.matched || !ownShown) return result;
+        if (!result || result.matched) return result;
         this.afterReplay();
         if (result.snapped) {
+            // Too far to smooth, or the car was just taken over (resume)
             this.offset.clear();
             this.cameraSnap = true;
             return result;
         }
+        if (!ownShown) return result;
         if (!this.offset.correct(ownShown, this.ownPose(alpha, false, this.poseAfter), result.contact, now)) {
             this.stats.renderSnaps++;
             this.cameraSnap = true;

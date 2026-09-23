@@ -115,7 +115,9 @@ export default defineConfig({
             '/ws': {
                 target: `ws://localhost:${GAME_SERVER_PORT}`,
                 ws: true
-            }
+            },
+            // Server health for the ?debug=perf overlay
+            '/healthz': `http://localhost:${GAME_SERVER_PORT}`
         }
     }
 });

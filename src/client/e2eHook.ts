@@ -10,6 +10,10 @@ import { sendToServer } from './network/socket.js';
 import { netDriver } from './net/netDriver.js';
 import type { NetStats } from '../shared/net/client.js';
 import { remoteFlags } from './net/remotes.js';
+import { connectionInfo, holdReconnect } from './network/websocket.js';
+import { connectionOverlayText } from './ui/connectionOverlay.js';
+import { NETSIM } from './net/netsim.js';
+import type { NetsimOptions } from '../shared/net/netsim.js';
 
 // Hook for the Playwright smoke tests (tests/e2e) and the screenshot script
 // (scripts/screenshots.ts). It is only installed when the page is opened with
@@ -64,6 +68,8 @@ export interface V2Snapshot {
 export interface BulliDebugSnapshot {
     myId: string | null;
     connected: boolean;
+    // Own Party score from the scoreboard (0 when not on it)
+    score: number;
     // The room the server put this page in, and its items in the scene
     room: RoomInfo | null;
     items: { coins: number; powerups: number };
@@ -219,6 +225,15 @@ export interface NetDebugSnapshot {
     // Car flags of the other players from their latest snapshot
     remoteFlags: Record<string, number>;
     stats: NetStats;
+    // The connection (11.1): reconnects so far, whether the last welcome
+    // resumed the session, the last close code, what the banner says
+    // (null while hidden), the prediction held for a lost connection
+    reconnects: number;
+    resumed: boolean;
+    lastCloseCode: number;
+    overlay: string | null;
+    suspended: boolean;
+    netsim: NetsimOptions | null;
 }
 
 function netSnapshot(): NetDebugSnapshot {
@@ -239,7 +254,13 @@ function netSnapshot(): NetDebugSnapshot {
         contactSet: p?.remotes.size ?? 0,
         offset: Math.hypot(o.x, o.y, o.z),
         remoteFlags: Object.fromEntries(Object.keys(state.remotePlayers).map(id => [id, remoteFlags(id)])),
-        stats: { ...netDriver.stats }
+        stats: { ...netDriver.stats },
+        reconnects: connectionInfo.reconnects,
+        resumed: connectionInfo.resumed,
+        lastCloseCode: connectionInfo.lastCloseCode,
+        overlay: connectionOverlayText(),
+        suspended: netDriver.suspended,
+        netsim: NETSIM
     };
 }
 
@@ -257,6 +278,7 @@ export function installE2EHook(): void {
             return {
                 myId: state.myId,
                 connected: state.ws?.readyState === WebSocket.OPEN,
+                score: state.scoreboard.find(entry => entry.id === state.myId)?.score ?? 0,
                 room: state.room ? { ...state.room } : null,
                 items: { coins: state.coins.length, powerups: state.worldPowerups.length },
                 local: state.bulli ? carSnapshot(state.bulli) : null,
@@ -302,6 +324,16 @@ export function installE2EHook(): void {
             car.speed = 0;
             // v2 physics: the sim car is the source of the pose
             car.vehicle?.place(x, z, angle);
+        },
+        // Closes the socket as if the connection broke: the client
+        // reconnects like after a lost connection, not before holdMs
+        dropConnection(holdMs = 0): void {
+            if (holdMs > 0) holdReconnect(holdMs);
+            state.ws?.close(4999, 'e2e drop');
+        },
+        // The Party's coins of the room (positions from the seed)
+        coins(): { id: number; x: number; z: number; collected: boolean }[] {
+            return (state.serverCoins ?? []).map(c => ({ id: c.id, x: c.x, z: c.z, collected: c.collected }));
         },
         // Where the local car is on screen (screenshot script: car size)
         localCarScreenBox,

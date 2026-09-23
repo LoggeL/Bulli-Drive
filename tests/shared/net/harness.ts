@@ -48,6 +48,12 @@ export class Link {
     deliverUntil(now: number): void {
         while (this.queue.length && this.queue[0].at <= now) this.queue.shift()!.deliver();
     }
+
+    /** The connection broke: nothing in flight arrives. */
+    clear(): void {
+        this.queue.length = 0;
+        this.lastAt = 0;
+    }
 }
 
 export class TestServer {
@@ -92,6 +98,8 @@ export class TestClient {
     private nextPingAt = 0;
     // A clock that is off from the server's by this much (a jump in a test)
     clockSkewMs = 0;
+    // The socket is up (disconnect / reconnect in a test)
+    online = true;
     script: InputScript = () => createVehicleInput();
     private readonly input = createVehicleInput();
 
@@ -109,6 +117,7 @@ export class TestClient {
         this.down = new Link(net, random);
         this.car = createSimCar(this.id, classId);
         this.net = new NetClient(bytes => {
+            if (!this.online) return;
             const copy = bytes.slice();
             this.up.send(this.server.time, () => {
                 const packet = decodeInputPacket(copy);
@@ -116,18 +125,45 @@ export class TestClient {
                 if (packet && member && this.session.room) this.session.room.onInput(member, packet, this.server.time);
             });
         });
-        const transport: Transport = {
-            readyState: 1,
-            bufferedAmount: 0,
-            send: data => {
-                const copy = typeof data === 'string' ? data : data.slice();
-                this.down.send(this.server.time, () => this.receive(copy));
-            },
-            close: () => { /* not in these tests */ }
-        };
-        this.session = new Session(this.id, transport, name, 0x336699);
+        this.session = new Session(this.id, this.transport(), name, 0x336699);
         this.session.carType = classId;
         this.server.lobby.join(this.session, kind);
+    }
+
+    // A socket to the server: open until the client drops it
+    private transport(): Transport {
+        const client = this;
+        let open = true;
+        const transport: Transport & { drop(): void } = {
+            get readyState() { return open ? 1 : 3; },
+            bufferedAmount: 0,
+            send: data => {
+                if (!open) return;
+                const copy = typeof data === 'string' ? data : data.slice();
+                this.down.send(this.server.time, () => { if (open) client.receive(copy); });
+            },
+            close: () => { open = false; },
+            drop: () => { open = false; }
+        };
+        return transport;
+    }
+
+    /** The connection breaks: nothing in flight arrives, the server starts the grace time. */
+    disconnect(): void {
+        this.online = false;
+        (this.session.transport as Transport & { drop(): void }).drop();
+        this.up.clear();
+        this.down.clear();
+        this.session.disconnectedAt = this.server.time;
+        this.net.suspend(this.now);
+    }
+
+    /** Back on a new socket with the session token: the server resumes the member (11.1). */
+    reconnect(): void {
+        this.online = true;
+        this.session.attach(this.transport());
+        const room = this.session.room!, member = this.session.member!;
+        room.resume(member);
     }
 
     private get now(): number {
@@ -135,6 +171,7 @@ export class TestClient {
     }
 
     sendJson(msg: ClientMessage): void {
+        if (!this.online) return;
         const text = JSON.stringify(msg);
         this.up.send(this.server.time, () => handleClientMessage(this.server.lobby, this.session, JSON.parse(text), this.server.time));
     }
@@ -153,6 +190,7 @@ export class TestClient {
         switch (msg.type) {
             case 'roomState':
                 this.net.enterRoom(mapFor().simWorld, msg.room.kind === 'party', msg.members, this.car, this.id);
+                if (msg.resume) this.net.resumeOwn(msg.resume);
                 this.net.clock.reset();
                 this.pingsSent = 0;
                 this.nextPingAt = now;

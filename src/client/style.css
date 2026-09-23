@@ -3092,13 +3092,15 @@ body.room-freeroam .nametag-hp {
    (network/websocket.ts). Reconnecting comes with phase 1b step 9
    ========================================================================== */
 #net-notice {
+    /* Between the HUD along the top edge (score, boost meter, chips) and the
+       touch controls at the bottom; the car stands still meanwhile anyway */
     position: fixed;
-    top: max(1rem, env(safe-area-inset-top, 0px));
+    top: 42%;
     left: 50%;
-    transform: translateX(-50%);
+    transform: translate(-50%, -50%);
     display: flex;
     align-items: center;
-    gap: 0.9rem;
+    gap: 0.8rem;
     max-width: calc(100vw - 2rem);
     padding: 0.6rem 0.7rem 0.6rem 1.2rem;
     border-radius: var(--radius-pill);
@@ -3112,8 +3114,57 @@ body.room-freeroam .nametag-hp {
     pointer-events: auto;
 }
 
-#net-notice[hidden] {
+#net-notice[hidden],
+#net-notice .net-notice-reload[hidden] {
     display: none;
+}
+
+#net-notice:not(.busy) .net-notice-spinner {
+    display: none;
+}
+
+#net-notice.busy {
+    padding-right: 1.2rem;
+}
+
+#net-notice.busy:has(.net-notice-reload:not([hidden])) {
+    padding-right: 0.7rem;
+}
+
+.net-notice-spinner {
+    flex: none;
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid rgba(255, 255, 255, 0.25);
+    border-top-color: var(--text);
+    border-radius: 50%;
+    animation: net-notice-spin 0.9s linear infinite;
+}
+
+/* Short landscape phones: smaller, and left of the middle, where neither
+   the stick (bottom left) nor the drive buttons (right) are */
+@media (orientation: landscape) and (max-height: 500px) {
+    #net-notice {
+        top: 50%;
+        left: 40%;
+        gap: 0.6rem;
+        padding: 0.4rem 0.6rem 0.4rem 0.9rem;
+        font-size: 0.85rem;
+    }
+
+    #net-notice.busy {
+        padding-right: 0.9rem;
+    }
+}
+
+@keyframes net-notice-spin {
+    to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .net-notice-spinner {
+        animation: none;
+    }
 }
 
 .net-notice-reload {

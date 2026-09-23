@@ -1,5 +1,6 @@
 import { DEFAULT_TERRAIN_CONFIG } from '../shared/constants.js';
 import type { TerrainConfig } from '../shared/protocol.js';
+import { GRACE_MS } from '../shared/net/constants.js';
 
 export const PORT = Number(process.env.PORT) || 8000;
 
@@ -25,6 +26,9 @@ function positiveIntEnv(name: string, fallback: number): number {
 export const MAX_PLAYERS_PER_ROOM = positiveIntEnv('MAX_PLAYERS_PER_ROOM', 32);
 export const MAX_CONNECTIONS = positiveIntEnv('MAX_CONNECTIONS', 160);
 export const EMPTY_ROOM_TTL_MS = 60_000;
+// How long a lost connection's session waits for the player (11.1); the
+// e2e server shortens it so closed test pages leave quickly
+export const SESSION_GRACE_MS = positiveIntEnv('GRACE_MS', GRACE_MS);
 export const ROOM_SWEEP_INTERVAL_MS = 5_000;
 
 // Inbound rate limits per connection

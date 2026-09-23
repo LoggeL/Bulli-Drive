@@ -5,6 +5,7 @@ import type {
     MemberInfo,
     RoomInfo,
     RoomKind,
+    ResumeState,
     RoomStateItems,
     ScoreboardEntry,
     ServerMessage
@@ -80,6 +81,8 @@ export interface RoomMember {
     pendingSpawn: boolean;
     pendingPlace: SpawnPose | null;
     carDirty: boolean;
+    // Tick the car last spawned or respawned, -1 = never
+    spawnTick: number;
 }
 
 // Messages about the session itself (name, car, room, clock) are handled
@@ -178,7 +181,8 @@ export abstract class Room {
             ghostHold: false,
             pendingSpawn: false,
             pendingPlace: null,
-            carDirty: false
+            carDirty: false,
+            spawnTick: -1
         };
         // Inputs for ticks the room already ran are late
         member.inputs.lastStepped = this.tick;
@@ -247,7 +251,25 @@ export abstract class Room {
         };
     }
 
-    roomStateFor(_member: RoomMember): ServerMessage {
+    /**
+     * The session came back on a new socket within the grace time (11.1):
+     * the member, its car and its party state stay; the client gets the
+     * room state again with its own car's state to take over.
+     */
+    resume(member: RoomMember): void {
+        if (this.members.get(member.id) !== member) return;
+        // The new page counts its inputs from the start again
+        member.lastProcessedSeq = -1;
+        member.inputs.clear();
+        member.inputs.takeWindow();
+        member.session.send(this.roomStateFor(member, true));
+    }
+
+    resumeState(member: RoomMember): ResumeState {
+        return { alive: !!member.car && member.alive, spawnTick: member.spawnTick, powerups: this.powerupWindows(member) };
+    }
+
+    roomStateFor(member: RoomMember, resume = false): ServerMessage {
         const members = this.sorted.map(m => this.memberInfo(m));
         const health: Record<string, number> = {};
         for (const m of this.sorted) health[m.id] = this.healthOf(m);
@@ -261,7 +283,8 @@ export abstract class Room {
             items: this.roomStateItems(),
             scoreboard: this.scoreboard(),
             health,
-            preview
+            preview,
+            ...(resume ? { resume: this.resumeState(member) } : {})
         };
     }
 
@@ -381,7 +404,9 @@ export abstract class Room {
     // Idle, background, frozen and lag ghost (5.4)
     private applyIdleRules(m: RoomMember, T: number, nowMs: number): void {
         const car = m.car!;
-        const idleNow = m.hidden || (m.clientFlags & (INPUT_FROZEN | INPUT_HIDDEN)) !== 0
+        // A lost connection makes the car an idle ghost until the player is
+        // back or the grace time ends (11.1)
+        const idleNow = m.hidden || !m.session.connected || (m.clientFlags & (INPUT_FROZEN | INPUT_HIDDEN)) !== 0
             || m.ticksWithoutInput >= IDLE_AFTER_TICKS;
         if (idleNow && !m.idle) {
             m.idle = true;
@@ -480,6 +505,7 @@ export abstract class Room {
                 m.missCount = 0;
                 m.playing = false;
                 m.ticksWithoutInput = 0;
+                m.spawnTick = T;
                 this.onSpawned(m, T);
                 this.emit({ type: 'spawn', id: m.id, tick: T, x: pose.x, z: pose.z, yaw: pose.yaw });
             }
@@ -629,6 +655,10 @@ export abstract class Room {
     // A car (re)appeared at the end of tick
     protected onSpawned(_member: RoomMember, _tick: number): void { /* none */ }
     protected healthOf(_member: RoomMember): number { return 100; }
+    // The member's Party score (carried over a new page of the same session)
+    scoreOf(_member: RoomMember): number { return 0; }
+    // The own powerup windows for a resumed session (Party)
+    protected powerupWindows(_member: RoomMember): ResumeState['powerups'] { return []; }
     roomStateItems(): RoomStateItems | null { return null; }
     scoreboard(): ScoreboardEntry[] { return []; }
 

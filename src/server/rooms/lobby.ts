@@ -79,6 +79,20 @@ export class RoomManager {
         return this.findOrCreate(kind).join(session, { ready: wasReady });
     }
 
+    /**
+     * The session is back on a new page (a reload within the grace time):
+     * a fresh membership behind the splash screen in a room of that kind,
+     * with the Party score kept.
+     */
+    rejoin(session: Session, kind: RoomKind): RoomMember {
+        const room = session.room, member = session.member;
+        if (room && member) {
+            if (room.kind === 'party' && kind === 'party') session.carryScore = room.scoreOf(member);
+            room.leave(member, 'disconnect');
+        }
+        return this.findOrCreate(kind).join(session);
+    }
+
     /** The session disconnected (or was kicked). */
     leave(session: Session, reason: 'disconnect' | 'kicked' = 'disconnect'): void {
         if (session.room && session.member) session.room.leave(session.member, reason);

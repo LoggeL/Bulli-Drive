@@ -1,6 +1,6 @@
 import express from 'express';
 import http from 'http';
-import { WebSocketServer, WebSocket } from 'ws';
+import { WebSocketServer, type WebSocket } from 'ws';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -12,20 +12,39 @@ import {
     MAX_PLAYERS_PER_ROOM,
     PING_EVERY_MS,
     PORT,
-    ROOM_SWEEP_INTERVAL_MS
+    ROOM_SWEEP_INTERVAL_MS,
+    SESSION_GRACE_MS
 } from './config.js';
 import { InputPacketSchema } from '../shared/protocol.js';
 import { decodeInputPacket, FRAME_INPUT } from '../shared/net/codec.js';
-import { CLOSE_HELLO, CLOSE_POLICY, CLOSE_IDLE } from '../shared/net/constants.js';
+import { CLOSE_HELLO, CLOSE_POLICY, CLOSE_IDLE, CLOSE_RESTART } from '../shared/net/constants.js';
 import { tuningIsDefault } from '../shared/sim/tuning.js';
 import * as v from 'valibot';
 import { mapFor } from './maps.js';
 import { RoomManager } from './rooms/lobby.js';
 import { roomOptions } from './rooms/Room.js';
-import { Session } from './session.js';
+import type { Session } from './session.js';
+import { SessionRegistry } from './sessions.js';
 import { handleClientMessage } from './dispatch.js';
-import { acceptHello, reject } from './handshake.js';
+import { acceptHelloResult, reject } from './handshake.js';
 import { TickScheduler } from './tick.js';
+import { healthReport, metricsReport, TrafficMeter, type HealthSources } from './health.js';
+import { TicketSigner } from './resumeTicket.js';
+import { gracefulShutdown } from './shutdown.js';
+import { netsimFromEnv, SocketConnection } from './connection.js';
+
+// A crash leaves the process in an unknown state: log it and exit, the
+// restart policy starts a fresh one (docs/phase-1b-design.md, 11.2)
+process.on('uncaughtException', (err) => {
+    console.error('Uncaught exception, exiting', err);
+    process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+    console.error('Unhandled rejection, exiting', reason);
+    process.exit(1);
+});
+
+const startedAtMs = performance.now();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -59,6 +78,26 @@ function preventStaleClientCaching(response: http.ServerResponse) {
     response.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     response.setHeader('CDN-Cache-Control', 'no-store');
     response.setHeader('Cloudflare-CDN-Cache-Control', 'no-store');
+}
+
+// Health and metrics (docs/phase-1b-design.md, 11.4 and 12). Defined
+// further down once the scheduler exists; the routes come first so they
+// also answer in dev, where Vite serves the client.
+let healthSources: HealthSources | null = null;
+app.get('/healthz', (_request, response) => {
+    response.setHeader('Cache-Control', 'no-store');
+    if (!healthSources) {
+        response.status(503).json({ ok: false });
+        return;
+    }
+    const report = healthReport(healthSources, performance.now());
+    response.status(report.ok ? 200 : 503).json(report);
+});
+if (process.env.METRICS === '1') {
+    app.get('/metrics.json', (_request, response) => {
+        response.setHeader('Cache-Control', 'no-store');
+        response.json(healthSources ? metricsReport(healthSources, performance.now()) : {});
+    });
 }
 
 if (fs.existsSync(clientIndexPath)) {
@@ -107,9 +146,16 @@ const lobby = new RoomManager(map, {
     maxPlayersPerRoom: MAX_PLAYERS_PER_ROOM,
     emptyRoomTtlMs: EMPTY_ROOM_TTL_MS
 });
-// Sessions by player id, and the sockets of connections before 'hello'
-const sessions = new Map<string, Session>();
-let connections = 0;
+// Sessions by id and token, with the grace time after a lost connection
+// (11.1); the open sockets; the resume tickets for restarts (11.3); the
+// dev netsim (11.5)
+const sessions = new SessionRegistry(SESSION_GRACE_MS);
+const connections = new Set<SocketConnection>();
+const tickets = TicketSigner.fromEnv();
+const netsim = netsimFromEnv();
+const traffic = new TrafficMeter();
+let kicks = 0;
+let shuttingDown = false;
 
 console.log(`Server starting... (world ${map.worldHash}, ${map.colliders.length} colliders, build ${SERVER_BUILD ?? 'dev'})`);
 
@@ -117,44 +163,71 @@ console.log(`Server starting... (world ${map.worldHash}, ${map.colliders.length}
 const scheduler = new TickScheduler(() => lobby.stepAll(performance.now()));
 scheduler.start();
 
-type Socket = WebSocket & { lastPongAt?: number };
+healthSources = {
+    scheduler,
+    lobby,
+    sessions,
+    traffic,
+    build: SERVER_BUILD,
+    startedAtMs,
+    connections: () => connections.size,
+    kicks: () => kicks,
+    shuttingDown: () => shuttingDown
+};
 
-// WebSocket pings: liveness (terminate stale connections so the rooms don't
-// accumulate ghosts) and the round trip for the lag ghost
+// WebSocket pings: liveness (terminate stale connections; their sessions go
+// into the grace time) and the round trip for the lag ghost
 const pinger = setInterval(() => {
     const now = performance.now();
-    wss.clients.forEach((client) => {
-        const socket = client as Socket;
-        if (socket.lastPongAt !== undefined && now - socket.lastPongAt > DEAD_SOCKET_MS) {
-            socket.terminate();
-            return;
+    for (const connection of connections) {
+        if (now - connection.lastPongAt > DEAD_SOCKET_MS) {
+            connection.terminate();
+            continue;
         }
         const payload = Buffer.alloc(8);
         payload.writeDoubleLE(now);
-        try { socket.ping(payload); } catch { /* ignore */ }
-    });
+        connection.ping(payload);
+    }
 }, PING_EVERY_MS);
 
 // Closes extra room instances that stayed empty
 const roomSweep = setInterval(() => lobby.sweep(), ROOM_SWEEP_INTERVAL_MS);
 roomSweep.unref();
 
+// Sessions whose player did not come back in time leave their room
+const graceSweep = setInterval(() => {
+    for (const session of sessions.expire(performance.now())) {
+        console.log(`Player ${session.name} (${session.id}) did not come back; leaving ${session.room?.id ?? 'no room'}`);
+        lobby.leave(session);
+    }
+}, 1000);
+graceSweep.unref();
+
+const trafficSampler = setInterval(() => traffic.sample(performance.now()), 5000);
+trafficSampler.unref();
+traffic.sample(performance.now());
+
 lobby.onIdleKick = (session) => kick(session, 'idle');
 
-const handshake = { lobby, serverBuild: SERVER_BUILD };
+const handshake = { lobby, serverBuild: SERVER_BUILD, sessions, tickets };
 
 wss.on('close', () => {
     clearInterval(pinger);
     clearInterval(roomSweep);
+    clearInterval(graceSweep);
+    clearInterval(trafficSampler);
     scheduler.stop();
 });
 
+// No grace after a kick: the session is gone
 function kick(session: Session, reason: 'policy' | 'idle'): void {
     if (session.kicked) return;
     session.kicked = true;
+    kicks++;
     console.warn(`Kicking ${session.name} (${session.id}): ${reason}`);
     session.send({ type: 'kicked', reason });
     lobby.leave(session, 'kicked');
+    sessions.remove(session);
     session.transport.close(reason === 'policy' ? CLOSE_POLICY : CLOSE_IDLE, reason);
 }
 
@@ -173,38 +246,46 @@ function onInputFrame(session: Session, bytes: Uint8Array): void {
 }
 
 wss.on('connection', (ws: WebSocket) => {
-    if (connections >= MAX_CONNECTIONS) {
-        console.warn(`Turning a connection away: ${connections} open`);
+    if (shuttingDown) {
+        ws.close(CLOSE_RESTART, 'restart');
+        return;
+    }
+    if (connections.size >= MAX_CONNECTIONS) {
+        console.warn(`Turning a connection away: ${connections.size} open`);
         reject(ws, 'full');
         return;
     }
-    connections++;
+    const connection = new SocketConnection(ws, traffic, netsim);
+    connections.add(connection);
     let session: Session | null = null;
-    const socket = ws as Socket;
-    socket.lastPongAt = performance.now();
-    ws.on('pong', (payload: Buffer) => {
+    ws.on('pong', (payload: Buffer) => connection.inbound(false, payload.length, () => {
         const now = performance.now();
-        socket.lastPongAt = now;
-        if (session && payload.length === 8) session.noteRtt(Math.max(0, now - payload.readDoubleLE(0)));
-    });
+        connection.lastPongAt = now;
+        if (session && session.transport === connection && payload.length === 8) {
+            session.noteRtt(Math.max(0, now - payload.readDoubleLE(0)));
+        }
+    }));
 
     const helloTimer = setTimeout(() => {
-        if (!session) ws.close(CLOSE_HELLO, 'no hello');
+        if (!session) connection.close(CLOSE_HELLO, 'no hello');
     }, HELLO_TIMEOUT_MS);
 
-    ws.on('message', (data: Buffer, isBinary: boolean) => {
+    const handle = (data: Buffer, isBinary: boolean) => {
         try {
             if (!session) {
                 if (isBinary) {
-                    reject(ws, 'hello');
+                    reject(connection, 'hello');
                     return;
                 }
-                session = acceptHello(ws, data.toString(), handshake);
-                if (session) sessions.set(session.id, session);
-                if (session) clearTimeout(helloTimer);
+                const result = acceptHelloResult(connection, data.toString(), handshake);
+                if (result) {
+                    session = result.session;
+                    clearTimeout(helloTimer);
+                }
                 return;
             }
-            if (session.kicked) return;
+            // A socket whose session another socket took over is ignored
+            if (session.kicked || session.transport !== connection) return;
             if (isBinary) {
                 if (data.length > 0 && data[0] === FRAME_INPUT) onInputFrame(session, data);
                 else if (session.noteInvalid(performance.now())) kick(session, 'policy');
@@ -221,21 +302,52 @@ wss.on('connection', (ws: WebSocket) => {
         } catch (e) {
             console.error('Handler error', e);
         }
-    });
+    };
+    ws.on('message', (data: Buffer, isBinary: boolean) => connection.inbound(isBinary, data.length, () => handle(data, isBinary)));
 
     ws.on('close', () => {
-        connections--;
+        connections.delete(connection);
+        connection.dispose();
         clearTimeout(helloTimer);
-        if (!session) return;
-        if (!sessions.delete(session.id)) return;
-        console.log(`Player ${session.name} disconnected from ${session.room?.id ?? 'no room'}`);
-        lobby.leave(session);
+        if (!session || shuttingDown) return;
+        // Taken over by a newer socket, or kicked: nothing to do
+        if (session.transport !== connection || !sessions.has(session)) return;
+        sessions.disconnect(session, performance.now());
+        console.log(`Player ${session.name} lost the connection in ${session.room?.id ?? 'no room'} (waiting ${SESSION_GRACE_MS / 1000} s)`);
     });
 
     ws.on('error', (err) => {
         console.warn('ws error', err);
     });
 });
+
+// Graceful shutdown (11.2): SIGTERM from a deploy or docker stop, SIGINT
+// from the terminal (a second SIGINT exits at once)
+function onSignal(signal: NodeJS.Signals): void {
+    if (shuttingDown) {
+        if (signal === 'SIGINT') process.exit(1);
+        return;
+    }
+    shuttingDown = true;
+    void gracefulShutdown({
+        stopAccepting: () => {
+            server.close();
+            wss.close();
+        },
+        stopTicking: () => scheduler.stop(),
+        sessions: () => sessions.all(),
+        tickets,
+        socketsOpen: () => connections.size,
+        closeAll: (code, reason) => {
+            for (const connection of connections) connection.close(code, reason);
+        },
+        exit: code => process.exit(code),
+        wait: ms => new Promise(resolve => setTimeout(resolve, ms)),
+        log: message => console.log(message)
+    }, signal);
+}
+process.on('SIGTERM', onSignal);
+process.on('SIGINT', onSignal);
 
 server.listen(PORT, () => {
     console.log(`Listening on port ${PORT}`);

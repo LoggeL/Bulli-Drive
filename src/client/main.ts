@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { state } from './state.js';
-import { initWebSocket } from './network/websocket.js';
+import { initWebSocket, markPlayerReady } from './network/websocket.js';
 import { initKeyboard } from './controls/keyboard.js';
 import { setupMobileControls } from './controls/mobile.js';
 import { updateParticles, spawnDriftParticle, spawnBoostFireParticle, spawnDamageSmoke } from './effects/particles.js';
@@ -105,6 +105,7 @@ function init() {
         sendToServer({ type: 'setCar', carType, profile: assistProfileForDevice() as ProfileId });
         applySplashChoice();
         sendToServer({ type: 'ready' });
+        markPlayerReady();
 
         // Hide splash screen
         if (splashScreen) {

@@ -119,6 +119,9 @@ export class Prediction {
     snapNext = true;
     // Ticks run with an input (not replays)
     ticksRun = 0;
+    // A resumed session (11.1): the car exists on the server; the next
+    // snapshot with the own car brings it in, like a spawn at T_s
+    adoptNext = false;
 
     private readonly history: HistoryEntry[] = [];
     private readonly cars: SimCar[] = [];
@@ -266,6 +269,11 @@ export class Prediction {
         if (Ts <= this.lastSnapshotTick) return null;
         this.lastSnapshotTick = Ts;
         const self = snap.self;
+        if (self && !this.spawned && this.adoptNext) {
+            this.adoptNext = false;
+            this.spawned = true;
+            this.snapNext = true;
+        }
         if (!self || !this.spawned) {
             this.updateContactSet(snap, null);
             return null;

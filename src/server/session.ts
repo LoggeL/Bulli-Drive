@@ -31,8 +31,15 @@ const RTT_SAMPLES = 5;
 
 export class Session {
     readonly id: string;
-    readonly transport: Transport;
+    // The socket; a resumed session gets the new one (attach)
+    transport: Transport;
     readonly token: string;
+    // Since when the socket is gone (ms, the server clock), -1 while
+    // connected: the session waits GRACE_MS for the player (11.1)
+    disconnectedAt = -1;
+    // Score carried over a restart by a resume ticket (11.3); the Party
+    // takes it on join
+    carryScore = 0;
     // Random per page load (duplicated tabs, 11.1)
     connId = '';
     // The page's build stamp from 'hello'
@@ -79,6 +86,16 @@ export class Session {
 
     get open(): boolean {
         return this.transport.readyState === OPEN;
+    }
+
+    get connected(): boolean {
+        return this.disconnectedAt < 0;
+    }
+
+    /** The player is back on a new socket (resume or takeover). */
+    attach(transport: Transport): void {
+        this.transport = transport;
+        this.disconnectedAt = -1;
     }
 
     // Sends an already serialized message

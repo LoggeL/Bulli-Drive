@@ -75,8 +75,17 @@ export const LAGGY_MISS_RATE = 0.2;
 export const LAGGY_WINDOW_TICKS = 300;
 export const LAGGY_RECOVER_TICKS = 300;
 
-// Session grace after a lost connection (reconnect, phase 1b step 9)
+// Session grace after a lost connection (11.1): the car waits as an idle
+// ghost this long for the player to come back with the session token
 export const GRACE_MS = 30_000;
+// A resume ticket from 'shutdown' is good this long (11.3)
+export const RESUME_TICKET_MS = 120_000;
+// Graceful shutdown (11.2): clients reconnect after this, the server closes
+// the sockets this long after the 'shutdown' message and exits at the latest
+// after SHUTDOWN_MAX_MS
+export const SHUTDOWN_RECONNECT_MS = 1500;
+export const SHUTDOWN_CLOSE_DELAY_MS = 300;
+export const SHUTDOWN_MAX_MS = 5000;
 
 // Clock sync (3.7): pings right after joining, then once a second
 export const CLOCK_BURST_PINGS = 5;
@@ -91,3 +100,6 @@ export const CLOSE_FULL = 4002;
 export const CLOSE_POLICY = 4003;
 export const CLOSE_IDLE = 4004;
 export const CLOSE_TAKEN_OVER = 4005;
+// Standard codes: the server restarts (graceful shutdown) or goes away
+export const CLOSE_RESTART = 1012;
+export const CLOSE_GOING_AWAY = 1001;

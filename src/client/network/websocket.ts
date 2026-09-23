@@ -7,7 +7,8 @@ import {
     type ServerMessage
 } from '../../shared/protocol.js';
 import { decodeSnapshot } from '../../shared/net/codec.js';
-import { CLOCK_BURST_INTERVAL_MS, CLOCK_BURST_PINGS, CLOCK_INTERVAL_MS, CLOSE_VERSION } from '../../shared/net/constants.js';
+import { CLOCK_BURST_INTERVAL_MS, CLOCK_BURST_PINGS, CLOCK_INTERVAL_MS, CLOSE_FULL } from '../../shared/net/constants.js';
+import { closeAction, reconnectDelayMs } from '../../shared/net/reconnect.js';
 import { isPowerupType } from '../../shared/party/rules.js';
 import { resetTuning, tuningIsDefault } from '../../shared/sim/tuning.js';
 import { createMapData, type MapData } from '../../shared/world/mapData.js';
@@ -26,7 +27,9 @@ import { addKillfeedEntry, showHitmarker } from '../ui/hud.js';
 import { initMinimap } from '../ui/minimap.js';
 import { releaseKeyboardInputs } from '../controls/keyboard.js';
 import { resetMobileControls } from '../controls/mobile.js';
-import { sendToServer } from './socket.js';
+import { sendToServer, setSocketNetsim } from './socket.js';
+import { createSocketNetsim } from '../net/netsim.js';
+import { hideConnectionOverlay, showConnectionNotice, showReconnecting } from '../ui/connectionOverlay.js';
 import { setWorldColliders, simWorldFor } from '../vehicle/simWorldClient.js';
 import { assistProfileForDevice } from '../vehicle/LocalVehicle.js';
 import { startNetPump } from '../vehicle/v2Driver.js';
@@ -35,13 +38,15 @@ import { netDriver, placeholderCar } from '../net/netDriver.js';
 import { clearRemoteViews, forgetRemote, noteSnapshotCars, setRemoteDead } from '../net/remotes.js';
 
 // The connection to the game server on protocol v2 (docs/phase-1b-design.md,
-// 3): the handshake, the world from the seed, the room state, the events
-// and the binary snapshots, which go to the prediction (net/netDriver.ts)
-// and the remote cars (net/remotes.ts).
+// 3 and 11): the handshake, the world from the seed, the room state, the
+// events and the binary snapshots, which go to the prediction
+// (net/netDriver.ts) and the remote cars (net/remotes.ts). A lost
+// connection comes back on its own: the session token brings the same
+// player and car back within the grace time, a resume ticket from a
+// restart the colour and the Party score.
 
 let environmentInitialized = false;
 let map: MapData | null = null;
-let connected = false;
 let clockTimer = 0;
 let snapshotWarned = false;
 // Random per page load, only in memory (duplicated tabs, 11.1)
@@ -50,6 +55,32 @@ const connId = Math.random().toString(36).slice(2) + Date.now().toString(36);
 const VERSION_RELOAD_KEY = 'bulli-protocol-reload';
 const BUILD_RELOAD_KEY = 'bulli-build-version-reload';
 const WORLD_RELOAD_KEY = 'bulli-world-reload';
+const SESSION_KEY = 'bulli-session';
+const RESUME_KEY = 'bulli-resume';
+
+// Connection state: which socket is current (older ones are ignored), whether
+// this page ever had a socket open, the reconnect attempt and since when
+// the connection is gone (-1 while connected)
+let socketGeneration = 0;
+let everOpened = false;
+let reconnectAttempt = 0;
+let reconnectTimer = 0;
+let restartDelayMs: number | null = null;
+let disconnectedAt = -1;
+// Past the splash screen: after a reconnect as a new session the car
+// spawns again right away
+let playerReady = false;
+// E2E only: no reconnect before this time (performance.now), so a test
+// can look at the banner
+let holdReconnectUntil = 0;
+
+// For the e2e hook and the net overlay
+export const connectionInfo = {
+    reconnects: 0,
+    resumed: false,
+    lastCloseCode: 0,
+    get disconnectedAt(): number { return disconnectedAt; }
+};
 
 function pageBuild(): string | null {
     return document.querySelector<HTMLMetaElement>('meta[name="bulli-build-version"]')?.content || null;
@@ -67,47 +98,34 @@ function reloadOnce(key: string, value: string): boolean {
     return true;
 }
 
+function storageGet(key: string): string | undefined {
+    try {
+        return sessionStorage.getItem(key) || undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+function storageSet(key: string, value: string | null): void {
+    try {
+        if (value === null) sessionStorage.removeItem(key);
+        else sessionStorage.setItem(key, value);
+    } catch { /* private mode */ }
+}
+
+/** E2E hook: keeps the next reconnect back for ms (the banner stays up). */
+export function holdReconnect(ms: number): void {
+    holdReconnectUntil = performance.now() + ms;
+}
+
+/** The splash screen is done: the player drives (main.ts). */
+export function markPlayerReady(): void {
+    playerReady = true;
+}
+
 export function initWebSocket() {
     // Online the server drives every car with the default tuning (7)
     if (!tuningIsDefault()) resetTuning();
-
-    const ws = new WebSocket(CONFIG.serverUrl);
-    ws.binaryType = 'arraybuffer';
-    state.ws = ws;
-
-    ws.onopen = () => {
-        connected = true;
-        const savedName = localStorage.getItem('bulli-player-name') || '';
-        sendToServer({
-            type: 'hello',
-            protocolVersion: PROTOCOL_VERSION,
-            build: pageBuild(),
-            connId,
-            name: savedName,
-            carType: localStorage.getItem('bulli-car-type') || 'bulli',
-            profile: assistProfileForDevice(),
-            room: preferredRoomKind()
-        });
-    };
-
-    ws.onmessage = (event) => {
-        if (typeof event.data !== 'string') {
-            onSnapshotFrame(event.data as ArrayBuffer);
-            return;
-        }
-        let data: ServerMessage;
-        try {
-            data = JSON.parse(event.data);
-        } catch (err) {
-            console.warn('Dropping malformed server message', err);
-            return;
-        }
-        if (!data || typeof data !== 'object' || typeof (data as { type?: unknown }).type !== 'string') {
-            console.warn('Dropping server message without type');
-            return;
-        }
-        handleServerMessage(data);
-    };
 
     // Background tabs get throttled: the server treats the car as idle, and
     // back in front the client jumps to a fresh tick estimate (5.4, 8.3)
@@ -115,20 +133,124 @@ export function initWebSocket() {
         sendToServer({ type: 'visibility', hidden: document.hidden });
         if (!document.hidden) netDriver.resync(performance.now());
     });
+    connect();
+}
+
+function connect() {
+    window.clearTimeout(reconnectTimer);
+    reconnectTimer = 0;
+    const generation = ++socketGeneration;
+    const ws = new WebSocket(CONFIG.serverUrl);
+    ws.binaryType = 'arraybuffer';
+    state.ws = ws;
+    // ?netsim: both directions of this socket go through the simulated network
+    const netsim = createSocketNetsim();
+    setSocketNetsim(netsim);
+    const current = () => generation === socketGeneration;
+
+    ws.onopen = () => {
+        if (!current()) return;
+        everOpened = true;
+        sendHello();
+    };
+
+    ws.onmessage = (event) => {
+        if (!current()) return;
+        const data = event.data as string | ArrayBuffer;
+        if (netsim) netsim.down.send(() => { if (current()) onFrame(data); }, typeof data !== 'string');
+        else onFrame(data);
+    };
 
     ws.onerror = (e) => {
+        if (!current()) return;
         console.warn('WebSocket error, offline mode?', e);
-        if (!state.bulli && !connected) startOffline();
+        if (!state.bulli && !everOpened) startOffline();
     };
 
     ws.onclose = (event) => {
-        window.clearTimeout(clockTimer);
-        if (event.code === CLOSE_VERSION) return;
-        if (!state.bulli && !connected) return;
-        console.warn(`Connection closed (${event.code} ${event.reason})`);
-        showConnectionNotice(event.code === 4003 ? 'Disconnected by the server' : event.code === 4004
-            ? 'Disconnected after a long break' : 'Connection lost');
+        if (!current()) return;
+        const { code, reason } = event;
+        // The close waits behind whatever the netsim still holds
+        if (netsim) netsim.down.send(() => { netsim.close(); if (current()) onClosed(code, reason); }, false, true);
+        else onClosed(code, reason);
     };
+}
+
+function sendHello() {
+    const savedName = localStorage.getItem('bulli-player-name') || '';
+    const sessionToken = storageGet(SESSION_KEY);
+    const resume = storageGet(RESUME_KEY);
+    sendToServer({
+        type: 'hello',
+        protocolVersion: PROTOCOL_VERSION,
+        build: pageBuild(),
+        connId,
+        ...(sessionToken ? { sessionToken } : {}),
+        ...(resume ? { resume } : {}),
+        name: savedName,
+        carType: localStorage.getItem('bulli-car-type') || 'bulli',
+        profile: assistProfileForDevice(),
+        room: state.room?.kind ?? preferredRoomKind()
+    });
+}
+
+function onFrame(data: string | ArrayBuffer) {
+    if (typeof data !== 'string') {
+        onSnapshotFrame(data);
+        return;
+    }
+    let msg: ServerMessage;
+    try {
+        msg = JSON.parse(data);
+    } catch (err) {
+        console.warn('Dropping malformed server message', err);
+        return;
+    }
+    if (!msg || typeof msg !== 'object' || typeof (msg as { type?: unknown }).type !== 'string') {
+        console.warn('Dropping server message without type');
+        return;
+    }
+    handleServerMessage(msg);
+}
+
+// The socket is gone: what happens next depends on why (11.1)
+function onClosed(code: number, reason: string) {
+    window.clearTimeout(clockTimer);
+    connectionInfo.lastCloseCode = code;
+    const now = performance.now();
+    netDriver.suspend(now);
+    // This page never had a connection: the offline mode took over (onerror)
+    if (!everOpened) return;
+    console.warn(`Connection closed (${code}${reason ? ` ${reason}` : ''})`);
+    if (disconnectedAt < 0) disconnectedAt = now;
+    switch (closeAction(code)) {
+        case 'reload':
+            // The reject handler reloads (or shows why it does not)
+            return;
+        case 'manual':
+            showConnectionNotice(code === 4005 ? 'Playing in another tab' : code === 4001
+                ? 'Could not join the game' : 'Disconnected by the server', 'Reconnect', reconnectNow);
+            return;
+        case 'continue':
+            showConnectionNotice('Disconnected after a long break', 'Continue', reconnectNow);
+            return;
+        case 'reconnect': {
+            const text = code === CLOSE_FULL ? 'The server is full, retrying…' : 'Reconnecting…';
+            const delay = Math.max(restartDelayMs ?? reconnectDelayMs(reconnectAttempt, Math.random), holdReconnectUntil - now);
+            restartDelayMs = null;
+            reconnectAttempt++;
+            showReconnecting(disconnectedAt, text);
+            reconnectTimer = window.setTimeout(connect, delay);
+            return;
+        }
+    }
+}
+
+function reconnectNow() {
+    reconnectAttempt = 0;
+    if (disconnectedAt < 0) disconnectedAt = performance.now();
+    showReconnecting(performance.now() - 1000, 'Reconnecting…');
+    connect();
 }
 
 // No server: the local car drives on the terrain with the rocks only
@@ -142,26 +264,6 @@ function startOffline() {
     const savedName = localStorage.getItem('bulli-player-name');
     createLocalPlayer(0xD32F2F, savedName || 'Offline');
     removeLoader();
-}
-
-function showConnectionNotice(text: string) {
-    let notice = document.getElementById('net-notice');
-    if (!notice) {
-        notice = document.createElement('div');
-        notice.id = 'net-notice';
-        notice.setAttribute('role', 'alert');
-        const label = document.createElement('span');
-        label.className = 'net-notice-text';
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'net-notice-reload';
-        button.textContent = 'Reload';
-        button.addEventListener('click', () => window.location.reload());
-        notice.append(label, button);
-        document.body.appendChild(notice);
-    }
-    notice.querySelector('.net-notice-text')!.textContent = text;
-    notice.hidden = false;
 }
 
 // ---- Clock ----
@@ -183,18 +285,28 @@ function startClockSync() {
 function handleServerMessage(data: ServerMessage) {
     switch (data.type) {
         case 'reject':
+            // Full: the close that follows retries with backoff
+            if (data.reason === 'full') return;
             if (data.reason === 'version' && data.reload && reloadOnce(VERSION_RELOAD_KEY, String(data.serverProtocol))) return;
-            showConnectionNotice(data.reason === 'full' ? 'The server is full'
-                : data.reason === 'version' ? 'A new version is out' : 'Could not join the game');
+            showConnectionNotice(data.reason === 'version' ? 'A new version is out' : 'Could not join the game');
             return;
         case 'welcome': {
+            // The token first: it has to survive a reload right below
+            storageSet(SESSION_KEY, data.sessionToken);
+            storageSet(RESUME_KEY, null);
+            if (disconnectedAt >= 0) connectionInfo.reconnects++;
+            connectionInfo.resumed = data.resumed;
+            reconnectAttempt = 0;
+            disconnectedAt = -1;
+            hideConnectionOverlay();
             // A new deploy with the same protocol: load the new client once
             const build = pageBuild();
             if (build && data.serverBuild && build !== data.serverBuild && reloadOnce(BUILD_RELOAD_KEY, data.serverBuild)) return;
             state.myId = data.playerId;
             state.myColor = data.color;
             state.myName = data.name;
-            try { sessionStorage.setItem('bulli-session', data.sessionToken); } catch { /* private mode */ }
+            // The own car carries the player id in the sim (contacts, order)
+            if (state.bulli?.vehicle) state.bulli.vehicle.car.id = data.playerId;
             return;
         }
         case 'roomState':
@@ -223,10 +335,12 @@ function handleServerMessage(data: ServerMessage) {
             updateScoreboardUI();
             return;
         case 'kicked':
-            showConnectionNotice(data.reason === 'idle' ? 'Disconnected after a long break' : 'Disconnected by the server');
+            // The close that follows (4003 / 4004) shows what to do
             return;
         case 'shutdown':
-            // Reconnect with the resume ticket comes with phase 1b step 9
+            // A restart: come back after reconnectInMs with the ticket (11.2, 11.3)
+            restartDelayMs = Math.max(0, Math.min(10_000, data.reconnectInMs));
+            if (data.resume) storageSet(RESUME_KEY, data.resume);
             return;
     }
 }
@@ -294,12 +408,16 @@ function enterRoom(data: Extract<ServerMessage, { type: 'roomState' }>) {
     const world = simWorldFor(state.terrainConfig ?? DEFAULT_TERRAIN_CONFIG, state.worldColliders);
     const car = state.bulli?.vehicle?.car ?? placeholderCar(state.myId ?? 'local', state.myCarType);
     netDriver.enterRoom(world, party, data.members, car, state.myId ?? '');
+    // Back after a lost connection with the car still on the server: the
+    // next snapshot brings it (11.1)
+    const resumedCar = !!data.resume?.alive;
+    if (data.resume) netDriver.resumeOwn(data.resume);
 
     const firstJoin = !state.bulli;
     if (firstJoin) {
         createLocalPlayer(state.myColor ?? 0xD32F2F, state.myName, data.preview);
         removeLoader();
-    } else {
+    } else if (!resumedCar) {
         // Until the spawn the car waits at the preview spot
         placeLocalCarVisual(data.preview.x, data.preview.z, data.preview.yaw);
     }
@@ -317,6 +435,13 @@ function enterRoom(data: Extract<ServerMessage, { type: 'roomState' }>) {
     updateScoreboardUI();
     startClockSync();
     startNetPump();
+    if (data.resume && !data.resume.alive && playerReady && party && data.members.some(m => m.id === state.myId && m.ready)) {
+        // Dead in the Party: the respawn event brings the car back
+        state.dead = true;
+    }
+    // Past the splash screen but not driving in this room (a new session
+    // after the grace time or a restart, or 'ready' got lost): drive again
+    if (playerReady && !resumedCar && !state.dead) sendToServer({ type: 'ready' });
 }
 
 function updateMember(data: Extract<ServerMessage, { type: 'playerUpdated' }>) {

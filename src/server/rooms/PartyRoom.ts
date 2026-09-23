@@ -1,9 +1,9 @@
-import type { CoinData, PowerupData, RoomStateItems, ScoreboardEntry } from '../../shared/protocol.js';
+import type { CoinData, PowerupData, ResumeState, RoomStateItems, ScoreboardEntry } from '../../shared/protocol.js';
 import { CAR_RESPAWN_SHIELD, CAR_SHIELD } from '../../shared/net/codec.js';
 import {
     COIN_MAGNET_PICKUP_RADIUS, COIN_PICKUP_RADIUS, COIN_RESET_TICKS, COIN_VALUE, KILL_REWARD, MAX_HEALTH,
     POWERUP_PICKUP_RADIUS, POWERUP_RESET_TICKS, POWERUP_TICKS, RAM_PAIR_COOLDOWN_TICKS, RESPAWN_SHIELD_DRIVE_TICKS,
-    RESPAWN_SHIELD_MAX_TICKS, RESPAWN_SHIELD_MOVE_SPEED, RESPAWN_TICKS, SHOT_COOLDOWN_TICKS, SHOT_RANGE,
+    POWERUP_TYPE_IDS, RESPAWN_SHIELD_MAX_TICKS, RESPAWN_SHIELD_MOVE_SPEED, RESPAWN_TICKS, SHOT_COOLDOWN_TICKS, SHOT_RANGE,
     isPowerupType, ramDamage, shotDamage
 } from '../../shared/party/rules.js';
 import { spawnVehicle } from '../../shared/sim/vehicle.js';
@@ -65,6 +65,10 @@ export class PartyRoom extends Room {
             .slice(0, 10);
     }
 
+    scoreOf(member: RoomMember): number {
+        return this.party.get(member.id)?.score ?? 0;
+    }
+
     protected healthOf(member: RoomMember): number {
         return this.party.get(member.id)?.health ?? MAX_HEALTH;
     }
@@ -80,7 +84,22 @@ export class PartyRoom extends Room {
     // ---- Membership ----
 
     protected onJoin(member: RoomMember): void {
-        this.party.set(member.id, createPartyState());
+        const state = createPartyState();
+        // A score carried over a server restart (resume ticket, 11.3)
+        const carried = member.session.carryScore;
+        if (carried > 0) {
+            state.score = carried;
+            member.session.carryScore = 0;
+        }
+        this.party.set(member.id, state);
+    }
+
+    protected powerupWindows(member: RoomMember): ResumeState['powerups'] {
+        const state = this.party.get(member.id);
+        if (!state) return [];
+        return POWERUP_TYPE_IDS
+            .filter(type => state.powerups[type].end > this.tick)
+            .map(type => ({ type, startTick: state.powerups[type].start, endTick: state.powerups[type].end }));
     }
 
     protected onLeave(member: RoomMember, _reason: LeaveReason): void {
@@ -226,6 +245,7 @@ export class PartyRoom extends Room {
         const pose = randomSpawnPose(this.map.world.city, this.carPositions(m));
         spawnVehicle(m.car!.state, this.map.simWorld, pose.x, pose.z, pose.yaw);
         m.alive = true;
+        m.spawnTick = tick;
         this.resetForSpawn(state, tick);
         this.emit({ type: 'respawn', id: m.id, tick, x: pose.x, z: pose.z, yaw: pose.yaw, health: state.health });
     }

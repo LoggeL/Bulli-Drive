@@ -112,9 +112,9 @@ async function tap(page: Page, selector: string): Promise<void> {
  * road name (and the game mode, when given), START ENGINE. Resolves with the
  * player's server id. extraQuery is appended to the URL, e.g. '&debug=perf'.
  */
-export async function joinGame(player: Player, name: string, extraQuery = '', mode?: 'party' | 'freeroam'): Promise<string> {
+export async function joinGame(player: Player, name: string, extraQuery = '', mode?: 'party' | 'freeroam', origin = ''): Promise<string> {
     const { page } = player;
-    await page.goto(`/?e2e=1${extraQuery}`);
+    await page.goto(`${origin}/?e2e=1${extraQuery}`);
 
     // The loader is removed once the server's init message has built the world.
     await expect(page.locator('#loading-screen')).toHaveCount(0, { timeout: 60_000 });
@@ -134,7 +134,8 @@ export async function joinGame(player: Player, name: string, extraQuery = '', mo
         const state = await snapshot(page);
         return state.connected && !!state.local && state.myId;
     }).toBeTruthy();
-    expect(player.sentMessages.map(message => message.type)).toContain('ready');
+    // (a moment later with ?netsim, which holds the frames back)
+    await expect.poll(() => player.sentMessages.map(message => message.type)).toContain('ready');
     // The server spawned the car and the prediction runs
     await expect.poll(async () => {
         const net = await netState(page);
@@ -158,6 +159,19 @@ export async function openSandbox(player: Player, extraQuery = ''): Promise<void
     else await startButton.click();
     await expect(splash).toHaveClass(/\bhidden\b/);
     await v2(page);
+}
+
+/** Waits until no session of a closed page waits on the page's server any more. */
+export async function noClosedPlayersLeft(page: Page): Promise<void> {
+    const origin = new URL(page.url()).origin;
+    await expect.poll(async () => {
+        try {
+            const response = await page.request.get(`${origin}/healthz`);
+            return (await response.json() as { graceSessions: number }).graceSessions;
+        } catch {
+            return -1;
+        }
+    }, { timeout: 20_000 }).toBe(0);
 }
 
 export function distance(a: { x: number; z: number }, b: { x: number; z: number }): number {
@@ -204,6 +218,10 @@ function freeRunway(colliders: ColliderInput[], x: number, z0: number): number {
  * Returns where the car was put and how much room it has ahead.
  */
 export async function placeOnClearRunway(page: Page, minLength = 120): Promise<{ x: number; z: number; free: number }> {
+    // Every test drives off the same runway: the cars of the pages an
+    // earlier test closed wait there as idle ghosts for the grace time
+    // (docs/phase-1b-design.md, 11.1) and have to be gone first
+    await noClosedPlayersLeft(page);
     const colliders = await page.evaluate(() => (window as unknown as {
         __bulliDebug: { colliders(): ColliderInput[] };
     }).__bulliDebug.colliders());

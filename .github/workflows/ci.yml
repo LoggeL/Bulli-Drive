@@ -94,11 +94,32 @@ jobs:
         run: |
           docker run -d --name bulli -p 8000:8000 bulli-drive:ci
           for attempt in $(seq 1 30); do
-            curl -fsS http://localhost:8000/build-version.txt && break
+            curl -fsS http://localhost:8000/healthz && break
             sleep 1
           done
+          # Healthy: the tick runs (docs/phase-1b-design.md, 11.4)
+          curl -fsS http://localhost:8000/healthz | grep -q '"ok":true'
           grep -Eq '^[a-f0-9]{16}$' <(curl -fsS http://localhost:8000/build-version.txt)
           curl -fsS http://localhost:8000/ | grep -q 'bulli-build-version'
+          # The image's own HEALTHCHECK turns healthy
+          for attempt in $(seq 1 40); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' bulli)
+            [ "$status" = healthy ] && break
+            sleep 1
+          done
+          echo "health: $status"
+          [ "$status" = healthy ]
+      - name: Graceful shutdown on docker stop
+        run: |
+          # SIGTERM: the server tells the clients, closes with 1012 and exits
+          # with 0 well before Docker's 10 s kill (11.2)
+          start=$(date +%s%N)
+          docker stop bulli
+          elapsed_ms=$(( ($(date +%s%N) - start) / 1000000 ))
+          code=$(docker inspect -f '{{.State.ExitCode}}' bulli)
+          echo "stopped in ${elapsed_ms} ms with exit code ${code}"
+          [ "$code" = 0 ]
+          [ "$elapsed_ms" -lt 6000 ]
       - name: Container logs
         if: always()
         run: docker logs bulli || true
