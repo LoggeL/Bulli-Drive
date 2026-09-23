@@ -1,5 +1,7 @@
 import { state } from '../state.js';
 import { setKeyboardDriveAxes } from './driveInput.js';
+import { PHYSICS_V2 } from '../flags.js';
+import { inputManager, type DriveKey } from '../input/InputManager.js';
 
 const heldDriveKeys = new Set<string>();
 
@@ -28,6 +30,32 @@ function spaceActivatesButton(e: KeyboardEvent): boolean {
         && !!e.target.closest('button, [role="button"]');
 }
 
+// Keys of the v2 physics (docs/phase-1a-design.md, 11.2): arrows as well
+// as WASD, Space handbrake, Shift boost, Q jump, R held resets
+const V2_KEYS: Record<string, DriveKey> = {
+    w: 'up', arrowup: 'up',
+    s: 'down', arrowdown: 'down',
+    a: 'left', arrowleft: 'left',
+    d: 'right', arrowright: 'right',
+    ' ': 'handbrake',
+    shift: 'boost',
+    q: 'jump',
+    r: 'reset'
+};
+
+function onV2KeyDown(e: KeyboardEvent) {
+    const key = e.key.toLowerCase();
+    const driveKey = V2_KEYS[key];
+    if (driveKey) {
+        if (!e.repeat) inputManager.keyDown(driveKey);
+        e.preventDefault();
+    } else if (key === 'e' && !e.repeat) {
+        state.inputs.e = true;
+    } else if (key === 'f' && !e.repeat) {
+        state.inputs.f = true;
+    }
+}
+
 function onKeyDown(e: KeyboardEvent) {
     if (document.activeElement?.tagName === 'INPUT') return;
     // Don't register new driving inputs while a modal/overlay is open.
@@ -35,6 +63,14 @@ function onKeyDown(e: KeyboardEvent) {
     // Let focused native/custom buttons handle Space themselves. Otherwise the
     // same press could both activate the button and queue vehicle recovery.
     if (spaceActivatesButton(e)) return;
+
+    if (PHYSICS_V2) {
+        onV2KeyDown(e);
+        if (state.audioCtx && state.audioCtx.state === 'suspended') {
+            state.audioCtx.resume();
+        }
+        return;
+    }
 
     const key = e.key.toLowerCase();
     if (key === 'w' || key === 'a' || key === 's' || key === 'd') {
@@ -58,6 +94,14 @@ function onKeyDown(e: KeyboardEvent) {
 function onKeyUp(e: KeyboardEvent) {
     if (spaceActivatesButton(e)) return;
     const key = e.key.toLowerCase();
+    if (PHYSICS_V2) {
+        const driveKey = V2_KEYS[key];
+        if (driveKey) {
+            inputManager.keyUp(driveKey);
+            e.preventDefault();
+        }
+        return;
+    }
     if (key === 'w' || key === 'a' || key === 's' || key === 'd') {
         heldDriveKeys.delete(key);
         syncDriveAxes();
@@ -70,6 +114,7 @@ function onKeyUp(e: KeyboardEvent) {
 }
 
 export function releaseKeyboardInputs() {
+    inputManager.releaseKeys();
     heldDriveKeys.clear();
     setKeyboardDriveAxes(0, 0);
     state.inputs.space = false;

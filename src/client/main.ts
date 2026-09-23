@@ -25,9 +25,11 @@ import { installE2EHook } from './e2eHook.js';
 import { watchWebGLContext, isWebGLContextLost } from './ui/contextLoss.js';
 import { installPerfMonitor, type PerfMonitor } from './debug/perfMonitor.js';
 import { setupLighting, updateLighting } from './render/lighting.js';
-import { ChaseCamera, LEGACY_CAMERA, type ChaseTarget } from './camera/ChaseCamera.js';
+import { ChaseCamera, LEGACY_CAMERA, RACE_CAMERA, RACE_CAMERA_SLIP_BLEND, type ChaseTarget } from './camera/ChaseCamera.js';
+import { PHYSICS_V2 } from './flags.js';
+import type { LocalVehicle } from './vehicle/LocalVehicle.js';
 
-const chaseCamera = new ChaseCamera(LEGACY_CAMERA);
+const chaseCamera = new ChaseCamera(PHYSICS_V2 ? RACE_CAMERA : LEGACY_CAMERA);
 const _chaseTarget: ChaseTarget = { position: new THREE.Vector3(), yaw: 0, speedRatio: 0, boost: false };
 
 let renderQuality: AdaptiveRenderQuality;
@@ -160,6 +162,20 @@ function updateChaseCamera(
     }
 }
 
+// v2: the camera swings a little towards the travel direction in a drift
+function updateRaceCamera(dt: number, carPos: THREE.Vector3, vehicle: LocalVehicle) {
+    const s = vehicle.car.state;
+    const u = vehicle.forwardSpeed;
+    _chaseTarget.position.copy(carPos);
+    _chaseTarget.yaw = vehicle.pose.yaw
+        + RACE_CAMERA_SLIP_BLEND * vehicle.slipAngle * Math.max(0, Math.min(1, u / 10));
+    _chaseTarget.speedRatio = Math.min(1, Math.abs(u) / Math.max(1, vehicle.car.params.topSpeed));
+    _chaseTarget.boost = s.boosting || vehicle.car.mods.turbo;
+    if (chaseCamera.update(dt, state.camera, _chaseTarget, state.cameraSnapPending)) {
+        state.cameraSnapPending = false;
+    }
+}
+
 function animate(frameTime: number) {
     requestAnimationFrame(animate);
     perfMonitor?.beginFrame();
@@ -173,14 +189,21 @@ function animate(frameTime: number) {
         // Update engine sound based on speed and jump height
         const isAccelerating = Math.abs(state.inputs.throttle) > 0.02;
         const turboActive = state.bulli.powerups.speed.active;
+        // v2 only: the drift boost (Shift) sounds and burns like the Turbo
+        const vehicle: LocalVehicle | undefined = state.bulli.vehicle;
+        const boostActive = turboActive || !!vehicle?.car.state.boosting;
         const jumpHeight = state.bulli.flipGroup.position.y;
-        updateEngineSound(state.bulli.speed, isAccelerating, turboActive, jumpHeight);
+        updateEngineSound(state.bulli.speed, isAccelerating, boostActive, jumpHeight);
 
         // Update the automatic chase camera. Its yaw follows the car on the
         // shortest arc, while position, framing and FOV use independent damping
         // so a quick turn feels deliberate instead of whipping the view around.
         const carPos = state.bulli.group.position;
-        updateChaseCamera(dt, carPos, state.bulli.angle, state.bulli.speed, state.bulli.powerups.speed.active);
+        if (vehicle) {
+            updateRaceCamera(dt, carPos, vehicle);
+        } else {
+            updateChaseCamera(dt, carPos, state.bulli.angle, state.bulli.speed, state.bulli.powerups.speed.active);
+        }
 
         // Effects based on speed
         const speed = Math.abs(state.bulli.speed);
@@ -194,7 +217,7 @@ function animate(frameTime: number) {
         checkPowerupCollection();
         updateProjectiles(dt);
         // Boost fire trails
-        if (turboActive && speed > 0.05) {
+        if (boostActive && speed > 0.05) {
             spawnBoostFireParticle();
         }
 

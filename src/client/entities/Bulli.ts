@@ -7,6 +7,9 @@ import { sendToServer } from '../network/socket.js';
 import { CarModel, randomCarType, type CarType } from '../vehicle/CarModel.js';
 import { Nametag } from '../vehicle/Nametag.js';
 import { createLegacyPhysicsState, updateLegacyMovement, type LegacyPhysicsState } from '../vehicle/legacyPhysics.js';
+import type { LocalVehicle } from '../vehicle/LocalVehicle.js';
+import { driveLocalCar } from '../vehicle/v2Driver.js';
+import { PHYSICS_V2 } from '../flags.js';
 
 // Muzzle distance for mega shots - just past the enlarged nose.
 const MEGA_PROJECTILE_FRONT_OFFSET = 6.5;
@@ -48,6 +51,8 @@ export class Bulli {
     health: number = 100;
     // State of the legacy physics (vehicle/legacyPhysics.ts)
     readonly legacy: LegacyPhysicsState = createLegacyPhysicsState();
+    // The v2 sim car; only the local car with ?physics=v2 gets one
+    vehicle?: LocalVehicle;
     shieldMesh?: THREE.Mesh;
     wheels: THREE.Group[];
     // Remote cars only. nametag/healthBarFill are the tag's elements, kept
@@ -151,8 +156,10 @@ export class Bulli {
 
     update(dt: number) {
         this.updateNametag();
+        // The v2 sim counts the powerup timers per tick instead (LocalVehicle)
+        const v2 = PHYSICS_V2 && this.isLocal;
 
-        for (const key of POWERUP_KEYS) {
+        for (const key of v2 ? [] : POWERUP_KEYS) {
             const p = this.powerups[key];
             if (p.active) {
                 p.timer -= dt;
@@ -184,6 +191,10 @@ export class Bulli {
         }
 
         if (!this.isLocal) return;
+        if (v2) {
+            driveLocalCar(this, dt);
+            return;
+        }
         if (state.isModalOpen) return;
         if (state.dead) return;
 

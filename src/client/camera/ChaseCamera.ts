@@ -54,6 +54,35 @@ export const LEGACY_CAMERA: ChaseProfile = {
     fovDamping: CONFIG.cameraFovDamping
 };
 
+// Lower racing camera of the v2 physics (docs/phase-1a-design.md, 12.5)
+export const RACE_CAMERA: ChaseProfile = {
+    height: 5.5,
+    distance: 11,
+    lookAtY: 1.5,
+    lookAhead: 4,
+    speedLookAhead: 6,
+    distanceSpeedGain: 0.12,
+    heightSpeedGain: 0,
+    distanceBoostGain: 0.06,
+    heightBoostGain: 0,
+    baseFov: 64,
+    mobileFov: 66,
+    speedFov: 10,
+    boostFov: 4,
+    maxFov: 80,
+    mobileDistanceScale: 0.9,
+    mobileHeightScale: 0.9,
+    // Tighter than the legacy camera, which trails far behind at 50 m/s
+    yawDamping: 7,
+    positionDamping: 12,
+    lookDamping: 12,
+    fovDamping: 5
+};
+
+// Share of the slip angle the race camera swings towards the travel
+// direction while drifting (full from 10 m/s)
+export const RACE_CAMERA_SLIP_BLEND = 0.5;
+
 export interface ChaseTarget {
     position: THREE.Vector3;
     // Heading the camera swings in behind

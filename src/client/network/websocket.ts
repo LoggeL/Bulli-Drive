@@ -16,6 +16,7 @@ import { initMinimap } from '../ui/minimap.js';
 import { releaseKeyboardInputs } from '../controls/keyboard.js';
 import { resetMobileControls } from '../controls/mobile.js';
 import { sendToServer } from './socket.js';
+import { PHYSICS_V2 } from '../flags.js';
 
 let environmentInitialized = false;
 let cityInitialized = false;
@@ -285,6 +286,8 @@ function handleServerMessage(data: ServerMessage) {
                     state.cameraSnapPending = true;
                     state.bulli.flipGroup.visible = true;
                     state.bulli.health = data.health;
+                    // v2: the sim car follows (no vehicle exists without the flag)
+                    state.bulli.vehicle?.respawn(data.x, data.z);
                 }
                 hideRespawnOverlay();
             } else {
