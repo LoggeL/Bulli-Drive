@@ -55,10 +55,21 @@ test('the v2 physics drives, steers, jumps, drifts and resets', async ({ openPla
     expect(peak.maxBeta).toBeGreaterThan(5 * Math.PI / 180);
     expect(peak.yaw).toBeGreaterThan(beforeDrift.yaw + 0.1);
 
-    // Brake to a stop with S
+    // Brake to a stop with S. Held on, S reverses after 8 ticks at a
+    // standstill, so the page watches every frame for the stop instead of
+    // polling (a poll can miss the short standstill and see the reverse)
     await page.keyboard.down('s');
-    await expect.poll(async () => Math.abs((await v2(page)).u)).toBeLessThan(1);
+    const stopped = await page.evaluate(async () => {
+        const debug = (window as unknown as { __bulliDebug: { snapshot(): { v2: { u: number } } } }).__bulliDebug;
+        const until = performance.now() + 15_000;
+        while (performance.now() < until) {
+            if (Math.abs(debug.snapshot().v2.u) < 1) return true;
+            await new Promise(resolve => requestAnimationFrame(resolve));
+        }
+        return false;
+    });
     await page.keyboard.up('s');
+    expect(stopped, 'the car came to a stop').toBe(true);
 
     // Q jumps: the car leaves the ground and comes back down
     const jumpsBefore = (await v2(page)).jumps;
