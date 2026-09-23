@@ -6,8 +6,9 @@
 import type { TerrainConfig } from '../protocol.js';
 import { createSimWorld, type ColliderInput, type RampDef, type SimWorld } from '../world/colliders.js';
 import { MEGA_SCALE } from '../constants.js';
-import { BTN_HANDBRAKE, DEG } from './constants.js';
-import { copyVehicleState, createVehicleState, type CarClassId, type SimCar, type VehicleState } from './types.js';
+import { BTN_BOOST, BTN_HANDBRAKE, BTN_JUMP, BTN_RESET, DEG, SIM_TUNING } from './constants.js';
+import { copyVehicleState, createVehicleState, type AssistProfile, type CarClassId, type SimCar, type VehicleState } from './types.js';
+import { CAR_CLASS_IDS } from './vehicleClasses.js';
 import { createSimCar, placeVehicle } from './vehicle.js';
 import { stepWorld } from './world.js';
 
@@ -28,8 +29,11 @@ export function createFlatWorld(colliders: ColliderInput[] = [], ramps: RampDef[
 }
 
 // A car on the ground at (x, z) heading yaw, moving forward at speed
-export function spawnCar(world: SimWorld, id: string, classId: CarClassId, x: number, z: number, yaw: number, speed = 0): SimCar {
-    const car = createSimCar(id, classId);
+export function spawnCar(
+    world: SimWorld, id: string, classId: CarClassId, x: number, z: number, yaw: number, speed = 0,
+    profile: AssistProfile = 'standard'
+): SimCar {
+    const car = createSimCar(id, classId, profile);
     placeVehicle(car.state, world, x, z, yaw);
     car.state.vx = Math.sin(yaw) * speed;
     car.state.vz = Math.cos(yaw) * speed;
@@ -78,6 +82,23 @@ function setInput(car: SimCar, throttle: number, steer = 0, brake = 0, buttons =
 function counterSteer(car: SimCar): number {
     // + 0 turns a -0 from Math.round into 0, so goldens stay plain JSON
     return Math.round(Math.max(-1, Math.min(1, 2 * slipAngle(car.state))) * 127) + 0;
+}
+
+// Full throttle straight and into a turn, then the brake held through the
+// stop into reverse: vtop, accel, grip and braking of one class
+function launchBrakeReverse(classId: CarClassId): SimScenario {
+    return {
+        name: `launch-brake-reverse-${classId}`,
+        ticks: 300,
+        create() {
+            const world = createFlatWorld();
+            return { world, cars: [spawnCar(world, 'a', classId, 0, -400, 0)] };
+        },
+        drive(tick, run) {
+            if (tick < 180) setInput(run.cars[0], 255, tick < 90 ? 0 : 64);
+            else setInput(run.cars[0], 0, 0, 255);
+        }
+    };
 }
 
 
@@ -239,7 +260,73 @@ export const SIM_SCENARIOS: SimScenario[] = [
             setInput(ghost, 255);
             setInput(byId(run, 'parked'), 0);
         }
-    }
+    },
+    {
+        name: 'boost-handbrake-bulli',
+        ticks: 240,
+        create() {
+            const world = createFlatWorld();
+            const car = spawnCar(world, 'a', 'bulli', 0, -450, 0, 45);
+            car.state.boostMeter = 1;
+            return { world, cars: [car] };
+        },
+        drive(tick, run) {
+            // Boost past vtop, let go, boost the rest of the meter, then
+            // roll on the handbrake alone from above vtop
+            const boost = tick < 100 || (tick >= 110 && tick < 180);
+            if (tick < 180) setInput(run.cars[0], 255, 0, 0, boost ? BTN_BOOST : 0);
+            else setInput(run.cars[0], 0, 0, 0, BTN_HANDBRAKE);
+        }
+    },
+    {
+        name: 'jump-reset-jeep',
+        ticks: 240,
+        create() {
+            const world = createFlatWorld();
+            return { world, cars: [spawnCar(world, 'a', 'jeep', 0, -400, 0, 20)] };
+        },
+        drive(tick, run) {
+            // Jump, press again within the coyote time (the cooldown holds
+            // it back), steer in the air and land; then hold reset until it
+            // fires and drive on through the contact ghost
+            let buttons = 0;
+            if ((tick >= 10 && tick < 14) || (tick >= 16 && tick < 18)) buttons = BTN_JUMP;
+            else if (tick >= 120 && tick < 160) buttons = BTN_RESET;
+            setInput(run.cars[0], 200, tick >= 20 && tick < 60 ? 60 : 0, 0, buttons);
+        }
+    },
+    {
+        name: 'slalom-touch-beetle',
+        ticks: 240,
+        create() {
+            // The assist profile of every phone player, on the loosest rear
+            const world = createFlatWorld();
+            return { world, cars: [spawnCar(world, 'a', 'beetle', 0, -300, 0, 35, 'touch')] };
+        },
+        drive(tick, run) {
+            // Full lock, switching sides every 50 ticks with a handbrake tap:
+            // slides past 30°, into the counter-steer and the spin guard
+            const steer = Math.floor(tick / 50) % 2 === 0 ? 127 : -127;
+            setInput(run.cars[0], 255, steer, 0, tick % 50 < 12 ? BTN_HANDBRAKE : 0);
+        }
+    },
+    {
+        name: 'proxy-bump-sport',
+        ticks: 180,
+        create() {
+            // A remote player's 1a proxy (client/vehicle/remoteProxies.ts):
+            // kinematic, and it pushes with the proxy contact strength
+            const world = createFlatWorld();
+            const proxy = spawnCar(world, 'proxy', 'bulli', 0, -200, 0, 25);
+            proxy.kinematic = true;
+            proxy.contactScale = SIM_TUNING.PROXY_CONTACT_SCALE;
+            return { world, cars: [proxy, spawnCar(world, 'sport', 'sport', 2.8, -206, -20 * DEG, 33)] };
+        },
+        drive(_tick, run) {
+            setInput(byId(run, 'sport'), 255);
+        }
+    },
+    ...CAR_CLASS_IDS.map(launchBrakeReverse)
 ];
 
 export function findScenario(name: string): SimScenario {

@@ -824,7 +824,7 @@ Für jede Klasse: 0–100 km/h innerhalb ±15 % der Tabelle 1.2; vtop bei Vollga
 
 ### 14.4 Golden-Szenarien (Node und Browser)
 
-Je Szenario Input-Skript pro Tick, 180 Ticks, Endzustand und Zustand alle 30 Ticks als Golden:
+Je Szenario Input-Skript pro Tick, 180 Ticks (11–19: 240 bzw. 300), Endzustand und Zustand alle 30 Ticks als Golden:
 
 1. Beschleunigen + Grip-Kurve (bulli)
 2. Handbremsen-Drift mit Gegenlenken (sport)
@@ -836,6 +836,13 @@ Je Szenario Input-Skript pro Tick, 180 Ticks, Endzustand und Zustand alle 30 Tic
 8. Drei Autos in Reihe (Auffahrkette 45 → 40 → 35 m/s; das hintere Paar berührt sich zuerst)
 9. Mega gegen Käfer
 10. Ghost fährt durch Auto und Wand; Ghost endet im Gebäude
+11. Boost ab knapp unter vtop, loslassen, Restboost, danach nur Handbremse ohne Gas über vtop (bulli; Boost, Overspeed, Handbremsverzögerung)
+12. Sprung per Taste, zweiter Druck in der Coyote-Zeit (Cooldown), Lenken in der Luft, Landung, dann Reset halten bis er auslöst und weiter durch den Kontakt-Ghost (jeep)
+13. Slalom mit Vollausschlag und Handbremsen-Tipp je Wechsel mit Assist-Profil `touch` (beetle, Schräglauf über 30°: Gegenlenken und Spin-Guard des Handy-Profils)
+14. Rempler gegen einen kinematischen Proxy mit `PROXY_CONTACT_SCALE` (sport gegen bulli-Proxy, wie `remoteProxies.ts`)
+15.–19. Je Klasse Vollgas geradeaus und in die Kurve, dann Bremse halten bis in den Rückwärtsgang (`launch-brake-reverse-<klasse>`)
+
+Dazu ist die ausgelieferte Abstimmung selbst ein Golden (`tests/shared/sim/golden-tuning.json`: alle Werte aus `SIM_TUNING`, den fünf Klassen und beiden Assist-Profilen, exakt verglichen). Die Szenarien erreichen nicht jeden Wert (Offroad wirkt erst in Phase 3, Sprungtaste nur beim Jeep, einige Schwellen); so braucht trotzdem jede Tuning-Änderung ein bewusstes `UPDATE_GOLDEN=1`.
 
 Node und Browser (`tests/e2e/sim-golden.spec.ts`, Sandbox mit `?e2e=1`, `__bulliSim.runGolden(name)`) vergleichen mit dem JSON auf 1e-9 · max(1, |Wert|), Zähler und Flags exakt (`tests/shared/sim/goldenCompare.ts`, Begründung in 24.2). Bitgleich bleibt nur der Vergleich zweier Läufe im selben Prozess (14.3).
 
@@ -1130,7 +1137,7 @@ Es enthält nur die Werte, die von den Defaults abweichen. Winkel stehen darin i
   - `sandbox.spec.ts` (Desktop): Die Sandbox lädt ohne WebSocket, und ohne `?tune=1` lädt weder das Panel noch lil-gui. Es gibt 5 Dummies mit 5 Karossen, die kreisenden fahren. Das Auto rammt den geparkten Käfer und schiebt ihn weg (in Rammrichtung). N setzt ihn zurück, C wechselt die Karosse.
   - Zweiter Test dort: Das Panel lädt mit `?tune=1`, die Telemetrie läuft beim Fahren mit, ein importierter Wert (`topSpeed` 61) erreicht das Sim-Auto, und Reset stellt es zurück.
   - `v2-sandbox-mobile.spec.ts` (iPhone 13): Der Sandbox-Kasten überdeckt keine Touch-Bedienelemente, Auto-Gas fährt, und der Knopf zum Karossenwechsel funktioniert per Tippen.
-  - `sim-golden.spec.ts`: Alle 10 Golden-Szenarien laufen im Browser über `__bulliSim.runGolden` und stimmen mit den JSON-Dateien überein (14.4; ursprünglich auf 1 mm bzw. 1e-4 rad, seit 24.2 mit derselben Toleranz wie Node).
+  - `sim-golden.spec.ts`: Alle 19 Golden-Szenarien laufen im Browser über `__bulliSim.runGolden` und stimmen mit den JSON-Dateien überein (14.4; ursprünglich auf 1 mm bzw. 1e-4 rad, seit 24.2 mit derselben Toleranz wie Node).
 - **Bundle:** Ohne Flags lädt die Seite nur `index` und `three`. Die Sandbox (~11 kB), das Panel mit lil-gui (~39 kB) und das gemeinsame Tuning-Modul (~2 kB) sind eigene Chunks.
 
 ## 22. Absicherung und Doku: FPS-Test, Leistung, Blindtest
@@ -1236,6 +1243,8 @@ Die Golden-Dateien entstehen auf macOS arm64 (Node 24), CI prüft auf Linux x64 
 - **Echte Änderungen:** Jeder der 52 Werte in `SIM_TUNING` einzeln um den Faktor 1 + 1e-6 geändert: Die 26, die in den Szenarien überhaupt wirken, verschieben die Goldens um 1,4e-9 bis 1e-4, die übrigen gar nicht.
 
 Die Toleranz 1e-9 · max(1, |Wert|) liegt damit drei Größenordnungen über dem Rauschen und fängt noch Änderungen von einem Millionstel. Ein Test in `golden.test.ts` hält das fest (`G_TIRE` × (1 + 1e-6) muss auffallen).
+
+Nachtrag Abdeckung: Die ersten zehn Szenarien nutzten weder den Jeep noch das Profil `touch` (seit v2 Standard auf jedem Handy) noch Boost, Rückwärtsgang, Sprungtaste, Reset oder Proxy-Kontakte; eine Änderung von jeep.topSpeed um 0,1 % blieb grün. Mit den Szenarien 11–19 fallen bei × 1,001 beide Assist-Profile, vtop, Beschleunigung, Bremse und Grip aller Klassen in mindestens einem Szenario auf. Ohne Szenario-Treffer bleiben Offroad (noch ohne Wirkung), die Sprunghöhe außer beim Jeep, Massen und Kollisionsmaße von Klassen ohne passendes Kontaktszenario, einige Rutsch- und Handbremswerte von pickup und jeep sowie Schwellen wie `BOOST_MIN`, `COYOTE_TICKS` oder `R_MAX`. Die Messung mit 1 + 1e-6 fängt 41 von 41 wirksamen `SIM_TUNING`-Werten. Den Rest deckt das Tuning-Golden ab. Das stärkste Rauschen liefert jetzt der Slalom (16 ulp: 7,3e-12), die Toleranz bleibt damit gut zwei Größenordnungen darüber.
 
 Die Messung fand einen echten Kipppunkt: `wall-graze-10deg` startete den Bulli genau mit seinem vtop von 50 m/s bei Vollgas. Dort springt der Antrieb zwischen „deckt den Fahrwiderstand“ (xs < 1) und „nichts“ (xs ≥ 1), und ob u = 50·(sin²+cos²) auf 50 oder knapp darunter rundet, hing vom letzten Bit von sin/cos(10°) ab: 5 cm Unterschied nach 3 s, bei jeder Toleranz ein Fehlschlag. Das Szenario startet jetzt mit 49 m/s, die Datei ist neu erzeugt. Die Unstetigkeit in der Sim selbst bleibt (sie betrifft nur Autos, die exakt auf vtop gesetzt werden; mit Vollgas von unten bleibt der Bulli nach 100 s rund 5e-13 m/s unter vtop stehen); für 1b ist sie ein Kandidat, wenn Server und Client auf verschiedenen Plattformen rechnen.
 

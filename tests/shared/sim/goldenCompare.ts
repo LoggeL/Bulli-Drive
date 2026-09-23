@@ -8,11 +8,13 @@ import type { ScenarioFrame } from '../../../src/shared/sim/scenarios.js';
 //
 // scripts/sim-golden-drift.ts measures both sides:
 // - every inexact transcendental result nudged by ±1, 2 or 16 ulp (all at
-//   once or at random) moves no golden value by more than about 5e-13
-//   (scaled as below) over the 180 ticks; no counter or flag changes;
+//   once or at random) moves no golden value by more than about 1e-11
+//   (scaled as below; ±1 ulp stays below 1e-12, the long slides of
+//   slalom-touch-beetle are the most sensitive); no counter or flag changes;
 // - scaling any single SIM_TUNING value by 1 + 1e-6 moves the goldens by
 //   far more than the tolerance for every value the scenarios use.
-// 1e-9 leaves three orders of magnitude for platform noise and is still
+// 1e-9 leaves three orders of magnitude over ±1 ulp noise (two over 16 ulp)
+// and is still
 // three orders below the smallest deliberate change worth a golden update.
 export const GOLDEN_TOLERANCE = 1e-9;
 

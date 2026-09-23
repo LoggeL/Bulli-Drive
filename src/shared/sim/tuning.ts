@@ -13,7 +13,7 @@ import {
 
 export const TUNING_FORMAT = 1;
 
-const PROFILE_IDS: readonly AssistProfile[] = ['standard', 'touch'];
+export const PROFILE_IDS: readonly AssistProfile[] = ['standard', 'touch'];
 const DRIVE_LAYOUTS: readonly string[] = ['rear', 'all'];
 
 const CLASS_DEFAULTS = Object.fromEntries(
