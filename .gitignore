@@ -16,3 +16,5 @@ screenshot*.js
 .playwright-cli/
 output/
 
+test-results/
+playwright-report/

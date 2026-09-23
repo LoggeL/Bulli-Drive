@@ -4,3 +4,5 @@ dist
 *.log
 .findings.txt
 screenshots
+test-results
+playwright-report
