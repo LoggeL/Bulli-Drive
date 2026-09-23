@@ -52,9 +52,10 @@ export function driveLocalCar(car: Bulli, dt: number): void {
     vehicle.world = world;
 
     // Frozen like the legacy car while a modal is open, while dead and
-    // while the GL context is gone
+    // while the GL context is gone; the powerup timers keep running
     if (state.isModalOpen || state.dead || isWebGLContextLost()) {
         vehicle.loop.reset();
+        vehicle.countPowerups(car, dt);
         return;
     }
 

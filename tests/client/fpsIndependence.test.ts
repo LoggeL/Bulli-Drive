@@ -6,6 +6,7 @@ import { LocalVehicle, type VehicleHost } from '../../src/client/vehicle/LocalVe
 import { mulberry32 } from '../../src/shared/math/rng.js';
 import { DT } from '../../src/shared/sim/constants.js';
 import { createDummy, driveDummy } from '../../src/shared/sim/dummies.js';
+import { createFlatWorld } from '../../src/shared/sim/scenarios.js';
 import { copyVehicleState, createVehicleState, type SimCar, type VehicleInput, type VehicleState } from '../../src/shared/sim/types.js';
 import { createSandboxWorld, SANDBOX } from '../../src/shared/world/sandbox.js';
 
@@ -167,5 +168,19 @@ describe('client tick at any frame rate', () => {
         expect(reference.jumps).toBe(1);
         expect(reference.states.some(tick => !tick[0].grounded)).toBe(true);
         expect(reference.inputs.some(input => input.buttons !== 0)).toBe(true);
+    });
+
+    it('lets the powerup timers run out while the sim is frozen (modal, dead)', () => {
+        const vehicle = new LocalVehicle('local', 'bulli', 'standard', createFlatWorld());
+        const host = createHost();
+        host.powerups.ghost.active = true;
+        host.powerups.ghost.timer = 0.5;
+        // v2Driver calls this once per frame instead of vehicle.update
+        for (let frame = 0; frame < 20; frame++) vehicle.countPowerups(host, 1 / 60);
+        expect(host.powerups.ghost.active).toBe(true);
+        expect(host.powerups.ghost.timer).toBeCloseTo(0.5 - 20 / 60, 9);
+        for (let frame = 0; frame < 20; frame++) vehicle.countPowerups(host, 1 / 60);
+        expect(host.powerups.ghost.active).toBe(false);
+        expect(vehicle.ticks).toBe(0);
     });
 });

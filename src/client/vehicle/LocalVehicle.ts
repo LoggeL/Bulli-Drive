@@ -181,17 +181,25 @@ export class LocalVehicle {
         this.applyPose(dt, host);
     }
 
+    /**
+     * Counts the powerup timers down, a Party rule (section 10): per tick
+     * while the sim runs, per frame while it is frozen (modal, dead, GL
+     * context lost), so they run out then too, like in legacy.
+     */
+    countPowerups(host: VehicleHost, seconds: number): void {
+        for (const key of POWERUP_KEYS) {
+            const powerup = host.powerups[key];
+            if (!powerup.active) continue;
+            powerup.timer -= seconds;
+            if (powerup.timer <= 0) powerup.active = false;
+        }
+    }
+
     private tick(host: VehicleHost, now: number): void {
         const car = this.car;
         copyVehicleState(this.prev, car.state);
 
-        // Powerup timers are a Party rule, counted per tick (section 10)
-        for (const key of POWERUP_KEYS) {
-            const powerup = host.powerups[key];
-            if (!powerup.active) continue;
-            powerup.timer -= DT;
-            if (powerup.timer <= 0) powerup.active = false;
-        }
+        this.countPowerups(host, DT);
         const mods = car.mods;
         mods.turbo = host.powerups.speed.active;
         mods.mega = host.powerups.size.active;
