@@ -122,6 +122,21 @@ export async function joinGame(player: Player, name: string, extraQuery = ''): P
     return (await snapshot(page)).myId!;
 }
 
+/** Opens the sandbox and starts from the splash screen, without a server connection. */
+export async function openSandbox(player: Player, extraQuery = ''): Promise<void> {
+    const { page } = player;
+    await page.goto(`/?e2e=1&sandbox=1${extraQuery}`);
+    await expect(page.locator('#loading-screen')).toHaveCount(0, { timeout: 60_000 });
+    const splash = page.locator('#splash-screen');
+    await expect(splash).toBeVisible();
+    await page.locator('#splash-name-input').fill('Sandbox E2E');
+    const startButton = page.locator('#start-btn');
+    if (await page.evaluate(() => navigator.maxTouchPoints > 0)) await startButton.tap();
+    else await startButton.click();
+    await expect(splash).toHaveClass(/\bhidden\b/);
+    await v2(page);
+}
+
 export function distance(a: { x: number; z: number }, b: { x: number; z: number }): number {
     return Math.hypot(a.x - b.x, a.z - b.z);
 }
