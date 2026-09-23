@@ -5,7 +5,7 @@ import { playJumpSound, playCollisionSound, playHonkSound, playShootSound } from
 import { createProjectile } from '../world/projectiles.js';
 import { spawnParticles } from '../effects/particles.js';
 import { getTerrainHeight } from '../world/environment.js';
-import { MEGA_SCALE, SPEED_BOOST_FACTOR, UPDATE_SEND_INTERVAL_MS } from '../../shared/constants.js';
+import { LEGACY_CAR_MAX_SPEED, MEGA_SCALE, SPEED_BOOST_FACTOR, UPDATE_SEND_INTERVAL_MS } from '../../shared/constants.js';
 import { sendToServer } from '../network/socket.js';
 
 // Reusable vectors to avoid per-frame allocations
@@ -118,7 +118,7 @@ export class Bulli {
     speed: number = 0;
     angle: number = 0;
     acceleration: number = 0.015;
-    maxSpeed: number = 1.0;
+    maxSpeed: number = LEGACY_CAR_MAX_SPEED;
     friction: number = 0.96;
     isFlipping: boolean = false;
     canRecover: boolean = false;

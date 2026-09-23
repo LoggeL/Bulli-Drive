@@ -9,6 +9,21 @@ export const MEGA_DAMAGE_REDUCTION = 0.4;
 export const MEGA_SCALE = 2.5;
 export const MAX_HEALTH = 100;
 
+// ---- Scale ----
+// One world unit is one metre. The authored geometry fits this roughly (the
+// cars are chibi-style: 3.5-5 u long, a bit wide), roads are 12 u wide and a
+// city block is 40 u.
+export const METERS_PER_UNIT = 1;
+// Multiply a speed in m/s by this to get km/h
+export const MS_TO_KMH = 3.6;
+
+// The legacy client car (entities/Bulli.ts) integrates its speed in units per
+// 1/60 s tick, independent of the actual frame rate.
+export const LEGACY_SPEED_TICKS_PER_SECOND = 60;
+// Legacy top speed in units per tick: 1.0 u/tick = 60 m/s = 216 km/h, and
+// 108 m/s = 388.8 km/h while the Turbo powerup (SPEED_BOOST_FACTOR) is active.
+export const LEGACY_CAR_MAX_SPEED = 1.0;
+
 // Turbo (speed powerup) multiplier applied to acceleration AND max speed for the
 // full duration of the boost (constant, not decaying with the remaining timer).
 export const SPEED_BOOST_FACTOR = 1.8;

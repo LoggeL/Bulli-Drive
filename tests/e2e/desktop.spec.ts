@@ -37,6 +37,14 @@ test('loads, joins and drives on desktop', async ({ openPlayer }) => {
     // Software rendering can stall for a moment, so wait for the distance
     // instead of holding W for a fixed time.
     await expect.poll(async () => distance(start, (await snapshot(page)).local!)).toBeGreaterThan(2);
+    // 1 u = 1 m: the speedometer shows the car's real speed, i.e. its
+    // units-per-1/60-s-tick speed times 60 * 3.6. Read both in the same task.
+    const reading = await page.evaluate(() => ({
+        shown: Number(document.getElementById('speedo-value')!.textContent),
+        speed: (window as unknown as { __bulliDebug: { snapshot(): { local: { speed: number } } } })
+            .__bulliDebug.snapshot().local.speed
+    }));
+    expect(Math.abs(reading.shown - Math.abs(reading.speed) * 216)).toBeLessThanOrEqual(1);
     await page.keyboard.up('w');
     expect(player.sentMessages.some(message => message.type === 'update')).toBe(true);
 
