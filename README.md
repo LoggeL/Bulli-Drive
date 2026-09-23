@@ -32,11 +32,19 @@ npm run dev
 Starts the game server (`tsx watch`, port 8000) and the Vite dev server with HMR
 at `http://localhost:5173`, which proxies the game WebSocket (`/ws`) to the game server.
 
+To try the touch controls on a real phone in the same network, run
+`npm run dev:lan` instead: Vite then also listens on the LAN and prints the
+`Network:` URL to open on the phone. (`npm run dev -- --host` does not work,
+the flag ends up at `concurrently`, not at Vite.) The production build is
+reachable from the LAN as well: `npm run build && npm start`, then
+`http://<LAN-IP>:8000`.
+
 ### Scripts
 
 | Script | What it does |
 |---|---|
 | `npm run dev` | Game server with `tsx watch` plus the Vite dev server (HMR) on port 5173 |
+| `npm run dev:lan` | Same as `dev`, but Vite also listens on the LAN, for testing on real phones |
 | `npm run build` | Client with Vite to `dist/client` (hashed assets, `build-version.txt`), server with `tsc` to `dist/server` and `dist/shared` |
 | `npm start` | Runs the production build on port 8000 (`PORT` to override) |
 | `npm run typecheck` | Type-checks client, server, tests, scripts and build config |
