@@ -229,11 +229,31 @@ describe('v2 lateral dynamics', () => {
         const car = start('sport', 28);
         drive(car, world, 40, { throttle: 255, steer: 127, buttons: BTN_HANDBRAKE });
         expect(car.state.driftTicks).toBeGreaterThan(0);
-        let endTick = -1;
-        drive(car, world, 240, { throttle: 255 }, tick => {
-            if (endTick < 0 && car.state.driftTicks === 0) endTick = tick;
+        // Turns the velocity to the slip angle beta before a tick
+        const setSlip = (beta: number) => {
+            const s = car.state, v = Math.hypot(s.vx, s.vz);
+            s.vx = v * Math.sin(s.yaw + beta);
+            s.vz = v * Math.cos(s.yaw + beta);
+            s.yawRate = 0;
+        };
+        // Ticks 1-4 low, tick 5 back up: a dip shorter than 10 ticks keeps
+        // the drift. From tick 20 on β stays low: it ends on the 10th low tick.
+        let lowRun = 0, dipLow = 0, endTick = -1, lowAtEnd = -1;
+        drive(car, world, 60, { throttle: 255 }, tick => {
+            const low = Math.abs(slipAngle(car.state)) < 6 * DEG;
+            lowRun = low ? lowRun + 1 : 0;
+            if (tick >= 1 && tick <= 4 && low) dipLow++;
+            if (tick < 20) expect(car.state.driftTicks, `tick ${tick}`).toBeGreaterThan(0);
+            if (endTick < 0 && car.state.driftTicks === 0) {
+                endTick = tick;
+                lowAtEnd = lowRun;
+            }
+            if (tick < 4 || tick >= 19) setSlip(0);
+            else if (tick === 4) setSlip(25 * DEG);
         });
-        expect(endTick).toBeGreaterThan(0);
+        expect(dipLow).toBe(4);
+        expect(endTick).toBeGreaterThan(20);
+        expect(lowAtEnd).toBe(10);
         expect(car.state.driftLowTicks).toBe(0);
     });
 
