@@ -99,6 +99,15 @@ describe('handleClientMessage with valid messages', () => {
         expect(players[ID].x).toBe(1);
     });
 
+    it('still applies the position when the other update fields are off, like main', () => {
+        handleClientMessage(ID, {
+            type: 'update', x: 3, z: 4, y: '3', angle: 0.5, flipAngle: 0, isFlipping: 1,
+            scale: null, ghostActive: 'yes', megaActive: null
+        });
+        const p = players[ID];
+        expect([p.x, p.z, p.y, p.angle, p.isFlipping]).toEqual([3, 4, 0, 0.5, true]);
+    });
+
     it('clamps positions to the world bound', () => {
         handleClientMessage(ID, { type: 'update', x: 1e9, z: -1e9, angle: 0, flipAngle: 0, isFlipping: false });
         expect(players[ID].x).toBe(550);

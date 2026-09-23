@@ -83,7 +83,10 @@ describe('parseClientMessage accepts every real client message', () => {
 
     it('accepts an update whose y became null (NaN on the wire)', () => {
         const message = { ...REAL_CLIENT_MESSAGES.update, y: NaN };
-        expect(parseClientMessage(overTheWire(message))).toMatchObject({ type: 'update', y: null });
+        const parsed = parseClientMessage(overTheWire(message));
+        expect(parsed).toMatchObject({ type: 'update', x: 12.345 });
+        // Dropped; the server then falls back to y = 0.
+        expect((parsed as { y?: unknown }).y).toBeUndefined();
     });
 
     it('accepts values the server clamps or cleans up itself', () => {
@@ -100,6 +103,37 @@ describe('parseClientMessage accepts every real client message', () => {
         expect(parsedProto).toEqual({ type: 'playerReady' });
         expect(({} as Record<string, unknown>).polluted).toBeUndefined();
     });
+});
+
+// Only x, z, angle and flipAngle make an update invalid. The pre-valibot
+// handler on main (1d39c07) still applied the position when the other fields
+// were off: isFlipping became !!value, y fell back to 0, the hints were never
+// read. The schema keeps that, so such an update is normalized, not dropped.
+describe('parseClientMessage normalizes the lenient update fields like main', () => {
+    const update = REAL_CLIENT_MESSAGES.update as Extract<ClientMessage, { type: 'update' }>;
+    const position = { type: 'update', x: update.x, z: update.z, angle: update.angle, flipAngle: update.flipAngle };
+    const cases: [string, unknown, Record<string, unknown>][] = [
+        ['update without isFlipping', { ...update, isFlipping: undefined }, { isFlipping: false }],
+        ['update with numeric isFlipping', { ...update, isFlipping: 1 }, { isFlipping: true }],
+        ['update with string isFlipping', { ...update, isFlipping: 'no' }, { isFlipping: true }],
+        ['update with string y', { ...update, y: '3' }, { y: undefined }],
+        ['update with null y (NaN on the wire)', overTheWire({ ...update, y: NaN }), { y: undefined }],
+        ['update with string scale', { ...update, scale: '2.5' }, { scale: undefined }],
+        ['update with null scale (NaN on the wire)', overTheWire({ ...update, scale: NaN }), { scale: undefined }],
+        ['update with string ghostActive', { ...update, ghostActive: 'yes' }, { ghostActive: undefined }],
+        ['update with null megaActive', { ...update, megaActive: null }, { megaActive: undefined }]
+    ];
+
+    for (const [name, value, expected] of cases) {
+        it(name, () => {
+            const parsed = parseClientMessage(value) as Record<string, unknown> | null;
+            expect(parsed).not.toBeNull();
+            expect(parsed).toMatchObject(position);
+            for (const [key, expectedValue] of Object.entries(expected)) {
+                expect(parsed![key], key).toBe(expectedValue);
+            }
+        });
+    }
 });
 
 describe('parseClientMessage rejects invalid messages', () => {
@@ -119,11 +153,6 @@ describe('parseClientMessage rejects invalid messages', () => {
         ['update with null z (NaN on the wire)', overTheWire({ ...update, z: NaN })],
         ['update with Infinity angle', { ...update, angle: Infinity }],
         ['update without flipAngle', { ...update, flipAngle: undefined }],
-        ['update without isFlipping', { ...update, isFlipping: undefined }],
-        ['update with numeric isFlipping', { ...update, isFlipping: 1 }],
-        ['update with string y', { ...update, y: '3' }],
-        ['update with string scale', { ...update, scale: '2.5' }],
-        ['update with string ghostActive', { ...update, ghostActive: 'yes' }],
         ['collectPowerup without id', { type: 'collectPowerup' }],
         ['collectPowerup with string id', { type: 'collectPowerup', powerupId: '3' }],
         ['collectCoin with null id', { type: 'collectCoin', coinId: null }],

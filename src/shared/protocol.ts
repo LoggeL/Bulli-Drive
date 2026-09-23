@@ -100,19 +100,25 @@ const finiteNumber = v.pipe(v.number(), v.finite());
 export const ClientMessageSchema = v.variant('type', [
     v.object({
         type: v.literal('update'),
+        // Only the position and angles make an update invalid. The other
+        // fields are as lenient as the pre-valibot handler on main (1d39c07),
+        // so a bad value (e.g. a NaN, which JSON turns into null) never drops
+        // the whole update and freezes the car for everyone else.
         x: finiteNumber,
         z: finiteNumber,
-        // Visual bob/jump offset; the server falls back to 0 when it is missing
-        // (JSON turns a NaN into null).
-        y: v.optional(v.nullable(v.number())),
+        // Visual bob/jump offset; the server falls back to 0 when it is not a number.
+        y: v.fallback(v.optional(v.number()), undefined),
         angle: finiteNumber,
         flipAngle: finiteNumber,
-        isFlipping: v.boolean(),
-        // Client-side hints only; the server tracks these effects itself.
-        scale: v.optional(v.number()),
-        ghostActive: v.optional(v.boolean()),
-        shieldActive: v.optional(v.boolean()),
-        megaActive: v.optional(v.boolean())
+        // Any truthy value counts and a missing one is false, like
+        // `!!msg.isFlipping` on main.
+        isFlipping: v.pipe(v.optional(v.unknown(), false), v.transform(value => !!value)),
+        // Client-side hints only; the server tracks these effects itself and
+        // ignores them, so a wrong type is dropped instead.
+        scale: v.fallback(v.optional(v.number()), undefined),
+        ghostActive: v.fallback(v.optional(v.boolean()), undefined),
+        shieldActive: v.fallback(v.optional(v.boolean()), undefined),
+        megaActive: v.fallback(v.optional(v.boolean()), undefined)
     }),
     v.object({ type: v.literal('collectPowerup'), powerupId: v.number() }),
     v.object({ type: v.literal('collectCoin'), coinId: v.number() }),
