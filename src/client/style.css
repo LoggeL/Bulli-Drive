@@ -2408,3 +2408,215 @@ canvas {
         font-size: 10px;
     }
 }
+
+/* ==========================================================================
+   PHYSICS V2 (?physics=v2): drive HUD and touch buttons
+   ========================================================================== */
+
+/* Elements for one physics only; body.physics-v2 is set by main.ts */
+body:not(.physics-v2) .v2-only,
+body.physics-v2 .legacy-only {
+    display: none !important;
+}
+
+/* Seven hints instead of four: as wide as its content */
+body.physics-v2 .controls-hint {
+    width: max-content;
+    max-width: calc(100vw - 14rem);
+}
+
+body.physics-v2 .hint-row {
+    padding: 0 0.6rem;
+}
+
+.hint-text {
+    font-family: var(--font-display);
+    font-size: 0.72rem;
+    letter-spacing: 1px;
+    color: rgba(255, 248, 231, 0.86);
+}
+
+/* Boost bar with the start mark, and the drift light, above the speedometer */
+#drive-meter {
+    position: fixed;
+    right: max(2rem, env(safe-area-inset-right, 0px));
+    bottom: calc(max(2rem, env(safe-area-inset-bottom, 0px)) + 150px);
+    width: 140px;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    z-index: 10;
+    pointer-events: none;
+}
+
+#boost-meter {
+    position: relative;
+    height: 10px;
+    border-radius: 5px;
+    background: rgba(0, 0, 0, 0.45);
+    border: 1px solid rgba(243, 210, 142, 0.55);
+    overflow: hidden;
+}
+
+#boost-meter-fill {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, #F5A623, #FFD54F);
+    transform-origin: left center;
+    transform: scaleX(0);
+}
+
+#drive-meter.boosting #boost-meter-fill {
+    background: linear-gradient(90deg, #FF6F61, #FFD54F);
+}
+
+/* BOOST_MIN: a boost needs at least this much to start */
+#boost-meter-mark {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 15%;
+    width: 2px;
+    background: rgba(255, 248, 231, 0.75);
+}
+
+#boost-meter-label,
+#drift-indicator {
+    font-family: var(--font-display);
+    font-size: 0.6rem;
+    letter-spacing: 2px;
+    text-align: center;
+    color: var(--cream);
+    opacity: 0.7;
+}
+
+#drift-indicator {
+    order: 3;
+    color: var(--sunset-gold);
+    opacity: 0;
+    transition: opacity 0.15s;
+    text-shadow: 0 0 8px rgba(255, 213, 79, 0.6);
+}
+
+#drive-meter.drifting #drift-indicator {
+    opacity: 1;
+}
+
+/* Touch: big DRIFT (handbrake) button, BOOST with the meter as a ring,
+   and the auto-gas switch, left of the action buttons */
+.drive-buttons {
+    position: absolute;
+    right: calc(max(1.1rem, env(safe-area-inset-right, 0px)) + 192px);
+    bottom: max(1.1rem, env(safe-area-inset-bottom, 0px));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    pointer-events: none;
+}
+
+.control-btn.drive {
+    pointer-events: auto;
+    padding: 0;
+    color: var(--cream);
+    font-family: var(--font-display);
+    letter-spacing: 1px;
+    box-shadow: 0 7px 20px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+.control-btn.drive.drift {
+    width: 96px;
+    height: 96px;
+    font-size: 1rem;
+    background: linear-gradient(145deg, rgba(70, 80, 88, 0.92), rgba(35, 40, 46, 0.9));
+    border: 3px solid rgba(255, 248, 231, 0.8);
+}
+
+.control-btn.drive.drift.active {
+    background: linear-gradient(145deg, rgba(255, 170, 60, 0.95), rgba(214, 110, 20, 0.92));
+}
+
+.control-btn.drive.boost {
+    --boost: 0;
+    width: 64px;
+    height: 64px;
+    border: 3px solid transparent;
+    background:
+        linear-gradient(145deg, rgba(240, 176, 58, 0.95), rgba(190, 119, 21, 0.92)) padding-box,
+        conic-gradient(#FFD54F calc(var(--boost) * 1turn), rgba(0, 0, 0, 0.45) 0) border-box;
+}
+
+.control-btn.drive.boost .ui-icon {
+    width: 46%;
+    height: 46%;
+}
+
+.control-btn.drive.boost.empty {
+    filter: grayscale(0.6);
+    opacity: 0.75;
+}
+
+.control-btn.drive.autogas {
+    width: 60px;
+    height: 28px;
+    border-radius: 14px;
+    font-size: 0.62rem;
+    background: rgba(0, 0, 0, 0.45);
+    border: 2px solid rgba(255, 248, 231, 0.45);
+}
+
+.control-btn.drive.autogas[aria-pressed="true"] {
+    background: rgba(46, 125, 50, 0.85);
+    border-color: rgba(200, 255, 200, 0.8);
+}
+
+@media (max-width: 768px), (pointer: coarse) {
+    #drive-meter {
+        right: 50%;
+        transform: translateX(50%);
+        top: max(4.2rem, calc(env(safe-area-inset-top, 0px) + 3.6rem));
+        bottom: auto;
+        width: 120px;
+    }
+}
+
+@media (max-width: 900px) and (orientation: landscape) {
+    .drive-buttons {
+        right: calc(max(0.75rem, env(safe-area-inset-right, 0px)) + 162px);
+        bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+        gap: 8px;
+    }
+
+    .control-btn.drive.drift {
+        width: 76px;
+        height: 76px;
+    }
+
+    .control-btn.drive.boost {
+        width: 52px;
+        height: 52px;
+    }
+}
+
+@media (max-width: 600px) and (orientation: portrait) {
+    .drive-buttons {
+        right: calc(max(1.1rem, env(safe-area-inset-right, 0px)) + 100px);
+    }
+
+    .control-btn.drive.drift {
+        width: 84px;
+        height: 84px;
+    }
+
+    .control-btn.drive.boost {
+        width: 56px;
+        height: 56px;
+    }
+
+    #drive-meter {
+        top: max(1.4rem, calc(env(safe-area-inset-top, 0px) + 0.9rem));
+    }
+}

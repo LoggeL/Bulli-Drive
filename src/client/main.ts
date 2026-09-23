@@ -10,7 +10,7 @@ import { updateJumpControl, showHitmarker } from './ui/hud.js';
 import { initSounds, startEngineSound, updateEngineSound } from './effects/sounds.js';
 import { checkCoinCollection, animateCoins } from './world/coins.js';
 import { checkPowerupCollection, animatePowerups } from './world/powerups.js';
-import { updatePowerupsUI, updateSpeedometer, updateHealthBar } from './ui/hud.js';
+import { updatePowerupsUI, updateSpeedometer, updateHealthBar, updateDriveHud } from './ui/hud.js';
 import { updateProjectiles } from './world/projectiles.js';
 import { initSplashScreen, initAboutModal } from './ui/screens.js';
 import { animateFountain } from './world/city.js';
@@ -40,6 +40,9 @@ let perfMonitor: PerfMonitor | null = null;
 const ramCooldowns: Record<string, number> = {};
 
 function init() {
+    // Shows the v2 HUD and control hints (style.css: .v2-only, .legacy-only)
+    if (PHYSICS_V2) document.body.classList.add('physics-v2');
+
     // Scene
     state.scene = new THREE.Scene();
 
@@ -283,6 +286,7 @@ function animate(frameTime: number) {
 
         updatePowerupsUI();
         updateSpeedometer();
+        if (vehicle) updateDriveHud(vehicle);
         updateHealthBar();
         const jumpControlMode = state.bulli.canRecover
             ? 'recover'

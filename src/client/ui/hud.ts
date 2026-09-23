@@ -1,5 +1,8 @@
 import { state } from '../state.js';
-import { carSpeedToKmh, speedoFill, SPEEDO_TICK_INTERVALS } from './speedoScale.js';
+import { carSpeedToKmh, speedoFill, SPEEDO_SCALE_MAX_KMH, SPEEDO_SCALE_MAX_KMH_V2, SPEEDO_TICK_INTERVALS } from './speedoScale.js';
+import { PHYSICS_V2 } from '../flags.js';
+import { SIM_TUNING } from '../../shared/sim/constants.js';
+import type { LocalVehicle } from '../vehicle/LocalVehicle.js';
 
 // Hitmarker
 let hitmarkerEl: HTMLElement | null = null;
@@ -192,6 +195,8 @@ let speedoTurboGradient: CanvasGradient | null = null;
 let lastSpeedoRedraw = -Infinity;
 let lastDisplayedKmh = -1;
 let lastTurboActive: boolean | null = null;
+let lastTurboLabel = '';
+const speedoScaleMaxKmh = PHYSICS_V2 ? SPEEDO_SCALE_MAX_KMH_V2 : SPEEDO_SCALE_MAX_KMH;
 
 function initSpeedoRefs() {
     speedoCanvas = document.getElementById('speedo-canvas') as HTMLCanvasElement | null;
@@ -254,10 +259,17 @@ export function updateSpeedometer() {
 
     // 1 u = 1 m, so this is the real speed (see src/shared/constants.ts)
     const kmh = Math.round(carSpeedToKmh(state.bulli.speed));
-    const turboActive = state.bulli.powerups.speed.active;
+    // v2: the drift boost lights the dial like the Turbo powerup
+    const boosting = !!state.bulli.vehicle?.car.state.boosting;
+    const turboActive = state.bulli.powerups.speed.active || boosting;
     if (kmh !== lastDisplayedKmh) {
         speedoValue.innerText = kmh.toString();
         lastDisplayedKmh = kmh;
+    }
+    const turboLabel = boosting && !state.bulli.powerups.speed.active ? 'BOOST' : 'TURBO';
+    if (turboLabel !== lastTurboLabel) {
+        speedoTurbo.innerText = turboLabel;
+        lastTurboLabel = turboLabel;
     }
     if (turboActive !== lastTurboActive) {
         speedoTurbo.classList.toggle('hidden', !turboActive);
@@ -273,7 +285,7 @@ export function updateSpeedometer() {
     const cx = w / 2;
     const cy = h / 2;
     const r = w / 2 - 10;
-    const pct = speedoFill(kmh);
+    const pct = speedoFill(kmh, speedoScaleMaxKmh);
     speedoCtx.clearRect(0, 0, w, h);
     if (speedoStaticLayer) speedoCtx.drawImage(speedoStaticLayer, 0, 0);
     if (pct <= 0.005) return;
@@ -284,6 +296,39 @@ export function updateSpeedometer() {
     speedoCtx.lineWidth = 6;
     speedoCtx.lineCap = 'round';
     speedoCtx.stroke();
+}
+
+// ?physics=v2: boost meter (bar on desktop and phones, ring around the
+// touch BOOST button) and the drift light
+let driveMeter: HTMLElement | null = null;
+let boostFill: HTMLElement | null = null;
+let boostButton: HTMLElement | null = null;
+let lastBoostPercent = -1;
+let lastDriveFlags = -1;
+
+export function updateDriveHud(vehicle: LocalVehicle) {
+    if (!driveMeter) {
+        driveMeter = document.getElementById('drive-meter');
+        boostFill = document.getElementById('boost-meter-fill');
+        boostButton = document.getElementById('btn-boost');
+    }
+    if (!driveMeter) return;
+    const s = vehicle.car.state;
+    const percent = Math.round(s.boostMeter * 100);
+    if (percent !== lastBoostPercent) {
+        lastBoostPercent = percent;
+        const value = percent.toString();
+        if (boostFill) boostFill.style.transform = `scaleX(${s.boostMeter})`;
+        driveMeter.setAttribute('aria-valuenow', value);
+        boostButton?.style.setProperty('--boost', s.boostMeter.toFixed(2));
+    }
+    const flags = (s.driftTicks > 0 ? 1 : 0) | (s.boosting ? 2 : 0) | (s.boostMeter < SIM_TUNING.BOOST_MIN ? 4 : 0);
+    if (flags !== lastDriveFlags) {
+        lastDriveFlags = flags;
+        driveMeter.classList.toggle('drifting', (flags & 1) !== 0);
+        driveMeter.classList.toggle('boosting', (flags & 2) !== 0);
+        boostButton?.classList.toggle('empty', (flags & 4) !== 0 && (flags & 2) === 0);
+    }
 }
 
 function createPowerupIcon(type: string): SVGSVGElement {

@@ -296,7 +296,11 @@
                 <h3 class="modal-section-title">Controls</h3>
                 <div class="modal-controls-grid">
                     <div class="modal-control-row"><span class="modal-key">W A S D</span><span>Drive &amp; steer</span></div>
-                    <div class="modal-control-row"><span class="modal-key">SPACE</span><span>Jump / flip; recover when stuck</span></div>
+                    <div class="modal-control-row legacy-only"><span class="modal-key">SPACE</span><span>Jump / flip; recover when stuck</span></div>
+                    <div class="modal-control-row v2-only"><span class="modal-key">SPACE</span><span>Handbrake / drift</span></div>
+                    <div class="modal-control-row v2-only"><span class="modal-key">SHIFT</span><span>Boost (fills while drifting)</span></div>
+                    <div class="modal-control-row v2-only"><span class="modal-key">Q</span><span>Jump / flip</span></div>
+                    <div class="modal-control-row v2-only"><span class="modal-key">R</span><span>Hold to reset onto the road</span></div>
                     <div class="modal-control-row"><span class="modal-key">F</span><span>Honk horn</span></div>
                     <div class="modal-control-row"><span class="modal-key">E</span><span>Shoot projectile</span></div>
                 </div>
@@ -338,6 +342,15 @@
                 <svg class="ui-icon" aria-hidden="true"><use href="#icon-jump"></use></svg>
             </button>
         </div>
+
+        <!-- ?physics=v2 only: handbrake, boost and the auto-gas switch -->
+        <div class="drive-buttons v2-only">
+            <button id="btn-autogas" class="control-btn drive autogas" type="button" aria-pressed="true" aria-label="Auto-gas">AUTO</button>
+            <button id="btn-boost" class="control-btn drive boost" type="button" aria-label="Boost">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-speed"></use></svg>
+            </button>
+            <button id="btn-drift" class="control-btn drive drift" type="button" aria-label="Drift (handbrake)">DRIFT</button>
+        </div>
     </div>
 
     <div id="ui-overlay">
@@ -369,10 +382,30 @@
                     </div>
                     <span class="sr-only">Drive and steer</span>
                 </div>
-                <div class="hint-row">
+                <div class="hint-row legacy-only">
                     <div class="key wide">SPACE</div>
                     <svg class="ui-icon hint-icon" aria-hidden="true"><use href="#icon-jump"></use></svg>
                     <span class="sr-only">Jump and flip; recover when stuck</span>
+                </div>
+                <div class="hint-row v2-only">
+                    <div class="key wide">SPACE</div>
+                    <span class="hint-text" aria-hidden="true">DRIFT</span>
+                    <span class="sr-only">Handbrake and drift</span>
+                </div>
+                <div class="hint-row v2-only">
+                    <div class="key wide">SHIFT</div>
+                    <svg class="ui-icon hint-icon" aria-hidden="true"><use href="#icon-speed"></use></svg>
+                    <span class="sr-only">Boost</span>
+                </div>
+                <div class="hint-row v2-only">
+                    <div class="key">Q</div>
+                    <svg class="ui-icon hint-icon" aria-hidden="true"><use href="#icon-jump"></use></svg>
+                    <span class="sr-only">Jump and flip</span>
+                </div>
+                <div class="hint-row v2-only">
+                    <div class="key">R</div>
+                    <svg class="ui-icon hint-icon" aria-hidden="true"><use href="#icon-recover"></use></svg>
+                    <span class="sr-only">Hold to reset onto the road</span>
                 </div>
                 <div class="hint-row">
                     <div class="key">E</div>
@@ -389,6 +422,15 @@
 
         <div id="interaction-prompt" class="hidden">
             POWERUP COLLECTED!
+        </div>
+
+        <div id="drive-meter" class="v2-only" role="meter" aria-label="Boost" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <span id="drift-indicator" aria-hidden="true">DRIFT</span>
+            <div id="boost-meter" aria-hidden="true">
+                <div id="boost-meter-fill"></div>
+                <div id="boost-meter-mark"></div>
+            </div>
+            <span id="boost-meter-label" aria-hidden="true">BOOST</span>
         </div>
 
         <div id="speedometer">
