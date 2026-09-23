@@ -53,11 +53,12 @@ Der Grund für den inkrementellen Weg ist das Tempo des Projekts. Es wird im Hob
 ## 4. Zielarchitektur
 
 ```
-src/shared/              # kein three, kein DOM (per Lint erzwungen)
-  protocol/messages.ts   # valibot-Schemas → Typen, PROTOCOL_VERSION
-  math/rng.ts            # mulberry32 + hash2 (Integer)
+src/shared/              # kein three, kein DOM (Vitest-Scan tests/shared/purity.test.ts)
+  protocol.ts            # valibot-Schemas → Typen, PROTOCOL_VERSION (Phase 0: eine Datei)
+  math/rng.ts            # mulberry32 + positionHash (heute sin-basiert; hash2 als Integer-Hash später)
   world/terrain.ts       # getTerrainHeight → Heightfield der Map (bilinear)
   world/cityGen.ts       # aus server/world.ts, Plaza/Park als Daten (heutige Stadt)
+  world/worldGen.ts      # Seed → Stadt + Powerups + Coins + Bäume (heutiges init)
   world/colliders.ts     # SpatialGrid 16 m, Kreise/AABBs
   world/roads.ts         # Straßen-Splines laden, Korridore, Oberflächen (Phase 3)
   maps/*.json            # kuratierte Map: Splines, Plätze, Props, Spawns (Phase 3)
@@ -104,9 +105,9 @@ Die Dauer ist in Wochen fokussierter Arbeit angegeben, im Kalender wird es läng
 - **Ziel:** Sicher iterieren können, ohne dass sich für Spieler etwas ändert.
 - **Deliverables:**
   - [x] Vite mit `three@0.160.0` über npm, Importmap und `scripts/*.mjs` gelöscht; `build-version.txt` und der Reload bei neuer Version funktionieren weiter
-  - [ ] Vitest, CI (typecheck, test, build, docker), Playwright-Smoke mit 2 Tabs, einmal Desktop und einmal Mobile mit Touch-Emulation (Joystick, Action-Buttons)
-  - [ ] Die eine Protokollquelle, `screens.ts:132` nutzt `sendToServer`
-  - [ ] rng, terrain und cityGen nach shared, mit Golden-Test (Seed 0xB0111D ergibt 30 Gebäude und 120 Bäume)
+  - [ ] Vitest, CI (typecheck, test, build, docker), Playwright-Smoke mit 2 Tabs, einmal Desktop und einmal Mobile mit Touch-Emulation (Joystick, Action-Buttons) — Vitest steht (`npm test`, `npm run ci`), CI und Playwright fehlen noch
+  - [x] Die eine Protokollquelle, `screens.ts:132` nutzt `sendToServer`; Client→Server-Nachrichten haben valibot-Schemas und werden in `handlers.ts` geprüft, `PROTOCOL_VERSION` ist definiert (noch ohne Handshake)
+  - [x] rng, terrain und cityGen nach shared, mit Golden-Test (Seed 0xB0111D ergibt 30 Gebäude und 120 Bäume); die Golden-Werte stammen aus dem unveränderten Code auf `1d39c07`
   - [ ] `webglcontextlost`-Handler
   - [ ] Baseline-Messung (FPS, Draw Calls, Bandbreite) auf Desktop und einem Referenz-Handy
   - [ ] **Maßstab festlegen:** 1 u = 1 m, Ziel-Topspeed, Tacho korrigieren (die einzige gewollte sichtbare Änderung)

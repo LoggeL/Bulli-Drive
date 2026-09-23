@@ -32,7 +32,13 @@ npm run dev
 Starts the game server (`tsx watch`, port 8000) and the Vite dev server with HMR
 at `http://localhost:5173`, which proxies the game WebSocket (`/ws`) to the game server.
 
-`npm run typecheck` checks client, server and build config.
+`npm run typecheck` checks client, server, tests and build config.
+`npm test` runs the Vitest unit tests in `tests/` (golden tests for the shared
+world generation, terrain and RNG, protocol validation, server handlers);
+`npm run ci` chains typecheck, tests and build.
+
+Code in `src/shared` runs in the browser and on the server, so it must not
+import three, the DOM or Node modules (a test enforces this).
 
 ## Controls
 - **WASD:** Drive and steer
