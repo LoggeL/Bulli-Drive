@@ -141,7 +141,7 @@ wss.on('connection', (ws: WebSocket) => {
         trees,
         city: cityData,
         scoreboard: getScoreboard()
-    } as ServerMessage));
+    } satisfies ServerMessage));
 
     ws.on('message', (message: Buffer | string) => {
         let data: unknown;
