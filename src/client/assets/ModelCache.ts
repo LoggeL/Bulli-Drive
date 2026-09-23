@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { RenderTier } from '../effects/renderQuality.js';
 import { patchCarMaterial } from './carMaterials.js';
 
@@ -65,6 +66,16 @@ export function lodsForTier(tier: RenderTier): number[] {
     return tier === 'software' ? [1, 2] : [0, 1, 2];
 }
 
+/**
+ * LODs whose wheels are baked into the body per tier: on the phone tier the
+ * other players' cars use LOD1 (docs/cars.md), and four separately drawn
+ * wheels would cost four draw calls per car. Those wheels no longer spin or
+ * steer (LOD2 has its wheels merged in the GLB already).
+ */
+export function staticWheelLodsForTier(tier: RenderTier): number[] {
+    return tier === 'mobile' ? [1] : [];
+}
+
 const key = (id: string, lod: number) => `${id}:${lod}`;
 
 async function defaultFetchManifest(url: string): Promise<ModelManifest> {
@@ -88,6 +99,11 @@ function withTimeout<T>(promise: Promise<T>, ms: number, what: string): Promise<
 export class ModelCache {
     status: ModelCacheStatus = 'idle';
     readonly errors: string[] = [];
+    /** LODs whose wheels are merged into the body when loaded (set before preload()) */
+    staticWheelLods: number[] = [];
+    /** Textures dropped because another LOD of the model carries the same image */
+    sharedTextureCount = 0;
+    private readonly textures = new Map<string, THREE.Texture>();
     private manifest: ModelManifest | null = null;
     private readonly templates = new Map<string, THREE.Object3D>();
     private readonly baseUrl: string;
@@ -140,7 +156,9 @@ export class ModelCache {
                     jobs.push(withTimeout(loader.load(url), this.timeoutMs, lodEntry.file).then(
                         root => {
                             if (this.disposed) return;
-                            this.templates.set(key(id, lodEntry.lod), prepareTemplate(root, id, lodEntry.lod));
+                            const template = prepareTemplate(root, id, lodEntry.lod, this.staticWheelLods.includes(lodEntry.lod));
+                            this.sharedTextureCount += shareTextures(template, id, this.textures);
+                            this.templates.set(key(id, lodEntry.lod), template);
                         },
                         error => {
                             this.errors.push(`${lodEntry.file}: ${error instanceof Error ? error.message : String(error)}`);
@@ -264,6 +282,114 @@ export class ModelCache {
             });
         }
         this.templates.clear();
+        this.textures.clear();
+    }
+}
+
+// --- One-time template setup ----------------------------------------------------------
+
+// Cheap content key of a texture: LOD0 and LOD1 of a car embed the same atlas
+// images (same size, bytes and sampling), which would otherwise be
+// transcoded, uploaded and kept on the GPU twice
+function textureKey(texture: THREE.Texture, id: string): string | null {
+    const mip = (texture as THREE.CompressedTexture).mipmaps?.[0] as { data?: ArrayBufferView; width: number; height: number } | undefined;
+    const data = mip?.data;
+    if (!data) return null;
+    const bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    let hash = 2166136261;
+    const step = Math.max(1, Math.floor(bytes.length / 4096));
+    for (let i = 0; i < bytes.length; i += step) hash = Math.imul(hash ^ bytes[i], 16777619);
+    return [
+        id, texture.name, mip.width, mip.height, bytes.length, hash >>> 0, texture.format, texture.colorSpace,
+        texture.channel, texture.flipY, texture.wrapS, texture.wrapT,
+        ...texture.offset.toArray(), ...texture.repeat.toArray(), texture.rotation
+    ].join('|');
+}
+
+/** Points the materials of `root` at textures already loaded with the same content; returns how many were shared. */
+function shareTextures(root: THREE.Object3D, id: string, known: Map<string, THREE.Texture>): number {
+    let shared = 0;
+    root.traverse(child => {
+        const mesh = child as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+            const slots = material as unknown as Record<string, unknown>;
+            for (const [slot, value] of Object.entries(slots)) {
+                const texture = value as THREE.Texture;
+                if (!texture?.isTexture) continue;
+                const k = textureKey(texture, id);
+                if (!k) continue;
+                const existing = known.get(k);
+                if (!existing) {
+                    known.set(k, texture);
+                } else if (existing !== texture) {
+                    slots[slot] = existing;
+                    texture.dispose();
+                    shared++;
+                }
+            }
+        }
+    });
+    return shared;
+}
+
+// Plain float attributes (the GLBs are quantized: KHR_mesh_quantization), so
+// geometries of different nodes can be transformed and merged
+function floatGeometry(source: THREE.BufferGeometry): THREE.BufferGeometry {
+    const geometry = new THREE.BufferGeometry();
+    for (const [name, attribute] of Object.entries(source.attributes)) {
+        const a = attribute as THREE.BufferAttribute | THREE.InterleavedBufferAttribute;
+        const array = new Float32Array(a.count * a.itemSize);
+        const get = [a.getX, a.getY, a.getZ, a.getW].map(getter => getter.bind(a));
+        for (let i = 0; i < a.count; i++) {
+            for (let c = 0; c < a.itemSize; c++) array[i * a.itemSize + c] = get[c](i);
+        }
+        geometry.setAttribute(name, new THREE.BufferAttribute(array, a.itemSize));
+    }
+    if (source.index) geometry.setIndex(Array.from(source.index.array));
+    return geometry;
+}
+
+/**
+ * Bakes the wheels into the body: each wheel mesh is merged with the body
+ * mesh of the same material (the atlas), in the model's space. The wheel
+ * pivots stay (empty), so the car code needs no special case.
+ */
+function mergeStaticWheels(root: THREE.Object3D): void {
+    root.updateMatrixWorld(true);
+    const toRoot = root.matrixWorld.clone().invert();
+    const wheelMeshes: THREE.Mesh[] = [];
+    const bodyMeshes: THREE.Mesh[] = [];
+    root.traverse(child => {
+        const mesh = child as THREE.Mesh;
+        if (!mesh.isMesh || Array.isArray(mesh.material)) return;
+        let node: THREE.Object3D | null = mesh;
+        let wheel = false, hidden = false;
+        while (node && node !== root) {
+            if (/^wheel_(fl|fr|rl|rr)$/.test(node.name)) wheel = true;
+            if (!node.visible) hidden = true;
+            node = node.parent;
+        }
+        if (hidden) return;
+        (wheel ? wheelMeshes : bodyMeshes).push(mesh);
+    });
+    for (const material of new Set(wheelMeshes.map(mesh => mesh.material as THREE.Material))) {
+        const wheels = wheelMeshes.filter(mesh => mesh.material === material);
+        const body = bodyMeshes.find(mesh => mesh.material === material)
+            ?? bodyMeshes.find(mesh => (mesh.material as THREE.Material).name === material.name);
+        const parts = body ? [body, ...wheels] : wheels;
+        const geometries = parts.map(mesh => {
+            const geometry = floatGeometry(mesh.geometry);
+            geometry.applyMatrix4(toRoot.clone().multiply(mesh.matrixWorld));
+            return geometry;
+        });
+        const merged = mergeGeometries(geometries);
+        for (const geometry of geometries) geometry.dispose();
+        if (!merged) continue;
+        const mesh = new THREE.Mesh(merged, material);
+        mesh.name = `${body?.name || 'body'}_static_wheels`;
+        for (const part of parts) part.removeFromParent();
+        root.add(mesh);
     }
 }
 
@@ -274,12 +400,18 @@ export class ModelCache {
  * the shadow flags (transparent glass and the ground blob
  * cast no shadow).
  */
-function prepareTemplate(root: THREE.Object3D, id: string, lod: number): THREE.Object3D {
+function prepareTemplate(root: THREE.Object3D, id: string, lod: number, staticWheels = false): THREE.Object3D {
     root.name = `model_${id}_lod${lod}`;
     root.userData.modelId = id;
     root.userData.lod = lod;
     root.traverse(child => {
         if (child.userData.default_visible === false) child.visible = false;
+    });
+    if (staticWheels) {
+        mergeStaticWheels(root);
+        root.userData.staticWheels = true;
+    }
+    root.traverse(child => {
         const mesh = child as THREE.Mesh;
         if (!mesh.isMesh) return;
         const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];

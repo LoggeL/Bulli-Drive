@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { models } from '../assets/gameModels.js';
+import { models, whenModelsReady } from '../assets/gameModels.js';
 import { carPaintColor } from '../assets/carMaterials.js';
 import { lightingTier } from '../render/lighting.js';
-import { GltfCarBody } from './GltfCarBody.js';
+import { GltfCarBody, PHONE_REMOTE_LOD_DISTANCES, type GltfCarBodyOptions } from './GltfCarBody.js';
 
 // Three.js model of one car: the body (the packed GLB model where one exists,
 // see GltfCarBody; otherwise a procedural body), shield bubble, ghost and AFK
@@ -182,6 +182,7 @@ export class CarModel {
     readonly flipGroup: THREE.Group;
     readonly carType: CarType;
     readonly colorCode: number;
+    readonly local: boolean;
     shieldMesh?: THREE.Mesh;
     // Wheel groups of a procedural body (empty with a GLB body, whose pivots
     // GltfCarBody drives)
@@ -215,7 +216,12 @@ export class CarModel {
     private _yawRate = 0;
     private _prevSpeed = 0;
 
-    constructor(colorCode: number, carType: CarType) {
+    /**
+     * `local`: the player's own car. The other cars are drawn cheaper on the
+     * phone tier (GltfCarBody PHONE_REMOTE_LOD_DISTANCES).
+     */
+    constructor(colorCode: number, carType: CarType, options: { local?: boolean } = {}) {
+        this.local = options.local ?? false;
         this.group = new THREE.Group();
         this.flipGroup = new THREE.Group();
         this.group.add(this.flipGroup);
@@ -227,8 +233,9 @@ export class CarModel {
         } else {
             this.buildCar();
             // Models still loading (the splash screen preload): swap in the GLB body once it is there
+            // (after the warm-up, so the swap does not compile shaders mid-frame)
             if (GLTF_TYPES.has(carType) && (models.status === 'loading' || models.status === 'idle')) {
-                models.whenLoaded().then(() => this.upgradeToGltf(), () => { /* stays procedural */ });
+                whenModelsReady().then(() => this.upgradeToGltf(), () => { /* stays procedural */ });
             }
         }
         liveModels.add(this);
@@ -451,7 +458,11 @@ export class CarModel {
 
     // ---- GLB body ----
     private buildGltf(): void {
-        const body = new GltfCarBody(this.carType, this.colorCode);
+        const phoneRemote = !this.local && lightingTier() === 'mobile';
+        const options: GltfCarBodyOptions = phoneRemote
+            ? { minLod: 1, lodDistances: PHONE_REMOTE_LOD_DISTANCES, castShadow: false }
+            : {};
+        const body = new GltfCarBody(this.carType, this.colorCode, options);
         this.gltf = body;
         this.flipGroup.add(body.root);
         this._body = [body.root];

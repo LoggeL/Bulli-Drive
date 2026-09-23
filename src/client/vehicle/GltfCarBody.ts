@@ -25,6 +25,20 @@ export const MODEL_SCALE: Record<string, number> = { bulli: 1.15, pickup: 1.15, 
 
 /** Camera distance (m) from which LOD1 and LOD2 are used, with a hysteresis. */
 export const LOD_DISTANCES: readonly number[] = [25, 70];
+/**
+ * The other players' cars on the phone tier (budget: 150 draw calls with
+ * shadows, docs/cars.md): never LOD0, LOD2 from 14 m, no shadow casting (the
+ * contact shadow stays). LOD1 has its wheels baked in there
+ * (staticWheelLodsForTier), so such a car costs 4 draw calls, 3 at LOD2.
+ */
+export const PHONE_REMOTE_LOD_DISTANCES: readonly number[] = [0, 14];
+
+export interface GltfCarBodyOptions {
+    /** Most detailed LOD to build (lower ones are skipped when a higher one is loaded) */
+    minLod?: number;
+    lodDistances?: readonly number[];
+    castShadow?: boolean;
+}
 const LOD_HYSTERESIS = 2;
 const WHEEL_NAMES = ['wheel_fl', 'wheel_fr', 'wheel_rl', 'wheel_rr'] as const;
 
@@ -58,6 +72,7 @@ export class GltfCarBody {
     private readonly lampSets: LampUniforms[] = [];
     private readonly paints: THREE.MeshStandardMaterial[] = [];
     private active: LodInstance | null = null;
+    private readonly lodDistances: readonly number[];
     private spin = 0;
     private steer = 0;
 
@@ -66,8 +81,10 @@ export class GltfCarBody {
         return models.bestLod(id, 0) !== null;
     }
 
-    constructor(id: string, colorCode: number) {
+    constructor(id: string, colorCode: number, options: GltfCarBodyOptions = {}) {
         this.id = id;
+        this.lodDistances = options.lodDistances ?? LOD_DISTANCES;
+        const minLod = [0, 1, 2].find(lod => lod >= (options.minLod ?? 0) && models.has(id, lod)) ?? 0;
         this.scale = MODEL_SCALE[id] ?? 1;
         this.root.name = `car_body_${id}`;
         this.root.scale.setScalar(this.scale);
@@ -90,12 +107,13 @@ export class GltfCarBody {
 
         let nametag = 0;
         for (const lod of [0, 1, 2]) {
-            const root = models.has(id, lod) ? models.instantiate(id, lod) : null;
+            const root = lod >= minLod && models.has(id, lod) ? models.instantiate(id, lod) : null;
             if (!root) continue;
             root.traverse(child => {
                 const mesh = child as THREE.Mesh;
                 if (!mesh.isMesh) return;
                 mesh.material = Array.isArray(mesh.material) ? mesh.material.map(cloneOf) : cloneOf(mesh.material);
+                if (options.castShadow === false) mesh.castShadow = false;
             });
             const pivots = WHEEL_NAMES.map(name => root.getObjectByName(name) ?? new THREE.Object3D());
             root.visible = false;
@@ -143,9 +161,9 @@ export class GltfCarBody {
     selectLod(distance: number): void {
         const current = this.active?.lod ?? 0;
         let wanted = 0;
-        for (let i = 0; i < LOD_DISTANCES.length; i++) {
+        for (let i = 0; i < this.lodDistances.length; i++) {
             // Switching back to the more detailed LOD needs a little more closeness
-            const edge = LOD_DISTANCES[i] + (current > i ? -LOD_HYSTERESIS : LOD_HYSTERESIS);
+            const edge = this.lodDistances[i] + (current > i ? -LOD_HYSTERESIS : LOD_HYSTERESIS);
             if (distance > edge) wanted = i + 1;
         }
         this.showLod(wanted);

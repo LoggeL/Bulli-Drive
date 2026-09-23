@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { describe, expect, it, vi } from 'vitest';
-import { ModelCache, lodsForTier, type ModelLoader, type ModelManifest } from '../../src/client/assets/ModelCache.js';
+import { ModelCache, lodsForTier, staticWheelLodsForTier, type ModelLoader, type ModelManifest } from '../../src/client/assets/ModelCache.js';
 
 const manifest: ModelManifest = {
     version: 1,
@@ -159,5 +159,98 @@ describe('ModelCache', () => {
         expect(lodsForTier('desktop')).toEqual([0, 1, 2]);
         expect(lodsForTier('mobile')).toEqual([0, 1, 2]);
         expect(lodsForTier('software')).toEqual([1, 2]);
+    });
+
+    it('bakes the wheels into the body on the static wheel LODs', async () => {
+        // Body atlas mesh plus four wheel pivots with quantized geometry (like
+        // the GLBs: KHR_mesh_quantization), all with the atlas material
+        const atlas = new THREE.MeshStandardMaterial({ name: 'bulli_atlas' });
+        const quantized = () => {
+            const box = new THREE.BoxGeometry(0.6, 0.6, 0.2);
+            const position = box.attributes.position;
+            const q = new Int16Array(position.count * 3);
+            for (let i = 0; i < q.length; i++) q[i] = Math.round((position.array[i] as number) / 0.5 * 32767);
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.BufferAttribute(q, 3, true));
+            geometry.setAttribute('normal', box.attributes.normal);
+            geometry.setAttribute('uv', box.attributes.uv);
+            geometry.setIndex(box.index);
+            return geometry;
+        };
+        const loader: ModelLoader = {
+            async load() {
+                const root = fakeCar();
+                const body = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1, 4), atlas);
+                body.name = 'body_atlas';
+                root.add(body);
+                for (const [name, x, z] of [['wheel_fl', 0.8, 1.2], ['wheel_fr', -0.8, 1.2], ['wheel_rl', 0.8, -1.2], ['wheel_rr', -0.8, -1.2]] as const) {
+                    const pivot = new THREE.Group();
+                    pivot.name = name;
+                    pivot.position.set(x, 0.33, z);
+                    const geo = new THREE.Group();
+                    geo.name = `${name}_geo`;
+                    geo.scale.setScalar(0.5);
+                    geo.add(new THREE.Mesh(quantized(), atlas));
+                    pivot.add(geo);
+                    root.add(pivot);
+                }
+                return root;
+            }
+        };
+        const models = cache(loader);
+        models.staticWheelLods = [1];
+        await models.preload([0, 1]);
+        const count = (root: THREE.Object3D) => {
+            let meshes = 0;
+            root.traverseVisible(child => { if ((child as THREE.Mesh).isMesh) meshes++; });
+            return meshes;
+        };
+        const lod0 = models.instantiate('bulli', 0)!;
+        const lod1 = models.instantiate('bulli', 1)!;
+        // LOD0: paint, glass, atlas, 4 wheels; LOD1: paint, glass, atlas + wheels
+        expect(count(lod0)).toBe(7);
+        expect(count(lod1)).toBe(3);
+        const merged = lod1.getObjectByName('body_atlas_static_wheels') as THREE.Mesh;
+        expect(merged.material).toBe(atlas);
+        merged.geometry.computeBoundingBox();
+        const box = merged.geometry.boundingBox!;
+        // The front left wheel is in place: quantized ±0.3 m reads ±0.6, the
+        // node scale 0.5 brings it back, at x 0.8 on its pivot
+        expect(box.max.x).toBeCloseTo(1.1, 3);
+        expect(box.min.y).toBeCloseTo(-0.5, 2);
+        // The pivots stay, empty
+        expect(lod1.getObjectByName('wheel_fl')!.getObjectByProperty('isMesh', true)).toBeUndefined();
+        expect(staticWheelLodsForTier('mobile')).toEqual([1]);
+        expect(staticWheelLodsForTier('desktop')).toEqual([]);
+    });
+
+    it('shares textures that two LODs of a model embed identically', async () => {
+        const image = () => {
+            const texture = new THREE.CompressedTexture([{ data: new Uint8Array(64).fill(7), width: 4, height: 4 }] as unknown as ImageData[], 4, 4, THREE.RGBA_ASTC_4x4_Format);
+            texture.name = 'atlas_base';
+            return texture;
+        };
+        const loader: ModelLoader = {
+            async load(url) {
+                const root = fakeCar();
+                const mesh = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial({ map: image(), name: 'atlas' }));
+                if (url.includes('lod2')) (mesh.material as THREE.MeshStandardMaterial).map!.name = 'atlas_lod2';
+                root.add(mesh);
+                return root;
+            }
+        };
+        const models = cache(loader);
+        await models.preload([0, 1, 2]);
+        const mapOf = (lod: number) => {
+            let map: THREE.Texture | null = null;
+            models.instantiate('bulli', lod)!.traverse(child => {
+                const material = (child as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+                if (material?.map) map = material.map;
+            });
+            return map;
+        };
+        expect(mapOf(0)).toBe(mapOf(1));
+        expect(mapOf(2)).not.toBe(mapOf(0));
+        expect(models.sharedTextureCount).toBe(1);
     });
 });

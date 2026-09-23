@@ -254,6 +254,9 @@ export interface CarInfo {
     materials: number;
     sharedMaterials: number;
     meshes: number;
+    // The player's own car (the others are drawn cheaper on the phone tier)
+    local: boolean;
+    shadowCasters: number;
 }
 
 function templateMaterials(): Set<THREE.Material> {
@@ -274,6 +277,11 @@ function carInfo(model: CarModel): CarInfo {
     const shared = templateMaterials();
     const materials = new Set<THREE.Material>();
     let meshes = 0;
+    let shadowCasters = 0;
+    model.flipGroup.traverseVisible(child => {
+        const mesh = child as THREE.Mesh;
+        if (mesh.isMesh && mesh.castShadow) shadowCasters++;
+    });
     model.flipGroup.traverse(child => {
         const mesh = child as THREE.Mesh;
         if (!mesh.isMesh) return;
@@ -292,7 +300,10 @@ function carInfo(model: CarModel): CarInfo {
         nametagHeight: model.nametagHeight,
         materials: materials.size,
         sharedMaterials: [...materials].filter(material => shared.has(material)).length,
-        meshes
+        meshes,
+        local: model.local,
+        // Visible meshes that cast a shadow
+        shadowCasters
     };
 }
 

@@ -223,7 +223,7 @@ function renderDummies(dt: number, alpha: number): void {
         dummy.model.flipGroup.rotation.x = flip % TWO_PI;
         const u = s.vx * Math.sin(s.yaw) + s.vz * Math.cos(s.yaw);
         dummy.model.setDriveState(u, s.steerAngle, dummy.car.input.brake > 20 && u > 0.5);
-        if (state.camera) dummy.tag.update(group.position, state.camera);
+        if (state.camera) dummy.tag.update(group.position, state.camera, dummy.model.nametagHeight * group.scale.y);
         knockCones(x, z, s.vx, s.vz);
     }
 }

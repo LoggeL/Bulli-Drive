@@ -113,7 +113,17 @@ Schritt „Bulli T1“, gemessen mit `npm run screenshots`, M5-GPU, inklusive Sc
 | mobile-portrait (Tier low) | 106 / 183k | 88 / 225k |
 | mobile-landscape (Tier low) | 137 / 195k | 119 / 237k |
 
-Ein GLB-Auto kostet 9 Draw Calls (LOD0/1) bzw. 4 (LOD2), dazu den Schatten-Pass. Der prozedurale Kasten brauchte rund 25 Meshes. Pro Bild sind das 18 Calls weniger und etwa 42k Dreiecke mehr (LOD0 mit 24,7k im Haupt- und im Schatten-Pass). Das Handy-Budget (≤ 150 Calls, ≤ 500k Dreiecke) hält. Ein E2E-Test prüft es mit `?tier=low`.
+Ein GLB-Auto kostet 9 Draw Calls (LOD0/1) bzw. 4 (LOD2), dazu den Schatten-Pass. Der prozedurale Kasten brauchte rund 25 Meshes. Pro Bild sind das 18 Calls weniger und etwa 42k Dreiecke mehr (LOD0 mit 24,7k im Haupt- und im Schatten-Pass).
+
+**Mitspieler auf dem Handy (G1-Nacharbeit).** Die Zahlen oben gelten für das eigene Auto allein. Jedes weitere Auto kostete auf Tier low rund 14 Calls (8 im Haupt-Pass, etwa 5 im Schatten-Pass): LOD1 hat so viele Primitives wie LOD0, weil die vier Räder einzeln gezeichnet werden. Mit drei Mitspielern im Bild war das Budget gerissen. Jetzt gilt auf Tier `mobile` für alle Autos außer dem eigenen (`CarModel` mit `local: false`, `PHONE_REMOTE_LOD_DISTANCES` in `GltfCarBody.ts`):
+
+- nie LOD0; LOD1 bis 14 m Kameraabstand, danach LOD2,
+- in LOD1 sind die Räder beim Laden in den Atlas-Teil der Karosserie gebacken (`ModelCache.staticWheelLods`, `staticWheelLodsForTier`), sie drehen und lenken dort nicht mehr (LOD2 hat die Räder schon im GLB verschmolzen),
+- kein Schattenwurf, der Kontaktschatten bleibt.
+
+Ein Mitspieler kostet damit 4 Calls (LOD1: Lack, Zweitlack, Atlas mit Rädern, Glas) bzw. 3 (LOD2). Gemessen auf dem Handy-Tier (GPU, iPhone-13-Hochformat, Straßenansicht): allein 88 Calls, mit sieben Autos 8–38 m voraus 105 Calls (vorher rund 190). Der E2E-Test `the phone tier stays within 150 draw calls including shadows` stellt jetzt zusätzlich sieben Autos aller Typen ins Bild. Desktop und Software-Tier bleiben unverändert.
+
+LOD0 und LOD1 eines Autos betten dieselben Atlas-Bilder ein. `ModelCache` erkennt gleiche Texturen am Inhalt (Größe, Bytes, Sampling) und hängt die Materialien von LOD1 auf die Texturen von LOD0 um, so werden sie nur einmal hochgeladen (rund 0,8 MB GPU-Speicher je Auto). Der doppelte Download (rund 200 KB insgesamt) bleibt, bis `tools/models/pack.mjs` die Atlanten als gemeinsame KTX2 auslagert.
 
 SwiftShader (Software-Tier, `npm run perf:baseline -- --clients=1 --duration=15`, zwei Läufe mit zufälliger Route): 17,8 und 11,9 FPS bei 35 bzw. 79 Draw Calls im Schnitt. Der Vorgänger-Schritt maß 13,0 und 11,5 FPS bei 97 bzw. 107 Calls. Einen Rückschritt gibt es nicht, alle 28 E2E-Tests laufen stabil.
 

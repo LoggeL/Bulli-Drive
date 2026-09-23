@@ -1,5 +1,5 @@
 import type * as THREE from 'three';
-import { ModelCache, lodsForTier } from './ModelCache.js';
+import { ModelCache, lodsForTier, staticWheelLodsForTier } from './ModelCache.js';
 import { createGltfModelLoader } from './gltfLoader.js';
 import { detectRenderTier } from '../effects/renderQuality.js';
 
@@ -19,8 +19,22 @@ export const models = new ModelCache({
 });
 
 /** Starts loading the car models for this device's render tier (idempotent). */
+let ready: Promise<void> | null = null;
+
 export function startModelPreload(renderer: THREE.WebGLRenderer, camera: THREE.Camera, scene: THREE.Scene): Promise<void> {
     rendererRef = renderer;
-    return models.preload(lodsForTier(detectRenderTier(renderer)))
+    const tier = detectRenderTier(renderer);
+    models.staticWheelLods = staticWheelLodsForTier(tier);
+    ready ??= models.preload(lodsForTier(tier))
         .then(() => models.warmup(renderer, camera, scene));
+    return ready;
+}
+
+/**
+ * Resolves once the models are loaded and their shaders compiled (or failed):
+ * swapping a car to its GLB body before that would compile the car shaders
+ * in the middle of a frame.
+ */
+export function whenModelsReady(): Promise<void> {
+    return ready ?? models.whenLoaded().then(() => undefined);
 }

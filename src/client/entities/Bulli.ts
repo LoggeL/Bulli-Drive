@@ -75,7 +75,7 @@ export class Bulli {
         this.carType = carType || randomCarType();
         this.pitchOffset = 0.8 + Math.random() * 0.7;
 
-        this.model = new CarModel(colorCode, this.carType);
+        this.model = new CarModel(colorCode, this.carType, { local: isLocal });
         this.group = this.model.group;
         this.flipGroup = this.model.flipGroup;
         this.wheels = this.model.wheels;
