@@ -20,7 +20,11 @@ export const TURBO_TOP_SPEED_KMH = carSpeedToKmh(LEGACY_CAR_MAX_SPEED * SPEED_BO
 export const SPEEDO_TICK_INTERVALS = 10;
 export const SPEEDO_SCALE_MAX_KMH = Math.ceil(TURBO_TOP_SPEED_KMH / 40) * 40;
 
+// v2 physics: top speeds 47-55 m/s, boost +20 m/s and Turbo + Boost capped
+// at V_ABS = 85 m/s (306 km/h), so the dial ends at 320 km/h
+export const SPEEDO_SCALE_MAX_KMH_V2 = 320;
+
 // Fraction of the dial arc to fill for a displayed speed
-export function speedoFill(kmh: number): number {
-    return Math.max(0, Math.min(kmh / SPEEDO_SCALE_MAX_KMH, 1));
+export function speedoFill(kmh: number, scaleMaxKmh: number = SPEEDO_SCALE_MAX_KMH): number {
+    return Math.max(0, Math.min(kmh / scaleMaxKmh, 1));
 }

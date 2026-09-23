@@ -1,4 +1,4 @@
-import { test, expect, joinGame, distance, snapshot, placeOnClearRunway } from './fixtures.js';
+import { test, expect, joinGame, distance, snapshot, placeOnClearRunway, openSandbox, v2 } from './fixtures.js';
 import type { PerfHook, PerfRecording } from '../../src/client/debug/perfMonitor.js';
 
 test('?debug=perf shows the overlay and records frame and bandwidth stats', async ({ openPlayer }) => {
@@ -41,4 +41,51 @@ test('?debug=perf shows the overlay and records frame and bandwidth stats', asyn
     // Driving sends position updates
     expect(recording.ws.messagesOut).toBeGreaterThan(0);
     expect(recording.ws.bytesOut).toBeGreaterThan(0);
+    // The v2 physics (the default) counts the sim ticks of the own car
+    expect(recording.sim).not.toBeNull();
+    expect(recording.sim!.ticks).toBeGreaterThan(0);
+    expect(recording.sim!.cars.max).toBe(1);
+    await expect(overlay).toContainText(/sim\s+\d+\.\d+ ms\s+1 cars/);
+});
+
+test('?debug=perf has no sim line with the legacy physics', async ({ openPlayer }) => {
+    const player = await openPlayer('perf-legacy');
+    const { page } = player;
+    await joinGame(player, 'E2E Perf Legacy', '&debug=perf&physics=legacy');
+
+    const overlay = page.locator('#perf-overlay');
+    await expect(overlay).toContainText(/FPS\s+\d/);
+    await page.evaluate(() => (window as unknown as { __bulliPerf: PerfHook }).__bulliPerf.startRecording());
+    const startFrame = (await snapshot(page)).render.frame;
+    await expect.poll(async () => (await snapshot(page)).render.frame).toBeGreaterThan(startFrame + 5);
+    const recording = await page.evaluate(() =>
+        (window as unknown as { __bulliPerf: PerfHook }).__bulliPerf.stopRecording()) as PerfRecording;
+    expect(recording.frames).toBeGreaterThan(3);
+    expect(recording.sim).toBeNull();
+    await expect(overlay).not.toContainText('sim');
+});
+
+test('?debug=perf counts the v2 sim ticks with the sandbox dummies', async ({ openPlayer }) => {
+    const player = await openPlayer('perf-v2');
+    const { page } = player;
+    await openSandbox(player, '&debug=perf');
+
+    // Local car plus the five dummies in one stepWorld
+    const overlay = page.locator('#perf-overlay');
+    await expect(overlay).toContainText(/sim\s+\d+\.\d+ ms\s+6 cars/);
+
+    await page.evaluate(() => (window as unknown as { __bulliPerf: PerfHook }).__bulliPerf.startRecording());
+    const startTicks = (await v2(page)).ticks;
+    await expect.poll(async () => (await v2(page)).ticks - startTicks).toBeGreaterThan(30);
+    const recording = await page.evaluate(() =>
+        (window as unknown as { __bulliPerf: PerfHook }).__bulliPerf.stopRecording()) as PerfRecording;
+
+    const sim = recording.sim!;
+    expect(sim).not.toBeNull();
+    expect(sim.ticks).toBeGreaterThan(30);
+    expect(sim.frames).toBeGreaterThan(0);
+    expect(sim.ticksPerFrame).toBeGreaterThan(0);
+    expect(sim.cars.max).toBe(6);
+    expect(sim.msPerTick).toBeGreaterThanOrEqual(0);
+    expect(sim.msPerTick).toBeLessThan(5);
 });

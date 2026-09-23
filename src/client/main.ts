@@ -10,7 +10,7 @@ import { updateJumpControl, showHitmarker } from './ui/hud.js';
 import { initSounds, startEngineSound, updateEngineSound } from './effects/sounds.js';
 import { checkCoinCollection, animateCoins } from './world/coins.js';
 import { checkPowerupCollection, animatePowerups } from './world/powerups.js';
-import { updatePowerupsUI, updateSpeedometer, updateHealthBar } from './ui/hud.js';
+import { updatePowerupsUI, updateSpeedometer, updateHealthBar, updateDriveHud } from './ui/hud.js';
 import { updateProjectiles } from './world/projectiles.js';
 import { initSplashScreen, initAboutModal } from './ui/screens.js';
 import { animateFountain } from './world/city.js';
@@ -25,15 +25,14 @@ import { installE2EHook } from './e2eHook.js';
 import { watchWebGLContext, isWebGLContextLost } from './ui/contextLoss.js';
 import { installPerfMonitor, type PerfMonitor } from './debug/perfMonitor.js';
 import { setupLighting, updateLighting } from './render/lighting.js';
+import { ChaseCamera, LEGACY_CAMERA, RACE_CAMERA, RACE_CAMERA_SLIP_BLEND, type ChaseTarget } from './camera/ChaseCamera.js';
+import { PHYSICS_V2, SANDBOX, TUNE_PANEL } from './flags.js';
+import { gameHooks } from './game/hooks.js';
+import type { LocalVehicle } from './vehicle/LocalVehicle.js';
 
-// Reusable chase-camera state/vectors to avoid per-frame allocations.
-const _cameraTarget = new THREE.Vector3();
-const _desiredLookAt = new THREE.Vector3();
-const _smoothedLookAt = new THREE.Vector3();
-const _lastCarPosition = new THREE.Vector3();
-let cameraYaw = 0;
-let cameraRigReady = false;
-let useMobileCameraEnvelope = false;
+const chaseCamera = new ChaseCamera(PHYSICS_V2 ? RACE_CAMERA : LEGACY_CAMERA);
+gameHooks.camera = chaseCamera;
+const _chaseTarget: ChaseTarget = { position: new THREE.Vector3(), yaw: 0, speedRatio: 0, boost: false };
 
 let renderQuality: AdaptiveRenderQuality;
 // Only set with ?debug=perf (FPS/draw call/bandwidth overlay)
@@ -43,13 +42,17 @@ let perfMonitor: PerfMonitor | null = null;
 const ramCooldowns: Record<string, number> = {};
 
 function init() {
+    // index.html starts with body.physics-v2 (v2 HUD and control hints,
+    // style.css: .v2-only, .legacy-only); ?physics=legacy swaps them back
+    document.body.classList.toggle('physics-v2', PHYSICS_V2);
+
     // Scene
     state.scene = new THREE.Scene();
 
     // Camera
-    refreshCameraEnvelope();
+    chaseCamera.refreshEnvelope();
     state.camera = new THREE.PerspectiveCamera(
-        useMobileCameraEnvelope ? CONFIG.cameraMobileFov : CONFIG.cameraBaseFov,
+        chaseCamera.baseFov,
         window.innerWidth / window.innerHeight,
         0.1,
         1000
@@ -120,8 +123,15 @@ function init() {
         }
     });
 
-    // Init WebSocket
-    initWebSocket();
+    // Init WebSocket, or with ?sandbox=1 the offline test pad of the v2
+    // physics instead (its own chunk, only loaded with the flag)
+    if (SANDBOX) {
+        import('./sandbox/sandbox.js')
+            .then(sandbox => sandbox.startSandbox())
+            .catch(error => console.error('Sandbox failed to load', error));
+    } else {
+        initWebSocket();
+    }
 
     // Event Listeners
     window.addEventListener('resize', onWindowResize, false);
@@ -135,6 +145,12 @@ function init() {
     installE2EHook();
     // Performance overlay, a no-op unless the page URL has ?debug=perf
     perfMonitor = installPerfMonitor();
+    // lil-gui tuning panel of the v2 physics, only loaded with ?tune=1
+    if (TUNE_PANEL) {
+        import('./debug/tuningPanel.js')
+            .then(panel => panel.installTuningPanel())
+            .catch(error => console.error('Tuning panel failed to load', error));
+    }
 
     // Start Loop
     requestAnimationFrame(animate);
@@ -142,24 +158,10 @@ function init() {
 
 function onWindowResize() {
     if (!state.camera || !state.renderer) return;
-    refreshCameraEnvelope();
+    chaseCamera.refreshEnvelope();
     state.camera.aspect = window.innerWidth / window.innerHeight;
     state.camera.updateProjectionMatrix();
     renderQuality.resize(window.innerWidth, window.innerHeight);
-}
-
-function refreshCameraEnvelope() {
-    useMobileCameraEnvelope = typeof window.matchMedia === 'function'
-        && window.matchMedia('(max-width: 768px), (pointer: coarse)').matches;
-}
-
-function dampingFactor(rate: number, dt: number): number {
-    return 1 - Math.exp(-rate * Math.min(dt, 0.1));
-}
-
-function dampAngle(current: number, target: number, amount: number): number {
-    const shortestDelta = Math.atan2(Math.sin(target - current), Math.cos(target - current));
-    return current + shortestDelta * amount;
 }
 
 function updateChaseCamera(
@@ -170,61 +172,27 @@ function updateChaseCamera(
     boostActive: boolean
 ) {
     const maxSpeed = Math.max(0.001, state.bulli.maxSpeed * (boostActive ? SPEED_BOOST_FACTOR : 1));
-    const speedRatio = Math.min(1, Math.abs(carSpeed) / maxSpeed);
-    const movedDistanceSq = cameraRigReady ? _lastCarPosition.distanceToSquared(carPos) : 0;
-    const teleportThresholdSq = CONFIG.cameraTeleportDistance * CONFIG.cameraTeleportDistance;
-    const shouldSnap = !cameraRigReady || state.cameraSnapPending || movedDistanceSq > teleportThresholdSq;
-
-    if (shouldSnap) {
-        cameraYaw = carAngle;
-    } else {
-        cameraYaw = dampAngle(cameraYaw, carAngle, dampingFactor(CONFIG.cameraYawDamping, dt));
-    }
-
-    const distanceScale = useMobileCameraEnvelope ? CONFIG.cameraMobileDistanceScale : 1;
-    const heightScale = useMobileCameraEnvelope ? CONFIG.cameraMobileHeightScale : 1;
-    const distance = CONFIG.cameraDistance * distanceScale
-        * (1 + speedRatio * 0.12 + (boostActive ? 0.06 : 0));
-    const height = CONFIG.cameraHeight * heightScale
-        * (1 + speedRatio * 0.08 + (boostActive ? 0.04 : 0));
-    const forwardX = Math.sin(cameraYaw);
-    const forwardZ = Math.cos(cameraYaw);
-    const lookAhead = CONFIG.cameraLookAhead + CONFIG.cameraSpeedLookAhead * speedRatio;
-
-    _cameraTarget.set(
-        carPos.x - forwardX * distance,
-        carPos.y + height,
-        carPos.z - forwardZ * distance
-    );
-    _desiredLookAt.set(
-        carPos.x + forwardX * lookAhead,
-        carPos.y + CONFIG.cameraLookAtY,
-        carPos.z + forwardZ * lookAhead
-    );
-
-    const baseFov = useMobileCameraEnvelope ? CONFIG.cameraMobileFov : CONFIG.cameraBaseFov;
-    const targetFov = Math.min(
-        CONFIG.cameraMaxFov,
-        baseFov + speedRatio * CONFIG.cameraSpeedFov + (boostActive ? CONFIG.cameraBoostFov : 0)
-    );
-
-    if (shouldSnap) {
-        state.camera.position.copy(_cameraTarget);
-        _smoothedLookAt.copy(_desiredLookAt);
-        state.camera.fov = targetFov;
-        cameraRigReady = true;
+    _chaseTarget.position.copy(carPos);
+    _chaseTarget.yaw = carAngle;
+    _chaseTarget.speedRatio = Math.min(1, Math.abs(carSpeed) / maxSpeed);
+    _chaseTarget.boost = boostActive;
+    if (chaseCamera.update(dt, state.camera, _chaseTarget, state.cameraSnapPending)) {
         state.cameraSnapPending = false;
-    } else {
-        state.camera.position.lerp(_cameraTarget, dampingFactor(CONFIG.cameraPositionDamping, dt));
-        _smoothedLookAt.lerp(_desiredLookAt, dampingFactor(CONFIG.cameraLookDamping, dt));
-        state.camera.fov += (targetFov - state.camera.fov) * dampingFactor(CONFIG.cameraFovDamping, dt);
     }
+}
 
-    state.camera.lookAt(_smoothedLookAt);
-    if (shouldSnap || Math.abs(targetFov - state.camera.fov) > 0.01) {
-        state.camera.updateProjectionMatrix();
+// v2: the camera swings a little towards the travel direction in a drift
+function updateRaceCamera(dt: number, carPos: THREE.Vector3, vehicle: LocalVehicle) {
+    const s = vehicle.car.state;
+    const u = vehicle.forwardSpeed;
+    _chaseTarget.position.copy(carPos);
+    _chaseTarget.yaw = vehicle.pose.yaw
+        + RACE_CAMERA_SLIP_BLEND * vehicle.slipAngle * Math.max(0, Math.min(1, u / 10));
+    _chaseTarget.speedRatio = Math.min(1, Math.abs(u) / Math.max(1, vehicle.car.params.topSpeed));
+    _chaseTarget.boost = s.boosting || vehicle.car.mods.turbo;
+    if (chaseCamera.update(dt, state.camera, _chaseTarget, state.cameraSnapPending)) {
+        state.cameraSnapPending = false;
     }
-    _lastCarPosition.copy(carPos);
 }
 
 function animate(frameTime: number) {
@@ -240,14 +208,21 @@ function animate(frameTime: number) {
         // Update engine sound based on speed and jump height
         const isAccelerating = Math.abs(state.inputs.throttle) > 0.02;
         const turboActive = state.bulli.powerups.speed.active;
+        // v2 only: the drift boost (Shift) sounds and burns like the Turbo
+        const vehicle: LocalVehicle | undefined = state.bulli.vehicle;
+        const boostActive = turboActive || !!vehicle?.car.state.boosting;
         const jumpHeight = state.bulli.flipGroup.position.y;
-        updateEngineSound(state.bulli.speed, isAccelerating, turboActive, jumpHeight);
+        updateEngineSound(state.bulli.speed, isAccelerating, boostActive, jumpHeight);
 
         // Update the automatic chase camera. Its yaw follows the car on the
         // shortest arc, while position, framing and FOV use independent damping
         // so a quick turn feels deliberate instead of whipping the view around.
         const carPos = state.bulli.group.position;
-        updateChaseCamera(dt, carPos, state.bulli.angle, state.bulli.speed, state.bulli.powerups.speed.active);
+        if (vehicle) {
+            updateRaceCamera(dt, carPos, vehicle);
+        } else {
+            updateChaseCamera(dt, carPos, state.bulli.angle, state.bulli.speed, state.bulli.powerups.speed.active);
+        }
 
         // Effects based on speed
         const speed = Math.abs(state.bulli.speed);
@@ -261,7 +236,7 @@ function animate(frameTime: number) {
         checkPowerupCollection();
         updateProjectiles(dt);
         // Boost fire trails
-        if (turboActive && speed > 0.05) {
+        if (boostActive && speed > 0.05) {
             spawnBoostFireParticle();
         }
 
@@ -327,6 +302,7 @@ function animate(frameTime: number) {
 
         updatePowerupsUI();
         updateSpeedometer();
+        if (vehicle) updateDriveHud(vehicle);
         updateHealthBar();
         const jumpControlMode = state.bulli.canRecover
             ? 'recover'
@@ -346,6 +322,9 @@ function animate(frameTime: number) {
             }
         }
     }
+
+    // Sandbox dummies and cones (game/hooks.ts, empty in the game)
+    for (const hook of gameHooks.frame) hook(dt);
 
     // Animate world objects
     animateCoins(time);

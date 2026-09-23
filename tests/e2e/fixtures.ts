@@ -1,5 +1,5 @@
 import { test as base, expect, type BrowserContext, type Page } from '@playwright/test';
-import type { BulliDebugSnapshot } from '../../src/client/e2eHook.js';
+import type { BulliDebugSnapshot, V2Snapshot } from '../../src/client/e2eHook.js';
 import type { Obstacle } from '../../src/client/types.js';
 import { CITY_BOUNDS, CITY_CONFIG, roadLineCenter } from '../../src/shared/world/cityGen.js';
 import { MEGA_SCALE } from '../../src/shared/constants.js';
@@ -78,6 +78,17 @@ export function snapshot(page: Page): Promise<BulliDebugSnapshot> {
     }).__bulliDebug.snapshot());
 }
 
+// The local v2 sim car (created with the car's first frame); fails when the
+// page runs the legacy physics
+export async function v2(page: Page): Promise<V2Snapshot> {
+    let state = await snapshot(page);
+    if (!state.v2) {
+        expect(state.physics, 'the page runs the legacy physics (?physics=legacy)').toBe('v2');
+        await expect.poll(async () => (state = await snapshot(page)).v2).not.toBeNull();
+    }
+    return state.v2!;
+}
+
 /**
  * Walks through the real join flow: loading screen, splash screen with the
  * road name, START ENGINE. Resolves with the player's server id.
@@ -109,6 +120,21 @@ export async function joinGame(player: Player, name: string, extraQuery = ''): P
     expect(player.sentMessages.map(message => message.type)).toContain('playerReady');
 
     return (await snapshot(page)).myId!;
+}
+
+/** Opens the sandbox and starts from the splash screen, without a server connection. */
+export async function openSandbox(player: Player, extraQuery = ''): Promise<void> {
+    const { page } = player;
+    await page.goto(`/?e2e=1&sandbox=1${extraQuery}`);
+    await expect(page.locator('#loading-screen')).toHaveCount(0, { timeout: 60_000 });
+    const splash = page.locator('#splash-screen');
+    await expect(splash).toBeVisible();
+    await page.locator('#splash-name-input').fill('Sandbox E2E');
+    const startButton = page.locator('#start-btn');
+    if (await page.evaluate(() => navigator.maxTouchPoints > 0)) await startButton.tap();
+    else await startButton.click();
+    await expect(splash).toHaveClass(/\bhidden\b/);
+    await v2(page);
 }
 
 export function distance(a: { x: number; z: number }, b: { x: number; z: number }): number {

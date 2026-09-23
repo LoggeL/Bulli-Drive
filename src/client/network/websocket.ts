@@ -16,6 +16,8 @@ import { initMinimap } from '../ui/minimap.js';
 import { releaseKeyboardInputs } from '../controls/keyboard.js';
 import { resetMobileControls } from '../controls/mobile.js';
 import { sendToServer } from './socket.js';
+import { PHYSICS_V2 } from '../flags.js';
+import { noteRemoteUpdate, removeRemoteProxy } from '../vehicle/remoteProxies.js';
 
 let environmentInitialized = false;
 let cityInitialized = false;
@@ -285,6 +287,8 @@ function handleServerMessage(data: ServerMessage) {
                     state.cameraSnapPending = true;
                     state.bulli.flipGroup.visible = true;
                     state.bulli.health = data.health;
+                    // v2: the sim car follows (no vehicle exists without the flag)
+                    state.bulli.vehicle?.respawn(data.x, data.z);
                 }
                 hideRespawnOverlay();
             } else {
@@ -423,6 +427,7 @@ export function removeRemotePlayer(id: string) {
         state.scene.remove(remote.group);
         remote.dispose();
         delete state.remotePlayers[id];
+        removeRemoteProxy(id);
         updateScoreboardUI();
     }
 }
@@ -457,6 +462,9 @@ function updateRemotePlayer(data: { id: string; x: number; z: number; y?: number
         remote.flipGroup.position.y = 0;
     }
 
+    // v2: the remote car as a kinematic contact partner of the local sim
+    if (PHYSICS_V2) noteRemoteUpdate(data.id, remote, performance.now());
+
     // Ghost visual on remote player
     if (data.ghostActive !== undefined && remote.setGhostVisual) {
         const wasGhost = remote.powerups?.ghost?.active ?? false;
@@ -482,7 +490,7 @@ function updateRemotePlayer(data: { id: string; x: number; z: number; y?: number
     }
 }
 
-function removeLoader() {
+export function removeLoader() {
     const loader = document.getElementById('loading-screen');
     const splash = document.getElementById('splash-screen');
     

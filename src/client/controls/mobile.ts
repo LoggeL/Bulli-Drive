@@ -1,9 +1,14 @@
 import { state } from '../state.js';
 import { releaseTouchDriveAxes, setTouchDriveAxes } from './driveInput.js';
+import { PHYSICS_V2 } from '../flags.js';
+import { BTN_BOOST, BTN_HANDBRAKE } from '../../shared/sim/constants.js';
+import { inputManager } from '../input/InputManager.js';
 
 const JOYSTICK_DEADZONE = 0.12;
 const JOYSTICK_RESPONSE_CURVE = 1.15;
-const JOYSTICK_FILTER_RATE = 18;
+// The v2 sim already smooths the steering through the wheel angle rate
+const JOYSTICK_FILTER_RATE = PHYSICS_V2 ? 30 : 18;
+const AUTO_GAS_STORAGE_KEY = 'bulli-auto-gas';
 
 interface ControlHandle {
     reset(): void;
@@ -19,15 +24,19 @@ export function setupMobileControls() {
     // Make setup idempotent for hot reloads/reinitialisation.
     destroyMobileControls();
 
-    setupJoystick('joystick-move', (x, y, active) => {
-        // DOM Y grows downwards, while positive throttle means forward. The
-        // steering sign preserves the established A/left and D/right behavior.
-        setTouchDriveAxes(-y, -x, active);
-    });
+    if (PHYSICS_V2) {
+        setupV2Controls();
+    } else {
+        setupJoystick('joystick-move', (x, y, active) => {
+            // DOM Y grows downwards, while positive throttle means forward. The
+            // steering sign preserves the established A/left and D/right behavior.
+            setTouchDriveAxes(-y, -x, active);
+        });
 
-    setupActionButton('btn-honk', 'f');
-    setupActionButton('btn-flip', 'space');
-    setupActionButton('btn-shoot', 'e');
+        setupActionButton('btn-honk', 'f');
+        setupActionButton('btn-flip', 'space');
+        setupActionButton('btn-shoot', 'e');
+    }
 
     const resetForLifecycle = () => resetMobileControls();
     const resetWhenHidden = () => {
@@ -47,6 +56,7 @@ export function setupMobileControls() {
 
 export function resetMobileControls() {
     activeControls.forEach(control => control.reset());
+    inputManager.releaseTouch();
     releaseTouchDriveAxes();
     state.inputs.e = false;
     state.inputs.f = false;
@@ -58,6 +68,111 @@ export function destroyMobileControls() {
     while (activeControls.length) activeControls.pop()!.destroy();
     removeLifecycleListeners?.();
     removeLifecycleListeners = null;
+}
+
+// Touch controls of the v2 physics (docs/phase-1a-design.md, 11.2): the
+// stick steers and brakes, auto-gas drives; DRIFT and BOOST are held; the
+// flip button jumps on a short press and resets when held
+function setupV2Controls() {
+    setupJoystick('joystick-move', (x, y, active) => inputManager.setStick(x, y, active));
+    setupActionButton('btn-honk', 'f');
+    setupActionButton('btn-shoot', 'e');
+    setupHoldButton('btn-flip', down => (down ? inputManager.flipDown() : inputManager.flipUp()));
+    setupHoldButton('btn-drift', down => inputManager.touchButton(BTN_HANDBRAKE, down));
+    setupHoldButton('btn-boost', down => inputManager.touchButton(BTN_BOOST, down));
+    setupAutoGasToggle();
+}
+
+function readAutoGasSetting(): boolean {
+    try {
+        return localStorage.getItem(AUTO_GAS_STORAGE_KEY) !== 'off';
+    } catch {
+        return true;
+    }
+}
+
+function setupAutoGasToggle() {
+    const button = document.getElementById('btn-autogas');
+    inputManager.autoGasEnabled = readAutoGasSetting();
+    if (!button) return;
+    const sync = () => button.setAttribute('aria-pressed', String(inputManager.autoGasEnabled));
+    sync();
+    const onClick = () => {
+        inputManager.autoGasEnabled = !inputManager.autoGasEnabled;
+        try {
+            localStorage.setItem(AUTO_GAS_STORAGE_KEY, inputManager.autoGasEnabled ? 'on' : 'off');
+        } catch { /* private mode: the switch still works for this visit */ }
+        sync();
+    };
+    button.addEventListener('click', onClick);
+    activeControls.push({
+        reset() { /* a setting, not an input */ },
+        destroy() { button.removeEventListener('click', onClick); }
+    });
+}
+
+// A button that reports press and release (held inputs such as the
+// handbrake). Keyboard/assistive activation (click with detail 0) is a
+// press and release in one.
+function setupHoldButton(elementId: string, onChange: (down: boolean) => void): ControlHandle | null {
+    const button = document.getElementById(elementId);
+    if (!button) return null;
+
+    let activePointerId: number | null = null;
+
+    const release = (pointerId?: number) => {
+        if (activePointerId === null) return;
+        if (pointerId !== undefined && pointerId !== activePointerId) return;
+
+        const capturedPointer = activePointerId;
+        activePointerId = null;
+        if (button.hasPointerCapture(capturedPointer)) {
+            button.releasePointerCapture(capturedPointer);
+        }
+        button.classList.remove('active');
+        onChange(false);
+    };
+
+    const onPointerDown = (event: PointerEvent) => {
+        if (activePointerId !== null || state.isModalOpen) return;
+        event.preventDefault();
+        activePointerId = event.pointerId;
+        button.setPointerCapture(event.pointerId);
+        button.classList.add('active');
+        onChange(true);
+
+        if (state.audioCtx?.state === 'suspended') {
+            void state.audioCtx.resume();
+        }
+    };
+
+    const onPointerUp = (event: PointerEvent) => release(event.pointerId);
+    const onLostCapture = (event: PointerEvent) => release(event.pointerId);
+    const onClick = (event: MouseEvent) => {
+        if (event.detail !== 0 || state.isModalOpen) return;
+        onChange(true);
+        onChange(false);
+    };
+
+    button.addEventListener('pointerdown', onPointerDown);
+    button.addEventListener('pointerup', onPointerUp);
+    button.addEventListener('pointercancel', onPointerUp);
+    button.addEventListener('lostpointercapture', onLostCapture);
+    button.addEventListener('click', onClick);
+
+    const handle: ControlHandle = {
+        reset: () => release(),
+        destroy() {
+            release();
+            button.removeEventListener('pointerdown', onPointerDown);
+            button.removeEventListener('pointerup', onPointerUp);
+            button.removeEventListener('pointercancel', onPointerUp);
+            button.removeEventListener('lostpointercapture', onLostCapture);
+            button.removeEventListener('click', onClick);
+        }
+    };
+    activeControls.push(handle);
+    return handle;
 }
 
 function setupActionButton(elementId: string, key: ActionKey): ControlHandle | null {

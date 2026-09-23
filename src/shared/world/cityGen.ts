@@ -5,6 +5,7 @@
 import { CITY_LAYOUT } from '../constants.js';
 import type { BuildingData, CityData, RoadData } from '../protocol.js';
 import type { RandomSource } from '../math/rng.js';
+import type { RoadGrid } from './colliders.js';
 
 // City configuration (grid dimensions come from the shared CITY_LAYOUT)
 export const CITY_CONFIG = {
@@ -62,6 +63,23 @@ export function blockCenter(bx: number, bz: number): { x: number; z: number } {
     return {
         x: centerX - HALF_CITY + roadWidth + bx * TOTAL_BLOCK_SIZE + blockSize / 2,
         z: centerZ - HALF_CITY + roadWidth + bz * TOTAL_BLOCK_SIZE + blockSize / 2
+    };
+}
+
+// Resets within this distance of a road centre line go onto the road
+const ROAD_SNAP_RANGE = 40;
+
+// The road grid as reset target of the v2 sim (SimWorld.roads)
+export function cityRoadGrid(): RoadGrid {
+    const lines = Array.from({ length: CITY_CONFIG.gridSize + 1 }, (_, index) => index);
+    return {
+        xLines: lines.map(index => roadLineCenter(index, 'x')),
+        zLines: lines.map(index => roadLineCenter(index, 'z')),
+        minX: CITY_BOUNDS.minX,
+        maxX: CITY_BOUNDS.maxX,
+        minZ: CITY_BOUNDS.minZ,
+        maxZ: CITY_BOUNDS.maxZ,
+        snapRange: ROAD_SNAP_RANGE
     };
 }
 

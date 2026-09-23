@@ -54,7 +54,7 @@
     <link rel="stylesheet" href="/src/client/style.css">
 </head>
 
-<body>
+<body class="physics-v2">
     <svg class="ui-icon-sprite" width="0" height="0" aria-hidden="true" focusable="false">
         <defs>
             <symbol id="icon-play" viewBox="0 0 24 24">
@@ -267,14 +267,29 @@
                 START ENGINE
             </button>
             <div class="splash-controls-preview">
-                <div class="preview-row">
+                <div class="preview-row preview-keyboard">
                     <span class="preview-keys">WASD</span> <span class="preview-desc">drive</span>
                     <span class="preview-sep">&middot;</span>
-                    <span class="preview-keys">SPACE</span> <span class="preview-desc">jump</span>
+                    <span class="preview-keys legacy-only">SPACE</span> <span class="preview-desc legacy-only">jump</span>
+                    <span class="preview-keys v2-only">SPACE</span> <span class="preview-desc v2-only">drift</span>
+                    <span class="preview-sep v2-only">&middot;</span>
+                    <span class="preview-keys v2-only">SHIFT</span> <span class="preview-desc v2-only">boost</span>
+                    <span class="preview-sep v2-only">&middot;</span>
+                    <span class="preview-keys v2-only">Q</span> <span class="preview-desc v2-only">jump</span>
                     <span class="preview-sep">&middot;</span>
-                    <span class="preview-keys">F</span> <span class="preview-desc">honk</span>
-                    <span class="preview-sep">&middot;</span>
+                    <span class="preview-keys legacy-only">F</span> <span class="preview-desc legacy-only">honk</span>
+                    <span class="preview-sep legacy-only">&middot;</span>
                     <span class="preview-keys">E</span> <span class="preview-desc">shoot</span>
+                </div>
+                <!-- Phones (style.css shows it instead of the keyboard row) -->
+                <div class="preview-row preview-touch v2-only">
+                    <span class="preview-keys">STICK</span> <span class="preview-desc">steer</span>
+                    <span class="preview-sep">&middot;</span>
+                    <span class="preview-keys">AUTO</span> <span class="preview-desc">gas</span>
+                    <span class="preview-sep">&middot;</span>
+                    <span class="preview-keys">DRIFT</span>
+                    <span class="preview-sep">&middot;</span>
+                    <span class="preview-keys">BOOST</span>
                 </div>
             </div>
             <a id="about-link" href="#">ABOUT</a>
@@ -296,9 +311,22 @@
                 <h3 class="modal-section-title">Controls</h3>
                 <div class="modal-controls-grid">
                     <div class="modal-control-row"><span class="modal-key">W A S D</span><span>Drive &amp; steer</span></div>
-                    <div class="modal-control-row"><span class="modal-key">SPACE</span><span>Jump / flip; recover when stuck</span></div>
-                    <div class="modal-control-row"><span class="modal-key">F</span><span>Honk horn</span></div>
+                    <div class="modal-control-row legacy-only"><span class="modal-key">SPACE</span><span>Jump / flip; recover when stuck</span></div>
+                    <div class="modal-control-row v2-only"><span class="modal-key">SPACE</span><span>Handbrake / drift</span></div>
+                    <div class="modal-control-row v2-only"><span class="modal-key">SHIFT</span><span>Boost (fills while drifting)</span></div>
+                    <div class="modal-control-row v2-only"><span class="modal-key">Q</span><span>Jump / flip</span></div>
+                    <div class="modal-control-row v2-only"><span class="modal-key">R</span><span>Hold to reset onto the road</span></div>
                     <div class="modal-control-row"><span class="modal-key">E</span><span>Shoot projectile</span></div>
+                    <div class="modal-control-row"><span class="modal-key">F</span><span>Honk horn</span></div>
+                </div>
+
+                <h3 class="modal-section-title v2-only">Touch</h3>
+                <div class="modal-controls-grid v2-only">
+                    <div class="modal-control-row"><span class="modal-key">STICK</span><span>Steer; pull back to brake and reverse</span></div>
+                    <div class="modal-control-row"><span class="modal-key">AUTO</span><span>Auto-gas on / off</span></div>
+                    <div class="modal-control-row"><span class="modal-key">DRIFT</span><span>Handbrake / drift (hold)</span></div>
+                    <div class="modal-control-row"><span class="modal-key">BOOST</span><span>Boost (hold)</span></div>
+                    <div class="modal-control-row"><span class="modal-key">JUMP</span><span>Tap to jump, hold to reset</span></div>
                 </div>
 
                 <h3 class="modal-section-title">Powerups</h3>
@@ -338,6 +366,15 @@
                 <svg class="ui-icon" aria-hidden="true"><use href="#icon-jump"></use></svg>
             </button>
         </div>
+
+        <!-- v2 physics (not ?physics=legacy): handbrake, boost and the auto-gas switch -->
+        <div class="drive-buttons v2-only">
+            <button id="btn-autogas" class="control-btn drive autogas" type="button" aria-pressed="true" aria-label="Auto-gas">AUTO</button>
+            <button id="btn-boost" class="control-btn drive boost" type="button" aria-label="Boost">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-speed"></use></svg>
+            </button>
+            <button id="btn-drift" class="control-btn drive drift" type="button" aria-label="Drift (handbrake)">DRIFT</button>
+        </div>
     </div>
 
     <div id="ui-overlay">
@@ -369,10 +406,30 @@
                     </div>
                     <span class="sr-only">Drive and steer</span>
                 </div>
-                <div class="hint-row">
+                <div class="hint-row legacy-only">
                     <div class="key wide">SPACE</div>
                     <svg class="ui-icon hint-icon" aria-hidden="true"><use href="#icon-jump"></use></svg>
                     <span class="sr-only">Jump and flip; recover when stuck</span>
+                </div>
+                <div class="hint-row v2-only">
+                    <div class="key wide">SPACE</div>
+                    <span class="hint-text" aria-hidden="true">DRIFT</span>
+                    <span class="sr-only">Handbrake and drift</span>
+                </div>
+                <div class="hint-row v2-only">
+                    <div class="key wide">SHIFT</div>
+                    <svg class="ui-icon hint-icon" aria-hidden="true"><use href="#icon-speed"></use></svg>
+                    <span class="sr-only">Boost</span>
+                </div>
+                <div class="hint-row v2-only">
+                    <div class="key">Q</div>
+                    <svg class="ui-icon hint-icon" aria-hidden="true"><use href="#icon-jump"></use></svg>
+                    <span class="sr-only">Jump and flip</span>
+                </div>
+                <div class="hint-row v2-only">
+                    <div class="key">R</div>
+                    <svg class="ui-icon hint-icon" aria-hidden="true"><use href="#icon-recover"></use></svg>
+                    <span class="sr-only">Hold to reset onto the road</span>
                 </div>
                 <div class="hint-row">
                     <div class="key">E</div>
@@ -389,6 +446,15 @@
 
         <div id="interaction-prompt" class="hidden">
             POWERUP COLLECTED!
+        </div>
+
+        <div id="drive-meter" class="v2-only" role="meter" aria-label="Boost" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <span id="drift-indicator" aria-hidden="true">DRIFT</span>
+            <div id="boost-meter" aria-hidden="true">
+                <div id="boost-meter-fill"></div>
+                <div id="boost-meter-mark"></div>
+            </div>
+            <span id="boost-meter-label" aria-hidden="true">BOOST</span>
         </div>
 
         <div id="speedometer">

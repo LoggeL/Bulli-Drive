@@ -1,0 +1,97 @@
+{
+  "meta": {
+    "date": "2026-09-23T13:58:37.328Z",
+    "commit": "b899167",
+    "node": "v24.18.0",
+    "chromium": "153.0.8010.12",
+    "gl": "gpu",
+    "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)",
+    "headless": true,
+    "device": "mobile",
+    "physics": "v2",
+    "sandbox": true,
+    "clients": 1,
+    "warmupS": 5,
+    "durationS": 15,
+    "note": "Headless Chromium on the local GPU: closer to a real desktop, but without vsync/compositor and with all clients sharing one machine."
+  },
+  "server": {
+    "rssMbStart": 74.1,
+    "rssMbEnd": 76.4
+  },
+  "clients": [
+    {
+      "name": "Perf 1",
+      "joinWs": {
+        "bytesIn": 0,
+        "bytesOut": 0,
+        "messagesIn": 0,
+        "messagesOut": 0
+      },
+      "drivenMeters": 630,
+      "remotesSeen": 0,
+      "durationMs": 15148.8,
+      "frames": 909,
+      "fps": 60,
+      "frameMs": {
+        "avg": 16.67,
+        "p50": 16.7,
+        "p95": 16.8,
+        "p99": 16.8,
+        "max": 16.8
+      },
+      "cpuMs": {
+        "avg": 0.73,
+        "p50": 0.7,
+        "p95": 1.1,
+        "p99": 1.2,
+        "max": 3
+      },
+      "drawCalls": {
+        "avg": 31.81,
+        "p50": 28,
+        "p95": 43,
+        "p99": 52,
+        "max": 52
+      },
+      "triangles": {
+        "avg": 5858.89,
+        "p50": 5854,
+        "p95": 6300,
+        "p99": 6354,
+        "max": 6412
+      },
+      "sim": {
+        "frames": 909,
+        "ticks": 909,
+        "ticksPerFrame": 1,
+        "msPerFrame": {
+          "avg": 0.089,
+          "p50": 0.1,
+          "p95": 0.2,
+          "p99": 0.2,
+          "max": 0.3
+        },
+        "msPerTick": 0.0892,
+        "cars": {
+          "avg": 6,
+          "max": 6
+        }
+      },
+      "geometries": 100,
+      "textures": 2,
+      "programs": 7,
+      "pixelRatio": 2,
+      "ws": {
+        "bytesIn": 0,
+        "bytesOut": 0,
+        "messagesIn": 0,
+        "messagesOut": 0,
+        "bytesInPerSec": 0,
+        "bytesOutPerSec": 0,
+        "messagesInPerSec": 0,
+        "messagesOutPerSec": 0
+      }
+    }
+  ]
+}

@@ -36,6 +36,7 @@
     "@types/three": "0.160.0",
     "@types/ws": "^8.18.1",
     "concurrently": "^10.0.5",
+    "lil-gui": "^0.20.0",
     "three": "0.160.0",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
