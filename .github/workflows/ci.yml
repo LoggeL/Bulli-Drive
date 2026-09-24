@@ -49,6 +49,23 @@ jobs:
           grep -Eq '^[a-f0-9]{16}$' dist/client/build-version.txt
           grep -q "name=\"bulli-build-version\" content=\"$(cat dist/client/build-version.txt)\"" dist/client/index.html
 
+  bots:
+    name: Bot integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Starts its own game server process and runs headless bots over real
+      # WebSockets: a bump seen by both cars, reconnect, room switch, flood
+      # kick, 16 bots behind netsim 150/30/3 with the bandwidth and tick
+      # budgets (docs/phase-1b-design.md, 15.2)
+      - run: npm run test:bots -- --reporter=verbose
+
   e2e:
     name: End-to-end (Playwright)
     runs-on: ubuntu-latest

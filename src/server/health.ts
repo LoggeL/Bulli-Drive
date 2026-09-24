@@ -74,9 +74,17 @@ export interface HealthReport {
     bytesOutPerSec: number;
     kicks: number;
     shuttingDown: boolean;
+    // Memory of the process (MB), for soak runs (24/7, 18)
+    heapUsedMb: number;
+    rssMb: number;
 }
 
 const round3 = (value: number): number => Math.round(value * 1000) / 1000;
+
+function memoryMb(): { heapUsedMb: number; rssMb: number } {
+    const memory = process.memoryUsage();
+    return { heapUsedMb: Math.round(memory.heapUsed / 1e5) / 10, rssMb: Math.round(memory.rss / 1e5) / 10 };
+}
 
 /** The health report at clock time now (ms on the scheduler's clock). */
 export function healthReport(src: HealthSources, nowMs: number): HealthReport {
@@ -100,7 +108,8 @@ export function healthReport(src: HealthSources, nowMs: number): HealthReport {
         bytesInPerSec: src.traffic.inPerSec,
         bytesOutPerSec: src.traffic.outPerSec,
         kicks: src.kicks(),
-        shuttingDown
+        shuttingDown,
+        ...memoryMb()
     };
 }
 

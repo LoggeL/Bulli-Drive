@@ -5,6 +5,8 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
     test: {
         include: ['tests/**/*.test.ts'],
+        // The bot integration tests start their own server (npm run test:bots)
+        exclude: ['tests/integration/**', 'node_modules/**'],
         environment: 'node'
     }
 });
