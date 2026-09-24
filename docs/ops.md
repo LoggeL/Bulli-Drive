@@ -25,13 +25,19 @@ Der Spielserver läuft rund um die Uhr (live: https://bulli.logge.top, Dokploy d
 ```json
 {"ok":true,"uptimeS":8123,"build":"4f1155c40a45dae6","rooms":2,"players":17,"sessions":18,
  "graceSessions":1,"connections":17,"lastTickAgeMs":4,"tickMeanMs":0.21,"tickP95Ms":0.48,
- "tickP99Ms":0.9,"overruns":0,"bytesInPerSec":31000,"bytesOutPerSec":410000,"kicks":0,"shuttingDown":false}
+ "tickP99Ms":0.9,"overruns":0,"bytesInPerSec":31000,"bytesOutPerSec":410000,"kicks":0,"shuttingDown":false,
+ "heapUsedMb":21.4,"rssMb":107.1}
 ```
 
 - **200** solange der Tick-Scheduler in der letzten Sekunde gelaufen ist, sonst **503**. Während des Herunterfahrens ebenfalls 503.
 - Hängt die Event-Loop, antwortet der Endpunkt gar nicht; der Docker-Health-Check zählt den Timeout (3 s) als Fehlschlag.
 - `tickP95Ms`/`tickP99Ms` beziehen sich auf die letzten 1024 Scheduler-Ticks (≈ 17 s) über alle Rooms. Budget: p99 < 2 ms bei einem vollen Room (Abschnitt 5.7).
 - Das Overlay `?debug=perf` bzw. `?debug=net` fragt `/healthz` alle 2 s ab und zeigt die Tick-Zeiten des Servers.
+- `heapUsedMb`/`rssMb`: Speicher des Prozesses, für Soak-Läufe. Der Heap schwankt mit der Garbage Collection; ein Leck zeigt sich am steigenden Minimum.
+
+## Lasttest mit Bots
+
+`npm run bots -- --url wss://<host>/ws --count 32 --mix drive:24,ram:6,reconnect:1,hop:1 --duration 120` fährt headless Bot-Clients gegen einen laufenden Server und gibt Snapshot-Rate, Downlink pro Client, Korrekturen, Kontakte und die Tick-Zeiten aus `/healthz` aus (`--netsim 150,30,3` für ein schlechtes Netz, `--json` für den ganzen Bericht). Gegen den Live-Server nur mit Bedacht: Die Bots sind echte Spieler im Room und belegen Plätze. Messwerte: [`baseline.md`](baseline.md), Abschnitt Phase 1b.
 
 Das Docker-Image enthält:
 

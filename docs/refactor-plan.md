@@ -1,6 +1,6 @@
 # Plan: Bulli Drive als Open-World-Multiplayer-Rennspiel
 
-**Stand:** 2026-09-24 · **Aktuelle Phase:** Phase 1b in Arbeit (Branch `net/phase-1b`, Spezifikation und Stand: [`phase-1b-design.md`](phase-1b-design.md)): Server-Sim, Protokoll v2 und Client-Prediction stehen, die Legacy-Physik und `?physics=legacy` sind gelöscht; Reconnect mit 30 s Grace, Graceful Shutdown mit Resume-Ticket, `/healthz` mit Docker-`HEALTHCHECK` und die Dev-Netsim sind da (Betrieb: [`ops.md`](ops.md)). Phase 1a ist live, v2 ist die einzige Physik. Phase 0 ist gemergt (PR #7, CI grün); offen ist dort nur noch die Messung auf echten Geräten (Referenz-Handy, Desktop im Browserfenster).
+**Stand:** 2026-09-24 · **Aktuelle Phase:** Phase 1b auf dem Branch fertig (Branch `net/phase-1b`, Spezifikation und Stand: [`phase-1b-design.md`](phase-1b-design.md)): Server-Sim, Protokoll v2 und Client-Prediction stehen, die Legacy-Physik und `?physics=legacy` sind gelöscht; Reconnect mit 30 s Grace, Graceful Shutdown mit Resume-Ticket, `/healthz` mit Docker-`HEALTHCHECK` und die Dev-Netsim sind da (Betrieb: [`ops.md`](ops.md)); Bot-Clients (`npm run bots`, `npm run test:bots` in der CI) und die Messung mit 32 Bots belegen die Budgets. Offen sind nur Messungen auf echten Geräten und der Playtest Desktop gegen Handy. Phase 1a ist live, v2 ist die einzige Physik. Phase 0 ist gemergt (PR #7, CI grün); offen ist dort nur noch die Messung auf echten Geräten (Referenz-Handy, Desktop im Browserfenster).
 
 ## 0. Entscheidungen (2026-09-23)
 
@@ -148,7 +148,7 @@ Verbindliche Spezifikation, Abweichungen und Messwerte: [`phase-1a-design.md`](p
 - **Review nach 1a:** 21 bestätigte Befunde (Sim, Netcode-Tauglichkeit, Mobile, Tests) behoben bzw. für 1b festgehalten, siehe [`phase-1a-design.md`](phase-1a-design.md), Abschnitt 23.
 - **Außerdem noch offen:** Messung der Sim-Kosten und Feinschliff von Renn-Kamera und Touch auf dem Referenz-Handy. (Der E2E-Test für eine gemischte Session aus v2- und Legacy-Client entfällt mit dem Löschen der Legacy-Physik.)
 
-**Phase 1b – Server-autoritativer Netz-Kern (3–4 Wochen)**
+**Phase 1b – Server-autoritativer Netz-Kern (3–4 Wochen) · Status: auf `net/phase-1b` umgesetzt, offen nur Messungen auf echten Geräten und der Playtest mit Netsim**
 - **Deliverables:**
   - Zuerst Rooms: Die Singletons in `state.ts:6` und `world.ts:4-9` werden zu Instanzfeldern. Das heutige Spiel läuft danach als **`PartyRoom`** (Kampf-, Coin- und Powerup-Code verschoben nach `server/party` und `client/party`), dazu kommt ein schlanker `FreeRoamRoom` ohne Kampf.
   - Room-Tick: Der Server simuliert mit 60 Hz über `stepWorld` und schickt mit 20 Hz (im Rennen 30 Hz) einen gebündelten Snapshot mit Zustand aller Autos und der letzten verarbeiteten Input-`seq` pro Spieler.
@@ -165,6 +165,14 @@ Verbindliche Spezifikation, Abweichungen und Messwerte: [`phase-1a-design.md`](p
   - `/healthz` (Prozess lebt, Room-Tick läuft) als `HEALTHCHECK` im Dockerfile; der Container-Smoke in der CI prüft `/healthz` statt `/build-version.txt`
   - Restart-Policy dokumentiert und gesetzt (`restart: unless-stopped` bzw. das Äquivalent beim Hoster, offene Frage 8), inklusive Neustart nach fehlgeschlagenem Health-Check (umgesetzt: Dokploy/Swarm ersetzt `unhealthy` Tasks, siehe [`ops.md`](ops.md); `SESSION_SECRET` muss in Dokploy gesetzt werden)
 - **Exit:** Bei 150 ms RTT, 30 ms Jitter und 3 % Verlust fährt sich das eigene Auto ohne sichtbares Rubberbanding (Korrektur ohne Kontakt unter 10 cm im Mittel), Remote-Autos laufen flüssig, und Rempeln fühlt sich für beide Seiten nachvollziehbar an (Playtest Desktop gegen Handy). Ein Server-Tick mit 32 Autos bleibt unter 2 ms. Ein Reconnect innerhalb von 30 s behält den Spieler. Ein Container-Neustart trennt die Spieler nur kurz, und ein Server, dessen Tick hängt, fällt über `/healthz` auf und wird von der Restart-Policy neu gestartet. Der Party-Modus ist spielbar wie vorher.
+- **Stand des Exits** (Messwerte: [`phase-1b-design.md`](phase-1b-design.md) Abschnitt 20.5, [`baseline.md`](baseline.md) Abschnitt Phase 1b):
+  - [x] Korrektur ohne Kontakt hinter Netsim 150/30/3 (TCP): im Mittel 0,02–0,06 cm mit 16 bzw. 32 Bots über echte WebSockets, < 0,01 cm im Reconcile-Test. Die Bots haben dabei einen Fehler des Lead-Reglers aufgedeckt (ein Drittel der Inputs kam zu spät, die Spieler wurden zu Lag-Ghosts), der behoben ist
+  - [x] Rempeln wirkt auf beiden Seiten: Bot-Integrationstest (Kontakt-Event, geschobenes Auto, bremsender Rammer, mit und ohne Netsim) und E2E `net-contact.spec.ts` mit zwei Browsern, auch mit `?netsim=150,30,3`
+  - [ ] Playtest Desktop gegen Handy, beide mit Netsim 150/30/3
+  - [x] Server-Tick mit 32 Autos: p99 1,3–1,8 ms (lokal), Downlink 24,2 kB/s pro Client (Budget 30 kB/s)
+  - [x] Reconnect innerhalb der Grace behält Spieler, Slot und Auto (Bot-Test, E2E), Neustart trennt nur kurz (E2E, CI-Smoke), hängender Tick → `/healthz` 503
+  - [x] Party-Modus spielbar wie vorher, Free Roam wählbar, auch auf dem Handy (E2E)
+  - [ ] Messungen auf dem Referenz-Handy (Replay-Kosten bei hohem Lead hinter Verlust, Overlay `?debug=net`)
 
 **Phase 2 – Vertical Slice Rennen (ca. 3 Wochen) → Release**
 - **Deliverables:**

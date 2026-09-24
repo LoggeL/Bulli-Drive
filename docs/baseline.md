@@ -143,9 +143,32 @@ Die übrigen Werte der v2-Läufe (Draw Calls, Dreiecke, Speicher, Bandbreite) li
 - **Die Upload-Rate hängt in 1a weiter an der Framerate** (7,2 bzw. 6,2 Updates/s bei ~10 FPS). Das Protokoll ist in 1a unverändert; erst der feste Netz-Tick in Phase 1b löst das.
 - **Für Phase 1b** (Replay von 9–12 Ticks pro Snapshot für die Autos im Kontaktradius) heißt das: Am Stück kosten 6 Autos rund 0,02 ms pro Tick, ein Replay also etwa 0,2–0,25 ms auf dem M5 Pro. Wie viel langsamer ein Handy ist, zeigt erst die Messung auf dem Referenz-Handy.
 
+## Phase 1b: Server und Netz mit Bots
+
+Gemessen mit `npm run bots` (headless Bot-Clients über echte WebSockets, [`phase-1b-design.md`](phase-1b-design.md) Abschnitt 20.5) gegen `node dist/server/index.js`. Server und Bots liefen auf demselben MacBook (M5 Pro). Die Mischung war `drive:24,ram:6,reconnect:1,hop:1`: 31 Autos in `party-1`, der Hop-Bot wechselt zwischen Party und Free Roam. Die Tick-Zeiten stammen aus `/healthz`, gemessen über die letzten 1024 Scheduler-Ticks.
+
+```
+npm run build && PORT=8521 node dist/server/index.js
+npm run bots -- --url ws://127.0.0.1:8521/ws --mix drive:24,ram:6,reconnect:1,hop:1 --duration 120 [--netsim 150,30,3]
+```
+
+| Lauf | Downlink pro Client (max / Mittel) | Uplink pro Client | Snapshots/s | Korrektur ohne Kontakt | Server-Tick Mittel / p95 / p99 | Server ausgehend | Heap / RSS |
+|---|---|---|---|---|---|---|---|
+| 32 Bots, 120 s | 24,2 / 23,7 kB/s | 1,4 kB/s | 20 | 0,01 cm | 0,46 / 1,2 / 1,6 ms | 0,73 MB/s | 18–22 / 104–107 MB |
+| 32 Bots, Netsim 150/30/3 TCP, 90 s | 24,2 / 23,8 kB/s | 1,4 kB/s | 19,9–20 | 0,02 cm | 0,42 / 1,1 / 1,3 ms | 0,77 MB/s | 19–26 / 122 MB |
+| 32 Bots, 10 min Soak | 24,2 / 23,8 kB/s | – | 20 | 0,01 cm | 0,40–0,52 / 1,0–1,2 / 1,2–1,8 ms (die letzten 4 min mit Blender auf ~200 % CPU daneben: p99 2,5–2,9 ms) | 0,72–0,79 MB/s | 16–31 / 88–115 MB |
+
+### Einordnung
+
+- **Bandbreite:** 24,2 kB/s pro Client bei 32 Spielern im Room, gerechnet waren ≈ 25 kB/s (Spezifikation 13.1), das Budget sind 30 kB/s. Zum Vergleich Phase 0: 8 Spieler ≈ 28 kB/s pro Client, quadratisch wachsend.
+- **Server-Tick:** Mit 32 Autos, Kontakt und Party-Regeln liegt der Tick im Mittel unter 0,5 ms und im p99 unter 2 ms, solange der Rechner sonst frei ist (Exit-Kriterium). Das CPU-Budget aus 5.7 hält also mit viel Reserve. Unter Fremdlast auf demselben Laptop (Load 5–15) stiegen dieselben Läufe auf 0,8 / 2,4 / 3,2–3,5 ms (Mittel / p95 / p99). Verlässliche Zahlen liefert erst ein Lauf gegen den Server selbst.
+- **Speicher:** Das Minimum des Heaps bleibt über 18 Minuten mit 32 Bots ohne Trend bei etwa 16 MB. Einen Soak über 30 Minuten gibt es noch nicht.
+- **Netsim:** Hinter 150/30/3 ist der Lead der Clients 20–40 Ticks hoch, damit die Staus der TCP-Nachbildung gedeckt sind. Ohne Verlust sind es 1–3 Ticks. Wie teuer das Nachrechnen bei hohem Lead auf dem Handy ist, misst erst das Referenz-Handy.
+
 ## Offen
 
 - **Referenz-Handy:** noch nicht festgelegt (siehe Plan, Phase 0). Messung dort: Spiel mit `?debug=perf` öffnen, eine Minute durch die Stadt fahren, die Overlay-Werte (FPS, Frame-Time, CPU, Draw Calls, Pixel-Ratio) hier ergänzen.
 - **Desktop mit echter GPU im normalen Browserfenster**, ebenfalls über das Overlay.
 - **Reproduzierbarer Blickpunkt:** Wegen des zufälligen Spawns streuen die Draw Calls stark. Für genaue Vorher/Nachher-Vergleiche beim Rendering braucht es eine feste Kamerafahrt. Die Sandbox aus Phase 1a (`--sandbox`) hat einen festen Start, zeigt aber nicht die Stadt.
 - **Sim-Kosten auf dem Referenz-Handy:** `?debug=perf` bzw. `?sandbox=1&debug=perf` öffnen und die Zeile `sim` im Overlay ablesen.
+- **Netz auf dem Referenz-Handy:** `?debug=net&netsim=150,30,3` öffnen, neben anderen Autos fahren (Kontakt-Set) und Replay-Ticks sowie Frame-Zeit ablesen (Phase 1b, hoher Lead hinter Verlust).

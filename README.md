@@ -50,13 +50,15 @@ reachable from the LAN as well: `npm run build && npm start`, then
 | `npm run typecheck` | Type-checks client, server, tests, scripts and build config |
 | `npm test` | Vitest unit tests in `tests/` (golden tests for world generation, terrain, RNG and the v2 sim scenarios, the binary codec and protocol validation, the tick scheduler, rooms and Party rules, and the prediction against the real rooms with simulated latency and loss) |
 | `npm run test:e2e` | Builds, then runs the Playwright smoke tests in `tests/e2e` against the production server (port 8799, `E2E_PORT` to override) |
+| `npm run test:bots` | Bot integration tests in `tests/integration`: starts its own game server process (port 8560-8599, `BOTS_PORT` to override) and runs headless bots over real WebSockets: a head-on bump seen by both cars (also behind the netsim), reconnect within the grace time, a room switch, a flood kick, and 16 bots for 30 s behind netsim 150/30/3 with the bandwidth (≤ 30 kB/s per client) and tick budgets (p95 < 4 ms) |
+| `npm run bots -- --url ws://127.0.0.1:8000/ws --count 32 --mix drive:24,ram:6,reconnect:1,hop:1 --netsim 150,30,3 --duration 120` | Load and robustness run against any server (see `tools/bots/cli.ts`): prints snapshot rate, downlink per bot, corrections, contacts and the server's tick times from `/healthz`; `--json` for the whole report. Modes: `drive`, `ram`, `idle`, `reconnect`, `hop`, `flood` |
 | `npm run perf:baseline` | Builds, then drives two headless Chromium clients for 20 s and prints FPS, draw calls and WebSocket bandwidth as JSON (see [docs/baseline.md](docs/baseline.md)); it also reports the sim time per frame, `-- --sandbox` measures the offline sandbox |
 | `npm run screenshots` | Builds, then captures a fixed set of views with headless Chromium for visual before/after comparisons (`-- --out=<dir>`, `--gl=swiftshader`, `--compare=<a>,<b>`; `stats.json` records how much of the frame the car takes; see `scripts/screenshots.ts`) |
 | `npx tsx scripts/sim-golden-drift.ts` | Shows how far the v2 golden scenarios drift when `Math.sin` & co. round differently in the last bit, and that the golden tolerance still catches tiny tuning changes |
 | `npm run ci` | typecheck, unit tests and build in one go |
 
 The Playwright tests cover driving on desktop and phone, two players bumping
-into each other, the sandbox with its dummy cars, the tuning panel and the
+into each other (a head-on ram also behind `?netsim=150,30,3`), the sandbox with its dummy cars, the tuning panel and the
 golden sim scenarios in the browser, Party and Free Roam rooms, the collider
 parity between browser and server, the stale-client reload, a lost WebGL
 context, the perf overlay, a lost connection and a server restart (the page
@@ -66,9 +68,9 @@ They need Chromium once:
 `npx playwright install chromium`.
 
 GitHub Actions (`.github/workflows/ci.yml`) runs typecheck and unit tests, the
-build, the Playwright tests and a Docker build with a container smoke test
-(`/healthz`, the image's health check and a graceful `docker stop`) on every
-pull request and push to `main`.
+build, the Playwright tests, the bot integration tests and a Docker build with
+a container smoke test (`/healthz`, the image's health check and a graceful
+`docker stop`) on every pull request and push to `main`.
 
 ### Operations
 The server runs 24/7. `GET /healthz` answers 200 while the 60 Hz tick runs
@@ -163,7 +165,10 @@ src/shared/           Code for both sides: protocol schemas (valibot), constants
                       lead control, prediction with the contact set, render
                       offsets, interpolation) and the Party
                       rules in ticks (party/)
-tests/                Vitest (shared/, server/, client/) and Playwright (e2e/)
+tests/                Vitest (shared/, server/, client/, tools/), bot integration
+                      tests (integration/) and Playwright (e2e/)
+tools/bots/           Headless bot clients over real WebSockets (shared NetClient,
+                      pure-pursuit driving on the road grid), npm run bots
 scripts/              perf-baseline.ts
 docs/                 Refactor plan, performance baseline, phase 1a/1b specs, blind test guide, operations (ops.md)
 ```
