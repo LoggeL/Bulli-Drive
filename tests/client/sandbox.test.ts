@@ -70,6 +70,8 @@ describe('the sandbox page', () => {
         expect(document.body.classList.contains('sandbox')).toBe(true);
         expect([...document.querySelectorAll('#sandbox-banner button')].map(button => button.textContent?.trim()))
             .toEqual(['N Reset dummies', 'C Switch car']);
+        // Without ?e2e=1 in the URL (happy-dom's is about:blank) no test hook
+        expect('__bulliSim' in window).toBe(false);
     });
 
     it('N puts the dummies back on their spots', () => {

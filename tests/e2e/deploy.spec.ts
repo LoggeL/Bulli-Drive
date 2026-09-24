@@ -8,9 +8,10 @@ import { test, expect, joinGame, snapshot, netState, topmostAtCenter, type Playe
 // deploy whose hashed assets are gone reloads once and starts; a page that
 // speaks an older protocol reloads once and then says why it stops; a
 // server restart (SIGTERM) shows the banner, the page comes back on its own
-// and the resume ticket brings the Party score back. The guards' logic is
-// unit-tested (tests/client/assetGuard, buildVersion, reloadOnce); the
-// server's side in tests/server and tests/integration.
+// and the resume ticket brings the Party score back. The page without
+// ?e2e=1 also shows that production players get no test hook. The guards'
+// logic is unit-tested (tests/client/assetGuard, buildVersion, reloadOnce);
+// the server's side in tests/server and tests/integration.
 
 test.use({ viewport: { width: 800, height: 500 } });
 
@@ -40,6 +41,10 @@ test('an old page whose assets are gone reloads once and starts', async ({ openP
     await expect(player.page.locator('#loading-screen')).toHaveCount(0, { timeout: 60_000 });
     await expect(player.page.locator('#splash-screen')).toBeVisible();
     expect(loads()).toBe(2);
+    // A regular player's page (no ?e2e=1, no ?debug=perf): no test hook,
+    // no perf probe, no overlay in the production build
+    expect(await player.page.evaluate(() => ['__bulliDebug', '__bulliPerf', '__bulliSim'].filter(key => key in window))).toEqual([]);
+    await expect(player.page.locator('#perf-overlay')).toHaveCount(0);
 });
 
 test('a page with an old protocol reloads once, then says why it stops', async ({ openPlayer }) => {
