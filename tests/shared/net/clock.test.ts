@@ -53,6 +53,61 @@ describe('ClockSync', () => {
     });
 });
 
+describe('ClockSync samples', () => {
+    // A server at tick = local ms / TICK_MS (offset 0); a pong with the
+    // given round trip, split evenly, so every sample says offset 0
+    function pong(clock: ClockSync, now: number, rtt: number): void {
+        const t = (now - rtt / 2) / TICK_MS;
+        clock.addSample(now - rtt, now, Math.floor(t), t - Math.floor(t));
+    }
+
+    it('keeps the last 8 samples for the round trip and counts every pong', () => {
+        const clock = new ClockSync();
+        expect(clock.rtt).toBe(0);
+        pong(clock, 1000, 10);
+        for (let i = 1; i < 8; i++) pong(clock, 1000 + i * 1000, 50);
+        // 8 samples: the 10 ms one is still in
+        expect(clock.rtt).toBe(10);
+        expect(clock.count).toBe(8);
+        pong(clock, 9000, 50);
+        expect(clock.rtt).toBe(50);
+        expect(clock.count).toBe(9);
+        clock.reset();
+        expect(clock.ready).toBe(false);
+        expect(clock.count).toBe(0);
+        expect(clock.rtt).toBe(0);
+    });
+
+    it('reports the jitter as p90 - p10 of the kept round trips', () => {
+        const clock = new ClockSync();
+        pong(clock, 1000, 70);
+        expect(clock.jitter).toBe(0);
+        pong(clock, 2000, 30);
+        // Two samples: the larger minus the smaller
+        expect(clock.jitter).toBe(40);
+        // 10 pongs of 100, 90, ... 10 ms: the last 8 are 80 ... 10 ms;
+        // sorted, p90 is rank round(0.9 · 7) = 6 (70 ms), p10 rank 1 (20 ms)
+        const many = new ClockSync();
+        for (let i = 0; i < 10; i++) pong(many, 1000 + i * 1000, 100 - i * 10);
+        expect(many.jitter).toBe(50);
+    });
+
+    it('eases a small offset change in and takes one past the margin at once', () => {
+        // Round trips of 0 ms: the tolerance is the margin of 1 tick alone
+        const clock = new ClockSync();
+        clock.addSample(1000, 1000, 100, 0);
+        expect(clock.serverTickAt(1000)).toBeCloseTo(100, 9);
+        // 0.5 ticks later than expected: eased in by a tenth
+        clock.addSample(2000, 2000, 100 + 1000 / TICK_MS + 0.5, 0);
+        expect(clock.jumps).toBe(0);
+        expect(clock.serverTickAt(2000)).toBeCloseTo(100 + 1000 / TICK_MS + 0.05, 9);
+        // 2 ticks off (1.95 from the eased offset): the server's clock moved, taken as it is
+        clock.addSample(3000, 3000, 100 + 2000 / TICK_MS + 2, 0);
+        expect(clock.jumps).toBe(1);
+        expect(clock.serverTickAt(3000)).toBeCloseTo(100 + 2000 / TICK_MS + 2, 9);
+    });
+});
+
 describe('ClockSync after a server hang', () => {
     // A server that skipped `skipMs` of ticks at local time hangAt; pongs
     // once a second with random asymmetric delays around rttMs
