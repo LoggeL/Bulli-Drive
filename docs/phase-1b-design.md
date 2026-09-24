@@ -249,7 +249,7 @@ Score-Änderungen kommen weiter als `scoreboard` (höchstens einmal pro Snapshot
 
 - Der Client sendet `ping {t}` (`t` = `performance.now()` des Clients) nach dem Join fünfmal im Abstand von 100 ms, danach einmal pro Sekunde.
 - Der Server antwortet sofort mit `pong {t, tick, sub}`: der aktuelle Room-Tick und der Anteil `sub` (0..1) des laufenden Tick-Intervalls.
-- Der Client rechnet `rtt = now − t` und `serverTickAt(now) = tick + sub + (rtt/2)/DT_ms`. Er behält die letzten 8 Proben und nutzt die mit der **kleinsten** RTT (geringste Warteschlange) als Offset, glättet die Änderung des Offsets mit 0,1 pro Probe und schätzt den Jitter als Spanne p90 − p10 der RTTs.
+- Der Client rechnet `rtt = now − t` und `serverTickAt(now) = tick + sub + (rtt/2)/DT_ms`. Er behält die letzten 8 Proben und nutzt die mit der **kleinsten** RTT (geringste Warteschlange) als Offset, glättet die Änderung des Offsets mit 0,1 pro Probe und schätzt den Jitter als Spanne p90 − p10 der RTTs. Liegt eine Probe weiter vom Offset entfernt als die halbe RTT der Probe plus die halbe kleinste RTT plus 1 Tick, hat sich die Server-Uhr verschoben (nach einem Hänger verwirft der Server Ticks für immer): Der Offset springt auf die Probe, die älteren Proben entfallen (Review 20.6).
 - Die Uhr dient nur der Erstschätzung und der Interpolationszeit. Den Vorlauf der Inputs regelt der Client über `inputSlack` (Abschnitt 8.3), weil der direkt misst, was zählt.
 
 ---
@@ -341,7 +341,7 @@ Ersetzt den AFK-Hack (`main.ts`, Grau färben nach 3 s ohne Bewegung) und löst 
 
 - **Einfrieren (Modal, Kontextverlust):** Der Client tickt weiter, verwendet selbst `stopInput` und setzt `FROZEN`. Server und Prediction rechnen damit dasselbe; beim Schließen des Modals springt nichts.
 - **Hintergrund:** `visibilitychange` → `visibility {hidden: true}` und `HIDDEN` im nächsten Paket. Danach kommen in der Regel keine Inputs mehr (Browser drosseln Timer).
-- **Idle** = `FROZEN` oder `HIDDEN` oder 60 Ticks ohne Input. Folgen: Stopp-Input ab 250 ms, **Kontakt-Ghost** (die Sim-Regel `ghostTicks = max(ghostTicks, 2)` vor jedem Tick), Flag `idle` im Snapshot (Clients zeigen das Auto grau mit „ZZZ“ wie heute), im Party-Modus unverwundbar und ohne Schussrecht (wie heute AFK). Idle endet mit dem ersten Input ohne `FROZEN`/`HIDDEN`; danach `ghostTicks = 60`, und der Server hält `ghostTicks ≥ 1`, solange sich die Hüllkreise mit einem anderen Auto überlappen (kein Herausschleudern).
+- **Idle** = `FROZEN` oder `HIDDEN` oder 60 Ticks ohne Input. Folgen: Stopp-Input ab 250 ms (bei `FROZEN`/`HIDDEN` und nach `visibility {hidden: true}` setzt der Server den Stopp-Input selbst, unabhängig davon, was im Paket steht; Review 20.6), keine Pickups, **Kontakt-Ghost** (die Sim-Regel `ghostTicks = max(ghostTicks, 2)` vor jedem Tick), Flag `idle` im Snapshot (Clients zeigen das Auto grau mit „ZZZ“ wie heute), im Party-Modus unverwundbar und ohne Schussrecht (wie heute AFK). Idle endet mit dem ersten Input ohne `FROZEN`/`HIDDEN`; danach `ghostTicks = 60`, und der Server hält `ghostTicks ≥ 1`, solange sich die Hüllkreise mit einem anderen Auto überlappen (kein Herausschleudern).
 - **Tod** ist Server-Zustand: Das Auto verlässt die Sim bis zum Respawn.
 - **Schlechte Verbindung (`laggy`):** RTT > 300 ms oder > 20 % wiederholte Inputs über 2 s → Kontakt-Ghost wie bei Idle, Flag `laggy`; Ende nach 5 s unter den Schwellen. So zerstören Spieler mit sehr hoher RTT das Rempeln der anderen nicht (Plan, Anti-Griefing).
 - **Idle-Kick:** nach 10 min Idle `kicked {reason: 'idle'}`, Close 4004. Der Client zeigt „Weiterspielen“ und verbindet neu. Hält den Speicher im 24/7-Betrieb stabil.
@@ -355,10 +355,10 @@ Alle Zeiten werden Ticks: `ticks = ms / 1000 · 60`.
 |---|---|---|
 | Powerup-Dauer | `setTimeout` (5 s / 8 s) | Fenster `[startTick, endTick)` je Typ: speed/size/jump/magnet 300, shield/ghost 480 Ticks. `beforeStep` setzt daraus `car.mods`. Erneutes Aufnehmen verlängert auf `T + Dauer`. |
 | Powerup aufnehmen | Client meldet `collectPowerup`, Server prüft 15 m | Server prüft im Tick: 2D-Abstand Auto–Powerup < 6 m (Client-Radius 5 m + 1 m Toleranz). `pickup` mit Fenster. |
-| Coin aufnehmen | Client meldet `collectCoin`, Server prüft 35 m | Server prüft im Tick: < 4 m, mit Magnet < 7 m (Client 3 / 6 m + 1 m). +10 Score. |
+| Coin aufnehmen | Client meldet `collectCoin`, Server prüft 35 m | Server prüft im Tick: < 4 m (Client 3 m + 1 m), mit Magnet < 26 m (die 25 m, aus denen der Client Coins heranzieht, + 1 m; Review 20.6). +10 Score. Idle-Autos nehmen nichts auf. |
 | Item-Reset | `setTimeout` 20 s / 15 s | `resetTick` = T + 1200 / 900 |
 | Schuss | `shoot {targetId}`, 150 m, Cooldown 400 ms | unverändert zielbasiert (Plan 6), aber gegen **Server-Positionen** im aktuellen Tick, Cooldown 24 Ticks, Schütze nicht idle/tot, Ziel nicht Schild/Respawn-Schild/Ghost/idle. Schaden 25, gegen Mega ×0,4. |
-| Mega-Ram | Client-Abstandstest schickt `shoot` | **aus dem Kontaktimpuls:** Hat Auto B im Tick einen Auto-Kontakt mit `carImpactId = A`, `A.mods.mega` und `B.events.carImpact = Δv ≥ 4 m/s`, dann Schaden `min(60, round(2,5 · Δv))`, gegen Mega ×0,4. Cooldown 60 Ticks je Paar (A, B). Gleiche Schutzregeln wie beim Schuss. Ursache `ram`. Ein Rammstoß mit 10 m/s Δv kostet damit 25 HP wie heute. |
+| Mega-Ram | Client-Abstandstest schickt `shoot` | **aus dem Kontaktimpuls:** Hat Auto B im Tick einen Auto-Kontakt mit `carImpactId = A`, `A.mods.mega` und `B.events.carImpact = Δv ≥ 4 m/s`, dann Schaden `min(60, round(2,5 · Δv))`, gegen Mega ×0,4. Cooldown 60 Ticks je Paar (A, B). Gleiche Schutzregeln wie beim Schuss. Ursache `ram`. Ein Rammstoß mit 10 m/s Δv kostet damit 25 HP wie heute. A muss zu Beginn des Ticks mit mindestens 3 m/s auf B zu fahren (`RAM_MIN_ATTACK_SPEED`, wie Legacy `speed > 0,05`); wer in ein stehendes Mega-Auto fährt, nimmt keinen Schaden (Review 20.6). |
 | Respawn-Schild | Client zählt 3 s nach dem Losfahren, schickt `respawnShieldExpired`; Server-Kappe 8 s | Server: endet 180 Ticks nachdem das Auto erstmals über 1 m/s fährt, spätestens 480 Ticks nach dem Spawn. Flag im Snapshot; die Nachricht entfällt. |
 | Tod und Respawn | `setTimeout` 3 s | Tod: Auto verlässt die Sim, `killed`; nach 180 Ticks `respawn` an `randomSpawn()` (Abstand zu Mitgliedern **dieses** Rooms), Yaw längs der Straße, `resetVehicle`, HP 100, Mods aus. |
 | Score, Kill-Belohnung | unverändert (10 pro Coin, 50 pro Kill) | unverändert |
@@ -465,7 +465,7 @@ interface HistoryEntry {           // Ring mit HISTORY_TICKS Einträgen, Index t
 4. **Offset:** `offset += before − after` (Position x, y, z und Yaw über den kürzesten Bogen). Ist |Positionsoffset| ≥ 4 m oder |Yaw-Offset| ≥ 45°: Offset = 0 (Snap), Kamera-Snap.
 5. Snapshot nicht älter als der zuletzt verarbeitete (TCP ordnet, aber nach einem Resync können alte im Puffer liegen).
 
-**Render-Offset:** Die dargestellte Pose ist interpolierte Sim-Pose + Offset. Der Offset klingt exponentiell ab, `τ = 100 ms + 100 ms · clamp(|offset|/2 m, 0, 1)`, also 100–200 ms; unter 1 mm wird er 0. Nach einer Korrektur mit Auto-Kontakt in den letzten 300 ms gilt dasselbe τ, der Offset wird aber spätestens 300 ms nach seinem Entstehen auf 0 gesetzt (Plan 6: „nie länger als 300 ms“). Kamera, Nametag und Effekte folgen der dargestellten Pose, die Sim nie.
+**Render-Offset:** Die dargestellte Pose ist interpolierte Sim-Pose + Offset. Der Offset klingt exponentiell ab, `τ = 100 ms + 100 ms · clamp(|offset|/2 m, 0, 1)`, also 100–200 ms; unter 1 mm wird er 0. Nach einer Korrektur mit Auto-Kontakt gilt dasselbe τ, zusätzlich darf der Offset höchstens auf einer Geraden von seiner Größe bei dieser Korrektur auf 0 nach 300 ms liegen (Plan 6: „nie länger als 300 ms“). Jede Kontakt-Korrektur bekommt ihre eigenen 300 ms; eine Korrektur ohne Kontakt übernimmt den Offset und lässt ihn normal abklingen (Review 20.6). Kamera, Nametag und Effekte folgen der dargestellten Pose, die Sim nie.
 
 **Spawn, Respawn, Wagenwechsel:** Das Event bringt Tick `T0` und Pose. Der Client setzt den Zustand zum Tick T0 mit `placeVehicle`/`resetVehicle` (dieselben shared-Funktionen wie der Server) und spielt T0+1 … C aus der Historie nach. Vor dem ersten `spawn` sagt er nichts voraus.
 
@@ -475,7 +475,7 @@ interface HistoryEntry {           // Ring mit HISTORY_TICKS Einträgen, Index t
 
 - **Auswahl bei jedem Snapshot:** Remote-Autos mit `d < 15 m + |v_rel| · Lead_s` (höchstens 45 m), verlassen erst bei +5 m (Hysterese), höchstens die 6 nächsten. Die Plan-Angabe „ca. 15–20 m“ gilt für langsame Autos; bei 2 × 85 m/s frontal schließen Autos in 250 ms 42 m, deshalb wächst der Radius mit der Relativgeschwindigkeit.
 - **Extrapolation:** Ausgehend vom Snapshot-Zustand werden sie in der lokalen Prediction als **dynamische** Sim-Autos (`kinematic = false`) mit ihrem zuletzt bekannten Input (Input-Repeat) auf den Tick C vorausgerechnet, zusammen mit dem eigenen Auto. Ein Stoß wirkt dadurch lokal sofort und auf beide.
-- **Grenze 250 ms:** Liegt `C − T_s` über 15 Ticks, rechnet der Client den Remote-Wagen nur bis `T_s + 15` mit Input-Repeat und danach mit konstantem Tempo als kinematisches Auto weiter. **Weicher Kontakt bei hoher RTT:** `contactScale` des Remote-Autos = 1 bis Lead 9 Ticks (150 ms), linear auf 0,5 bei 15 Ticks, darüber 0,5. Die endgültige Wirkung kommt vom Server.
+- **Grenze 250 ms:** Liegt `C − T_s` über 15 Ticks, rechnet der Client den Remote-Wagen nur bis `T_s + 15` mit Input-Repeat und danach rollend weiter (ohne Gas, Bremse und Knöpfe, die Lenkung bleibt), weiter als dynamisches Auto. Kinematisch wäre er für das eigene Auto eine Wand (Review 20.6). **Weicher Kontakt bei hoher RTT:** `contactScale` des Remote-Autos = 1 bis Lead 9 Ticks (150 ms), linear auf 0,5 bei 15 Ticks, darüber 0,5. Die endgültige Wirkung kommt vom Server.
 - Party-Ghost, Idle, Lag und Respawn-Schild wirken über Mods, Flags und `applyContactGhostFloor` wie auf dem Server.
 - **Kosten:** Replay ≈ Lead in Ticks (bei 150 ms RTT ≈ 11) × (1 + ≤ 6) Autos pro Snapshot. Gemessen in 1a: 6 Autos ≈ 0,02 ms pro Tick in Chromium → ≈ 0,25 ms pro Snapshot, 5 ms/s; auf dem Handy mit Faktor 4 ≈ 20 ms/s (2 % eines 60-FPS-Frame-Budgets). Autos außerhalb des Sets werden nie mitsimuliert.
 
@@ -489,7 +489,7 @@ interface HistoryEntry {           // Ring mit HISTORY_TICKS Einträgen, Index t
 
 ### 8.7 Party auf dem Client
 
-- **Coins:** optimistisch wie heute: Berührt die vorhergesagte Pose einen Coin (3 m, Magnet 6 m), verschwindet er sofort mit Ton und Partikeln. Kommt binnen 600 ms kein `pickup` mit dieser `itemId`, erscheint er wieder. Keine `collect`-Nachricht mehr.
+- **Coins:** optimistisch wie heute: Berührt die vorhergesagte Pose einen Coin (3 m, Magnet 6 m), verschwindet er sofort mit Ton und Partikeln. Kommt binnen 600 ms kein `pickup` mit dieser `itemId`, erscheint er wieder. Keine `collect`-Nachricht mehr. Ein Coin, den der Server mit Magnet schon vergeben hat, während er noch heranfliegt, fliegt zu Ende und verschwindet beim Auto.
 - **Powerups:** Wirkung erst mit dem `pickup`-Event (sie ändert die Mods und damit die Prediction). Die Reconciliation spielt ab `startTick` mit den neuen Mods nach; die kleine Korrektur wird geglättet. HUD-Timer aus `endTick − C`.
 - **Schüsse:** unverändert lokal dargestellt, Treffer gegen die **dargestellten** Remote-Posen, dann `shoot {targetId}`; Entscheidung und Schaden vom Server (`hit`).
 - **Mega-Ram:** kein Client-Code mehr; Ton und Hitmarker beim `hit` mit `cause: 'ram'`.
@@ -533,7 +533,7 @@ Die Adapterfelder von `Bulli` (`speed` in u/Tick, `maxSpeed`) bleiben in 1b, wei
 - **Wiederaufnahme:** `hello` mit gültigem Token einer Session in Grace → dieselbe `playerId`, derselbe Slot, dasselbe Auto, Party-Zustand erhalten, `welcome {resumed: true}` + `roomState`. Der Client übernimmt den Zustand beim ersten Snapshot hart (Snap).
 - **Duplizierte Tabs** kopieren `sessionStorage`. Ist die Session des Tokens noch verbunden, entscheidet `connId`: gleich (dieselbe Seite, alter Socket tot, aber noch nicht erkannt) → Übernahme, der alte Socket wird mit 4005 geschlossen; verschieden (duplizierter Tab) → neue Session.
 - **Heartbeat:** WebSocket-Ping alle 10 s (bisher 30 s), Terminate ohne Pong nach weiteren 10 s. Hält auch Proxys mit Idle-Timeout (Cloudflare 100 s) offen, wenn ein Tab im Hintergrund keine Inputs schickt.
-- **Reconnect mit Backoff (Client):** 0,5 s, 1 s, 2 s, 4 s, dann alle 8 s, jeweils ±20 % Zufall, unbegrenzt. Nach Close 1012 (Neustart) erster Versuch nach `shutdown.reconnectInMs` (Standard 1,5 s). Ab 1 s Trennung Overlay „Verbindung wird wiederhergestellt …“ (Touch-tauglich, mit Button „Neu laden“ nach 30 s). Während der Trennung sagt der Client höchstens 250 ms voraus und hält das Auto dann an; Remote-Autos frieren nach der Extrapolation ein.
+- **Reconnect mit Backoff (Client):** 0,5 s, 1 s, 2 s, 4 s, dann alle 8 s, jeweils ±20 % Zufall, unbegrenzt. Das gilt auch, wenn schon die erste Verbindung scheitert: Der Loader bleibt, darüber „Connecting to the server…“ (einen Offline-Modus gibt es nur noch als Sandbox). Nach Close 1012 (Neustart) erster Versuch nach `shutdown.reconnectInMs` (Standard 1,5 s). Ab 1 s Trennung Overlay „Verbindung wird wiederhergestellt …“ (Touch-tauglich, mit Button „Neu laden“ nach 30 s). Während der Trennung sagt der Client höchstens 250 ms voraus und hält das Auto dann an; Remote-Autos frieren nach der Extrapolation ein.
 - **Close-Codes:** 4000 Version (Reload), 4001 Hello fehlt/ungültig, 4002 voll, 4003 Policy (Flut, ungültig), 4004 Idle-Kick, 4005 Session übernommen, 1012 Neustart, 1001 Server fährt herunter. Automatischer Reconnect bei 1006, 1012, 1001; bei 4003 und 4005 nur per Button.
 
 ### 11.2 Graceful Shutdown
@@ -565,6 +565,18 @@ Ein Neustart verliert alle Sessions im Speicher. Damit Spieler nach einem Deploy
 ### 11.6 Anti-Cheat
 
 Implizit durch die Server-Sim: Der Client liefert nur Inputs im gültigen Wertebereich, also keine Teleports, kein Tempo über der Physik, keine Wandfahrten. Pickups und Treffer entscheidet der Server gegen seinen Zustand. Bleiben: Input-Flut (Rate-Limit, 5.2), Inputs aus der Zukunft (Tick-Fenster), ungültige Werte (Schema, Klemmung, Kick nach 10 Fehlern), Schussrate (Cooldown in Ticks), Aimbot-artige Schüsse (Reichweite 150 m; bewusst nicht weiter geprüft, Party ist ein Spaßmodus).
+
+
+### 11.7 Grenzen pro Session und Adresse (Review 20.6)
+
+Gegen Clients, die nicht den Browser-Client benutzen:
+
+- **JSON-Nachrichten:** Token-Bucket pro Session, 20/s mit Burst 40; darüber verworfen, über 60/s im 2-s-Fenster Kick 4003. Gilt für jeden Nachrichtentyp, auch künftige ohne eigenes Limit.
+- **`setCar`** erreicht den Room höchstens einmal pro Sekunde und Mitglied (`CAR_CHANGE_INTERVAL_MS`), der letzte Stand gewinnt; der Wechsel wirkt zum nächsten Tick.
+- **Sessions:** höchstens `MAX_SESSIONS` (Standard `MAX_CONNECTIONS` + 40), Grace-Sessions mitgezählt. Eine neue verdrängt die am längsten getrennte, sonst `reject full`. Eine Session, die nie ein Input geschickt hat, geht beim Schließen des Sockets sofort (keine Grace, kein Geisterauto).
+- **Pro Client-Adresse:** höchstens `MAX_SOCKETS_PER_ADDRESS` (12) offene Sockets und neue Sessions als Token-Bucket (Burst 10, dann 20 pro Minute); darüber `full`. Die Adresse ist hinter einem privaten Peer (live: Cloudflare → Traefik → Server) `CF-Connecting-IP`, sonst `X-Real-IP`, sonst der letzte `X-Forwarded-For`-Eintrag; ein öffentlicher Peer ist selbst der Client. `CLIENT_IP_HEADER` legt den Header fest (`socket`: Peer-Adresse, `none`: aus). Loopback ist ausgenommen (Tests, Bots, Werkzeuge auf dem Server). Wer den Proxy umgeht und die Header fälscht, kann die Grenzen pro Adresse umgehen, nicht aber `MAX_CONNECTIONS` und `MAX_SESSIONS`.
+- **RTT:** Der Server misst die Runde mit eigenen Ping-IDs und hält die Sendezeit selbst; ein Pong zählt nur für seinen Ping, einmal, höchstens 10 s. Ein gefälschter Payload (NaN, alter Zeitstempel) kann den Lag-Ghost nicht mehr steuern.
+- Beitritts- und Abgangszeilen im Log: höchstens 40 pro 10 s, der Rest als eine Summenzeile.
 
 ---
 
@@ -915,7 +927,7 @@ Umgesetzt in den Commits „Keep the lead a stall needed instead of swinging bac
 **Integrationstests** (`tests/integration/bots.test.ts`, `npm run test:bots`, eigener CI-Job „Bot integration“). Abweichungen von 15.2:
 
 - **Skript und Server:** `test:bots` statt `test:integration`, Konfiguration `vitest.bots.config.ts`; `npm test` schließt `tests/integration` aus. Der Server läuft nicht im Testprozess auf Port 0, sondern als eigener Prozess (`node --import tsx src/server/index.ts`, kein Build nötig) auf dem ersten freien Port in 8560–8599 (`BOTS_PORT`), mit `E2E=1` und `GRACE_MS=5000`. So misst `/healthz` den Tick ohne die Bots in derselben Event-Loop, und der Server wird wie in Produktion per `SIGTERM` beendet. `PORT=0` kennt die Server-Konfiguration nicht.
-- **Lastlauf:** 16 Bots statt 8 (`drive:10, ram:4, reconnect:1, hop:1`, Drop und Wechsel alle 10 s) hinter Netsim 150/30/3 TCP. Gemessen wird ab dem Zeitpunkt, an dem jeder Bot 100 Snapshots hat und keiner mehr Lag-Ghost ist (der Lead schwingt ein), bis jeder fahrende Bot 600 weitere Snapshots bekommen hat, also etwa 30 s. Die Tests warten auf Bedingungen statt auf feste Zeiten (Projektregel in `CLAUDE.md`). Geprüft wird: keine Fehler; jeder Bot höchstens 30 kB/s Downlink; `drive`/`ram` mindestens 18 Snapshots/s und mehr als 100 m Strecke, die Bots, die trennen oder wechseln, mindestens 12; keine nicht endlichen Werte; mittlere Korrektur ohne Kontakt unter 10 cm; Server-Tick p95 unter 4 ms (Vorgabe des Arbeitsschritts, 15.2 nannte p99; p99 steht im Bericht); mindestens 3 Kontakte, die beide Autos gemeldet haben; der Reconnect-Bot kam mit derselben `playerId` und `resumed` zurück, der Hop-Bot war in beiden Room-Arten.
+- **Lastlauf:** 16 Bots statt 8 (`drive:10, ram:4, reconnect:1, hop:1`, Drop und Wechsel alle 10 s) hinter Netsim 150/30/3 TCP. Gemessen wird ab dem Zeitpunkt, an dem jeder Bot 100 Snapshots hat und keiner mehr Lag-Ghost ist (der Lead schwingt ein), bis jeder fahrende Bot 600 weitere Snapshots bekommen hat, also etwa 30 s. Die Tests warten auf Bedingungen statt auf feste Zeiten (Projektregel in `CLAUDE.md`). Geprüft wird: keine Fehler; jeder Bot höchstens 30 kB/s Downlink; `drive`/`ram` mindestens 18 Snapshots/s und mehr als 100 m Strecke, die Bots, die trennen oder wechseln, mindestens 12; keine nicht endlichen Werte; mittlere Korrektur ohne Kontakt unter 10 cm; Server-Tick p95 unter 4 ms (Vorgabe des Arbeitsschritts, 15.2 nannte p99; p99 steht im Bericht); mindestens 3 Kontakte, die beide Autos gemeldet haben (nach dem Review mindestens 1, 20.6); der Reconnect-Bot kam mit derselben `playerId` und `resumed` zurück, der Hop-Bot war in beiden Room-Arten.
 - **Kontakt bei beiden sichtbar** als eigenes geskriptetes Szenario, einmal ohne und einmal mit Netsim 150/30/3: zwei `manual`-Bots in Free Roam, per `debugPlace` 20 m frontal voreinander. Gewartet wird, bis beide Platzierungen auf beiden Seiten angekommen sind, der Kontakt-Ghost vom Spawn abgelaufen ist und keiner Idle- oder Lag-Ghost ist. Dann fährt A Vollgas. Geprüft wird: beide bekommen das `contact`-Event mit dem anderen (Δv ≥ 3 m/s); A ist mindestens 8 m/s schnell und danach unter 70 % davon; B, laut Self-Block des Servers, wird mindestens 3 m/s schnell; B steht auf dem eigenen und auf A's Bildschirm mehr als 1 m weiter weg, und beide Ansichten liegen unter 2 m auseinander. „Geschwindigkeitsänderung ≥ 3 m/s bei beiden laut Server“ aus 15.2 prüft das Szenario über die Self-Blöcke und das Event-Δv, nicht im Lastlauf.
 - **Reconnect:** Die Grace dauert im Test 5 s statt 30 s. Hart trennen, nach 1,5 s zurück: gleiche `playerId`, `welcome.resumed`, `roomState.resume` mit gleichem Slot und Room, das Auto fährt weiter, und der andere Bot hat den Spieler nie verloren. Danach endgültig trennen: Das Auto verschwindet beim anderen erst nach der Grace-Zeit.
 - **Room-Wechsel:** Der Bot taucht in Free Roam beim dortigen Bot auf und fehlt in den Snapshots des Party-Bots, auch 0,5 s später noch.
@@ -983,4 +995,47 @@ Mit der zweiten Fassung der Lead-Grenze (siehe oben; das Netzverhalten hinter de
 Damit sind die Budgets aus 13.1 und 5.7 und das Exit-Kriterium „Server-Tick mit 32 Autos p99 < 2 ms“ (16) auf dem Referenz-Rechner eingehalten, solange er nicht nebenher ausgelastet ist: Der Downlink liegt mit 24,2 kB/s knapp unter den gerechneten 25 kB/s, weil nicht jeder Bot in jedem Snapshot alle 31 anderen sieht (Tote, Wechsel). Die mittlere Korrektur ohne Kontakt liegt auch hinter der Netsim bei 0,02 cm. Snaps gab es im Messfenster nur beim Reconnect- und beim Hop-Bot, jeweils nach dem Wiedereinstieg, wie 16 es erlaubt.
 
 **Offen.** Messung auf dem Referenz-Handy (Replay-Kosten bei hohem Lead, Netz-Overlay), der Playtest Desktop gegen Handy mit Netsim (16), die Tick-Zeiten mit 32 Bots auf dem Produktionsserver bzw. einem gleich ausgestatteten Staging-Host (`npm run bots` gegen dessen URL) und ein Soak über 30 Minuten (lokal liefen 10 Minuten). In den ersten Sekunden nach dem Beitritt, solange der Lead noch nicht angehoben ist, kann ein Spieler hinter starkem Verlust kurz zum Lag-Ghost werden (im Lastlauf nach 5 s Einschwingen nicht mehr).
+
+### 20.6 Review nach 1b: Befunde und Korrekturen
+
+Ein Review mit Messungen (Netcode, Server-Sicherheit, Party-Parität und Mobile, Tests und Betrieb) fand 20 bestätigte Befunde. Behoben in den Commits „Merge main (graphics G1) into phase 1b“, „Harden the server against abusive clients“, „Keep bumps smooth behind loss and follow a server clock that moved“, „Fix client leftovers of the Party, the reconnect and the first connection“ und „Make the bot tests wait for the kick close and see server errors“.
+
+**Zusammenführung mit G1.** Die Branch stand auf dem Stand vor der Grafik G1 und ließ sich nicht mergen (Konflikte in zehn Dateien). Aufgelöst per Merge von `main`: `city.ts` und `environment.ts` übernehmen die gebündelte G1-Welt; die Props schieben keine Client-Hindernisse mehr, sondern melden, wo sie gezeichnet werden (`colliderTags.markColliderAt`), mit den Positionen aus `shared/world/props.ts`; Felsen nehmen Position und Größe aus `rockPlacements()` und nur ihr Aussehen aus einem eigenen Strom. `collider-parity.spec.ts` prüft jeden gezeichneten Prop gegen die Collider des Servers (grün), deshalb entfällt der Hash der alten Hindernisliste in `world-look.spec.ts`, und `screenshots.ts` schreibt `colliders.json`. Remote-Autos drehen ihre Räder und schalten die Bremslichter über `CarModel.setDriveState` (Bremslicht bei mehr als 6 m/s² Verzögerung vorwärts), Idle-Autos werden über `setAfkVisual` grau (eigene Materialkopien statt geteilter Materialien).
+
+**Netcode.**
+
+- Kontakt-Set bei Lead über 15 Ticks (hinter Verlust die Regel, 20.5): Die Autos bleiben dynamisch und rollen nach dem Input-Repeat weiter. Kinematisch nahmen sie keinen Anteil am Stoß; das eigene Auto blieb wie an einer Wand stehen (Sim: 0,0 statt 9,3 m/s), und die Korrektur kam als Sprung. Gemessen mit dem Harness, Auffahren und frontal, je fünf Seeds bei 150/30/3 und 100/10/1: vorher eigenes Auto bis 1,84 m pro Frame und Remote-Snaps von 4–9 m; nachher eigenes Auto höchstens 0,13 m, Remote-Autos höchstens 0,22 m, keine Snaps. Neue Tests in `reconcile.test.ts` (Lead > 15 beim Stoß, kein Frame über `JUMP_LIMIT`, für beide Autos und das andere Auto).
+- Render-Offset nach Kontakt: eigene 300 ms pro Kontakt-Korrektur und eine lineare Rampe statt hartem Löschen (vorher fielen 0,5–1,9 m in einem Frame weg). Eine Korrektur ohne Kontakt übernimmt den Offset und lässt ihn normal abklingen. **Abweichung** von der wörtlichen Lesart von 8.4: Die Frist gilt pro Korrektur, nicht ab der ersten.
+- Clock-Sync nach einem Server-Hänger: Sprung statt 20 s Angleichen (3.7). Test: 400 ms Hänger bei RTT 40–200 ms, nach zwei Pongs genau; normales Jitter bis 300/100 ms springt nie. Bei RTT über etwa 230 ms bleibt es beim Angleichen.
+- `FrameProbe` rechnet übersprungene Ticks (Uhrsprung des Lead-Reglers) als Bewegung des anderen Autos, nicht als Sprung.
+
+**Server.** Alles in 11.7: JSON-Budget, `setCar` gebündelt, `MAX_SESSIONS`, keine Grace ohne Input, Grenzen pro Adresse, RTT aus eigenen Ping-IDs, gedrosseltes Log. Gemessen: 1000 Verbindungen mit `hello`, `ready` und sofortigem Abbruch hinterlassen 0 Sessions (vorher 1000 Geisterautos in 32 Rooms); ein `setCar`-Flood wird nach 1,5 s gekickt, die Opfer bekommen 2 `playerUpdated` (vorher 78 000 pro Sekunde, Snapshots auf 3/s). Dazu: `FROZEN`/`HIDDEN` stoppt das Auto auf dem Server (vorher fuhr ein Client mit dem Flag als unverwundbarer Geist weiter und sammelte Coins), der Client stoppt ein verstecktes Auto ebenfalls. Mega-Ram nur, wenn das Mega-Auto selbst mit mindestens 3 m/s auf das Ziel zufährt (5.5).
+
+**Client und Party.**
+
+- Resume nach einem Tod, dessen Respawn in die Verbindungslücke fiel: Auto sichtbar, Overlay weg (vorher blieb „ELIMINATED“ stehen und das eigene Auto unsichtbar). E2E in `net-reconnect.spec.ts` (Kill-Event in den echten Serverstrom eingespeist).
+- Magnet: Der Server vergibt Coins im Umkreis von 26 m (5.5). **Entscheidung:** Parität mit dem bisherigen Spiel (der Magnet sammelte real bis etwa 25 m) statt eines auf 7 m geschrumpften Magneten; mit 7 m kamen gezogene Coins in einer Schleife ohne Punkte zurück.
+- `#net-notice` liegt über Loader und Splash (z-index 10001); E2E prüft per `elementFromPoint`.
+- Scheitert die erste Verbindung, versucht der Client es weiter (11.1); der Offline-Modus ohne Stadt ist entfernt. E2E: drei gescheiterte Sockets, Hinweis oben, dann Beitritt.
+- Die Coin-Anzeige im Party-HUD zeigt den eigenen Score (Altfehler seit lange vor 1b): Die `scoreboard`-Nachricht trägt für jeden Empfänger `own {score, rank}`, auch außerhalb der Top 10; die Rang-Anzeige nutzt den Rang des Servers. Additiv, `PROTOCOL_VERSION` bleibt.
+- Tote Reste entfernt (`respawnTimer`, `respawnMoveStart`), `WORLD_BOUND` bleibt, weil G1 damit das sichtbare Gelände formt (Kommentar korrigiert), `refactor-plan.md` sagt, dass `?physics=legacy` gelöscht ist.
+
+**Tests.** `sessions.test.ts` fährt den Resume-Test von einer freien Stelle mit festem Zufall (vorher in etwa 6 % der Läufe ein Coin oder Powerup am Spawn). Der Flood-Bot-Test wartet auf das Close statt auf die `kicked`-Nachricht. Der Lastlauf verlangt mindestens einen beidseitig gesehenen Kontakt statt drei (gemessen 3–19). Die Bot-Tests scheitern an jeder „Handler error“-, „ws error“-, „Uncaught“- oder „Unhandled“-Zeile des Servers und geben bei einem Fehlschlag die letzten Serverzeilen aus.
+
+**Mutationsproben** (alle danach zurückgesetzt):
+
+| Test | Probe | Ergebnis |
+|---|---|---|
+| Reconcile „Auffahren/frontal hinter Verlust“ | Remote-Autos wieder kinematisch ab 15 Ticks | zwei von drei rot (4,4 m Sprung, Snap) |
+| Reconcile frontal 150/30/3, RenderOffset-Tests | Frist wieder ab der ersten Korrektur, ohne Rampe | rot |
+| ClockSync „400 ms Hänger“ | kein Sprung | rot |
+| Pong-RTT | ID-Prüfung entfernt | rot |
+| `setCar` 100 × pro Sekunde | ohne Intervall | rot |
+| Session-Grenze | `makeRoom` übersprungen | rot |
+| versteckt/eingefroren | kein Stopp-Input | rot |
+| Idle sammelt nichts | Idle-Prüfung bei Pickups entfernt | rot |
+| geparktes Mega-Auto | Tempo-Prüfung entfernt | rot |
+| Bot-Tests sehen Serverfehler | Handler wirft bei Clock-Pings | rot |
+
+**Bewusst nicht geändert.** Der Mega-Ram rechnet mit dem Tempo zu Beginn des Ticks, nicht exakt im Kontakt-Substep (ausreichend genau, ohne Sim-Änderung). Die Grenzen pro Adresse vertrauen den Proxy-Headern, wenn der direkte Peer privat ist; wer den Cloudflare-Proxy umgeht, kann sie mit gefälschten Headern umgehen, die prozessweiten Grenzen bleiben. Nach einem Server-Hänger springt die Interpolation der fernen Autos einmal zurück in den gepufferten Bereich (statt 15–20 s zu extrapolieren).
 

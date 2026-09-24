@@ -13,6 +13,10 @@ Der Spielserver läuft rund um die Uhr (live: https://bulli.logge.top, Dokploy d
 | `NODE_ENV` | im Docker-Image `production` | In Produktion ist die Dev-Netsim gesperrt, Express liefert knappe Fehler. |
 | `MAX_PLAYERS_PER_ROOM` | `32` | Spieler pro Room-Instanz |
 | `MAX_CONNECTIONS` | `160` | offene Sockets des Prozesses; darüber Close 4002 („voll“), der Client versucht es mit Backoff weiter |
+| `MAX_SESSIONS` | `MAX_CONNECTIONS + 40` | Sessions einschließlich der getrennten in ihrer Grace-Zeit; eine neue verdrängt die am längsten getrennte, sonst 4002 |
+| `MAX_SOCKETS_PER_ADDRESS` | `12` | offene Sockets pro Client-Adresse (Loopback ausgenommen) |
+| `NEW_SESSION_BURST_PER_ADDRESS`, `NEW_SESSIONS_PER_MINUTE_PER_ADDRESS` | `10`, `20` | neue Sessions pro Client-Adresse: so viele auf einmal, dann so viele pro Minute |
+| `CLIENT_IP_HEADER` | – | Header mit der Client-Adresse. Ohne: hinter einem privaten Peer `CF-Connecting-IP`, `X-Real-IP` oder der letzte `X-Forwarded-For`-Eintrag (live: Cloudflare → Traefik → Server). `socket` = Peer-Adresse, `none` = keine Grenzen pro Adresse |
 | `GRACE_MS` | `30000` | Wie lange die Sitzung eines getrennten Spielers wartet. Nur für Tests kürzer (Playwright: 3000). |
 | `METRICS` | – | `1` schaltet `/metrics.json` frei (Rooms einzeln, Traffic-Summen) |
 | `NETSIM` | – | Dev-Netsim für jede Verbindung, z. B. `rtt=150,jitter=30,loss=3,mode=tcp`. Wirkt nur außerhalb von `NODE_ENV=production` oder mit `NETSIM_ALLOW=1`. |
