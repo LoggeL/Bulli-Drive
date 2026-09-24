@@ -94,7 +94,20 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      # Chromium of this Playwright version from the cache; the system
+      # libraries it needs come from apt either way
+      - name: Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('./node_modules/@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      - if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
       # Builds, then runs the critical user paths against the production
       # server (see playwright.config.ts): desktop, two players, touch on a
       # phone, a new deploy, missing assets. Everything a unit or bot test
@@ -121,10 +134,23 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      # Chromium of this Playwright version from the cache; the system
+      # libraries it needs come from apt either way
+      - name: Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('./node_modules/@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      - if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
       # The phone tier's draw call and triangle budget and its texture
-      # placeholders, measured by the renderer (SwiftShader): measurements,
-      # not user paths
+      # placeholders, measured by the renderer (SwiftShader), and the touch
+      # HUD's layout in eight viewports: measurements, not user paths
       - run: npm run test:e2e:render
       - name: Upload Playwright report and traces
         if: failure()

@@ -52,8 +52,9 @@ export default defineConfig({
             use: { ...devices['iPhone 13'], browserName: 'chromium' }
         },
         {
-            // Draw call budget and texture placeholders of the phone tier:
-            // renderer measurements, not user paths (own CI job)
+            // Draw call budget and texture placeholders of the phone tier,
+            // the touch HUD layout in eight viewports: measurements, not
+            // user paths (own CI job)
             name: 'render',
             testDir: 'tests/e2e-render',
             use: { ...devices['Desktop Chrome'] }

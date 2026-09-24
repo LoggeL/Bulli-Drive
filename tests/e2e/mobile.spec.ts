@@ -7,13 +7,14 @@ import {
 // a phone: the splash screen with the touch controls and thumb-sized mode
 // options, Free Roam from the splash, real touch events on the stick and
 // the buttons (docs/phase-1a-design.md, 11.2), the room chip back to the
-// Party, a HUD that nothing overlaps in eight viewports, a short drop that
-// resumes the same player, and a lost connection that comes back as a new
-// player after the grace time. The touch rules (brake threshold, auto-gas,
-// flip held = reset) are tested on InputManager in
-// tests/client/input.test.ts, the DOM wiring on the real markup (DRIFT and
-// BOOST bits, a second finger, the stick's Y axis, the flip button's tap
-// and hold) in tests/client/mobileControls.test.ts.
+// Party, a short drop that resumes the same player, and a lost connection
+// that comes back as a new player after the grace time, with a reconnect
+// banner that leaves the HUD free. The HUD layout in eight viewports is a
+// measurement in the render job (tests/e2e-render/touch-hud.spec.ts). The
+// touch rules (brake threshold, auto-gas, flip held = reset) are tested on
+// InputManager in tests/client/input.test.ts, the DOM wiring on the real
+// markup (DRIFT and BOOST bits, a second finger, the stick's Y axis, the
+// flip button's tap and hold) in tests/client/mobileControls.test.ts.
 
 type Box = { x: number; y: number; width: number; height: number };
 
@@ -35,47 +36,21 @@ async function waitTicks(page: Page, ticks: number): Promise<void> {
     await expect.poll(async () => (await v2(page)).ticks).toBeGreaterThan(start + ticks);
 }
 
-// Touch HUD elements that must never cover each other, with the reset
-// prompt shown: it appears exactly when the player is stuck
+// Touch HUD elements the reconnect banner must not cover
 const HUD = [
     '#btn-drift', '#btn-boost', '#btn-autogas', '#btn-flip', '#btn-shoot', '#btn-honk',
-    '#joystick-move', '#interaction-prompt', '#drive-meter', '#map-panel', '#score-container', '#player-list'
-];
-// Touch controls, which must also stay off the car itself (standing at
-// spawn) and clear of the sandbox banner (?sandbox=1, same CSS everywhere)
-const CONTROLS = ['#btn-drift', '#btn-boost', '#btn-autogas', '#btn-flip', '#btn-shoot', '#btn-honk', '#joystick-move'];
-interface CarBox { left: number; right: number; top: number; bottom: number }
-
-// The car's screen box in CSS pixels, once the camera has caught up with
-// the new viewport (two reads in a row agree)
-async function carBox(page: Page, width: number, height: number): Promise<CarBox> {
-    const read = () => page.evaluate(() => (window as unknown as {
-        __bulliDebug: { localCarScreenBox(): CarBox | null };
-    }).__bulliDebug.localCarScreenBox());
-    const reads: Array<CarBox | null> = [];
-    await expect.poll(async () => {
-        reads.push(await read());
-        const [previous, box] = reads.slice(-2);
-        return !!box && !!previous && Math.abs(box.left - previous.left) * width < 1 && Math.abs(box.top - previous.top) * height < 1;
-    }, { intervals: [150] }).toBe(true);
-    const done = reads[reads.length - 1]!;
-    return { left: done.left * width, right: done.right * width, top: done.top * height, bottom: done.bottom * height };
-}
-
-const VIEWPORTS = [
-    { name: 'iPhone 13', width: 390, height: 664 },
-    { name: 'iPhone SE', width: 320, height: 568 },
-    { name: 'Galaxy S9+', width: 320, height: 658 },
-    { name: 'Android 360', width: 360, height: 640 },
-    { name: 'iPhone 13 landscape', width: 750, height: 342 },
-    { name: 'iPhone SE landscape', width: 568, height: 320 },
-    { name: 'iPad portrait', width: 768, height: 1024 },
-    { name: 'iPad landscape', width: 1024, height: 768 }
+    '#joystick-move', '#drive-meter', '#map-panel', '#score-container', '#player-list'
 ];
 // The phones the reconnect banner is checked on, portrait and landscape
-const PHONES = VIEWPORTS.filter(viewport => ['iPhone 13', 'iPhone SE', 'iPhone 13 landscape', 'iPhone SE landscape'].includes(viewport.name));
+// (the whole touch HUD in eight viewports: tests/e2e-render/touch-hud.spec.ts)
+const PHONES = [
+    { name: 'iPhone 13', width: 390, height: 664 },
+    { name: 'iPhone SE', width: 320, height: 568 },
+    { name: 'iPhone 13 landscape', width: 750, height: 342 },
+    { name: 'iPhone SE landscape', width: 568, height: 320 }
+];
 
-test('touch on a phone: splash, Free Roam, stick and buttons, room chip, HUD layout and a lost connection', async ({ openPlayer }) => {
+test('touch on a phone: splash, Free Roam, stick and buttons, room chip and a lost connection', async ({ openPlayer }) => {
     const player = await openPlayer('phone');
     const { page } = player;
 
@@ -145,65 +120,6 @@ test('touch on a phone: splash, Free Roam, stick and buttons, room chip, HUD lay
     await expect(page.locator('#btn-shoot')).toBeVisible();
     await expect(page.locator('#score-container')).toBeVisible();
 
-    // ---- The Party HUD in eight viewports ----
-    // With the reset prompt and the sandbox banner (injected: the sandbox
-    // page has it, with the same CSS)
-    await page.evaluate(() => {
-        const banner = document.createElement('div');
-        banner.id = 'sandbox-banner';
-        banner.innerHTML = '<span class="sandbox-title">SANDBOX</span>'
-            + '<button type="button"><span class="key">N</span> Reset dummies</button>'
-            + '<button type="button"><span class="key">C</span> Switch car</button>';
-        document.getElementById('ui-overlay')!.appendChild(banner);
-    });
-    // The final layout counts: .control-btn animates its size (transition:
-    // all 0.1s), which a slow CI runner can still be in after a resize
-    await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; }' });
-    const problems: string[] = [];
-    for (const viewport of VIEWPORTS) {
-        await page.setViewportSize({ width: viewport.width, height: viewport.height });
-        // Auto-gas is off, but a powerup picked up meanwhile could put its
-        // own, longer text into the prompt; the reset hint is what is measured
-        await page.evaluate(() => {
-            const prompt = document.getElementById('interaction-prompt')!;
-            prompt.textContent = 'HOLD JUMP TO RESET';
-            prompt.style.transition = 'none';
-            prompt.classList.remove('hidden');
-        });
-        const car = await carBox(page, viewport.width, viewport.height);
-        const boxes = await Promise.all(HUD.map(async selector => ({ selector, box: await page.locator(selector).boundingBox() })));
-        for (const { selector, box } of boxes) {
-            if (!box) problems.push(`${viewport.name}: ${selector} not shown`);
-            else if (box.x < 0 || box.x + box.width > viewport.width) problems.push(`${viewport.name}: ${selector} off screen ${round(box)}`);
-        }
-        for (let i = 0; i < boxes.length; i++) {
-            for (let j = i + 1; j < boxes.length; j++) {
-                const a = boxes[i].box, b = boxes[j].box;
-                if (a && b && overlaps(a, b)) problems.push(`${viewport.name}: ${boxes[i].selector} ${round(a)} overlaps ${boxes[j].selector} ${round(b)}`);
-            }
-        }
-        // The room chip (inside #player-list) stays clear of the map and the controls
-        const chip = (await page.locator('#room-chip').boundingBox())!;
-        if (chip.x < 0 || chip.x + chip.width > viewport.width) problems.push(`${viewport.name}: #room-chip off screen ${round(chip)}`);
-        for (const { selector, box } of boxes) {
-            if (box && (selector === '#map-panel' || CONTROLS.includes(selector)) && overlaps(chip, box)) {
-                problems.push(`${viewport.name}: #room-chip ${round(chip)} overlaps ${selector} ${round(box)}`);
-            }
-        }
-        const banner = (await page.locator('#sandbox-banner').boundingBox())!;
-        const carRect = { x: car.left, y: car.top, width: car.right - car.left, height: car.bottom - car.top };
-        for (const { selector, box } of boxes) {
-            if (!box || !CONTROLS.includes(selector)) continue;
-            if (overlaps(box, carRect)) problems.push(`${viewport.name}: ${selector} ${round(box)} covers the car ${round(carRect)}`);
-            if (overlaps(box, banner)) problems.push(`${viewport.name}: the sandbox banner ${round(banner)} covers ${selector} ${round(box)}`);
-        }
-    }
-    expect(problems).toEqual([]);
-    await page.evaluate(() => {
-        document.getElementById('sandbox-banner')?.remove();
-        document.getElementById('interaction-prompt')!.classList.add('hidden');
-    });
-
     // ---- A short drop: the same player and car come back ----
     // Within the grace time the session token resumes the session (11.1)
     const id = (await snapshot(page)).myId;
@@ -225,11 +141,12 @@ test('touch on a phone: splash, Free Roam, stick and buttons, room chip, HUD lay
     await expect(notice).toBeVisible();
     await expect(notice).toContainText('Reconnecting');
     await expect.poll(async () => (await netState(page)).suspended).toBe(true);
+    const problems: string[] = [];
     for (const viewport of PHONES) {
         await page.setViewportSize({ width: viewport.width, height: viewport.height });
         const own = (await notice.boundingBox())!;
         if (own.x < 0 || own.x + own.width > viewport.width || own.y < 0) problems.push(`${viewport.name}: banner off screen`);
-        for (const selector of [...HUD.filter(selector => selector !== '#interaction-prompt'), '#room-chip']) {
+        for (const selector of [...HUD, '#room-chip']) {
             const box = await page.locator(selector).boundingBox();
             if (box && overlaps(own, box)) problems.push(`${viewport.name}: the reconnect banner ${round(own)} covers ${selector} ${round(box)}`);
         }
