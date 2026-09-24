@@ -1,12 +1,12 @@
 import { devices, type Page } from '@playwright/test';
-import { test, expect, joinGame } from '../e2e/fixtures.js';
+import { test, expect, joinGame, placeOnClearRunway, waitFrames } from '../e2e/fixtures.js';
 
 // The touch HUD of the Party in eight phone and tablet viewports: no
 // control, panel or prompt covers another or leaves the screen, the room
 // chip stays clear of the map and the controls, and the controls stay off
-// the car standing at spawn and clear of the sandbox banner (?sandbox=1,
-// same CSS). A layout measurement rather than a user path, so it runs in
-// the render job beside the E2E suite; the touch path itself is
+// the standing car and clear of the sandbox banner (?sandbox=1, same
+// CSS). A layout measurement rather than a user path, so it runs in the
+// render job beside the E2E suite; the touch path itself is
 // tests/e2e/mobile.spec.ts.
 
 // iPhone 13 with touch, rendered by Chromium like the rest of the project
@@ -24,25 +24,33 @@ const HUD = [
     '#btn-drift', '#btn-boost', '#btn-autogas', '#btn-flip', '#btn-shoot', '#btn-honk',
     '#joystick-move', '#interaction-prompt', '#drive-meter', '#map-panel', '#score-container', '#player-list'
 ];
-// Touch controls, which must also stay off the car itself (standing at
-// spawn) and clear of the sandbox banner
+// Touch controls, which must also stay off the car itself (standing on
+// the runway of the driving tests) and clear of the sandbox banner
 const CONTROLS = ['#btn-drift', '#btn-boost', '#btn-autogas', '#btn-flip', '#btn-shoot', '#btn-honk', '#joystick-move'];
 interface CarBox { left: number; right: number; top: number; bottom: number }
 
 // The car's screen box in CSS pixels, once the camera has caught up with
-// the new viewport (two reads in a row agree)
+// the new viewport: two reads with rendered frames between them agree (on
+// a busy runner two reads a fixed time apart can see the same frame,
+// before the camera took the new aspect)
 async function carBox(page: Page, width: number, height: number): Promise<CarBox> {
     const read = () => page.evaluate(() => (window as unknown as {
         __bulliDebug: { localCarScreenBox(): CarBox | null };
     }).__bulliDebug.localCarScreenBox());
-    const reads: Array<CarBox | null> = [];
+    let previous: CarBox | null = null;
+    let done: CarBox | null = null;
     await expect.poll(async () => {
-        reads.push(await read());
-        const [previous, box] = reads.slice(-2);
-        return !!box && !!previous && Math.abs(box.left - previous.left) * width < 1 && Math.abs(box.top - previous.top) * height < 1;
-    }, { intervals: [150] }).toBe(true);
-    const done = reads[reads.length - 1]!;
-    return { left: done.left * width, right: done.right * width, top: done.top * height, bottom: done.bottom * height };
+        await waitFrames(page, 2);
+        const box = await read();
+        const stable = !!box && !!previous
+            && Math.abs(box.left - previous.left) * width < 1 && Math.abs(box.right - previous.right) * width < 1
+            && Math.abs(box.top - previous.top) * height < 1 && Math.abs(box.bottom - previous.bottom) * height < 1;
+        previous = box;
+        done = box;
+        return stable;
+    }, { intervals: [0], timeout: 60_000 }).toBe(true);
+    const box = done!;
+    return { left: box.left * width, right: box.right * width, top: box.top * height, bottom: box.bottom * height };
 }
 
 const VIEWPORTS = [
@@ -62,6 +70,11 @@ test('the Party touch HUD in eight viewports: nothing overlaps, the car stays fr
     await joinGame(player, 'E2E Touch HUD', '', 'party');
     await expect(page.locator('#btn-shoot')).toBeVisible();
     await expect(page.locator('#score-container')).toBeVisible();
+    // The server spawns the car at a random spot, and the terrain and the
+    // buildings there shift its screen box by a few pixels; measured on
+    // the same flat stretch of road, facing +z, the layout check does not
+    // depend on where the car happened to spawn
+    await placeOnClearRunway(page);
 
     // With the reset prompt and the sandbox banner (injected: the sandbox
     // page has it, with the same CSS)
