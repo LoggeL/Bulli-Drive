@@ -175,6 +175,9 @@ Verbindliche Spezifikation, Abweichungen und Messwerte: [`phase-1a-design.md`](p
   - [ ] Messungen auf dem Referenz-Handy (Replay-Kosten bei hohem Lead hinter Verlust, Overlay `?debug=net`)
 
 **Phase 2 – Vertical Slice Rennen (ca. 3 Wochen) → Release**
+
+Verbindliche Spezifikation, Entscheidungen und Testplan: [`phase-2-design.md`](phase-2-design.md) (Branch `game/phase-2-racing`).
+
 - **Deliverables:**
   - `shared/race` und die RaceRoom-State-Machine (lobby → countdown mit `startAt` und Freeze → racing → finished mit 30 s DNF → results/Rematch)
   - Gates und Zeitmessung laufen im Server-Sim-Tick mit Sub-Tick-Interpolation (`RaceTimer`, siehe Abschnitt 6)
