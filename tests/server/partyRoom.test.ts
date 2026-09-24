@@ -12,6 +12,7 @@ import {
     RESPAWN_TICKS, SHOT_COOLDOWN_TICKS, ramDamage
 } from '../../src/shared/party/rules.js';
 import { placeVehicle } from '../../src/shared/sim/vehicle.js';
+import { createVehicleParams } from '../../src/shared/sim/vehicleClasses.js';
 import type { Session } from '../../src/server/session.js';
 import { feed, fakeSession, ready, steps } from './helpers.js';
 
@@ -126,6 +127,29 @@ describe('session messages', () => {
         ]);
     });
 
+    it('shows a car toggled 100 times in a second to the room at most twice', () => {
+        const alice = player('Alice');
+        const other = player('Other');
+        other.transport.clear();
+        alice.transport.clear();
+        // 100 alternating changes in one second, a tick after each
+        for (let i = 0; i < 100; i++) {
+            const now = 5000 + i * 10;
+            handleClientMessage(lobby, alice, { type: 'setCar', carType: i % 2 ? 'bulli' : 'jeep', profile: 'standard' }, now);
+            feed(room, alice, {});
+            feed(room, other, {});
+            steps(room, 1, now);
+        }
+        const updates = other.transport.of('playerUpdated');
+        expect(updates.length).toBeGreaterThanOrEqual(1);
+        expect(updates.length).toBeLessThanOrEqual(2);
+        expect(alice.transport.events('carChanged').length).toBeLessThanOrEqual(2);
+        // The last change still arrives once the interval is over: bulli (i = 99)
+        steps(room, 1, 7000);
+        expect(other.transport.of('playerUpdated').at(-1)).toEqual({ type: 'playerUpdated', id: alice.id, carType: 'bulli', profile: 'standard' });
+        expect(alice.member!.car!.base.mass).toBe(createVehicleParams('bulli', 'standard').mass);
+    });
+
     it('answers pings with the room tick', () => {
         const alice = player('Alice');
         steps(room, 5, 1000);
@@ -183,10 +207,11 @@ describe('items', () => {
         })]);
         expect(alice.transport.lastSnapshot!.self!.flags & CAR_MEGA).toBe(CAR_MEGA);
         // A second Mega 100 ticks later extends the window, the start stays
-        steps(room, 97);
+        // (inputs keep the car from going idle, an idle car collects nothing)
+        run(97);
         const other = room.powerups.find(p => p.type === 'size' && p !== mega)!;
         put(alice, other.x, other.z);
-        steps(room, 1);
+        run(1);
         expect(partyOf(alice).powerups.size).toEqual({ start: T + 1, end: room.tick + 1 + POWERUP_TICKS.size });
         put(alice, 58, -60);
         steps(room, POWERUP_TICKS.size + 1);
@@ -320,6 +345,27 @@ describe('Mega ram', () => {
         expect(partyOf(victim).health).toBe(health);
     });
 
+    it('does not hurt a car that drives into a parked Mega car', () => {
+        const mega = player('Parked');
+        const victim = player('Victim');
+        partyOf(mega).powerups.size = { start: 0, end: room.tick + 10_000 };
+        run(60);
+        partyOf(victim).respawnShield = false;
+        // The Mega car stands (and keeps sending inputs, so it is not idle);
+        // the victim rolls into it at 10 m/s, a hard contact for the victim
+        put(mega, 58, -72);
+        put(victim, 58, -80, 0, 10);
+        let contact = 0;
+        for (let i = 0; i < 40; i++) {
+            run(1);
+            contact = Math.max(contact, victim.member!.car!.events.carImpactId === mega.id ? victim.member!.car!.events.carImpact : 0);
+        }
+        // Without the rule this impulse would cost about 23 HP
+        expect(ramDamage(contact, false)).toBeGreaterThanOrEqual(10);
+        expect(partyOf(victim).health).toBe(100);
+        expect(victim.transport.events('hit')).toEqual([]);
+    });
+
     it('does not hurt a car behind the respawn shield', () => {
         const ram = player('Ram');
         const victim = player('Victim');
@@ -411,6 +457,42 @@ describe('idle and lag ghost', () => {
         feed(room, bob, {});
         steps(room, 1);
         expect(bob.member!.idle).toBe(false);
+    });
+
+    it('holds a hidden or frozen car to its stop: full throttle neither moves it nor collects', () => {
+        for (const flag of [INPUT_HIDDEN, INPUT_FROZEN]) {
+            const alice = player(`Ghost ${flag}`);
+            // On the road, a coin 10 m ahead
+            const coin = room.coins.find(c => !c.collected)!;
+            put(alice, coin.x, coin.z - 10);
+            for (let i = 0; i < 240; i++) {
+                feed(room, alice, { throttle: 255 }, flag);
+                steps(room, 1);
+            }
+            expect(alice.member!.idle).toBe(true);
+            const s = alice.member!.car!.state;
+            expect(Math.hypot(s.x - coin.x, s.z - (coin.z - 10))).toBeLessThan(0.5);
+            expect(coin.collected).toBe(false);
+            expect(partyOf(alice).score).toBe(0);
+            // The same inputs without the flag drive through the coin
+            for (let i = 0; i < 120 && !coin.collected; i++) {
+                feed(room, alice, { throttle: 255 });
+                steps(room, 1);
+            }
+            expect(coin.collected).toBe(true);
+            lobby.leave(alice);
+        }
+    });
+
+    it('lets an idle car that drifts onto a coin leave it', () => {
+        const alice = player('Drifter');
+        const coin = room.coins.find(c => !c.collected)!;
+        // Rolling onto the coin while the connection is gone
+        put(alice, coin.x, coin.z - 6, 0, 8);
+        alice.disconnectedAt = 0;
+        steps(room, 60);
+        expect(alice.member!.idle).toBe(true);
+        expect(coin.collected).toBe(false);
     });
 
     it('keeps the ghost while the car still overlaps another one', () => {

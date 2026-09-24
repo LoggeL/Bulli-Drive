@@ -3,6 +3,7 @@ import type {
     GameEvent,
     LeaveReason,
     MemberInfo,
+    ProfileId,
     RoomInfo,
     RoomKind,
     ResumeState,
@@ -27,7 +28,7 @@ import { createSimCar, placeVehicle, spawnVehicle } from '../../shared/sim/vehic
 import { createVehicleParams, isCarClassId } from '../../shared/sim/vehicleClasses.js';
 import { stepWorld } from '../../shared/sim/world.js';
 import type { MapData } from '../../shared/world/mapData.js';
-import { HONK_INTERVAL_MS } from '../config.js';
+import { CAR_CHANGE_INTERVAL_MS, HONK_INTERVAL_MS } from '../config.js';
 import type { Session } from '../session.js';
 import { InputBuffer } from './InputBuffer.js';
 import { randomSpawnPose, type SpawnPoint, type SpawnPose } from './spawn.js';
@@ -81,6 +82,12 @@ export interface RoomMember {
     pendingSpawn: boolean;
     pendingPlace: SpawnPose | null;
     carDirty: boolean;
+    // A setCar is waiting to be shown to the room: car changes reach the
+    // others at most once per CAR_CHANGE_INTERVAL_MS, the latest one wins
+    carPending: boolean;
+    carShownAtMs: number;
+    shownCar: CarClassId;
+    shownProfile: ProfileId;
     // Tick the car last spawned or respawned, -1 = never
     spawnTick: number;
 }
@@ -182,6 +189,10 @@ export abstract class Room {
             pendingSpawn: false,
             pendingPlace: null,
             carDirty: false,
+            carPending: false,
+            carShownAtMs: -Infinity,
+            shownCar: carClass(session),
+            shownProfile: session.profile,
             spawnTick: -1
         };
         // Inputs for ticks the room already ran are late
@@ -324,18 +335,30 @@ export abstract class Room {
         }
     }
 
-    // The session was renamed or changed its car (server/dispatch.ts)
+    // The session was renamed or changed its car (server/dispatch.ts). A
+    // rename has its own rate limit and goes out at once; a car change is
+    // shown at the next tick, and to the room at most once per
+    // CAR_CHANGE_INTERVAL_MS (every change rebuilds the car on every
+    // client), so a client toggling its car cannot flood the room.
     onSessionChanged(member: RoomMember, change: { name?: boolean; car?: boolean }): void {
-        if (change.car) member.carDirty = true;
-        if (!member.ready) return;
-        const session = member.session;
-        this.broadcast({
-            type: 'playerUpdated',
-            id: member.id,
-            ...(change.name ? { name: session.name } : {}),
-            ...(change.car ? { carType: carClass(session), profile: session.profile } : {})
-        });
-        if (change.name) this.markScoreboardDirty();
+        if (change.car) member.carPending = true;
+        if (!change.name || !member.ready) return;
+        this.broadcast({ type: 'playerUpdated', id: member.id, name: member.session.name });
+        this.markScoreboardDirty();
+    }
+
+    private showCarChanges(nowMs: number): void {
+        for (const m of this.sorted) {
+            if (!m.carPending || nowMs - m.carShownAtMs < CAR_CHANGE_INTERVAL_MS) continue;
+            m.carPending = false;
+            const carType = carClass(m.session), profile = m.session.profile;
+            if (carType === m.shownCar && profile === m.shownProfile) continue;
+            m.shownCar = carType;
+            m.shownProfile = profile;
+            m.carShownAtMs = nowMs;
+            m.carDirty = true;
+            if (m.ready) this.broadcast({ type: 'playerUpdated', id: m.id, carType, profile });
+        }
     }
 
     private handleHonk(member: RoomMember): void {
@@ -363,6 +386,7 @@ export abstract class Room {
         if (cars.length > 0) stepWorld(cars, this.map.simWorld);
         this.contactEvents(T);
         this.afterStep(T);
+        this.showCarChanges(nowMs);
         this.spawnAndPlace(T);
         if (T % this.snapshotEvery === 0) {
             this.flushEvents(T);
@@ -398,6 +422,9 @@ export abstract class Room {
             if (m.missing <= INPUT_REPEAT_TICKS) copyInput(car.input, m.lastInput);
             else stopInput(car.state, car.input);
         }
+        // A frozen or hidden client is an idle ghost (5.4) and stops: the
+        // server holds it to that instead of trusting the inputs it sends
+        if (m.hidden || (m.clientFlags & (INPUT_FROZEN | INPUT_HIDDEN)) !== 0) stopInput(car.state, car.input);
         this.filterInput(m, car.input, T);
     }
 

@@ -60,6 +60,16 @@ export class SessionRegistry {
         return this.byId.size;
     }
 
+    /** The session whose player has been gone longest, or null if all are connected. */
+    longestInGrace(): Session | null {
+        let oldest: Session | null = null;
+        for (const session of this.byId.values()) {
+            if (session.connected) continue;
+            if (!oldest || session.disconnectedAt < oldest.disconnectedAt) oldest = session;
+        }
+        return oldest;
+    }
+
     /** Sessions waiting for their player to come back. */
     get inGrace(): number {
         let n = 0;

@@ -50,6 +50,10 @@ export const RAM_MIN_DV = 4;
 export const RAM_DAMAGE_PER_DV = 2.5;
 export const RAM_MAX_DAMAGE = 60;
 export const RAM_PAIR_COOLDOWN_TICKS = 60;
+// The Mega car has to drive at its target at least this fast (m/s), like the
+// legacy client's speed > 0.05 units per frame (3 m/s): a parked Mega car
+// is no trap (docs/phase-1b-design.md, 5.5)
+export const RAM_MIN_ATTACK_SPEED = 3;
 
 export function ramDamage(dv: number, targetMega: boolean): number {
     if (!(dv >= RAM_MIN_DV)) return 0;

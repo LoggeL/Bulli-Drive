@@ -24,6 +24,10 @@ export interface PartyMemberState {
     lastShotTick: number;
     // Last tick each attacker's Mega rammed this player
     readonly rammedBy: Map<string, number>;
+    // Velocity at the start of the running tick (m/s), before any contact
+    // of the tick: a Mega car rams only while it drives at its target
+    tickStartVx: number;
+    tickStartVz: number;
 }
 
 export function createPartyState(): PartyMemberState {
@@ -36,6 +40,8 @@ export function createPartyState(): PartyMemberState {
         respawnShield: false,
         spawnTick: 0,
         movedTick: -1,
+        tickStartVx: 0,
+        tickStartVz: 0,
         deadUntil: -1,
         lastShotTick: -Infinity,
         rammedBy: new Map()

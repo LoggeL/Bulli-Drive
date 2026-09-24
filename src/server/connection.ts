@@ -36,9 +36,16 @@ const clock = {
     setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms)
 };
 
+// A round trip longer than this is not a measurement but a stuck socket
+export const MAX_RTT_MS = 10_000;
+
 export class SocketConnection implements Transport {
     // Clock time of the last pong (liveness, server/index.ts)
     lastPongAt = performance.now();
+    // The ping waiting for its pong: the payload carries only this number,
+    // the send time stays here, so a client cannot fake its round trip
+    private pingSeq = Math.floor(Math.random() * 0x7fffffff);
+    private pendingPing: { seq: number; sentAt: number } | null = null;
     private readonly netsim: NetsimConnection | null;
     private closeRequested = false;
     private queuedBytes = 0;
@@ -94,7 +101,28 @@ export class SocketConnection implements Transport {
         this.ws.terminate();
     }
 
-    ping(payload: Buffer): void {
+    /** A WebSocket ping that measures the round trip (see pongRtt). */
+    ping(nowMs: number): void {
+        this.pingSeq = (this.pingSeq + 1) % 0x7fffffff;
+        this.pendingPing = { seq: this.pingSeq, sentAt: nowMs };
+        const payload = Buffer.alloc(8);
+        payload.writeUInt32LE(this.pingSeq, 0);
+        this.sendPing(payload);
+    }
+
+    /**
+     * A pong arrived: the round trip of the ping it answers (ms, at most
+     * MAX_RTT_MS), or null when it answers none (unsolicited, repeated or
+     * forged pongs do not count).
+     */
+    pongRtt(payload: Buffer, nowMs: number): number | null {
+        const pending = this.pendingPing;
+        if (!pending || payload.length !== 8 || payload.readUInt32LE(0) !== pending.seq) return null;
+        this.pendingPing = null;
+        return Math.min(MAX_RTT_MS, Math.max(0, nowMs - pending.sentAt));
+    }
+
+    private sendPing(payload: Buffer): void {
         const send = () => {
             if (this.ws.readyState === OPEN) {
                 try { this.ws.ping(payload); } catch { /* closing */ }

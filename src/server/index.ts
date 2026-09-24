@@ -10,6 +10,10 @@ import {
     HELLO_TIMEOUT_MS,
     MAX_CONNECTIONS,
     MAX_PLAYERS_PER_ROOM,
+    MAX_SESSIONS,
+    MAX_SOCKETS_PER_ADDRESS,
+    NEW_SESSION_BURST_PER_ADDRESS,
+    NEW_SESSIONS_PER_MINUTE_PER_ADDRESS,
     PING_EVERY_MS,
     PORT,
     ROOM_SWEEP_INTERVAL_MS,
@@ -33,6 +37,7 @@ import { TicketSigner } from './resumeTicket.js';
 import { gracefulShutdown } from './shutdown.js';
 import { netsimFromEnv, SocketConnection } from './connection.js';
 import { hdriMiddleware, versionedAssetCache } from './staticAssets.js';
+import { AddressLimits, clientAddress, sessionLog } from './access.js';
 
 // A crash leaves the process in an unknown state: log it and exit, the
 // restart policy starts a fresh one (docs/phase-1b-design.md, 11.2)
@@ -160,6 +165,11 @@ const connections = new Set<SocketConnection>();
 const tickets = TicketSigner.fromEnv();
 const netsim = netsimFromEnv();
 const traffic = new TrafficMeter();
+const addressLimits = new AddressLimits({
+    maxSockets: MAX_SOCKETS_PER_ADDRESS,
+    helloBurst: NEW_SESSION_BURST_PER_ADDRESS,
+    hellosPerMinute: NEW_SESSIONS_PER_MINUTE_PER_ADDRESS
+});
 let kicks = 0;
 let shuttingDown = false;
 
@@ -190,9 +200,7 @@ const pinger = setInterval(() => {
             connection.terminate();
             continue;
         }
-        const payload = Buffer.alloc(8);
-        payload.writeDoubleLE(now);
-        connection.ping(payload);
+        connection.ping(now);
     }
 }, PING_EVERY_MS);
 
@@ -203,9 +211,10 @@ roomSweep.unref();
 // Sessions whose player did not come back in time leave their room
 const graceSweep = setInterval(() => {
     for (const session of sessions.expire(performance.now())) {
-        console.log(`Player ${session.name} (${session.id}) did not come back; leaving ${session.room?.id ?? 'no room'}`);
+        sessionLog.log(`Player ${session.name} (${session.id}) did not come back; leaving ${session.room?.id ?? 'no room'}`);
         lobby.leave(session);
     }
+    addressLimits.sweep(performance.now());
 }, 1000);
 graceSweep.unref();
 
@@ -215,7 +224,19 @@ traffic.sample(performance.now());
 
 lobby.onIdleKick = (session) => kick(session, 'idle');
 
-const handshake = { lobby, serverBuild: SERVER_BUILD, sessions, tickets };
+// A session gone for good before its grace time ends: pushed out by a new
+// one (MAX_SESSIONS), or never a player (no input) when its socket closed
+function dropSession(session: Session, why: string): void {
+    sessionLog.log(`Player ${session.name} (${session.id}) ${why}; leaving ${session.room?.id ?? 'no room'}`);
+    lobby.leave(session);
+    sessions.remove(session);
+}
+
+const handshake = {
+    lobby, serverBuild: SERVER_BUILD, sessions, tickets,
+    maxSessions: MAX_SESSIONS,
+    evict: (session: Session) => dropSession(session, 'made room for a new player')
+};
 
 wss.on('close', () => {
     clearInterval(pinger);
@@ -242,6 +263,7 @@ function onInputFrame(session: Session, bytes: Uint8Array): void {
     const admit = session.admitInput(now);
     if (admit === 'kick') return kick(session, 'policy');
     if (admit === 'drop') return;
+    session.sentInput = true;
     const packet = decodeInputPacket(bytes);
     if (!packet || !v.safeParse(InputPacketSchema, packet).success) {
         if (session.noteInvalid(now)) kick(session, 'policy');
@@ -251,7 +273,7 @@ function onInputFrame(session: Session, bytes: Uint8Array): void {
     if (room && member) room.onInput(member, packet, now);
 }
 
-wss.on('connection', (ws: WebSocket) => {
+wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
     if (shuttingDown) {
         ws.close(CLOSE_RESTART, 'restart');
         return;
@@ -261,15 +283,21 @@ wss.on('connection', (ws: WebSocket) => {
         reject(ws, 'full');
         return;
     }
+    const address = clientAddress(req);
+    if (!addressLimits.openSocket(address, performance.now())) {
+        console.warn(`Turning a connection away: ${address} has ${MAX_SOCKETS_PER_ADDRESS} open`);
+        reject(ws, 'full');
+        return;
+    }
     const connection = new SocketConnection(ws, traffic, netsim);
     connections.add(connection);
+    const context = { ...handshake, admitNewSession: () => addressLimits.admitNewSession(address, performance.now()) };
     let session: Session | null = null;
     ws.on('pong', (payload: Buffer) => connection.inbound(false, payload.length, () => {
         const now = performance.now();
         connection.lastPongAt = now;
-        if (session && session.transport === connection && payload.length === 8) {
-            session.noteRtt(Math.max(0, now - payload.readDoubleLE(0)));
-        }
+        const rtt = connection.pongRtt(payload, now);
+        if (rtt !== null && session && session.transport === connection) session.noteRtt(rtt);
     }));
 
     const helloTimer = setTimeout(() => {
@@ -283,7 +311,7 @@ wss.on('connection', (ws: WebSocket) => {
                     reject(connection, 'hello');
                     return;
                 }
-                const result = acceptHelloResult(connection, data.toString(), handshake);
+                const result = acceptHelloResult(connection, data.toString(), context);
                 if (result) {
                     session = result.session;
                     clearTimeout(helloTimer);
@@ -297,6 +325,9 @@ wss.on('connection', (ws: WebSocket) => {
                 else if (session.noteInvalid(performance.now())) kick(session, 'policy');
                 return;
             }
+            const admit = session.admitMessage(performance.now());
+            if (admit === 'kick') return kick(session, 'policy');
+            if (admit === 'drop') return;
             let parsed: unknown;
             try {
                 parsed = JSON.parse(data.toString());
@@ -313,13 +344,16 @@ wss.on('connection', (ws: WebSocket) => {
 
     ws.on('close', () => {
         connections.delete(connection);
+        addressLimits.closeSocket(address);
         connection.dispose();
         clearTimeout(helloTimer);
         if (!session || shuttingDown) return;
         // Taken over by a newer socket, or kicked: nothing to do
         if (session.transport !== connection || !sessions.has(session)) return;
+        // Never sent an input: nothing to come back to, no ghost car
+        if (!session.sentInput) return dropSession(session, 'closed before playing');
         sessions.disconnect(session, performance.now());
-        console.log(`Player ${session.name} lost the connection in ${session.room?.id ?? 'no room'} (waiting ${SESSION_GRACE_MS / 1000} s)`);
+        sessionLog.log(`Player ${session.name} lost the connection in ${session.room?.id ?? 'no room'} (waiting ${SESSION_GRACE_MS / 1000} s)`);
     });
 
     ws.on('error', (err) => {

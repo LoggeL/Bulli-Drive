@@ -4,6 +4,7 @@ import * as v from 'valibot';
 import { HelloSchema, PROTOCOL_VERSION, type HelloMessage, type RejectReason, type ServerMessage } from '../shared/protocol.js';
 import { CLOSE_FULL, CLOSE_HELLO, CLOSE_TAKEN_OVER, CLOSE_VERSION, SNAPSHOT_RATE, TICK_RATE } from '../shared/net/constants.js';
 import { isCarClassId } from '../shared/sim/vehicleClasses.js';
+import { sessionLog } from './access.js';
 import { cleanName } from './dispatch.js';
 import type { RoomManager } from './rooms/lobby.js';
 import type { TicketSigner } from './resumeTicket.js';
@@ -46,6 +47,14 @@ export interface HandshakeContext {
     // Sessions by token (resume); without it every hello is a new session
     sessions?: SessionRegistry;
     tickets?: TicketSigner;
+    // At most this many sessions, including those in their grace time: a
+    // new one pushes out the one that waited longest, or is turned away
+    // when every session is connected (11.7)
+    maxSessions?: number;
+    // Removes a session in its grace time from its room and the registry
+    evict?: (session: Session) => void;
+    // The budget of new sessions for this connection's address (11.7)
+    admitNewSession?: () => boolean;
 }
 
 export interface HelloResult {
@@ -91,6 +100,20 @@ function takeOver(transport: Transport, hello: HelloMessage, ctx: HandshakeConte
     return session;
 }
 
+// Room for one more session under maxSessions: evicts the session that has
+// waited longest in its grace time; false if all of them are connected
+function makeRoom(ctx: HandshakeContext): boolean {
+    const sessions = ctx.sessions;
+    if (!sessions || ctx.maxSessions === undefined) return true;
+    while (sessions.size >= ctx.maxSessions) {
+        const oldest = sessions.longestInGrace();
+        if (!oldest) return false;
+        if (ctx.evict) ctx.evict(oldest);
+        else sessions.remove(oldest);
+    }
+    return true;
+}
+
 /** The session for a valid hello (welcomed and in a room), or null after a reject. */
 export function acceptHelloResult(transport: Transport, text: string, ctx: HandshakeContext): HelloResult | null {
     let raw: unknown;
@@ -113,8 +136,17 @@ export function acceptHelloResult(transport: Transport, text: string, ctx: Hands
     const hello = parsed.output;
     const resumed = takeOver(transport, hello, ctx);
     if (resumed) {
-        console.log(`Player ${resumed.name} (${resumed.id}) is back in ${resumed.room?.id}`);
+        sessionLog.log(`Player ${resumed.name} (${resumed.id}) is back in ${resumed.room?.id}`);
         return { session: resumed, resumed: true };
+    }
+
+    if (ctx.admitNewSession && !ctx.admitNewSession()) {
+        reject(transport, 'full');
+        return null;
+    }
+    if (!makeRoom(ctx)) {
+        reject(transport, 'full');
+        return null;
     }
 
     const id = uuidv4();
@@ -136,7 +168,7 @@ export function acceptHelloResult(transport: Transport, text: string, ctx: Hands
     ctx.sessions?.add(session);
     welcome(session, false, ctx);
     ctx.lobby.join(session, hello.room);
-    console.log(`Player ${name} (${id}) joined ${session.room?.id}${ticket ? ' with a resume ticket' : ''}`);
+    sessionLog.log(`Player ${name} (${id}) joined ${session.room?.id}${ticket ? ' with a resume ticket' : ''}`);
     return { session, resumed: false };
 }
 

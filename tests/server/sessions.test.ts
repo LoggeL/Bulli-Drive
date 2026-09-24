@@ -1,4 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mulberry32 } from '../../src/shared/math/rng.js';
+import { placeVehicle } from '../../src/shared/sim/vehicle.js';
 import { acceptHelloResult, type HandshakeContext } from '../../src/server/handshake.js';
 import { mapFor } from '../../src/server/maps.js';
 import { RoomManager } from '../../src/server/rooms/lobby.js';
@@ -21,6 +23,8 @@ let ctx: HandshakeContext;
 let wallClock: number;
 
 beforeEach(() => {
+    // Spawn points and colours are random: the same ones in every run
+    vi.spyOn(Math, 'random').mockImplementation(mulberry32(1234));
     lobby = new RoomManager(mapFor(), { maxPlayersPerRoom: 32, emptyRoomTtlMs: 60_000 });
     sessions = new SessionRegistry();
     wallClock = 1_700_000_000_000;
@@ -29,6 +33,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+    vi.restoreAllMocks();
     for (const room of lobby.list()) room.dispose();
 });
 
@@ -83,6 +88,10 @@ describe('grace time and resume', () => {
         room.partyState(a.session.id)!.score = 70;
         const { slot } = a.session.member!;
         const car = a.session.member!.car;
+        // On a free stretch of road, 40 m from any item: the drive picks up
+        // no coin or powerup, which would change the score and the resume
+        // (the spawn point alone did in about 6 % of the runs)
+        placeVehicle(car!.state, room.map.simWorld, 58, 10, 0);
         for (let i = 0; i < 10; i++) {
             feed(room, a.session, { throttle: 255 });
             steps(room, 1);
@@ -226,5 +235,45 @@ describe('resume tickets', () => {
         const ticket = tickets.sign({ name: 'Ada', color: 0x123456, carType: 'jeep', profile: 'touch', roomKind: 'party', score: 30 });
         wallClock += RESUME_TICKET_MS - 1;
         expect(tickets.redeem(ticket)).toEqual(expect.objectContaining({ name: 'Ada', color: 0x123456, score: 30, roomKind: 'party' }));
+    });
+});
+
+describe('session limits (11.7)', () => {
+    it('pushes out the session that waited longest when MAX_SESSIONS is reached', () => {
+        const evicted: string[] = [];
+        ctx.maxSessions = 3;
+        ctx.evict = session => {
+            evicted.push(session.name);
+            lobby.leave(session);
+            sessions.remove(session);
+        };
+        const a = driving({ name: 'Ann', connId: 'a' });
+        const b = driving({ name: 'Ben', connId: 'b' });
+        driving({ name: 'Cy', connId: 'c' });
+        drop(b.transport, 2000);
+        drop(a.transport, 5000);
+        // Full: the fourth takes Ben's place (gone since 2000), Ann waits on
+        const d = join({ name: 'Dee', connId: 'd' });
+        expect(d.session).toBeTruthy();
+        expect(evicted).toEqual(['Ben']);
+        expect(sessions.size).toBe(3);
+        expect(lobby.playerCount()).toBe(3);
+        // Ann can still come back
+        expect(join({ sessionToken: a.transport.of('welcome')[0].sessionToken, connId: 'a' }).resumed).toBe(true);
+        // Everyone connected: a new player is turned away as full
+        const transport = new FakeTransport();
+        expect(acceptHelloResult(transport, hello({ name: 'Eve', connId: 'e' }), ctx)).toBeNull();
+        expect(transport.of('reject')[0]).toEqual(expect.objectContaining({ reason: 'full' }));
+        expect(sessions.size).toBe(3);
+    });
+
+    it('turns a new session away when its address is over budget, a resume still works', () => {
+        const a = driving();
+        drop(a.transport, 1000);
+        ctx.admitNewSession = () => false;
+        const transport = new FakeTransport();
+        expect(acceptHelloResult(transport, hello({ connId: 'other' }), ctx)).toBeNull();
+        expect(transport.of('reject')[0]).toEqual(expect.objectContaining({ reason: 'full' }));
+        expect(join({ sessionToken: a.transport.of('welcome')[0].sessionToken }).resumed).toBe(true);
     });
 });

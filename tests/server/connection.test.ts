@@ -13,9 +13,10 @@ class FakeWs {
     readonly sent: { data: string | Uint8Array; at: number }[] = [];
     closed: { code?: number; at: number } | null = null;
     pings = 0;
+    lastPing: Buffer | null = null;
     send(data: string | Uint8Array): void { this.sent.push({ data, at: performance.now() }); }
     close(code?: number): void { this.closed = { code, at: performance.now() }; this.readyState = 3; }
-    ping(): void { this.pings++; }
+    ping(payload: Buffer): void { this.pings++; this.lastPing = payload; }
     terminate(): void { this.readyState = 3; }
 }
 
@@ -84,5 +85,29 @@ describe('SocketConnection', () => {
         connection.dispose();
         vi.advanceTimersByTime(500);
         expect(handled).toBe(0);
+    });
+
+    it('measures the round trip only from the pong of its own ping', () => {
+        const ws = new FakeWs();
+        const connection = new SocketConnection(ws as unknown as WebSocket, new TrafficMeter(), null);
+        // Nothing asked: an unsolicited pong does not count
+        expect(connection.pongRtt(Buffer.alloc(8), 1000)).toBeNull();
+        connection.ping(1000);
+        const payload = ws.lastPing!;
+        expect(payload).toHaveLength(8);
+        // A forged payload (the old scheme: the client echoes a clock time,
+        // here NaN or a time far in the past) answers no ping
+        const forged = Buffer.alloc(8);
+        forged.writeDoubleLE(Number.NaN);
+        expect(connection.pongRtt(forged, 1080)).toBeNull();
+        forged.writeDoubleLE(1);
+        expect(connection.pongRtt(forged, 1080)).toBeNull();
+        expect(connection.pongRtt(Buffer.alloc(4), 1080)).toBeNull();
+        // The real pong: the time since the ping, once
+        expect(connection.pongRtt(payload, 1080)).toBe(80);
+        expect(connection.pongRtt(payload, 1090)).toBeNull();
+        // A pong after a long stall is capped
+        connection.ping(2000);
+        expect(connection.pongRtt(ws.lastPing!, 60_000)).toBe(10_000);
     });
 });

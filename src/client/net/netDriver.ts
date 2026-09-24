@@ -40,8 +40,10 @@ export class NetDriver extends NetClient {
         if (!p || p.tick < 0) return false;
         if (p.car !== vehicle.car) p.setCar(vehicle.car);
         const frozen = state.isModalOpen || isWebGLContextLost();
-        const flags = (frozen ? INPUT_FROZEN : 0) | (typeof document !== 'undefined' && document.hidden ? INPUT_HIDDEN : 0);
-        if (frozen) stopInput(p.car.state, this.input);
+        const hidden = typeof document !== 'undefined' && document.hidden;
+        const flags = (frozen ? INPUT_FROZEN : 0) | (hidden ? INPUT_HIDDEN : 0);
+        // The server stops a frozen or hidden car too (Room.takeInput)
+        if (frozen || hidden) stopInput(p.car.state, this.input);
         else inputManager.sampleTick(this.input);
         return this.tickWith(this.input, flags);
     }

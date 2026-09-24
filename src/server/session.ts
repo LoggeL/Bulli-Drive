@@ -26,6 +26,14 @@ export const INPUT_BURST = 30;
 export const FLOOD_RATE = 240;
 export const FLOOD_WINDOW_MS = 2000;
 export const INVALID_LIMIT = 10;
+// JSON messages (everything but inputs): a token bucket of 20 per second
+// with a burst of 40. A real client sends a handful per second at most
+// (clock pings, honk, shots); more is dropped, and a sustained flood kicks
+// like an input flood. Holds for every message type, also future ones
+// without a limit of their own.
+export const MESSAGE_RATE = 20;
+export const MESSAGE_BURST = 40;
+export const MESSAGE_FLOOD_RATE = 60;
 export const INVALID_WINDOW_MS = 10_000;
 const RTT_SAMPLES = 5;
 
@@ -65,6 +73,13 @@ export class Session {
     private floodWindowStart = -1;
     private floodCount = 0;
     private readonly invalidAt: number[] = [];
+    private messageTokens = MESSAGE_BURST;
+    private messageRefillAt = -1;
+    private messageWindowStart = -1;
+    private messageCount = 0;
+    // An input packet arrived on this session: a player, not a bare socket
+    // (a session without one leaves at once when its socket closes)
+    sentInput = false;
     // Bytes sent, for metrics
     bytesOut = 0;
     kicked = false;
@@ -78,6 +93,7 @@ export class Session {
     }
 
     noteRtt(ms: number): void {
+        if (!Number.isFinite(ms) || ms < 0) return;
         this.rttSamples.push(ms);
         if (this.rttSamples.length > RTT_SAMPLES) this.rttSamples.shift();
         const sorted = [...this.rttSamples].sort((a, b) => a - b);
@@ -137,6 +153,26 @@ export class Session {
         this.inputRefillAt = nowMs;
         if (this.inputTokens < 1) return 'drop';
         this.inputTokens -= 1;
+        return 'ok';
+    }
+
+    /**
+     * Rate limit for JSON messages: 'ok', 'drop' (over the budget) or
+     * 'kick' (a sustained flood).
+     */
+    admitMessage(nowMs: number): 'ok' | 'drop' | 'kick' {
+        if (this.messageWindowStart < 0 || nowMs - this.messageWindowStart >= FLOOD_WINDOW_MS) {
+            const rate = this.messageWindowStart < 0 ? 0 : this.messageCount / ((nowMs - this.messageWindowStart) / 1000);
+            if (rate > MESSAGE_FLOOD_RATE) return 'kick';
+            this.messageWindowStart = nowMs;
+            this.messageCount = 0;
+        }
+        this.messageCount++;
+        if (this.messageRefillAt < 0) this.messageRefillAt = nowMs;
+        this.messageTokens = Math.min(MESSAGE_BURST, this.messageTokens + (nowMs - this.messageRefillAt) * MESSAGE_RATE / 1000);
+        this.messageRefillAt = nowMs;
+        if (this.messageTokens < 1) return 'drop';
+        this.messageTokens -= 1;
         return 'ok';
     }
 

@@ -2,7 +2,7 @@ import type { CoinData, PowerupData, ResumeState, RoomStateItems, ScoreboardEntr
 import { CAR_RESPAWN_SHIELD, CAR_SHIELD } from '../../shared/net/codec.js';
 import {
     COIN_MAGNET_PICKUP_RADIUS, COIN_PICKUP_RADIUS, COIN_RESET_TICKS, COIN_VALUE, KILL_REWARD, MAX_HEALTH,
-    POWERUP_PICKUP_RADIUS, POWERUP_RESET_TICKS, POWERUP_TICKS, RAM_PAIR_COOLDOWN_TICKS, RESPAWN_SHIELD_DRIVE_TICKS,
+    POWERUP_PICKUP_RADIUS, POWERUP_RESET_TICKS, POWERUP_TICKS, RAM_MIN_ATTACK_SPEED, RAM_PAIR_COOLDOWN_TICKS, RESPAWN_SHIELD_DRIVE_TICKS,
     POWERUP_TYPE_IDS, RESPAWN_SHIELD_MAX_TICKS, RESPAWN_SHIELD_MOVE_SPEED, RESPAWN_TICKS, SHOT_COOLDOWN_TICKS, SHOT_RANGE,
     isPowerupType, ramDamage, shotDamage
 } from '../../shared/party/rules.js';
@@ -23,6 +23,15 @@ interface Item<T> {
     data: T;
     // Tick the item comes back, -1 while it is there
     resetTick: number;
+}
+
+// Towards the other car at least RAM_MIN_ATTACK_SPEED at the start of the
+// tick (the direction between the two cars after the contact)
+function drivesAt(attacker: PartyMemberState, from: { x: number; z: number }, to: { x: number; z: number }): boolean {
+    const dx = to.x - from.x, dz = to.z - from.z;
+    const d = Math.hypot(dx, dz);
+    if (!(d > 1e-6)) return false;
+    return (attacker.tickStartVx * dx + attacker.tickStartVz * dz) / d >= RAM_MIN_ATTACK_SPEED;
 }
 
 export class PartyRoom extends Room {
@@ -135,6 +144,8 @@ export class PartyRoom extends Room {
             mods.superJump = powerupActive(state, 'jump', tick);
             mods.ghost = powerupActive(state, 'ghost', tick);
             mods.shield = powerupActive(state, 'shield', tick) || state.respawnShield;
+            state.tickStartVx = car.state.vx;
+            state.tickStartVz = car.state.vz;
         }
     }
 
@@ -156,6 +167,9 @@ export class PartyRoom extends Room {
             const attacker = this.members.get(ev.carImpactId);
             const attackerState = attacker && this.party.get(attacker.id);
             if (!attacker || !attackerState || !attacker.alive || !attacker.car?.mods.mega || attacker.idle) continue;
+            // Only a Mega car that drives into its target rams: parked, or
+            // hit by a car driving into it, it deals no damage
+            if (!drivesAt(attackerState, attacker.car.state, car.state)) continue;
             const damage = ramDamage(ev.carImpact, car.mods.mega);
             if (damage <= 0) continue;
             const last = targetState.rammedBy.get(attacker.id);
@@ -170,7 +184,8 @@ export class PartyRoom extends Room {
         for (const m of this.orderedMembers) {
             const car = m.car;
             const state = this.party.get(m.id);
-            if (!car || !m.alive || !state) continue;
+            // An idle ghost (background, frozen, gone) collects nothing
+            if (!car || !m.alive || !state || m.idle) continue;
             const x = car.state.x, z = car.state.z;
             for (const item of this.powerupItems) {
                 const p = item.data;
