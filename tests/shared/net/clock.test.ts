@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ClockSync } from '../../../src/shared/net/clock.js';
 import { TICK_MS } from '../../../src/shared/net/constants.js';
-import { LeadControl, RESYNC_TICKS } from '../../../src/shared/net/leadControl.js';
+import { EARLY_JUMP_TICKS, LeadControl, MAX_LATE_MARGIN_TICKS, RESYNC_TICKS } from '../../../src/shared/net/leadControl.js';
 import { mulberry32 } from '../../../src/shared/math/rng.js';
 
 // Clock sync (3.7) and lead control (8.3), docs/phase-1b-design.md 15.1.
@@ -97,6 +97,69 @@ describe('LeadControl', () => {
         const jumped = lead.lead;
         expect(lead.onSnapshot(-(RESYNC_TICKS + 4), 1, 1050, 40)).toBe(false);
         expect(lead.lead).toBe(jumped);
+    });
+
+    it('keeps the lead a stall needed instead of taking it back as a clock jump (20.5)', () => {
+        // Found with the bots under netsim 150/30/3 TCP: an 18-tick raise made
+        // the next reports 18 ticks early, which counted as a clock jump; the
+        // lead swung between 7 and 27 ticks and a third of the inputs came late
+        const lead = new LeadControl();
+        lead.start(150, 3);
+        // 75 ms one way (4.5 ticks) plus the buffer of 3
+        expect(lead.lead).toBeCloseTo(7.5, 9);
+        // A stall: the inputs came 15 ticks late, 18 short of the buffer
+        expect(lead.onSnapshot(-15, 3, 1000, 150)).toBe(true);
+        expect(lead.lead).toBeCloseTo(25.5, 9);
+        // Now they come 18 ticks early: 21 slow steps of 5 % of the 3 ticks
+        // between snapshots, no jump back
+        let t = 2000;
+        for (let i = 0; i < 21; i++) expect(lead.onSnapshot(21, 3, t += 50, 150)).toBe(false);
+        expect(lead.lead).toBeCloseTo(25.5 - 21 * 0.15, 6);
+        // Early far beyond what the stall added: the clock jumped after all
+        lead.onSnapshot(3 + 40, 3, t += 50, 150);
+        expect(lead.lead).toBeCloseTo(25.5 - 21 * 0.15 - 40, 6);
+    });
+
+    it('makes up any lateness at once, and lets early reports count as a clock jump only past the margin', () => {
+        expect(MAX_LATE_MARGIN_TICKS).toBe(40);
+        const lead = new LeadControl();
+        lead.start(100, 1);
+        // 50 ms one way (3 ticks) plus the buffer of 1
+        expect(lead.lead).toBeCloseTo(4, 9);
+        let t = 0;
+        // The clock offset was 50 ticks off at the start: 52 short of the
+        // buffer, made up in one go (a cap here left a car without inputs
+        // for seconds in an e2e run)
+        lead.onSnapshot(1 - 52, 1, t += 1000, 100);
+        expect(lead.lead).toBeCloseTo(4 + 52, 9);
+        // Early by 50 now counts as coming down slowly: the margin is 40
+        // (capped), so up to 16 + 40 = 56 ticks early is no clock jump
+        const raised = lead.lead;
+        lead.onSnapshot(1 + 50, 1, t += 1000, 100);
+        expect(lead.lead).toBeCloseTo(raised - 0.15, 9);
+        // Early by 60: past the margin, a clock jump
+        lead.onSnapshot(1 + 60, 1, t += 1000, 100);
+        expect(lead.lead).toBeCloseTo(raised - 0.15 - 60, 9);
+    });
+
+    it('never gets stuck late when the inputs come in bursts (20.5)', () => {
+        const lead = new LeadControl();
+        lead.start(40, 2);
+        let t = 0;
+        // A stall raised the lead by 20, and the inputs then arrived 30 ticks early
+        lead.onSnapshot(-18, 2, t += 1000, 40);
+        lead.onSnapshot(30, 2, t += 1000, 40);
+        // Now the page renders slowly and sends its inputs in bursts; the
+        // report holds only the latest of them, 8 ticks short. Late reports
+        // keep raising the lead until the bursts are covered (a cap on the
+        // reported slack stopped here and left the car without inputs)
+        let slack = -6;
+        for (let i = 0; i < 20 && slack < 1; i++) {
+            const before = lead.lead;
+            lead.onSnapshot(slack, 2, t += 1000, 40);
+            slack += lead.lead - before;
+        }
+        expect(slack).toBeGreaterThanOrEqual(1);
     });
 
     it('restarts when no input arrives for a second', () => {

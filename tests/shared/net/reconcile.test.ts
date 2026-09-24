@@ -83,14 +83,50 @@ describe('prediction against the server', () => {
     });
 
     it('at the exit criterion (RTT 150 ms, 30 ms jitter, 3 % loss, TCP): mean correction under 10 cm, snaps rare', () => {
-        const { client, errors, from } = measure({ latencyMs: 75, jitterMs: 30, loss: 0.03 }, 30, 5);
+        const { client, errors, from, missed } = measure({ latencyMs: 75, jitterMs: 30, loss: 0.03 }, 30, 5);
         const mean = errors.reduce((a, b) => a + b, 0) / errors.length;
         expect(mean).toBeLessThan(0.1);
+        // The lead covers the stalls (20.5): before the fix a third of the
+        // inputs came too late, and the mean was up to 11 cm
+        expect(missed).toBeLessThan(0.05 * 30 * 60);
         // A lost packet holds everything behind it for 200 ms + RTT (head of
         // line): past the 250 ms of input repeat the server stops the car,
         // which can take more than a smooth correction (20.2)
         const snaps = client.results.filter(r => r.result.snapped && r.tick > from).length;
         expect(snaps).toBeLessThanOrEqual(Math.ceil(errors.length * 0.01));
+    });
+
+    it('behind 150/30/3, a page that stalled while joining is never idle once it runs smoothly (20.5)', () => {
+        // Found in loaded e2e runs: a page that hangs for 1.5 s every 2 s
+        // (another page loading next to it) sends nothing and, with the
+        // netsim in the page, delivers nothing; its inputs arrive 90 ticks
+        // late. Raising the lead for that inflated it to 100-180 ticks, the
+        // jump back left C waiting and the car an idle ghost for seconds
+        for (const seed of [1, 3]) {
+            server?.dispose();
+            server = new TestServer();
+            const client = new TestClient(server, 'stall', 'bulli', { latencyMs: 75, jitterMs: 30, loss: 0.03 }, seed);
+            client.script = () => input(0);
+            let t = 0;
+            const step = (ms: number, stalled: (t: number) => boolean, each?: () => void) => {
+                const end = t + ms;
+                while (t < end) {
+                    t += 4;
+                    server.advance(t);
+                    if (!stalled(t)) client.pump();
+                    each?.();
+                }
+            };
+            client.sendJson({ type: 'ready' });
+            step(10_000, at => at % 2000 < 1500);
+            const member = client.session.member!;
+            let idle = 0;
+            step(3000, () => false, () => { if (member.idle) idle++; });
+            const missed = client.net.stats.missedInputs;
+            step(7000, () => false, () => { if (member.idle) idle++; });
+            expect(idle, `seed ${seed}`).toBe(0);
+            expect(client.net.stats.missedInputs - missed, `seed ${seed}`).toBeLessThan(0.05 * 420);
+        }
     });
 
     it('jumps back on track after the client clock jumps', () => {
@@ -242,8 +278,9 @@ describe('smoothing on screen', () => {
             expect(client.net.offset.active).toBe(false);
             expect(Math.max(...probe.jumps.slice(jumpsFrom))).toBeLessThan(1e-9);
         }
-        // Without the offset the picture would have jumped by metres
-        expect(rawMax).toBeGreaterThan(1);
+        // Without the offset the picture would have jumped (by metres before
+        // the lead covered the stalls, 20.5; now by decimetres)
+        expect(rawMax).toBeGreaterThan(0.25);
     });
 
     it('a car of the contact set that steers unpredictably moves smoother than its corrections', () => {

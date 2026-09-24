@@ -23,6 +23,9 @@ import type { SimWorld } from '../world/colliders.js';
 export const MAX_TICKS_PER_FRAME = 20;
 // Pongs before C starts: the very first may have waited in a busy page
 export const START_AFTER_PONGS = 3;
+// A gap this long between two pumps is a stall of the client itself (a
+// busy page, GC): the late reports that follow are not the network's (20.5)
+export const OWN_STALL_MS = 150;
 
 export interface NetStats {
     snapshots: number;
@@ -46,6 +49,8 @@ export interface NetStats {
     // to smooth (a snap of the picture)
     offsetMax: number;
     renderSnaps: number;
+    // Stalls of the client itself (gaps between pumps over OWN_STALL_MS)
+    ownStalls: number;
 }
 
 export function createNetStats(): NetStats {
@@ -53,7 +58,7 @@ export function createNetStats(): NetStats {
         snapshots: 0, corrections: 0, correctionSum: 0, correctionMax: 0,
         contactCorrections: 0, contactCorrectionSum: 0, snaps: 0, replayedTicks: 0,
         lostInputs: 0, resyncs: 0, exactMatches: 0, missedInputs: 0, lastSlack: 0, frames: 0, bytesOut: 0,
-        offsetMax: 0, renderSnaps: 0
+        offsetMax: 0, renderSnaps: 0, ownStalls: 0
     };
 }
 
@@ -91,6 +96,8 @@ export class NetClient {
     // Since when the connection is gone (ms), -1 while connected: the own
     // car is predicted OFFLINE_PREDICT_MS further, then held (11.1)
     suspendedAt = -1;
+    // Time the client last ran (a pump or a snapshot), -1 before the first
+    private lastActiveAt = -1;
     // Server tick at local time 0 as the clock said at the last (re)start.
     // C follows this anchor plus the lead, not the clock's later estimates,
     // so the clock's own corrections do not move C; the lead control
@@ -235,6 +242,7 @@ export class NetClient {
         // Disconnected: a moment more of prediction, then the car holds
         if (this.suspendedAt >= 0 && now - this.suspendedAt > OFFLINE_PREDICT_MS) return this.renderAlpha(now);
         this.stats.frames++;
+        this.noteActivity(now);
         if (p.tick < 0) this.resync(now);
         const target = this.targetTick(now);
         if (target - p.tick > MAX_TICKS_PER_FRAME) {
@@ -248,6 +256,16 @@ export class NetClient {
             n++;
         }
         return Math.max(0, Math.min(1, target - p.tick));
+    }
+
+    // A long gap since the client last ran is a stall of its own: the late
+    // reports that follow say nothing about the network (20.5)
+    private noteActivity(now: number): void {
+        if (this.lastActiveAt >= 0 && now - this.lastActiveAt > OWN_STALL_MS) {
+            this.lead.holdAfterStall(now, this.clock.rtt, now - this.lastActiveAt);
+            this.stats.ownStalls++;
+        }
+        this.lastActiveAt = now;
     }
 
     /** One tick with this input (and clientFlags); returns whether the own car was simulated. */
@@ -397,6 +415,7 @@ export class NetClient {
     // The reconciliation proper, without the picture
     private reconcileOnly(snap: Snapshot, now: number): ReconcileResult | null {
         const p = this.prediction!;
+        this.noteActivity(now);
         this.stats.snapshots++;
         this.stats.missedInputs += snap.missedInputs;
         if (snap.inputSlack !== null) this.stats.lastSlack = snap.inputSlack;

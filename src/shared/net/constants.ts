@@ -14,8 +14,12 @@ export const SNAPSHOT_RATE = TICK_RATE / SNAPSHOT_EVERY;
 // Older inputs sent again in every packet, and the most per packet
 export const INPUT_REDUNDANCY = 2;
 export const INPUT_MAX_PER_PACKET = 8;
-// Inputs further ahead of the server tick are dropped (broken clock or tampering)
-export const INPUT_MAX_AHEAD = 30;
+// Inputs further ahead of the server tick are dropped (broken clock or
+// tampering). Above the earliest a client's inputs arrive before its lead
+// control takes that for a clock jump (buffer + EARLY_JUMP_TICKS +
+// MAX_LATE_MARGIN_TICKS in leadControl.ts); below the 64 slots of the
+// server's input ring (20.5)
+export const INPUT_MAX_AHEAD = 60;
 // Without new input the server repeats the last one this long (250 ms),
 // then stops the car
 export const INPUT_REPEAT_TICKS = 15;
