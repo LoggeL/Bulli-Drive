@@ -194,6 +194,14 @@ function createTerrain(step: number): { mesh: THREE.Mesh; ground: GroundSampler 
     return { mesh, ground: meshSampler(xs, heights) };
 }
 
+// The rendered terrain mesh, once built (things laid on the visible ground)
+let renderedGround: GroundSampler | null = null;
+
+/** Height of the rendered terrain mesh at (x, z) (the exact terrain before it is built). */
+export function renderedGroundHeight(x: number, z: number): number {
+    return renderedGround ? renderedGround(x, z) : visualTerrainHeight(x, z);
+}
+
 /** 1 when the sun reaches (x, y, z) over the rendered ground, 0 behind a hill (soft over a few meters). */
 function sunOver(ground: GroundSampler, x: number, y: number, z: number): number {
     const d = SUN_DIRECTION;
@@ -248,6 +256,7 @@ export function createEnvironment(treeData: TreeData[]) {
     group.add(terrain.mesh);
     // Scenery stands on the rendered mesh, not on the exact height
     const ground = terrain.ground;
+    renderedGround = ground;
 
     const oaks: TreeSpot[] = [];
     const cypresses: TreeSpot[] = [];

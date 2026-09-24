@@ -240,6 +240,10 @@
                         <span class="mode-name">FREE ROAM</span>
                         <span class="mode-desc">Just drive and bump</span>
                     </button>
+                    <button type="button" class="mode-option" role="radio" aria-checked="false" data-room="race">
+                        <span class="mode-name">RACE</span>
+                        <span class="mode-desc">Laps, sprints, bots</span>
+                    </button>
                 </div>
             </div>
             <button id="start-btn">
@@ -338,6 +342,7 @@
             <button id="btn-shoot" class="control-btn action shoot party-only" type="button" data-key="e" aria-label="Shoot projectile">
                 <svg class="ui-icon" aria-hidden="true"><use href="#icon-target"></use></svg>
             </button>
+            <button id="btn-brake" class="control-btn action brake race-only" type="button" aria-label="Brake">BRAKE</button>
             <button id="btn-flip" class="control-btn action flip" type="button" data-key="space" data-mode="jump" aria-label="Jump and flip vehicle">
                 <svg class="ui-icon" aria-hidden="true"><use href="#icon-jump"></use></svg>
             </button>
@@ -369,6 +374,88 @@
 
         <div id="powerup-panel" class="party-only"></div>
 
+        <!-- Race (docs/phase-2-design.md, 17.2; src/client/race) -->
+        <div id="race-hud" class="race-only" role="group" aria-label="Race status" hidden>
+            <span id="race-pos" aria-label="Position">P1/1</span>
+            <div class="race-hud-main">
+                <span id="race-time" role="timer">0:00.000</span>
+                <span class="race-hud-sub"><span id="race-lap"></span><span id="race-split"></span></span>
+            </div>
+            <div id="race-next" aria-hidden="true">
+                <svg class="race-arrow" viewBox="0 0 24 24"><path d="M12 3 20 19 12 15 4 19z"/></svg>
+                <span id="race-next-dist"></span>
+            </div>
+            <button id="race-retry" type="button" aria-label="Retry the run" hidden>
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-recover"></use></svg>
+            </button>
+        </div>
+        <div id="race-countdown" class="race-only" aria-live="assertive" hidden>
+            <div class="race-lights" aria-hidden="true"><span></span><span></span><span></span></div>
+            <div id="race-count-label"></div>
+            <div class="race-launch" aria-hidden="true"><div class="race-launch-window"></div><div class="race-launch-fill"></div></div>
+        </div>
+        <div id="race-banner" class="race-only" role="status" hidden></div>
+        <button id="race-go" class="race-only" type="button" hidden>TAP ON<br>GREEN</button>
+        <div id="race-spectate" class="race-only" hidden>
+            <span>SPECTATING – next race after this one</span>
+            <button type="button" class="race-btn secondary" data-race-action="own">START OWN RACE</button>
+        </div>
+        <section id="race-lobby" class="race-sheet race-only" aria-labelledby="race-lobby-title" hidden>
+            <h2 id="race-lobby-title">RACE LOBBY</h2>
+            <div class="race-sheet-body">
+                <canvas id="race-track-preview" width="200" height="120" role="img" aria-label="Track map"></canvas>
+                <div class="race-field">
+                    <span class="input-label">TRACK</span>
+                    <div class="race-segments" role="radiogroup" aria-label="Track">
+                        <button type="button" class="race-segment" role="radio" data-track="downtown-loop">DOWNTOWN LOOP<small>3 laps</small></button>
+                        <button type="button" class="race-segment" role="radio" data-track="hill-sprint">HILL SPRINT<small>sprint</small></button>
+                    </div>
+                </div>
+                <div class="race-field race-bots">
+                    <span class="input-label">BOTS</span>
+                    <div class="race-segments" role="radiogroup" aria-label="Bot level">
+                        <button type="button" class="race-segment" role="radio" data-bot="easy">EASY</button>
+                        <button type="button" class="race-segment" role="radio" data-bot="medium">MEDIUM</button>
+                        <button type="button" class="race-segment" role="radio" data-bot="hard">HARD</button>
+                    </div>
+                </div>
+                <div class="race-field">
+                    <span class="input-label">CAR</span>
+                    <div class="race-cars">
+                        <button type="button" class="race-car" data-car="bulli" aria-label="Bulli"><img src="/icons/car-bulli.webp" alt="" width="52" height="32" draggable="false"></button>
+                        <button type="button" class="race-car" data-car="beetle" aria-label="Beetle"><img src="/icons/car-beetle.webp" alt="" width="52" height="32" draggable="false"></button>
+                        <button type="button" class="race-car" data-car="pickup" aria-label="Pickup"><img src="/icons/car-pickup.webp" alt="" width="52" height="32" draggable="false"></button>
+                        <button type="button" class="race-car" data-car="sport" aria-label="Sport"><img src="/icons/car-sport.webp" alt="" width="52" height="32" draggable="false"></button>
+                        <button type="button" class="race-car" data-car="jeep" aria-label="Jeep"><img src="/icons/car-jeep.webp" alt="" width="52" height="32" draggable="false"></button>
+                    </div>
+                </div>
+                <div class="race-field race-drivers-field">
+                    <span class="input-label">DRIVERS</span>
+                    <ul id="race-drivers"></ul>
+                </div>
+            </div>
+            <p id="race-lobby-status" role="status"></p>
+            <div class="race-actions">
+                <button type="button" id="race-ready" class="race-btn primary" aria-pressed="false">READY</button>
+                <button type="button" id="race-lobby-switch" class="race-btn secondary" data-race-action="switch">TIME TRIAL</button>
+            </div>
+        </section>
+        <section id="race-results" class="race-sheet race-only" aria-labelledby="race-results-title" hidden>
+            <h2 id="race-results-title">RESULTS</h2>
+            <div class="race-sheet-body">
+                <p id="race-record" hidden></p>
+                <table id="race-table">
+                    <thead><tr><th>POS</th><th>DRIVER</th><th>CAR</th><th>TIME</th><th class="race-col-lap">BEST LAP</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <p id="race-results-status" role="status"></p>
+            <div class="race-actions">
+                <button type="button" id="race-rematch" class="race-btn primary" data-race-action="rematch">REMATCH</button>
+                <button type="button" id="race-next-track" class="race-btn secondary" data-race-action="next">NEXT TRACK</button>
+            </div>
+        </section>
+
         <div class="controls-hint" role="group" aria-label="Keyboard controls">
             <div class="hint-grid">
                 <div class="hint-row">
@@ -392,7 +479,7 @@
                     <svg class="ui-icon hint-icon" aria-hidden="true"><use href="#icon-speed"></use></svg>
                     <span class="sr-only">Boost</span>
                 </div>
-                <div class="hint-row">
+                <div class="hint-row jump-hint">
                     <div class="key">Q</div>
                     <svg class="ui-icon hint-icon" aria-hidden="true"><use href="#icon-jump"></use></svg>
                     <span class="sr-only">Jump and flip</span>
@@ -457,6 +544,14 @@
                 <button type="button" class="room-option" data-room="freeroam">
                     <span class="mode-name">FREE ROAM</span>
                     <span class="mode-desc">Just drive and bump</span>
+                </button>
+                <button type="button" class="room-option" data-room="race">
+                    <span class="mode-name">RACE</span>
+                    <span class="mode-desc">Laps, sprints, bots</span>
+                </button>
+                <button type="button" class="room-option" data-room="timetrial">
+                    <span class="mode-name">TIME TRIAL</span>
+                    <span class="mode-desc">Alone against your ghost</span>
                 </button>
             </div>
             <div id="scoreboard-panel" class="party-only" hidden>

@@ -58,6 +58,18 @@ export function touchDriveAxes(x: number, y: number, autoGas: boolean, out: Driv
 }
 
 /**
+ * Touch in a race (docs/phase-2-design.md, 17.5): the stick only steers,
+ * the BRAKE button brakes (and reverses at a standstill), auto-gas drives,
+ * or without it the stick pushed up.
+ */
+export function raceTouchAxes(x: number, y: number, autoGas: boolean, brake: boolean, out: DriveAxes): DriveAxes {
+    out.steer = -x + 0;
+    out.brake = brake ? 1 : 0;
+    out.throttle = brake ? 0 : autoGas ? 1 : Math.max(0, -y);
+    return out;
+}
+
+/**
  * Held buttons plus a pulse latch: a press between two ticks reaches the
  * next tick even when the button was already released again.
  */
@@ -111,6 +123,12 @@ export class InputManager {
     private autoGasArmed = false;
     // Whether the touch HUD is in use (phones, tablets)
     touchUi = false;
+    // A race room: the touch layout of 17.5. Auto-gas there waits for the
+    // race client instead of the stick: a tap on the GO zone or the tick
+    // after green arms it (race/RaceClient.ts), so the launch stays a skill
+    private raceTouchOn = false;
+    private raceGasArmed = false;
+    private brakeHeld = false;
     // Gamepad, polled once per frame
     private readonly pad: PadState = createPadState();
     private readonly padLatch = new ButtonLatch();
@@ -177,7 +195,32 @@ export class InputManager {
     }
 
     get autoGasActive(): boolean {
-        return this.touchUi && this.autoGasEnabled && this.autoGasArmed;
+        return this.touchUi && this.autoGasEnabled && (this.raceTouchOn ? this.raceGasArmed : this.autoGasArmed);
+    }
+
+    get raceTouch(): boolean {
+        return this.raceTouchOn;
+    }
+
+    /** Race touch layout on or off (a race room or not); disarms the race auto-gas. */
+    setRaceTouch(on: boolean): void {
+        this.raceTouchOn = on;
+        this.raceGasArmed = false;
+        this.brakeHeld = false;
+    }
+
+    /** Race auto-gas on (the GO tap, or green passed) or off (a new countdown). */
+    armRaceGas(armed: boolean): void {
+        this.raceGasArmed = armed;
+    }
+
+    get raceGasOn(): boolean {
+        return this.raceGasArmed;
+    }
+
+    // The BRAKE button of the race layout
+    touchBrake(down: boolean): void {
+        this.brakeHeld = down;
     }
 
     // Stick, touch buttons and auto-gas back to rest, e.g. on death/respawn
@@ -188,6 +231,7 @@ export class InputManager {
         this.flipHeldTicks = 0;
         this.touchLatch.clear();
         this.autoGasArmed = false;
+        this.brakeHeld = false;
     }
 
     // ---- Gamepad ----
@@ -224,9 +268,11 @@ export class InputManager {
         let axes: DriveAxes;
         const padActive = this.pad.steer !== 0 || this.pad.throttle > 0 || this.pad.brake > 0;
         const keysActive = this.keys.has('up') || this.keys.has('down') || this.keys.has('left') || this.keys.has('right');
-        const touchActive = this.touchUi && (this.stickActive || (this.autoGasActive && !padActive && !keysActive));
+        const touchActive = this.touchUi && (this.stickActive || this.brakeHeld || (this.autoGasActive && !padActive && !keysActive));
         if (touchActive) {
-            axes = touchDriveAxes(this.stickX, this.stickY, this.autoGasActive, this.touchAxes);
+            axes = this.raceTouchOn
+                ? raceTouchAxes(this.stickX, this.stickY, this.autoGasActive, this.brakeHeld, this.touchAxes)
+                : touchDriveAxes(this.stickX, this.stickY, this.autoGasActive, this.touchAxes);
         } else if (padActive) {
             axes = this.pad;
         } else {

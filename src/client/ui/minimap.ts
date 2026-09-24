@@ -1,5 +1,7 @@
 import { state } from '../state.js';
 import type { CityData } from '../../shared/protocol.js';
+import type { TrackDef } from '../../shared/race/types.js';
+import { drawTrack, fitFrame, mapHeading, toMap, type MapFrame } from '../race/trackMap.js';
 import { CITY_LAYOUT } from '../../shared/constants.js';
 import { blockCenter, CITY_BOUNDS, PARK_BLOCK, PLAZA_BLOCK } from '../../shared/world/cityGen.js';
 
@@ -420,9 +422,119 @@ export function initMinimap(city: CityData) {
     updateMinimap(performance.now());
 }
 
+// ---- Track mode (docs/phase-2-design.md, 17.3) ----
+// In a race the map shows the whole track, north up: the racing line as a
+// band, the gates as bars (the next one bright), start and finish
+// chequered, every racer as a dot in their colour, the own car as an
+// arrow and the time trial ghost as a hollow circle.
+
+// The track fits into the square inside the round panel
+const TRACK_PADDING = 30;
+
+interface TrackMode {
+    track: TrackDef;
+    frame: MapFrame;
+    layer: HTMLCanvasElement | null;
+    layerGate: number;
+}
+
+let trackMode: TrackMode | null = null;
+// Set by the race client every frame
+export const minimapRace = { nextGate: -1, ghost: null as { x: number; z: number } | null };
+
+/** Track mode on (a race room) or off (null). */
+export function setMinimapTrack(track: TrackDef | null): void {
+    if (!track) {
+        trackMode = null;
+        lastUpdate = -Infinity;
+        return;
+    }
+    if (trackMode?.track.id === track.id) return;
+    trackMode = { track, frame: fitFrame(track.minimap, MAP_SIZE, MAP_SIZE, TRACK_PADDING), layer: null, layerGate: -2 };
+    lastUpdate = -Infinity;
+}
+
+// The static part (line and gates) is drawn once per track and next gate
+function trackLayer(mode: TrackMode): HTMLCanvasElement | null {
+    if (mode.layer && mode.layerGate === minimapRace.nextGate) return mode.layer;
+    const layer = mode.layer ?? document.createElement('canvas');
+    layer.width = Math.round(MAP_SIZE * pixelRatio);
+    layer.height = Math.round(MAP_SIZE * pixelRatio);
+    const ctx = layer.getContext('2d');
+    if (!ctx) return null;
+    ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    ctx.clearRect(0, 0, MAP_SIZE, MAP_SIZE);
+    drawTrack(ctx, mode.frame, mode.track, {
+        band: 3, lineColor: 'rgba(245, 166, 35, 0.95)', gateColor: 'rgba(255, 248, 231, 0.55)', nextGate: minimapRace.nextGate
+    });
+    mode.layer = layer;
+    mode.layerGate = minimapRace.nextGate;
+    return layer;
+}
+
+function drawTrackMinimap(ctx: CanvasRenderingContext2D, mode: TrackMode): void {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(RADAR_CENTER, RADAR_CENTER, RADAR_CENTER - 1.5, 0, Math.PI * 2);
+    ctx.clip();
+    if (backdropLayer) ctx.drawImage(backdropLayer, 0, 0, backdropLayer.width, backdropLayer.height, 0, 0, MAP_SIZE, MAP_SIZE);
+    const layer = trackLayer(mode);
+    if (layer) ctx.drawImage(layer, 0, 0, layer.width, layer.height, 0, 0, MAP_SIZE, MAP_SIZE);
+    const ghost = minimapRace.ghost;
+    if (ghost) {
+        const g = toMap(mode.frame, ghost.x, ghost.z);
+        ctx.strokeStyle = '#bfe3ff';
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.arc(g.px, g.py, 4, 0, Math.PI * 2);
+        ctx.stroke();
+    }
+    for (const id in state.remotePlayers) {
+        const remote = state.remotePlayers[id];
+        if (!remote.flipGroup.visible) continue;
+        const m = toMap(mode.frame, remote.group.position.x, remote.group.position.z);
+        ctx.fillStyle = colorToCss(remote.colorCode);
+        ctx.strokeStyle = '#fff8e7';
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        ctx.arc(m.px, m.py, 3.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+    }
+    const own = state.bulli;
+    if (own && own.flipGroup.visible) {
+        const m = toMap(mode.frame, own.group.position.x, own.group.position.z);
+        ctx.translate(m.px, m.py);
+        ctx.rotate(mapHeading(own.angle ?? 0));
+        ctx.fillStyle = colorToCss(own.colorCode);
+        ctx.strokeStyle = '#fff8e7';
+        ctx.lineWidth = 1.3;
+        ctx.beginPath();
+        ctx.moveTo(0, -7);
+        ctx.lineTo(5, 5);
+        ctx.lineTo(0, 2.5);
+        ctx.lineTo(-5, 5);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+    }
+    ctx.restore();
+    // The rim and the north marker at the top (north is always up here)
+    drawRadarOverlay(ctx, 0);
+}
+
 export function updateMinimap(now: number) {
     if (!canvas || !context || !staticLayer || now - lastUpdate < UPDATE_INTERVAL_MS) return;
     lastUpdate = now;
+    if (trackMode) {
+        const ctx = context;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+        drawTrackMinimap(ctx, trackMode);
+        ctx.globalAlpha = 1;
+        return;
+    }
 
     const ctx = context;
     ctx.setTransform(1, 0, 0, 1, 0, 0);

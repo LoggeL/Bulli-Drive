@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {
-    CAR_GHOST, CAR_IDLE, CAR_MEGA, CAR_RESPAWN_SHIELD, CAR_SHIELD, CAR_TURBO, type Snapshot
+    CAR_GHOST, CAR_IDLE, CAR_MEGA, CAR_RACE_GHOST, CAR_RESPAWN_SHIELD, CAR_SHIELD, CAR_TURBO, type Snapshot
 } from '../../shared/net/codec.js';
 import { AdaptiveDelay, createRemotePose, RemoteTrack, type RemotePose } from '../../shared/net/interpolation.js';
 import type { PredictedRemote } from '../../shared/net/prediction.js';
@@ -173,7 +173,8 @@ export function updateRemoteCars(dt: number, now: number, alpha: number): void {
 
         // Powerup looks and the idle grey from the flags
         const flags = view.flags;
-        remote.powerups.ghost.active = (flags & CAR_GHOST) !== 0;
+        // A race ghost (wrong way, finished, DNF) looks like the Ghost powerup
+        remote.powerups.ghost.active = (flags & (CAR_GHOST | CAR_RACE_GHOST)) !== 0;
         remote.powerups.shield.active = (flags & (CAR_SHIELD | CAR_RESPAWN_SHIELD)) !== 0;
         remote.powerups.size.active = (flags & CAR_MEGA) !== 0;
         remote.powerups.speed.active = (flags & CAR_TURBO) !== 0;

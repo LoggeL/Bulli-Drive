@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { state } from '../../src/client/state.js';
 import {
-    applySplashChoice, initModeSelector, initRoomMenu, preferredRoomKind, requestRoom, setCurrentRoom
+    applySplashChoice, initModeSelector, initRoomMenu, partyRulesActive, preferredRoomKind, requestRoom, setCurrentRoom
 } from '../../src/client/ui/roomMenu.js';
 
 // Party or Free Roam on the client (src/client/ui/roomMenu.ts,
@@ -16,7 +16,7 @@ import {
 // tests/server/lobby.test.ts and the bot test 'room switch'.
 
 const INDEX = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../index.html');
-const sent: Array<{ type: string; kind?: string }> = [];
+const sent: Array<{ type: string; kind?: string; fresh?: boolean }> = [];
 
 const option = (selector: string) => document.querySelector<HTMLButtonElement>(selector)!;
 const text = (id: string) => document.getElementById(id)!.textContent;
@@ -79,6 +79,52 @@ describe('the game mode', () => {
         setCurrentRoom({ id: 'party-1', kind: 'party', index: 1 });
         expect(document.body.classList.contains('room-party')).toBe(true);
         expect(text('room-chip-mode')).toBe('PARTY');
+    });
+
+    it('offers the race on the splash; a time trial played last shows as Race and stays a time trial', () => {
+        localStorage.setItem('bulli-room-kind', 'timetrial');
+        initModeSelector();
+        expect(option('.mode-option[data-room="race"]').getAttribute('aria-checked')).toBe('true');
+        expect(option('.mode-option[data-room="race"]').tabIndex).toBe(0);
+        setCurrentRoom({ id: 'timetrial-3', kind: 'timetrial', index: 3 });
+        applySplashChoice();
+        expect(sent).toEqual([]);
+        expect(preferredRoomKind()).toBe('timetrial');
+        // Picking RACE on the splash moves to a race
+        vi.advanceTimersByTime(2000);
+        option('.mode-option[data-room="race"]').click();
+        applySplashChoice();
+        expect(sent).toEqual([{ type: 'joinRoom', kind: 'race' }]);
+        setCurrentRoom({ id: 'race-1', kind: 'race', index: 1 });
+    });
+
+    it('shows the race HUD classes in races and time trials, without the Party rules', () => {
+        setCurrentRoom({ id: 'race-2', kind: 'race', index: 2 });
+        expect(document.body.classList.contains('room-race')).toBe(true);
+        expect(document.body.classList.contains('room-timetrial')).toBe(false);
+        expect(document.body.classList.contains('room-party')).toBe(false);
+        expect(text('room-chip-mode')).toBe('RACE');
+        expect(partyRulesActive()).toBe(false);
+        setCurrentRoom({ id: 'timetrial-4', kind: 'timetrial', index: 4 });
+        expect(document.body.classList.contains('room-race')).toBe(true);
+        expect(document.body.classList.contains('room-timetrial')).toBe(true);
+        expect(text('room-chip-mode')).toBe('TIME TRIAL');
+        setCurrentRoom({ id: 'party-1', kind: 'party', index: 1 });
+        expect(document.body.classList.contains('room-race')).toBe(false);
+        expect(partyRulesActive()).toBe(true);
+        setCurrentRoom({ id: 'freeroam-1', kind: 'freeroam', index: 1 });
+        expect(partyRulesActive()).toBe(false);
+    });
+
+    it('asks for a new race instance from a race room only with fresh (START OWN RACE)', () => {
+        setCurrentRoom({ id: 'race-1', kind: 'race', index: 1 });
+        vi.advanceTimersByTime(2000);
+        requestRoom('race');
+        expect(sent).toEqual([]);
+        requestRoom('race', { fresh: true });
+        expect(sent).toEqual([{ type: 'joinRoom', kind: 'race', fresh: true }]);
+        setCurrentRoom({ id: 'race-2', kind: 'race', index: 2 });
+        vi.advanceTimersByTime(2000);
     });
 
     it('switches from the chip menu, locked while it waits and for the 2 s cooldown', () => {

@@ -17,15 +17,23 @@ export function setWorldColliders(world: { trees: readonly TreeData[]; city: Cit
 }
 
 let cachedWorld: SimWorld | null = null;
+// A race room drives in its race world (map + track, race/RaceClient.ts)
+let worldOverride: SimWorld | null = null;
+
+/** The world of a race room (null: the map's own again). */
+export function setWorldOverride(world: SimWorld | null): void {
+    worldOverride = world;
+}
 let cachedTerrain: TerrainConfig | null = null;
 let cachedColliders: readonly ColliderInput[] | null = null;
 
 /**
  * The sim world for the current terrain and collider list. Built once and
  * rebuilt only when either changes (the list is set with the server's
- * world, before the first tick normally).
+ * world, before the first tick normally). In a race room: its race world.
  */
 export function simWorldFor(terrain: TerrainConfig, colliders: readonly ColliderInput[]): SimWorld {
+    if (worldOverride) return worldOverride;
     if (!cachedWorld || terrain !== cachedTerrain || colliders !== cachedColliders) {
         cachedWorld = createSimWorld(terrain, colliders, [], cityRoadGrid());
         cachedTerrain = terrain;

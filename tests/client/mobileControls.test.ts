@@ -137,6 +137,30 @@ describe('touch buttons', () => {
     });
 });
 
+describe('the race layout (docs/phase-2-design.md, 17.5)', () => {
+    it('BRAKE brakes while held; the stick pulled back only steers', () => {
+        inputManager.setRaceTouch(true);
+        try {
+            const stick = byId('joystick-move');
+            // Pulled back and to the left: no brake, just steering
+            pointer('pointerdown', stick, 1, CENTER.x - RADIUS, CENTER.y + RADIUS);
+            frames(30);
+            let input = tick();
+            expect(input.brake).toBe(0);
+            expect(input.steer).toBe(127);
+            pointer('pointerup', stick, 1);
+            pointer('pointerdown', byId('btn-brake'), 5);
+            input = tick();
+            expect(input.brake).toBe(255);
+            expect(input.throttle).toBe(0);
+            pointer('pointerup', byId('btn-brake'), 5);
+            expect(tick().brake).toBe(0);
+        } finally {
+            inputManager.setRaceTouch(false);
+        }
+    });
+});
+
 describe('the stick', () => {
     it('pulled down brakes, pushed up gives gas without auto-gas, to the left steers left', () => {
         // Auto-gas off (the AUTO button), so the stick alone decides

@@ -559,7 +559,8 @@ canvas {
 }
 
 /* Score Display */
-#score-container {
+#score-container,
+#race-hud {
     position: fixed;
     top: 1rem;
     left: 50%;
@@ -1280,7 +1281,8 @@ canvas {
     box-shadow: 0 0 25px rgba(245, 166, 35, 0.5);
 }
 
-.control-btn.action.shoot {
+.control-btn.action.shoot,
+.control-btn.action.brake {
     background: rgba(232, 69, 69, 0.25);
     border-color: rgba(232, 69, 69, 0.4);
 }
@@ -1348,7 +1350,8 @@ canvas {
         right: max(10px, env(safe-area-inset-right, 10px));
     }
 
-    #score-container {
+    #score-container,
+    #race-hud {
         top: 0.5rem;
         padding: 0.3rem 1rem;
     }
@@ -1392,7 +1395,8 @@ canvas {
         font-size: 0.9rem;
     }
 
-    #score-container {
+    #score-container,
+    #race-hud {
         top: max(0.5rem, env(safe-area-inset-top, 0.5rem));
     }
 
@@ -1479,7 +1483,8 @@ canvas {
 }
 
 /* Combined score and health capsule */
-#score-container {
+#score-container,
+#race-hud {
     position: fixed;
     top: max(1.25rem, env(safe-area-inset-top, 0px));
     left: 50%;
@@ -1861,7 +1866,8 @@ canvas {
     stroke-width: 1.8;
 }
 
-.control-btn.action.shoot {
+.control-btn.action.shoot,
+.control-btn.action.brake {
     right: 22px;
     bottom: 0;
     width: 88px;
@@ -1904,7 +1910,8 @@ canvas {
         display: none;
     }
 
-    #score-container {
+    #score-container,
+    #race-hud {
         top: max(0.65rem, env(safe-area-inset-top, 0px));
         width: clamp(190px, 27vw, 260px);
         min-height: 48px;
@@ -2019,7 +2026,8 @@ canvas {
         height: 142px;
     }
 
-    .control-btn.action.shoot {
+    .control-btn.action.shoot,
+    .control-btn.action.brake {
         right: 60px;
         width: 68px;
         height: 68px;
@@ -2053,7 +2061,8 @@ canvas {
         min-height: 44px;
     }
 
-    #score-container {
+    #score-container,
+    #race-hud {
         top: max(7.4rem, calc(env(safe-area-inset-top, 0px) + 6.75rem));
         width: min(230px, calc(100vw - 2rem));
     }
@@ -2078,7 +2087,8 @@ canvas {
         height: 208px;
     }
 
-    .control-btn.action.shoot {
+    .control-btn.action.shoot,
+    .control-btn.action.brake {
         right: 0;
         width: 76px;
         height: 76px;
@@ -2111,7 +2121,8 @@ canvas {
         height: 102px;
     }
 
-    #score-container {
+    #score-container,
+    #race-hud {
         min-height: 46px;
         padding-block: 0.3rem;
     }
@@ -2131,7 +2142,8 @@ canvas {
         height: 140px;
     }
 
-    .control-btn.action.shoot {
+    .control-btn.action.shoot,
+    .control-btn.action.brake {
         width: 70px;
         height: 70px;
     }
@@ -2672,7 +2684,8 @@ canvas {
    the minimap and the rank chip, the boost bar goes under it, and the road
    ahead of the car stays free */
 @media (min-width: 375px) and (max-width: 600px) and (orientation: portrait) {
-    #score-container {
+    #score-container,
+    #race-hud {
         top: max(0.65rem, env(safe-area-inset-top, 0px));
         left: calc(max(0.65rem, env(safe-area-inset-left, 0px)) + 96px + 0.5rem);
         right: calc(max(0.65rem, env(safe-area-inset-right, 0px)) + 68px + 0.5rem);
@@ -2887,7 +2900,11 @@ body.sandbox #player-list {
 body.room-freeroam .party-only,
 body.room-freeroam #killfeed,
 body.room-freeroam #respawn-overlay,
-body.room-freeroam .nametag-hp {
+body.room-freeroam .nametag-hp,
+body.room-race .party-only,
+body.room-race #killfeed,
+body.room-race #respawn-overlay,
+body.room-race .nametag-hp {
     display: none !important;
 }
 
@@ -3247,4 +3264,741 @@ body.room-freeroam .nametag-hp {
 
 @keyframes start-btn-pulse {
     50% { opacity: 0.35; }
+}
+
+/* ==========================================================================
+   RACE AND TIME TRIAL (docs/phase-2-design.md, 17.2 and 17.5; src/client/race)
+   The race HUD takes the place of the Party's score pill (same rules above),
+   the countdown sits below it, not in the middle, so a thumb on the screen
+   never covers the lights. Lobby and results are sheets: a card on desktop,
+   full width below the top row on phones, so the room chip stays reachable.
+   ========================================================================== */
+
+body:not(.room-race) .race-only,
+.race-only[hidden],
+#race-hud [hidden] {
+    display: none !important;
+}
+
+#race-hud {
+    gap: 0.8rem;
+    justify-content: space-between;
+    color: var(--cream);
+    font-family: var(--font-display);
+    pointer-events: none;
+}
+
+#race-pos {
+    flex: none;
+    font-size: 1.85rem;
+    line-height: 1;
+    letter-spacing: 0.5px;
+    color: var(--sunset-gold);
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.race-hud-main {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.1rem;
+}
+
+#race-time {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 1.3rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+}
+
+.race-hud-sub {
+    display: flex;
+    gap: 0.5rem;
+    font-size: 0.72rem;
+    letter-spacing: 1px;
+    white-space: nowrap;
+    color: rgba(255, 248, 231, 0.8);
+}
+
+#race-split {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-weight: 700;
+}
+
+#race-split.ahead {
+    color: #7CFC9A;
+}
+
+#race-split.behind {
+    color: #FF7A6E;
+}
+
+#race-next {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.05rem;
+    min-width: 2.6rem;
+}
+
+.race-arrow {
+    width: 22px;
+    height: 22px;
+    fill: var(--cream);
+    filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.6));
+}
+
+#race-next.missed .race-arrow {
+    fill: #FF5A4E;
+}
+
+#race-next-dist {
+    font-size: 0.62rem;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+}
+
+#race-retry {
+    flex: none;
+    width: 40px;
+    height: 40px;
+    padding: 8px;
+    border-radius: 50%;
+    border: 1px solid rgba(243, 210, 142, 0.68);
+    background: rgba(0, 0, 0, 0.35);
+    color: var(--cream);
+    cursor: pointer;
+    pointer-events: auto;
+    touch-action: manipulation;
+}
+
+#race-retry .ui-icon {
+    width: 100%;
+    height: 100%;
+}
+
+/* Countdown: three lights, the number, and the launch bar whose last third
+   (the 20 ticks before green) is the window of the perfect start */
+#race-countdown {
+    position: fixed;
+    top: calc(max(1.25rem, env(safe-area-inset-top, 0px)) + 5.2rem);
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.6rem 1.1rem 0.7rem;
+    border-radius: var(--radius-lg);
+    background: rgba(12, 16, 16, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    z-index: 120;
+    pointer-events: none;
+}
+
+.race-lights {
+    display: flex;
+    gap: 0.6rem;
+}
+
+.race-lights span {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: #2a1a1a;
+    border: 2px solid rgba(0, 0, 0, 0.6);
+    box-shadow: inset 0 3px 6px rgba(0, 0, 0, 0.6);
+}
+
+.race-lights span.on {
+    background: radial-gradient(circle at 40% 35%, #ff8a7a, #e0261b 60%, #8a120c);
+    box-shadow: 0 0 18px rgba(255, 50, 30, 0.8);
+}
+
+.race-lights span.green {
+    background: radial-gradient(circle at 40% 35%, #b6ffc4, #1fd45a 60%, #0b6a2a);
+    box-shadow: 0 0 20px rgba(40, 230, 110, 0.85);
+}
+
+#race-count-label {
+    min-height: 1em;
+    font-family: var(--font-display);
+    font-size: 2.2rem;
+    line-height: 1;
+    color: var(--cream);
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+
+#race-countdown.go #race-count-label {
+    color: #7CFC9A;
+}
+
+.race-launch {
+    position: relative;
+    width: 150px;
+    height: 7px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.14);
+    overflow: hidden;
+}
+
+.race-launch-window {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 66.67%;
+    right: 0;
+    background: rgba(124, 252, 154, 0.35);
+}
+
+.race-launch-fill {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 0;
+    background: var(--cream);
+}
+
+#race-countdown.window .race-launch-window {
+    background: rgba(124, 252, 154, 0.95);
+}
+
+#race-countdown.go .race-launch {
+    visibility: hidden;
+}
+
+/* The boost bar is empty on the grid; the countdown takes its place */
+body.race-counting #drive-meter {
+    visibility: hidden;
+}
+
+#race-banner {
+    position: fixed;
+    top: 27%;
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: calc(100vw - 2rem);
+    padding: 0.45rem 1.4rem;
+    border-radius: var(--radius-pill);
+    background: rgba(12, 16, 16, 0.78);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: var(--cream);
+    font-family: var(--font-display);
+    font-size: 1.5rem;
+    letter-spacing: 1.5px;
+    white-space: nowrap;
+    z-index: 110;
+    pointer-events: none;
+}
+
+#race-banner[data-kind="good"] {
+    color: #7CFC9A;
+    border-color: rgba(124, 252, 154, 0.55);
+}
+
+#race-banner[data-kind="bad"] {
+    color: #FF7A6E;
+    border-color: rgba(255, 122, 110, 0.6);
+}
+
+#race-banner[data-kind="info"] {
+    color: var(--sunset-gold);
+}
+
+/* Touch with auto-gas: the GO zone in the middle starts the gas (the
+   launch stays a skill); without a tap auto-gas starts after green */
+#race-go {
+    position: fixed;
+    top: 55%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 128px;
+    height: 128px;
+    border-radius: 50%;
+    border: 3px dashed rgba(124, 252, 154, 0.85);
+    background: rgba(20, 60, 34, 0.45);
+    color: #CFFFDC;
+    font-family: var(--font-display);
+    font-size: 0.95rem;
+    letter-spacing: 1px;
+    line-height: 1.2;
+    z-index: 115;
+    pointer-events: auto;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+
+#race-spectate {
+    position: fixed;
+    left: 50%;
+    bottom: max(1.2rem, env(safe-area-inset-bottom, 0px));
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    max-width: calc(100vw - 2rem);
+    padding: 0.45rem 0.5rem 0.45rem 1.1rem;
+    border-radius: var(--radius-pill);
+    background: rgba(12, 16, 16, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    color: var(--cream);
+    font-family: var(--font-display);
+    font-size: 0.85rem;
+    z-index: 110;
+    pointer-events: auto;
+}
+
+/* No jump in a race (E4) */
+body.room-race .hint-row.jump-hint {
+    display: none;
+}
+
+/* Spectators have no car to drive; with a sheet up the car stands */
+body.race-spectating #mobile-controls,
+body.race-spectating #drive-meter,
+body.room-race.race-lobby-open #mobile-controls,
+body.room-race.race-results-open #mobile-controls {
+    display: none !important;
+}
+
+/* Brake of the race layout, in the shooting button's place */
+.control-btn.action.brake {
+    font-family: var(--font-display);
+    font-size: 0.95rem;
+    letter-spacing: 1px;
+    background: linear-gradient(145deg, rgba(88, 96, 104, 0.95), rgba(40, 44, 50, 0.93));
+    border: 3px solid rgba(255, 248, 231, 0.8);
+}
+
+.control-btn.action.brake.active {
+    background: linear-gradient(145deg, rgba(255, 102, 96, 0.96), rgba(200, 45, 40, 0.94));
+}
+
+/* Nametags */
+.bot-badge {
+    font-size: 0.7em;
+    letter-spacing: 1px;
+    color: var(--sunset-gold);
+}
+
+.nametag.nametag-ghost {
+    opacity: 0.75;
+    color: #CDEBFF;
+}
+
+/* ---- Lobby and results ---- */
+
+.race-sheet {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(560px, calc(100vw - 2rem));
+    max-height: min(86vh, 720px);
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+    padding: 1.1rem 1.2rem 1rem;
+    color: var(--cream);
+    background: linear-gradient(145deg, rgba(31, 49, 42, 0.95), rgba(17, 25, 23, 0.93));
+    border: 1px solid rgba(243, 210, 142, 0.55);
+    border-radius: 20px;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    z-index: 150;
+    pointer-events: auto;
+    font-family: var(--font-body);
+}
+
+.race-sheet h2 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 1.35rem;
+    font-weight: 400;
+    letter-spacing: 1.5px;
+    color: var(--sunset-gold);
+}
+
+.race-sheet-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+}
+
+.race-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+#race-lobby.timetrial .race-bots,
+#race-lobby.timetrial .race-drivers-field {
+    display: none;
+}
+
+#race-track-preview {
+    align-self: center;
+    width: 200px;
+    height: 120px;
+    border-radius: 12px;
+    background: radial-gradient(circle at 50% 45%, #315c4b, #17342f);
+}
+
+.race-segments {
+    display: flex;
+    gap: 0.4rem;
+}
+
+.race-segment,
+.race-car,
+.race-btn {
+    min-height: 48px;
+    border-radius: var(--radius-md);
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--cream);
+    font-family: var(--font-display);
+    letter-spacing: 1px;
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.race-segment {
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+}
+
+.race-segment small {
+    font-family: var(--font-body);
+    font-size: 0.62rem;
+    font-weight: 700;
+    color: var(--text-muted);
+}
+
+.race-segment[aria-checked="true"],
+.race-car[aria-pressed="true"] {
+    border-color: var(--sunset-orange);
+    background: rgba(245, 166, 35, 0.14);
+    color: var(--sunset-orange);
+}
+
+.race-cars {
+    display: flex;
+    gap: 0.35rem;
+}
+
+.race-car {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0.2rem;
+}
+
+.race-car img {
+    width: 100%;
+    max-width: 52px;
+    height: auto;
+}
+
+#race-drivers {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+#race-drivers li {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.6rem;
+    padding: 0.35rem 0.6rem;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    font-weight: 700;
+}
+
+#race-drivers li.self {
+    outline: 1px solid rgba(245, 166, 35, 0.6);
+}
+
+.race-driver-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.race-driver-state {
+    flex: none;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+#race-drivers li.ready .race-driver-state {
+    color: #7CFC9A;
+}
+
+#race-lobby-status,
+#race-results-status,
+#race-record {
+    margin: 0;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: rgba(255, 248, 231, 0.8);
+}
+
+#race-record {
+    color: var(--sunset-gold);
+}
+
+.race-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.race-btn {
+    flex: 1 1 0;
+    padding: 0 0.8rem;
+    font-size: 1rem;
+}
+
+.race-btn.primary {
+    flex-grow: 1.6;
+    border: none;
+    background: linear-gradient(135deg, var(--sunset-orange), #E8791F);
+    color: #1b1206;
+}
+
+.race-btn.primary[aria-pressed="true"] {
+    background: linear-gradient(135deg, #5fd07a, #2e9d4c);
+}
+
+.race-btn.secondary[aria-pressed="true"] {
+    border-color: var(--sunset-orange);
+}
+
+#race-spectate .race-btn {
+    flex: none;
+    min-height: 44px;
+    font-size: 0.8rem;
+}
+
+#race-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+#race-table th {
+    padding: 0.25rem 0.4rem;
+    text-align: left;
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 0.7rem;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+}
+
+#race-table td {
+    padding: 0.35rem 0.4rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+#race-table td:nth-child(2) {
+    max-width: 10rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#race-table td:nth-child(4),
+#race-table td:nth-child(5) {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+}
+
+#race-table tr.self td {
+    color: var(--sunset-gold);
+}
+
+#race-results:not(.with-laps) .race-col-lap {
+    display: none;
+}
+
+.race-bot-tag {
+    padding: 0 0.3rem;
+    border-radius: 4px;
+    background: rgba(255, 213, 79, 0.18);
+    font-size: 0.62rem;
+    letter-spacing: 1px;
+    color: var(--sunset-gold);
+}
+
+@media (max-width: 768px), (pointer: coarse) {
+    #race-pos {
+        font-size: 1.35rem;
+    }
+
+    #race-time {
+        font-size: 1rem;
+    }
+
+    .race-hud-sub {
+        font-size: 0.6rem;
+        gap: 0.35rem;
+    }
+
+    #race-hud {
+        gap: 0.5rem;
+    }
+
+    #race-retry {
+        width: 34px;
+        height: 34px;
+        padding: 7px;
+    }
+
+    .race-arrow {
+        width: 18px;
+        height: 18px;
+    }
+
+    #race-countdown {
+        top: calc(max(0.65rem, env(safe-area-inset-top, 0px)) + 3.6rem);
+        padding: 0.45rem 0.8rem 0.55rem;
+        gap: 0.25rem;
+    }
+
+    .race-lights span {
+        width: 24px;
+        height: 24px;
+    }
+
+    #race-count-label {
+        font-size: 1.5rem;
+    }
+
+    .race-launch {
+        width: 110px;
+    }
+
+    #race-banner {
+        font-size: 1.05rem;
+        padding: 0.35rem 1rem;
+    }
+
+    #race-spectate {
+        font-size: 0.68rem;
+        gap: 0.5rem;
+        padding-left: 0.8rem;
+    }
+
+    #race-spectate .race-btn {
+        font-size: 0.7rem;
+        padding: 0 0.6rem;
+    }
+
+    /* Below the top row (map, race pill, room chip), full width */
+    .race-sheet {
+        top: calc(max(0.65rem, env(safe-area-inset-top, 0px)) + 3.7rem);
+        bottom: max(0.65rem, env(safe-area-inset-bottom, 0px));
+        left: max(0.65rem, env(safe-area-inset-left, 0px));
+        right: max(0.65rem, env(safe-area-inset-right, 0px));
+        width: auto;
+        max-height: none;
+        transform: none;
+        padding: 0.8rem 0.9rem;
+        gap: 0.5rem;
+    }
+
+    .race-sheet h2 {
+        font-size: 1.1rem;
+    }
+}
+
+/* Upright phones from 375 px: the pill sits between the minimap and the
+   room chip (about 190 px), so everything in it gets smaller */
+@media (min-width: 375px) and (max-width: 600px) and (orientation: portrait) {
+    #race-hud {
+        gap: 0.35rem;
+        padding-inline: 0.5rem;
+    }
+
+    #race-pos {
+        font-size: 1.1rem;
+    }
+
+    #race-time {
+        font-size: 0.86rem;
+    }
+
+    .race-hud-sub {
+        font-size: 0.55rem;
+        gap: 0.3rem;
+        letter-spacing: 0.5px;
+    }
+
+    #race-next {
+        min-width: 2rem;
+    }
+}
+
+/* Upright phones below 375 px: the pill sits under the minimap, the
+   countdown under the pill */
+@media (max-width: 374px) and (orientation: portrait) {
+    #race-countdown {
+        top: calc(max(7.4rem, env(safe-area-inset-top, 0px) + 6.75rem) + 3.5rem);
+    }
+
+    #race-banner {
+        top: 17.5rem;
+    }
+}
+
+/* Short landscape phones: a slim countdown, the sheets in two columns */
+@media (max-height: 480px) and (orientation: landscape) {
+    #race-countdown {
+        top: calc(max(0.65rem, env(safe-area-inset-top, 0px)) + 3.4rem);
+        flex-direction: row;
+        padding: 0.3rem 0.7rem;
+    }
+
+    #race-go {
+        width: 96px;
+        height: 96px;
+        font-size: 0.8rem;
+    }
+
+    #race-banner {
+        top: 36%;
+    }
+
+    .race-sheet-body {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        align-content: start;
+    }
+
+    #race-track-preview {
+        width: 160px;
+        height: 96px;
+    }
 }

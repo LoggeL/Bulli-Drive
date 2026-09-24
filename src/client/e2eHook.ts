@@ -24,6 +24,8 @@ import { connectionOverlayText } from './ui/connectionOverlay.js';
 import { NETSIM } from './net/netsim.js';
 import { isE2EEnabled } from './flags.js';
 import type { NetsimOptions } from '../shared/net/netsim.js';
+import { raceClient } from './race/RaceClient.js';
+import type { RacePhase, RacerStatus, TrackId } from '../shared/race/types.js';
 
 // Hook for the Playwright smoke tests (tests/e2e) and the screenshot script
 // (scripts/screenshots.ts). It is only installed when the page is opened with
@@ -493,6 +495,41 @@ export interface NetDebugSnapshot {
     netsim: NetsimOptions | null;
 }
 
+// The race as the client knows it (docs/phase-2-design.md, 17)
+export interface RaceDebugSnapshot {
+    mode: 'race' | 'timetrial';
+    phase: RacePhase;
+    trackId: TrackId;
+    startTick: number | null;
+    racers: { id: string; grid: number; bot: boolean }[];
+    ready: string[];
+    passed: number;
+    finish: { pos: number; time: number } | null;
+    launch: string | null;
+    results: { id: string; name: string; pos: number; status: RacerStatus; finishTicks: number | null }[] | null;
+    // The prediction's tick C
+    tick: number;
+}
+
+function raceSnapshot(): RaceDebugSnapshot | null {
+    const m = raceClient.model;
+    const s = m.state;
+    if (!raceClient.active || !s) return null;
+    return {
+        mode: s.mode,
+        phase: s.phase,
+        trackId: s.trackId,
+        startTick: s.startTick,
+        racers: s.racers.map(r => ({ ...r })),
+        ready: [...s.ready],
+        passed: m.progress.passed,
+        finish: m.finish ? { ...m.finish } : null,
+        launch: m.launchEvent,
+        results: m.results?.entries.map(e => ({ id: e.id, name: e.name, pos: e.pos, status: e.status, finishTicks: e.finishTicks })) ?? null,
+        tick: netDriver.prediction?.tick ?? -1
+    };
+}
+
 function netSnapshot(): NetDebugSnapshot {
     const p = netDriver.prediction;
     const o = netDriver.offset;
@@ -558,6 +595,24 @@ export function installE2EHook(): void {
                 v2: v2Snapshot(state.bulli?.vehicle),
                 models: models.snapshot()
             };
+        },
+        // The race or time trial of the room (null elsewhere)
+        race: raceSnapshot,
+        // Meshes and triangles of the track dressing and the map features
+        // (docs/phase-2-design.md, 17.4: at most +20 draw calls, +30 k triangles)
+        raceDressing(): { meshes: number; triangles: number } {
+            let meshes = 0, triangles = 0;
+            for (const name of ['race-track', 'race-map-features']) {
+                state.scene?.getObjectByName(name)?.traverse(object => {
+                    const mesh = object as THREE.Mesh;
+                    if (!mesh.isMesh) return;
+                    meshes++;
+                    const index = mesh.geometry.index;
+                    const perInstance = (index ? index.count : mesh.geometry.attributes.position.count) / 3;
+                    triangles += perInstance * ((mesh as THREE.InstancedMesh).isInstancedMesh ? (mesh as THREE.InstancedMesh).count : 1);
+                });
+            }
+            return { meshes, triangles };
         },
         // The same as the sim's collider list (shared/world/colliderGen.ts)
         colliders(): ColliderInput[] {

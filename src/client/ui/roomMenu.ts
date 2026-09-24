@@ -2,9 +2,10 @@ import { DEFAULT_ROOM_KIND, isRoomKind, type RoomInfo, type RoomKind } from '../
 import { sendToServer } from '../network/socket.js';
 import { state } from '../state.js';
 
-// Party or Free Roam (docs/phase-1b-design.md, 9): the choice on the splash
-// screen, the room chip in the HUD with its mode menu, and the page classes
-// that hide the Party HUD in Free Roam.
+// Party, Free Roam, Race or Time Trial (docs/phase-1b-design.md, 9 and
+// docs/phase-2-design.md, 17.6): the choice on the splash screen, the room
+// chip in the HUD with its mode menu, and the page classes that hide the
+// Party HUD outside the Party and show the race HUD in races.
 
 const STORAGE_KEY = 'bulli-room-kind';
 // The server takes one room switch per two seconds
@@ -36,17 +37,28 @@ function rememberRoomKind(kind: RoomKind): void {
     } catch { /* private mode: the default stays */ }
 }
 
-/** True outside Free Roam (offline and in the sandbox too). */
+/** True in the Party (offline and in the sandbox too): shooting, coins, HP. */
 export function partyRulesActive(): boolean {
-    return state.room?.kind !== 'freeroam';
+    return !state.room || state.room.kind === 'party';
+}
+
+/** A race or time trial room. */
+export function isRaceKind(kind: RoomKind | undefined): boolean {
+    return kind === 'race' || kind === 'timetrial';
+}
+
+// The splash offers Party, Free Roam and Race; the time trial counts as Race
+function splashOption(kind: RoomKind): RoomKind {
+    return kind === 'timetrial' ? 'race' : kind;
 }
 
 // ---- Splash screen ----
 
 function renderSplashChoice(): void {
     document.querySelectorAll<HTMLElement>('.mode-option').forEach(option => {
-        option.setAttribute('aria-checked', String(option.dataset.room === splashChoice));
-        option.tabIndex = option.dataset.room === splashChoice ? 0 : -1;
+        const checked = option.dataset.room === splashOption(splashChoice);
+        option.setAttribute('aria-checked', String(checked));
+        option.tabIndex = checked ? 0 : -1;
     });
 }
 
@@ -74,7 +86,8 @@ export function initModeSelector(): void {
 
 /**
  * START on the splash: moves to the chosen mode first if the connection
- * joined another one (the server handles joinRoom before ready).
+ * joined another one (the server handles joinRoom before ready). A time
+ * trial played last stays a time trial unless another mode was picked.
  */
 export function applySplashChoice(): void {
     rememberRoomKind(splashChoice);
@@ -101,6 +114,8 @@ function renderRoomUi(): void {
     const kind = room?.kind ?? DEFAULT_ROOM_KIND;
     document.body.classList.toggle('room-freeroam', kind === 'freeroam');
     document.body.classList.toggle('room-party', kind === 'party');
+    document.body.classList.toggle('room-race', isRaceKind(kind));
+    document.body.classList.toggle('room-timetrial', kind === 'timetrial');
 
     const mode = document.getElementById('room-chip-mode');
     const index = document.getElementById('room-chip-index');
@@ -144,11 +159,14 @@ export function initRoomMenu(): void {
     renderRoomUi();
 }
 
-/** Asks the server for a room of that kind (the answer is 'roomState'). */
-export function requestRoom(kind: RoomKind): void {
-    if (!state.room || state.room.kind === kind || pendingKind) return;
+/**
+ * Asks the server for a room of that kind (the answer is 'roomState').
+ * fresh: a new race instance even from a race room ("START OWN RACE").
+ */
+export function requestRoom(kind: RoomKind, options: { fresh?: boolean } = {}): void {
+    if (!state.room || (state.room.kind === kind && !options.fresh) || pendingKind) return;
     if (performance.now() < lockedUntil) return;
-    if (!sendToServer({ type: 'joinRoom', kind })) return;
+    if (!sendToServer(options.fresh ? { type: 'joinRoom', kind, fresh: true } : { type: 'joinRoom', kind })) return;
     pendingKind = kind;
     rememberRoomKind(kind);
     window.clearTimeout(unlockTimer);
