@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { positionHash } from '../../src/shared/math/rng.js';
-import { generateWorld, WORLD_SEED } from '../../src/shared/world/worldGen.js';
+import { generateWorld, placeWithRejection, WORLD_SEED } from '../../src/shared/world/worldGen.js';
 import { sha256, sha256OfFloats, stableStringify } from '../helpers.js';
 
 // Golden values were recorded by running initWorld() from the untouched
@@ -66,5 +66,25 @@ describe('generateWorld (seed 0xB0111D)', () => {
 
     it('produces a different world for a different seed', () => {
         expect(stableStringify(generateWorld(1))).not.toBe(stableStringify(world));
+    });
+});
+
+describe('placeWithRejection', () => {
+    it('tries at most maxAttempts spots in the square and reports a failure with the last one', () => {
+        const values = [0.9, 0.1, 0.25, 0.75, 0.5, 0.5];
+        let i = 0;
+        const random = () => values[i++];
+        let tries = 0;
+        const result = placeWithRejection(100, 3, random, () => { tries++; return true; });
+        expect(tries).toBe(3);
+        // (value - 0.5) · range for x and z
+        expect(result).toEqual({ x: 0, z: 0, ok: false });
+    });
+
+    it('returns the first spot that is not rejected', () => {
+        const values = [0.9, 0.1, 0.25, 0.75];
+        let i = 0;
+        const result = placeWithRejection(100, 5, () => values[i++], x => x > 0);
+        expect(result).toEqual({ x: -25, z: 25, ok: true });
     });
 });
