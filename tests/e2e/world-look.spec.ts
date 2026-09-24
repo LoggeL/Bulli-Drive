@@ -21,6 +21,13 @@ interface WorldHook {
     setCameraOverride(pose: CameraPose | null): void;
 }
 
+// Half the desktop project's 1280 x 800 at the same aspect ratio: the camera
+// frustum, and with it the draw calls and triangles, stay the same, while
+// software WebGL shades a quarter of the pixels. The phone tier (?tier=low)
+// renders PBR, shadows and the environment map, which on a busy CI runner
+// took seconds per frame at full size.
+test.use({ viewport: { width: 640, height: 400 } });
+
 function settled(page: Page): Promise<WorldInfo> {
     return page.evaluate(() => (window as unknown as { __bulliDebug: WorldHook }).__bulliDebug.worldSettled());
 }
@@ -133,6 +140,8 @@ async function meanColor(page: Page): Promise<[number, number, number]> {
 }
 
 test('a restored WebGL context rebuilds the environment map and the textures', async ({ openPlayer }) => {
+    // Rebuilding the PMREM and re-uploading every texture is slow in software
+    test.slow();
     const player = await openPlayer('world-context');
     await joinGame(player, 'E2E World Context', '&tier=low');
     const { page } = player;
