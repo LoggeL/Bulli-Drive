@@ -35,6 +35,8 @@ import { assistProfileForDevice } from '../vehicle/LocalVehicle.js';
 import { startNetPump } from '../vehicle/v2Driver.js';
 import { preferredRoomKind, setCurrentRoom } from '../ui/roomMenu.js';
 import { netDriver, placeholderCar } from '../net/netDriver.js';
+import { reloadOnce } from './reloadOnce.js';
+import { resumeOutcome } from './resumeOutcome.js';
 import { clearRemoteViews, forgetRemote, noteSnapshotCars, setRemoteDead } from '../net/remotes.js';
 
 // The connection to the game server on protocol v2 (docs/phase-1b-design.md,
@@ -84,18 +86,6 @@ export const connectionInfo = {
 
 function pageBuild(): string | null {
     return document.querySelector<HTMLMetaElement>('meta[name="bulli-build-version"]')?.content || null;
-}
-
-/** Reloads once per key value (sessionStorage guard); false when the guard holds. */
-function reloadOnce(key: string, value: string): boolean {
-    try {
-        if (sessionStorage.getItem(key) === value) return false;
-        sessionStorage.setItem(key, value);
-    } catch {
-        return false;
-    }
-    window.location.reload();
-    return true;
 }
 
 function storageGet(key: string): string | undefined {
@@ -410,7 +400,8 @@ function enterRoom(data: Extract<ServerMessage, { type: 'roomState' }>) {
     netDriver.enterRoom(world, party, data.members, car, state.myId ?? '');
     // Back after a lost connection with the car still on the server: the
     // next snapshot brings it (11.1)
-    const resumedCar = !!data.resume?.alive;
+    const outcome = resumeOutcome(data, { playerReady, myId: state.myId });
+    const resumedCar = outcome === 'resumedCar';
     if (data.resume) netDriver.resumeOwn(data.resume);
 
     const firstJoin = !state.bulli;
@@ -435,7 +426,7 @@ function enterRoom(data: Extract<ServerMessage, { type: 'roomState' }>) {
     updateScoreboardUI();
     startClockSync();
     startNetPump();
-    if (resumedCar) {
+    if (outcome === 'resumedCar') {
         // The car lives on the server. If it died and respawned while the
         // connection was gone, the respawn event is lost: undo the death
         // on screen here
@@ -444,16 +435,17 @@ function enterRoom(data: Extract<ServerMessage, { type: 'roomState' }>) {
             state.bulli.health = state.health;
         }
         hideRespawnOverlay();
-    } else if (data.resume && playerReady && party && data.members.some(m => m.id === state.myId && m.ready)) {
+    } else if (outcome === 'deadInParty') {
         // Dead in the Party (maybe killed while the connection was gone):
         // the respawn event brings the car back
         state.dead = true;
         if (state.bulli) state.bulli.flipGroup.visible = false;
         showRespawnOverlay();
+    } else if (outcome === 'sendReady') {
+        // Past the splash screen but not driving in this room (a new session
+        // after the grace time or a restart, or 'ready' got lost): drive again
+        sendToServer({ type: 'ready' });
     }
-    // Past the splash screen but not driving in this room (a new session
-    // after the grace time or a restart, or 'ready' got lost): drive again
-    if (playerReady && !resumedCar && !state.dead) sendToServer({ type: 'ready' });
 }
 
 // The own score and rank as far as the top 10 tell
