@@ -7,7 +7,7 @@ import {
     type ServerMessage
 } from '../../shared/protocol.js';
 import { decodeSnapshot } from '../../shared/net/codec.js';
-import { CLOCK_BURST_INTERVAL_MS, CLOCK_BURST_PINGS, CLOCK_INTERVAL_MS, CLOSE_FULL } from '../../shared/net/constants.js';
+import { CLOCK_BURST_INTERVAL_MS, CLOCK_BURST_PINGS, CLOCK_INTERVAL_MS } from '../../shared/net/constants.js';
 import { closeAction, reconnectDelayMs } from '../../shared/net/reconnect.js';
 import { isPowerupType } from '../../shared/party/rules.js';
 import { resetTuning, tuningIsDefault } from '../../shared/sim/tuning.js';
@@ -29,7 +29,7 @@ import { releaseKeyboardInputs } from '../controls/keyboard.js';
 import { resetMobileControls } from '../controls/mobile.js';
 import { sendToServer, setSocketNetsim } from './socket.js';
 import { createSocketNetsim } from '../net/netsim.js';
-import { hideConnectionOverlay, showConnectionNotice, showReconnecting } from '../ui/connectionOverlay.js';
+import { hideConnectionOverlay, reconnectingText, showConnectionNotice, showReconnecting } from '../ui/connectionOverlay.js';
 import { setWorldColliders, simWorldFor } from '../vehicle/simWorldClient.js';
 import { assistProfileForDevice } from '../vehicle/LocalVehicle.js';
 import { startNetPump } from '../vehicle/v2Driver.js';
@@ -223,10 +223,8 @@ function onClosed(code: number, reason: string) {
             showConnectionNotice('Disconnected after a long break', 'Continue', reconnectNow);
             return;
         case 'reconnect': {
-            // Never connected yet (a deploy restarting the server, a flaky
-            // mobile network): the loader stays and the banner says why
-            const text = code === CLOSE_FULL ? 'The server is full, retrying…'
-                : everOpened ? 'Reconnecting…' : 'Connecting to the server…';
+            // Never connected yet: the loader stays and the banner says why
+            const text = reconnectingText(code, everOpened);
             const delay = Math.max(restartDelayMs ?? reconnectDelayMs(reconnectAttempt, Math.random), holdReconnectUntil - now);
             restartDelayMs = null;
             reconnectAttempt++;
