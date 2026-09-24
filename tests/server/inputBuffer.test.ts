@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mapFor } from '../../src/server/maps.js';
 import { InputBuffer } from '../../src/server/rooms/InputBuffer.js';
 import { RoomManager } from '../../src/server/rooms/lobby.js';
-import { INPUT_MAX_AHEAD, INPUT_REPEAT_TICKS } from '../../src/shared/net/constants.js';
+import { INPUT_MAX_AHEAD } from '../../src/shared/net/constants.js';
 import { stopInput } from '../../src/shared/sim/inputs.js';
 import { createFlatWorld, forwardSpeed, spawnCar } from '../../src/shared/sim/scenarios.js';
 import { createVehicleInput } from '../../src/shared/sim/types.js';
@@ -127,7 +127,8 @@ describe('Room: missing inputs', () => {
             steps(room, 1);
         }
         expect(car.input.throttle).toBe(255);
-        for (let i = 1; i <= INPUT_REPEAT_TICKS; i++) {
+        // 15 ticks (250 ms, docs/phase-1b-design.md, 4 and 15.1) with the last input
+        for (let i = 1; i <= 15; i++) {
             steps(room, 1);
             expect(car.input.throttle, `repeat ${i}`).toBe(255);
         }

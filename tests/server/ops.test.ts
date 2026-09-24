@@ -61,25 +61,47 @@ describe('/healthz', () => {
     }
 
     it('is healthy while the tick runs, with rooms, players and tick times', () => {
-        const { scheduler, clock, fire } = manualScheduler();
+        const clock = { time: 0 };
+        let pending: (() => void) | null = null;
+        // Every tick takes 0.5 ms on the clock, every 10th 2 ms, ticks 50
+        // and 100 take 4 ms
+        let tick = 0;
+        const scheduler = new TickScheduler(() => {
+            tick++;
+            lobby.stepAll(clock.time);
+            clock.time += tick === 50 || tick === 100 ? 4 : tick % 10 === 0 ? 2 : 0.5;
+        }, {
+            now: () => clock.time,
+            setTimeout: (fn) => { pending = fn; return 1; },
+            clearTimeout: () => { pending = null; }
+        });
         player('Ada', 'p1');
         const b = player('Bob', 'p2');
         ready(lobby, b.session);
         scheduler.start();
-        for (let i = 0; i < 120; i++) {
-            clock.time += 1000 / 60;
-            fire();
+        // One wake-up 1 ms after each tick is due: one tick each, 121 in all
+        for (let i = 1; i <= 120; i++) {
+            clock.time = i * 1000 / 60 + 1;
+            const fn = pending!;
+            pending = null;
+            fn();
         }
+        expect(tick).toBe(121);
         const report = healthReport(sources(scheduler), clock.time + 10);
         expect(report).toEqual(expect.objectContaining({
             ok: true, build: 'abc', rooms: 1, players: 2, sessions: 2, graceSessions: 0, connections: 2, shuttingDown: false
         }));
         expect(report.lastTickAgeMs).toBeLessThan(HEALTHY_TICK_AGE_MS);
-        expect(report.tickP95Ms).toBeGreaterThanOrEqual(0);
-        expect(report.tickP99Ms).toBeGreaterThanOrEqual(report.tickP95Ms);
+        // 121 durations, sorted: 109 x 0.5, 10 x 2 (ranks 109-118), 2 x 4.
+        // Mean (109 * 0.5 + 10 * 2 + 2 * 4) / 121 = 82.5 / 121 = 0.6818;
+        // p95 is rank floor(0.95 * 121) = 114, p99 rank 119
+        expect(report.tickMeanMs).toBe(0.682);
+        expect(report.tickP95Ms).toBe(2);
+        expect(report.tickP99Ms).toBe(4);
         expect(report.uptimeS).toBe(2);
-        const metrics = metricsReport(sources(scheduler), clock.time) as { roomList: { id: string; players: number }[] };
+        const metrics = metricsReport(sources(scheduler), clock.time) as { roomList: { id: string; players: number }[]; ticks: number; tickP50Ms: number; tickMaxMs: number };
         expect(metrics.roomList).toEqual([expect.objectContaining({ id: 'party-1', players: 2 })]);
+        expect(metrics).toEqual(expect.objectContaining({ ticks: 121, tickP50Ms: 0.5, tickMaxMs: 4 }));
         scheduler.stop();
     });
 

@@ -277,6 +277,8 @@ describe('16 bots for 30 s behind netsim 150/30/3', () => {
         // Exit criterion: mean correction without contact under 10 cm (16)
         expect(report.correctionMeanCm).toBeLessThan(10);
         // The server tick stays well inside the budget (5.7)
+        // (and was measured at all: a report of 0 means the metric is not wired)
+        expect(report.server!.tickP95Ms).toBeGreaterThan(0);
         expect(report.server!.tickP95Ms).toBeLessThan(4);
         // Bumps that both cars felt: at least one (how many depends on when
         // the ram bots meet, 3-19 in 25 runs; the scripted head-on tests

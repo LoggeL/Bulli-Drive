@@ -3,7 +3,7 @@ import { mulberry32 } from '../../../src/shared/math/rng.js';
 import {
     NETSIM_RETRANSMIT_MS, NetsimLink, describeNetsim, parseNetsimEnv, parseNetsimFlag, type NetsimOptions
 } from '../../../src/shared/net/netsim.js';
-import { closeAction, reconnectDelayMs, RECONNECT_STEPS_MS } from '../../../src/shared/net/reconnect.js';
+import { closeAction, reconnectDelayMs } from '../../../src/shared/net/reconnect.js';
 
 // Dev netsim (docs/phase-1b-design.md, 11.5) and the reconnect policy (11.1).
 
@@ -145,17 +145,28 @@ describe('NetsimLink', () => {
 
 describe('reconnect policy', () => {
     it('backs off 0.5, 1, 2, 4, then every 8 s, each ±20 %', () => {
+        // The steps from docs/phase-1b-design.md, 11.1, written out here
+        const expected = [500, 1000, 2000, 4000, 8000, 8000, 8000, 8000, 8000, 8000, 8000, 8000];
+        for (let attempt = 0; attempt < expected.length; attempt++) {
+            const base = expected[attempt];
+            // Middle of the jitter range: the step itself
+            expect(reconnectDelayMs(attempt, () => 0.5), `attempt ${attempt}`).toBe(base);
+            // The ends of the range: -20 % and (almost) +20 %
+            expect(reconnectDelayMs(attempt, () => 0), `attempt ${attempt}`).toBe(base * 0.8);
+            expect(reconnectDelayMs(attempt, () => 0.999), `attempt ${attempt}`).toBe(Math.round(base * (1 + 0.998 * 0.2)));
+        }
+        expect(reconnectDelayMs(100, () => 0.5)).toBe(8000);
+        // A negative attempt counts as the first
+        expect(reconnectDelayMs(-3, () => 0.5)).toBe(500);
+        // A seeded random stays inside the range for every attempt
         const random = mulberry32(9);
-        for (let attempt = 0; attempt < 12; attempt++) {
-            const base = RECONNECT_STEPS_MS[Math.min(attempt, RECONNECT_STEPS_MS.length - 1)];
+        for (let attempt = 0; attempt < expected.length; attempt++) {
             for (let i = 0; i < 50; i++) {
                 const delay = reconnectDelayMs(attempt, random);
-                expect(delay).toBeGreaterThanOrEqual(base * 0.8 - 1);
-                expect(delay).toBeLessThanOrEqual(base * 1.2 + 1);
+                expect(delay).toBeGreaterThanOrEqual(expected[attempt] * 0.8);
+                expect(delay).toBeLessThanOrEqual(expected[attempt] * 1.2);
             }
         }
-        expect(reconnectDelayMs(0, () => 0.5)).toBe(500);
-        expect(reconnectDelayMs(100, () => 0.5)).toBe(8000);
     });
 
     it('reconnects on its own after losses and restarts, not after kicks', () => {

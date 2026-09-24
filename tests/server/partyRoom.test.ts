@@ -487,12 +487,14 @@ describe('idle and lag ghost', () => {
         feed(room, alice, {});
         steps(room, 1);
         expect(alice.member!.idle).toBe(false);
-        expect(alice.member!.car!.state.ghostTicks).toBe(IDLE_EXIT_GHOST_TICKS - 1);
+        // ghostTicks = 60 after idle (docs/phase-1b-design.md, 5.4), one stepped
+        expect(alice.member!.car!.state.ghostTicks).toBe(60 - 1);
     });
 
     it('goes idle after 60 ticks without input and in a background tab', () => {
         const alice = player('Alice');
-        steps(room, IDLE_AFTER_TICKS - 1);
+        // 60 ticks (1 s) without input (docs/phase-1b-design.md, 5.4)
+        steps(room, 60 - 1);
         expect(alice.member!.idle).toBe(false);
         steps(room, 1);
         expect(alice.member!.idle).toBe(true);

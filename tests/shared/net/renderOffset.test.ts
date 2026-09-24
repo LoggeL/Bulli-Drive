@@ -133,13 +133,16 @@ describe('RenderOffset', () => {
     });
 
     it('jumps (clears) at 4 m, at 45° and on non-finite poses', () => {
+        // 4 m and 45° from docs/phase-1b-design.md, 8.4 (step 4)
         const offset = new RenderOffset();
-        expect(offset.correct(pose(SNAP_DISTANCE, 0), pose(0, 0), false, 0)).toBe(false);
+        expect(offset.correct(pose(4, 0), pose(0, 0), false, 0)).toBe(false);
         expect(offset.size).toBe(0);
-        expect(offset.correct(pose(0, 0, SNAP_YAW + 0.01), pose(0, 0, 0), false, 0)).toBe(false);
+        expect(offset.correct(pose(0, 0, Math.PI / 4 + 0.01), pose(0, 0, 0), false, 0)).toBe(false);
         expect(offset.correct(pose(Number.NaN, 0), pose(0, 0), false, 0)).toBe(false);
-        expect(offset.correct(pose(SNAP_DISTANCE - 0.01, 0), pose(0, 0), false, 0)).toBe(true);
-        expect(offset.size).toBeCloseTo(SNAP_DISTANCE - 0.01, 12);
+        expect(offset.correct(pose(0, 0, Math.PI / 4 - 0.01), pose(0, 0, 0), false, 0)).toBe(true);
+        offset.clear();
+        expect(offset.correct(pose(3.99, 0), pose(0, 0), false, 0)).toBe(true);
+        expect(offset.size).toBeCloseTo(3.99, 12);
     });
 
     it('takes yaw the short way across ±π', () => {
