@@ -1,7 +1,7 @@
 import * as v from 'valibot';
 import { describe, expect, it } from 'vitest';
 import {
-    ClientMessage, HelloSchema, InputPacketSchema, parseClientMessage, PROTOCOL_VERSION
+    ClientMessage, HelloSchema, InputPacketSchema, isRoomKind, parseClientMessage, PROTOCOL_VERSION
 } from '../../src/shared/protocol.js';
 
 // Protocol v2 (docs/phase-1b-design.md, 3): the JSON messages of the client
@@ -49,6 +49,17 @@ const REAL_CLIENT_MESSAGES: Record<string, ClientMessage> = {
 describe('PROTOCOL_VERSION', () => {
     it('is 2 since the server simulates', () => {
         expect(PROTOCOL_VERSION).toBe(2);
+    });
+});
+
+describe('isRoomKind', () => {
+    // The room menu keeps a saved choice only if it is one of the two kinds
+    it('accepts party and freeroam only', () => {
+        expect(isRoomKind('party')).toBe(true);
+        expect(isRoomKind('freeroam')).toBe(true);
+        for (const value of ['Party', 'free roam', 'free', '', 'party ', undefined, null, 1, ['party'], { kind: 'party' }]) {
+            expect(isRoomKind(value), String(value)).toBe(false);
+        }
     });
 });
 
