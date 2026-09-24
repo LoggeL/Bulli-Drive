@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { Page } from '@playwright/test';
-import { test, expect, joinGame, snapshot, netState, distance, placeOnClearRunway } from './fixtures.js';
+import { test, expect, joinGame, snapshot, netState, distance, placeOnClearRunway, topmostAtCenter } from './fixtures.js';
 
 // A lost connection and a server restart (docs/phase-1b-design.md, 11.1 to
 // 11.3, 15.3): within the grace time the page comes back as the same player
@@ -55,6 +55,64 @@ test('a dropped connection comes back as the same player with the same car', asy
     await alice.page.keyboard.up('w');
 });
 
+test('killed and back before the respawn event came: the car shows again, the overlay is gone', async ({ openPlayer }) => {
+    const alice = await openPlayer('alice-killed', { allowedProblems: RECONNECT_NOISE });
+    const { page } = alice;
+    // The real server behind a route that can add a message of its own
+    let socket: import('@playwright/test').WebSocketRoute | null = null;
+    await page.routeWebSocket(/\/ws$/, ws => {
+        socket = ws;
+        ws.connectToServer();
+    });
+    const aliceId = await joinGame(alice, 'E2E Killed', '', 'party');
+    // Shot down (the event as the server sends it), then the connection
+    // drops before the respawn event: the server respawns the car meanwhile
+    // and the event is lost
+    socket!.send(JSON.stringify({ type: 'events', tick: 0, list: [
+        { type: 'killed', target: aliceId, killer: 'nobody', killerName: 'E2E Shooter', targetName: 'E2E Killed', cause: 'shot' }
+    ] }));
+    await expect(page.locator('#respawn-overlay')).toBeVisible();
+    await expect.poll(async () => (await snapshot(page)).local?.visible).toBe(false);
+    await page.evaluate(() => (window as unknown as { __bulliDebug: { dropConnection(holdMs?: number): void } }).__bulliDebug.dropConnection(1000));
+    await expect.poll(async () => (await netState(page)).reconnects, { timeout: 20_000 }).toBe(1);
+    expect((await netState(page)).resumed).toBe(true);
+    // The server says the car lives: it is drawn and drives again
+    await expect(page.locator('#respawn-overlay')).toBeHidden();
+    await expect.poll(async () => (await snapshot(page)).local?.visible).toBe(true);
+    await expect.poll(async () => (await netState(page)).spawned).toBe(true);
+    await placeOnClearRunway(page);
+    const start = (await snapshot(page)).local!;
+    await page.keyboard.down('w');
+    await expect.poll(async () => distance(start, (await snapshot(page)).local!)).toBeGreaterThan(5);
+    await page.keyboard.up('w');
+});
+
+test('a first connection that fails is retried, with the reason over the loader', async ({ openPlayer }) => {
+    const player = await openPlayer('first-fail', { allowedProblems: RECONNECT_NOISE });
+    const { page } = player;
+    // The first three sockets close at once (a deploy restarting the
+    // server): 0.5 + 1 + 2 s of backoff, then the real server
+    let attempts = 0;
+    await page.routeWebSocket(/\/ws$/, ws => {
+        attempts++;
+        if (attempts <= 3) {
+            ws.close({ code: 1011, reason: 'restarting' });
+            return;
+        }
+        ws.connectToServer();
+    });
+    await page.goto('/?e2e=1');
+    const notice = page.locator('#net-notice');
+    await expect(notice).toContainText('Connecting to the server', { timeout: 15_000 });
+    expect(await topmostAtCenter(page, '#net-notice')).toBe(true);
+    // Then it joins like any page: the world is built, the splash shows
+    await expect(page.locator('#loading-screen')).toHaveCount(0, { timeout: 60_000 });
+    await expect(page.locator('#splash-screen')).toBeVisible();
+    await expect(notice).toBeHidden();
+    expect(attempts).toBe(4);
+    expect((await snapshot(page)).room).not.toBeNull();
+});
+
 // The own server of this test: started, stopped with SIGTERM and started
 // again on the same port
 function startServer(port: number): ChildProcess {
@@ -99,6 +157,8 @@ test('a server restart: the banner shows, the page comes back on its own with it
         await place(page, coin.x, coin.z);
         await expect.poll(async () => (await snapshot(page)).score, { timeout: 20_000 }).toBeGreaterThanOrEqual(10);
         const score = (await snapshot(page)).score;
+        // The coin pill of the Party HUD shows it (it stayed at 0 before)
+        await expect(page.locator('#score-display')).toHaveText(String(score));
 
         // A deploy: SIGTERM, the process says goodbye and exits with 0 in time
         const stopStarted = Date.now();
@@ -122,6 +182,7 @@ test('a server restart: the banner shows, the page comes back on its own with it
         // A new session (new process), with the score from the resume ticket
         expect((await netState(page)).resumed).toBe(false);
         await expect.poll(async () => (await snapshot(page)).score).toBe(score);
+        await expect(page.locator('#score-display')).toHaveText(String(score));
         await expect(page.locator('#net-notice')).toBeHidden();
         await expect.poll(async () => (await snapshot(page)).room?.kind).toBe('party');
     } finally {

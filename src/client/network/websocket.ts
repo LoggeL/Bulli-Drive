@@ -23,7 +23,7 @@ import { updateScoreboardUI } from '../ui/playerList.js';
 import { getTerrainHeight } from '../world/environment.js';
 import { playCollisionSound, playHitSound } from '../effects/sounds.js';
 import { spawnExplosion, spawnParticles } from '../effects/particles.js';
-import { addKillfeedEntry, showHitmarker } from '../ui/hud.js';
+import { addKillfeedEntry, showHitmarker, updateScoreUI } from '../ui/hud.js';
 import { initMinimap } from '../ui/minimap.js';
 import { releaseKeyboardInputs } from '../controls/keyboard.js';
 import { resetMobileControls } from '../controls/mobile.js';
@@ -163,8 +163,8 @@ function connect() {
 
     ws.onerror = (e) => {
         if (!current()) return;
-        console.warn('WebSocket error, offline mode?', e);
-        if (!state.bulli && !everOpened) startOffline();
+        // The close event follows and decides what to do
+        console.warn('WebSocket error', e);
     };
 
     ws.onclose = (event) => {
@@ -219,8 +219,6 @@ function onClosed(code: number, reason: string) {
     connectionInfo.lastCloseCode = code;
     const now = performance.now();
     netDriver.suspend(now);
-    // This page never had a connection: the offline mode took over (onerror)
-    if (!everOpened) return;
     console.warn(`Connection closed (${code}${reason ? ` ${reason}` : ''})`);
     if (disconnectedAt < 0) disconnectedAt = now;
     switch (closeAction(code)) {
@@ -235,7 +233,10 @@ function onClosed(code: number, reason: string) {
             showConnectionNotice('Disconnected after a long break', 'Continue', reconnectNow);
             return;
         case 'reconnect': {
-            const text = code === CLOSE_FULL ? 'The server is full, retrying…' : 'Reconnecting…';
+            // Never connected yet (a deploy restarting the server, a flaky
+            // mobile network): the loader stays and the banner says why
+            const text = code === CLOSE_FULL ? 'The server is full, retrying…'
+                : everOpened ? 'Reconnecting…' : 'Connecting to the server…';
             const delay = Math.max(restartDelayMs ?? reconnectDelayMs(reconnectAttempt, Math.random), holdReconnectUntil - now);
             restartDelayMs = null;
             reconnectAttempt++;
@@ -251,19 +252,6 @@ function reconnectNow() {
     if (disconnectedAt < 0) disconnectedAt = performance.now();
     showReconnecting(performance.now() - 1000, 'Reconnecting…');
     connect();
-}
-
-// No server: the local car drives on the terrain with the rocks only
-function startOffline() {
-    state.terrainConfig = { ...DEFAULT_TERRAIN_CONFIG };
-    if (!environmentInitialized) {
-        createEnvironment([]);
-        environmentInitialized = true;
-        setWorldColliders({ trees: [], city: null });
-    }
-    const savedName = localStorage.getItem('bulli-player-name');
-    createLocalPlayer(0xD32F2F, savedName || 'Offline');
-    removeLoader();
 }
 
 // ---- Clock ----
@@ -332,6 +320,13 @@ function handleServerMessage(data: ServerMessage) {
             return;
         case 'scoreboard':
             state.scoreboard = data.scoreboard;
+            if (data.own) {
+                state.score = data.own.score;
+                state.rank = data.own.rank;
+            } else {
+                takeOwnScoreFromBoard();
+            }
+            updateScoreUI();
             updateScoreboardUI();
             return;
         case 'kicked':
@@ -402,6 +397,11 @@ function enterRoom(data: Extract<ServerMessage, { type: 'roomState' }>) {
         state.serverCoins = [];
     }
     state.scoreboard = data.scoreboard;
+    // Until the next scoreboard brings the exact numbers
+    state.score = 0;
+    state.rank = 0;
+    takeOwnScoreFromBoard();
+    updateScoreUI();
     state.health = data.health[state.myId ?? ''] ?? 100;
     state.dead = false;
 
@@ -435,13 +435,33 @@ function enterRoom(data: Extract<ServerMessage, { type: 'roomState' }>) {
     updateScoreboardUI();
     startClockSync();
     startNetPump();
-    if (data.resume && !data.resume.alive && playerReady && party && data.members.some(m => m.id === state.myId && m.ready)) {
-        // Dead in the Party: the respawn event brings the car back
+    if (resumedCar) {
+        // The car lives on the server. If it died and respawned while the
+        // connection was gone, the respawn event is lost: undo the death
+        // on screen here
+        if (state.bulli) {
+            state.bulli.flipGroup.visible = true;
+            state.bulli.health = state.health;
+        }
+        hideRespawnOverlay();
+    } else if (data.resume && playerReady && party && data.members.some(m => m.id === state.myId && m.ready)) {
+        // Dead in the Party (maybe killed while the connection was gone):
+        // the respawn event brings the car back
         state.dead = true;
+        if (state.bulli) state.bulli.flipGroup.visible = false;
+        showRespawnOverlay();
     }
     // Past the splash screen but not driving in this room (a new session
     // after the grace time or a restart, or 'ready' got lost): drive again
     if (playerReady && !resumedCar && !state.dead) sendToServer({ type: 'ready' });
+}
+
+// The own score and rank as far as the top 10 tell
+function takeOwnScoreFromBoard() {
+    const index = state.scoreboard.findIndex(entry => entry.id === state.myId);
+    if (index < 0) return;
+    state.score = state.scoreboard[index].score;
+    state.rank = index + 1;
 }
 
 function updateMember(data: Extract<ServerMessage, { type: 'playerUpdated' }>) {

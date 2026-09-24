@@ -146,6 +146,17 @@ export async function joinGame(player: Player, name: string, extraQuery = '', mo
     return (await snapshot(page)).myId!;
 }
 
+/** Whether the element under the middle of `selector` belongs to it (nothing covers it). */
+export async function topmostAtCenter(page: Page, selector: string): Promise<boolean> {
+    return page.evaluate(sel => {
+        const el = document.querySelector(sel);
+        if (!el) return false;
+        const box = el.getBoundingClientRect();
+        const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+        return !!hit && el.contains(hit);
+    }, selector);
+}
+
 /** Opens the sandbox and starts from the splash screen, without a server connection. */
 export async function openSandbox(player: Player, extraQuery = ''): Promise<void> {
     const { page } = player;

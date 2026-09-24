@@ -38,6 +38,8 @@ interface CarSnapshot {
     z: number;
     angle: number;
     speed: number;
+    // The car is drawn (false while dead)
+    visible: boolean;
 }
 
 // State of the local sim car, null before the car's first frame
@@ -456,7 +458,8 @@ function carSnapshot(car: any): CarSnapshot {
         y: car.group.position.y,
         z: car.group.position.z,
         angle: car.group.rotation.y,
-        speed: car.speed ?? 0
+        speed: car.speed ?? 0,
+        visible: !!car.flipGroup?.visible
     };
 }
 

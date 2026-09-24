@@ -25,7 +25,9 @@ export const state = {
     myColor: null as number | null,
     myName: "Player",
     myCarType: "bulli",
+    // Own Party score and rank from the server's scoreboard (0 = unknown)
     score: 0,
+    rank: 0,
     coins: [] as any[],
     serverCoins: null as CoinData[] | null,
     particles: [] as any[],
@@ -35,9 +37,7 @@ export const state = {
     cameraSnapPending: true,
     health: 100,
     dead: false,
-    respawnTimer: 0,
     scoreboard: [] as ScoreboardEntry[],
     killfeed: [] as { killer: string; victim: string; time: number }[],
-    respawnShield: false as boolean,
-    respawnMoveStart: 0 as number
+    respawnShield: false as boolean
 };

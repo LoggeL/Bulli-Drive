@@ -3,7 +3,7 @@
 // optimistic coin pickup and the powerup HUD.
 
 import {
-    BASE_SHOT_DAMAGE, COIN_VALUE, KILL_REWARD, MAX_HEALTH, MAX_SHOT_RANGE, MEGA_DAMAGE_REDUCTION
+    BASE_SHOT_DAMAGE, COIN_VALUE, KILL_REWARD, MAGNET_RANGE, MAX_HEALTH, MAX_SHOT_RANGE, MEGA_DAMAGE_REDUCTION
 } from '../constants.js';
 import { TICK_RATE } from '../net/constants.js';
 
@@ -29,7 +29,10 @@ export const POWERUP_TICKS: Record<PowerupType, number> = {
 // 2D distance car to item, on the server: the client's radius + 1 m
 export const POWERUP_PICKUP_RADIUS = 6;
 export const COIN_PICKUP_RADIUS = 4;
-export const COIN_MAGNET_PICKUP_RADIUS = 7;
+// The magnet takes every coin it pulls on the client (MAGNET_RANGE, 25 m)
+// as the legacy server did (it accepted 35 m): the client draws the coin
+// flying in, the server has it already (docs/phase-1b-design.md, 5.5)
+export const COIN_MAGNET_PICKUP_RADIUS = MAGNET_RANGE + 1;
 // What the client uses for its optimistic coin pickup and the marker check
 export const CLIENT_POWERUP_RADIUS = 5;
 export const CLIENT_COIN_RADIUS = 3;

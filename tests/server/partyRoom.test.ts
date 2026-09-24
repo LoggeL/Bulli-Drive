@@ -150,6 +150,22 @@ describe('session messages', () => {
         expect(alice.member!.car!.base.mass).toBe(createVehicleParams('bulli', 'standard').mass);
     });
 
+    it('tells every player its own score and rank with the top 10, also from place 12', () => {
+        const players = Array.from({ length: 12 }, (_, i) => player(`P${String(i).padStart(2, '0')}`));
+        // Scores 120, 110, ... 10: the last one is 12th
+        players.forEach((p, i) => { partyOf(p).score = (12 - i) * 10; });
+        for (const p of players) p.transport.clear();
+        room.markScoreboardDirty();
+        steps(room, 3);
+        const last = players[11].transport.of('scoreboard').at(-1)!;
+        expect(last.scoreboard).toHaveLength(10);
+        expect(last.scoreboard.some(e => e.id === players[11].id)).toBe(false);
+        expect(last.own).toEqual({ score: 10, rank: 12 });
+        expect(players[0].transport.of('scoreboard').at(-1)!.own).toEqual({ score: 120, rank: 1 });
+        // The same list for everyone
+        expect(players[0].transport.of('scoreboard').at(-1)!.scoreboard).toEqual(last.scoreboard);
+    });
+
     it('answers pings with the room tick', () => {
         const alice = player('Alice');
         steps(room, 5, 1000);
@@ -180,15 +196,24 @@ describe('items', () => {
         expect(alice.transport.events('itemReset')).toEqual([{ type: 'itemReset', kind: 'coin', itemId: coin.id }]);
     });
 
-    it('needs 4 m, or 7 m with the magnet', () => {
+    it('needs 4 m, or with the magnet the 25 m it pulls coins from on the client (+1 m)', () => {
         const alice = player('Alice');
         const coin = room.coins[1];
         put(alice, coin.x + 4.5, coin.z);
         steps(room, 1);
         expect(coin.collected).toBe(false);
-        partyOf(alice).powerups.magnet = { start: 0, end: room.tick + 100 };
+        partyOf(alice).powerups.magnet = { start: 0, end: room.tick + 1000 };
         steps(room, 1);
         expect(coin.collected).toBe(true);
+        // The edge of the pull (legacy: the magnet pulled from 25 m and the
+        // server took any coin the client reported within 35 m)
+        const far = room.coins.find(c => !c.collected)!;
+        put(alice, far.x + 27.5, far.z);
+        steps(room, 1);
+        expect(far.collected).toBe(false);
+        put(alice, far.x + 24.5, far.z);
+        steps(room, 1);
+        expect(far.collected).toBe(true);
     });
 
     it('opens a powerup window from the next tick and extends it on a second pickup', () => {

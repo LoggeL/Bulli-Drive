@@ -274,6 +274,8 @@ export abstract class Room {
         member.inputs.clear();
         member.inputs.takeWindow();
         member.session.send(this.roomStateFor(member, true));
+        // Its own score and rank come with the next scoreboard
+        this.markScoreboardDirty();
     }
 
     resumeState(member: RoomMember): ResumeState {
@@ -569,7 +571,7 @@ export abstract class Room {
         if (this.scoreboardDirty) {
             this.scoreboardDirty = false;
             const board = this.scoreboard();
-            if (board.length > 0 || this.kind === 'party') this.broadcast({ type: 'scoreboard', scoreboard: board });
+            if (board.length > 0 || this.kind === 'party') this.sendScoreboard(board);
         }
         if (this.queued.length === 0) return;
         const simple = this.queued.every(q => !q.near && !q.exclude);
@@ -651,6 +653,23 @@ export abstract class Room {
         for (const member of this.sorted) {
             if (member.id === excludeId) continue;
             member.session.sendRaw(data);
+            this.bytesOut += data.length;
+        }
+    }
+
+    // The same top 10 to everyone, each with its own score and rank; the
+    // list is serialized once
+    private sendScoreboard(board: ScoreboardEntry[]): void {
+        const ranked = this.sorted.filter(m => m.ready).map(m => ({ id: m.id, score: this.scoreOf(m) }));
+        // Stable: equal scores keep the id order, as in scoreboard()
+        ranked.sort((a, b) => b.score - a.score);
+        const rankOf = new Map<string, { score: number; rank: number }>();
+        ranked.forEach((r, i) => rankOf.set(r.id, { score: r.score, rank: i + 1 }));
+        const list = JSON.stringify(board);
+        for (const m of this.sorted) {
+            const own = rankOf.get(m.id);
+            const data = `{"type":"scoreboard","scoreboard":${list}${own ? `,"own":${JSON.stringify(own)}` : ''}}`;
+            m.session.sendRaw(data);
             this.bytesOut += data.length;
         }
     }

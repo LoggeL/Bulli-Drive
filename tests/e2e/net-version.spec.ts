@@ -1,5 +1,5 @@
 import WebSocket from 'ws';
-import { test, expect } from './fixtures.js';
+import { test, expect, topmostAtCenter } from './fixtures.js';
 import { PROTOCOL_VERSION } from '../../src/shared/protocol.js';
 
 // Version check and health (docs/phase-1b-design.md, 3.2, 11.4, 15.3): an
@@ -41,6 +41,9 @@ test('the page reloads once for a new protocol, then says why it stops', async (
     await expect(notice).toBeVisible({ timeout: 30_000 });
     await expect(notice).toContainText('A new version is out');
     await expect(notice.locator('button')).toHaveText('Reload');
+    // On top: the page never got a room, so the loader is still there
+    // (visible alone would also pass underneath it)
+    expect(await topmostAtCenter(page, '#net-notice')).toBe(true);
     // No reload loop
     await page.waitForTimeout(1500);
     expect(loads).toBe(2);

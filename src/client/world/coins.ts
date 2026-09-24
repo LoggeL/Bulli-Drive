@@ -16,6 +16,9 @@ const coinMeshes: Map<number, THREE.Mesh> = new Map();
 // Coins the local car took before the server confirmed them (8.7): the
 // time they were taken; without a pickup event they come back
 const pendingCollects = new Map<number, number>();
+// Coins the server gave the local car while the magnet still pulls them in:
+// they fly on and are taken (without a new confirmation) when they arrive
+const confirmedFlying = new Set<number>();
 // Buffer, snapshot interval and jitter on top of the round trip
 const COIN_CONFIRM_MARGIN_MS = 300;
 
@@ -55,6 +58,7 @@ export function clearCoins() {
     coinMeshes.clear();
     coinBaseY.clear();
     pendingCollects.clear();
+    confirmedFlying.clear();
     state.coins.length = 0;
 }
 
@@ -66,6 +70,7 @@ function markCollected(coinId: number, collected: boolean) {
 // Another player took the coin
 export function removeCoinById(coinId: number) {
     pendingCollects.delete(coinId);
+    confirmedFlying.delete(coinId);
     markCollected(coinId, true);
     removeCoinMesh(coinId);
 }
@@ -76,6 +81,13 @@ export function confirmCoinPickup(coinId: number) {
     const wasPending = pendingCollects.delete(coinId);
     if (!wasPending && coinMeshes.has(coinId)) {
         const coin = coinMeshes.get(coinId)!;
+        // The magnet pulls it in: let it arrive (checkCoinCollection)
+        const car = state.bulli?.group.position;
+        if (car && state.bulli!.powerups.magnet.active
+            && distSq2D(car.x, car.z, coin.position.x, coin.position.z) < MAGNET_RANGE * MAGNET_RANGE) {
+            confirmedFlying.add(coinId);
+            return;
+        }
         collectCoin(coin, coinId);
         pendingCollects.delete(coinId);
         const idx = state.coins.indexOf(coin);
@@ -96,6 +108,7 @@ function removeCoinMesh(coinId: number) {
 
 export function resetCoinById(coinId: number) {
     pendingCollects.delete(coinId);
+    confirmedFlying.delete(coinId);
     markCollected(coinId, false);
     showCoinAgain(coinId);
 }
@@ -159,16 +172,36 @@ export function checkCoinCollection() {
     if (!state.bulli || state.dead) return;
     const carPos = state.bulli.group.position;
     const magnetActive = state.bulli.powerups.magnet.active;
+    // Confirmed coins still flying in when the magnet ends arrive at once
+    if (!magnetActive && confirmedFlying.size > 0) {
+        for (const coinId of [...confirmedFlying]) takeConfirmed(coinId);
+    }
     const collectRadius = magnetActive ? CLIENT_COIN_MAGNET_RADIUS : CLIENT_COIN_RADIUS;
     const collectRadiusSq = collectRadius * collectRadius;
     for (let i = state.coins.length - 1; i >= 0; i--) {
         const coin = state.coins[i];
         if (distSq2D(carPos.x, carPos.z, coin.position.x, coin.position.z) < collectRadiusSq) {
             const coinId = (coin as any).coinId as number;
+            if (confirmedFlying.has(coinId)) {
+                takeConfirmed(coinId);
+                continue;
+            }
             collectCoin(coin, coinId);
             state.coins.splice(i, 1);
         }
     }
+}
+
+// A coin the server already gave the local car arrives: sound and sparkle,
+// nothing to wait for
+function takeConfirmed(coinId: number) {
+    confirmedFlying.delete(coinId);
+    const coin = coinMeshes.get(coinId);
+    if (!coin) return;
+    collectCoin(coin, coinId);
+    pendingCollects.delete(coinId);
+    const idx = state.coins.indexOf(coin);
+    if (idx !== -1) state.coins.splice(idx, 1);
 }
 
 export function collectCoin(coin: THREE.Mesh, coinId: number) {

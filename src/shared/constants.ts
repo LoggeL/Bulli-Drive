@@ -74,5 +74,8 @@ export const DEFAULT_TERRAIN_CONFIG = {
     amplitude3: 1.2
 };
 
-// Positions beyond this on |x| or |z| are rejected by the server
+// Half the side of the playable area plus a margin (m): the rendered
+// terrain follows the shared height inside and rises to hills beyond it
+// (client/world/environment.ts). The server no longer checks positions,
+// it simulates the cars itself.
 export const WORLD_BOUND = DEFAULT_TERRAIN_CONFIG.size / 2 + 50;

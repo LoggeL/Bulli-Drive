@@ -251,6 +251,8 @@ export type ServerMessage =
     // Clock sync: the room tick and how far (0..1) the running tick interval is
     | { type: 'pong'; t: number; tick: number; sub: number }
     | { type: 'events'; tick: number; list: GameEvent[] }
-    | { type: 'scoreboard'; scoreboard: ScoreboardEntry[] }
+    // The top 10, and for the receiver its own score and rank (also when it
+    // is not among the 10; missing from older servers)
+    | { type: 'scoreboard'; scoreboard: ScoreboardEntry[]; own?: { score: number; rank: number } }
     | { type: 'shutdown'; reconnectInMs: number; resume?: string }
     | { type: 'kicked'; reason: 'policy' | 'idle' };
