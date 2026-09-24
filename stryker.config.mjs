@@ -10,7 +10,7 @@
 // It is incremental: a later run only tests the mutants again whose code or
 // covering tests changed, so after the first full run it is quick.
 //
-// MUTATION_GROUP=sim|contact|net|world|rooms runs one group of files with
+// MUTATION_GROUP=sim|contact|net|world|rooms|race runs one group of files with
 // its own incremental file and report (the workflow runs the groups in
 // parallel). Without it every file is mutated. --mutate narrows further:
 //   npm run test:mutation -- --mutate "src/shared/sim/contact.ts"
@@ -31,7 +31,10 @@ const GROUPS = {
     ],
     net: ['src/shared/net/**/*.ts', 'src/shared/protocol.ts', 'src/shared/party/**/*.ts'],
     world: ['src/shared/world/**/*.ts', 'src/shared/math/**/*.ts', 'src/shared/constants.ts'],
-    rooms: ['src/server/rooms/**/*.ts']
+    rooms: ['src/server/rooms/**/*.ts'],
+    // Race mode (docs/phase-2-design.md, 20): tracks, racing line, gates,
+    // progress, standings, launch, freeze and the slipstream
+    race: ['src/shared/race/**/*.ts', 'src/shared/sim/slipstream.ts']
 };
 
 const group = process.env.MUTATION_GROUP || '';

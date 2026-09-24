@@ -900,3 +900,37 @@ Jeder Schritt ist ein Commit (oder wenige), nach dem das Spiel spielbar bleibt. 
 ## 25. Umsetzung: Abweichungen und Stand
 
 *Wird während der Umsetzung gefüllt: Abweichungen von dieser Spezifikation mit Grund, gemessene Werte (Budgets aus 19, Laufzeiten der Test-Ebenen, Draw Calls), Ergebnisse der Mutationsläufe und die im Playtest angepassten Startwerte.*
+
+### 25.1 Schritte 2 und 3: Renn-Kern und Sim (`src/shared/race`, Windschatten, Launch)
+
+**Abweichungen:**
+
+| Stelle | Spezifikation | Umgesetzt | Grund |
+|---|---|---|---|
+| Downtown Loop, `lineOptions` (5.2) | R 24 m, Versatz 4 m | **R 19 m, Versatz 0** | An den inneren Kreuzungsecken stehen Laternen (8,1 m von der Kreuzungsmitte, r 0,7). Mit Versatz 0 hält die Linie 2,5 m Abstand nur bis R ≈ 19,9 m (gemessen: R 20 → 2,47 m, R 24 → 0,81 m). Jeder Versatz nach innen verschärft das. Runde 767 m statt ~750 m. |
+| Außen-innen-außen (5.4) | Versatz bis `apexShift` | als seitlicher Versatz umgesetzt und getestet, **auf beiden Strecken 0** | Der Versatz verkleinert zwar die Krümmung im Scheitel, erhöht sie aber am Einlenkpunkt (R 16 m mit 1,5 m Versatz: kleinster Radius 7,9 m). Eine echte Ideallinie mit größerem Radius passt in der Stadt nicht zwischen die Laternen. |
+| Hill Sprint, Mittellinie (5.3) | beginnt am Start (58,64) | **beginnt bei (58,104)** | Die Startplätze liegen hinter dem Start. Ohne Linie dahinter projizieren alle auf s = 0 und die Positionen am Start hängen am 25-m-Grenzwert der Luftlinie. |
+| Hill Sprint, Start-Gate und Grid (5.3) | G0 (58,64), Grid z 70–98 | **G0 (58,66), Grid z 72–100** | z = 64 ist genau die Kante der Kreuzung (58,58). Der Datentest verlangt 2 m Abstand zu jeder Kreuzung. Der letzte Startplatz liegt 4 m vor der Kreuzung (58,110). |
+| Freeze (12.1) | Lenkung bleibt frei | **Lenkung ebenfalls 0** | In der Sim schieben eingeschlagene Vorderräder ein stehendes Auto: gemessen 1,5 m in 240 Ticks. Die Räder drehen im Countdown deshalb nicht sichtbar mit. |
+| Falschfahrer (10.1) | Ende nach 30 Ticks v̂·t̂ > 0,3 | zusätzlich **≥ 4 m/s**; das Ende setzt das Rückschritt-Maximum auf die aktuelle Stelle | Bei Stillstand ist v̂ nicht definiert. Ohne Neustart des Maximums würde ein Auto, das gewendet hat und noch 25 m hinter seinem weitesten Punkt liegt, sofort wieder Falschfahrer. |
+| `maxSSinceGate` (9) | Bogenlänge | als **Fortschritt seit dem letzten Gate** (m) | Auf dem Rundkurs springt `sLine` an der Naht von L auf 0; der Fortschritt seit dem Gate nicht. |
+| Globale Projektion mit Erwartung (5.4) | „kleinste Abweichung vom Fortschritt" | Kandidaten sind die **lokalen Minima** des Abstands innerhalb von 25 m | Sonst gewinnt irgendein Punkt im 25-m-Kreis, der zufällig näher an der Erwartung liegt, statt des nächsten Punkts des richtigen Schenkels. |
+| Start-Ghost (11) | S bis S + 179 | `raceGhostFloor` nur in `racing`/`finished` | Im Countdown sind alle eingefroren; die Grid-Plätze liegen ≥ 6 m auseinander. |
+| Protokoll v3 (16.1) | Schritt 3 | **in diesem Schritt**, nur der Binärteil (`draft` im Self-Block, `MOD_LAUNCH`/`MOD_BOGGED`, `CAR_RACE_GHOST`/`CAR_DRAFTING`) | `draft` liegt im Zustand, der Codec-Test erzwingt jeden Zustandsschlüssel im Self-Block. JSON-Nachrichten kommen mit dem RaceRoom. |
+| Rampen in der Karte (5.5) | `MAP_VERSION` 3 | `MAP_RAMPS` und `HILL_ROAD` liegen in `world/mapFeatures.ts`, die Rampenbasis ist umgestellt; **`createRaceWorld` fügt die Rampen selbst hinzu**, `MAP_VERSION` bleibt 2 | Ohne Rampen-Optik im Client wären es unsichtbare Wände in Free Roam und Party. Schritt 4 nimmt sie mit der Optik in `MapData` auf; dann darf `createRaceWorld` sie nicht noch einmal anhängen. Die Strecken tragen schon `mapVersion` 3 (`MAP_VERSION_FOR_RACES`). |
+
+**Goldens:** Mit `VehicleState.draft` bekommt jeder Golden-Frame das Feld `"draft": 0`. Neu erzeugt mit `UPDATE_GOLDEN=1`; der Diff enthält ausschließlich diese Zeilen (und das Komma davor). Alle anderen Werte und `golden-tuning.json` sind unverändert, die Windschatten-Konstanten liegen in `race/rules.ts`, nicht in `SIM_TUNING`.
+
+**Gemessen (Datentest `tests/shared/race/tracks.test.ts`):**
+
+| | Downtown Loop | Hill Sprint |
+|---|---|---|
+| Länge der Ideallinie | 767 m | 732 m (davon 38 m hinter dem Start) |
+| kleinster Abstand Linie–Collider | 2,89 m (Laterne) | 6,70 m (Absperrung an der ersten Kreuzung) |
+| größte Steigung außerhalb der Rampen | 0 % | 11,6 % |
+| Absperrungen | 19 Reihen | 8 Reihen (4 Kreuzungen) |
+| Rampenkante über Gelände | – | R1 1,60 m, R2 1,81 m, R3 1,58 m |
+| Ziel | – | 13,77 m, im 20-m-Ring höchstens 13,58 m |
+
+**Mutationslauf** (`MUTATION_GROUP=race`, neue Gruppe in `stryker.config.mjs` und im Workflow): 90 % gesamt; `gates.ts` und `inputFilter.ts` 100 %, `standings.ts` 98 %, `launch.ts` 96 %, `racingLine.ts` 91 %, `slipstream.ts` 91 %, `raceWorld.ts` 90 %, `geometry.ts` und `progress.ts` 87 %. Die Überlebenden sind überwiegend äquivalent: Grenzen `<` gegen `<=` auf Floats, die Größe der Scratch-Puffer, Schutzabfragen, die ein anderer Zweig schon abfängt, und die Fehlertexte. Die Streckendaten selbst (`tracks/*.ts`) laufen beim Laden und zählen für Stryker als statisch; sie prüft der Datentest.
+
