@@ -33,6 +33,21 @@ describe('InputBuffer', () => {
         expect(buffer.late).toBe(2);
     });
 
+    it('still reports the slack after inputs far in the future (the old room right after a switch)', () => {
+        const buffer = new InputBuffer();
+        // Ticks of the room the client just left, 3000 ahead of this one
+        buffer.accept({ flags: 0, seq: 1, tick: 3100, inputs: [gas, gas, gas] }, 100, 0);
+        expect(buffer.early).toBe(3);
+        expect(buffer.takeWindow().slack).toBe(2998);
+        // The client's first inputs for this room: 2 ticks early, and seen
+        buffer.accept({ flags: 0, seq: 2, tick: 102, inputs: [gas] }, 100, 16);
+        buffer.accept({ flags: 0, seq: 3, tick: 103, inputs: [gas, gas] }, 101, 32);
+        expect(buffer.takeWindow().slack).toBe(2);
+        // Once past what the far packet could have reached, new ones count again
+        buffer.accept({ flags: 0, seq: 4, tick: 100 + INPUT_MAX_AHEAD + 1, inputs: [gas] }, 100 + INPUT_MAX_AHEAD - 1, 48);
+        expect(buffer.takeWindow().slack).toBe(2);
+    });
+
     it('clamps the values into the quantised ranges', () => {
         const buffer = new InputBuffer();
         buffer.accept({ flags: 0, seq: 1, tick: 1, inputs: [{ steer: -128, throttle: 255, brake: 0, buttons: 0xff }] }, 0, 0);

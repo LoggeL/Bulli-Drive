@@ -162,6 +162,31 @@ describe('prediction against the server', () => {
         }
     });
 
+    it('behind 150/30/3, a switch to a younger room leaves the inputs on time (20.7)', () => {
+        // Found in CI: the Party had run for minutes, the Free Roam room was
+        // new. Inputs still in flight for the Party's ticks reached the new
+        // room far in the future; the server then took every later input
+        // for a redundant copy, reported no slack any more, and the lead
+        // stayed at its start value, too small: a third of the inputs came
+        // late for good (here 194 to 236 of 600 missed in 10 s)
+        for (const seed of [1, 2, 3]) {
+            server?.dispose();
+            server = new TestServer();
+            const client = new TestClient(server, 'switch', 'bulli', { latencyMs: 75, jitterMs: 30, loss: 0.03 }, seed, 'party');
+            client.script = () => input(0);
+            run(server, [client], 20_000);
+            client.sendJson({ type: 'joinRoom', kind: 'freeroam' });
+            run(server, [client], 1000);
+            expect(client.session.room!.kind).toBe('freeroam');
+            client.sendJson({ type: 'ready' });
+            run(server, [client], 5000);
+            const missed = client.net.stats.missedInputs;
+            run(server, [client], 10_000);
+            // 600 ticks in the 10 s
+            expect(client.net.stats.missedInputs - missed, `seed ${seed}`).toBeLessThan(30);
+        }
+    });
+
     it('jumps back on track after the client clock jumps', () => {
         const tickMs = TICK_MS;
         server = new TestServer();

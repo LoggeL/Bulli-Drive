@@ -81,7 +81,13 @@ export class InputBuffer {
             copyInput(slot.input, clampInput(copyInput(this.scratch, packet.inputs[k])));
             this.accepted++;
         }
-        if (packet.tick > this.highestSeen) this.highestSeen = packet.tick;
+        // Only inputs the buffer could take count as seen: inputs far in the
+        // future (the old room's ticks right after a room switch, a clock
+        // that jumped) would otherwise hide every later input from the
+        // slack, the client's lead would stop following and its inputs stay
+        // late for good (docs/phase-1b-design.md, 20.7)
+        const newestKept = Math.min(packet.tick, roomTick + INPUT_MAX_AHEAD);
+        if (newestKept > packet.tick - packet.inputs.length && newestKept > this.highestSeen) this.highestSeen = newestKept;
         if (this.lastArrival >= 0) {
             this.gaps[this.gapCount % GAPS] = nowMs - this.lastArrival;
             this.gapCount++;
