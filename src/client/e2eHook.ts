@@ -22,6 +22,7 @@ import { remoteFlags } from './net/remotes.js';
 import { connectionInfo, holdReconnect } from './network/websocket.js';
 import { connectionOverlayText } from './ui/connectionOverlay.js';
 import { NETSIM } from './net/netsim.js';
+import { isE2EEnabled } from './flags.js';
 import type { NetsimOptions } from '../shared/net/netsim.js';
 
 // Hook for the Playwright smoke tests (tests/e2e) and the screenshot script
@@ -521,7 +522,7 @@ function netSnapshot(): NetDebugSnapshot {
 }
 
 export function installE2EHook(): void {
-    if (new URLSearchParams(window.location.search).get('e2e') !== '1') return;
+    if (!isE2EEnabled(window.location.search)) return;
     (window as unknown as { __bulliNet: { snapshot(): NetDebugSnapshot } }).__bulliNet = { snapshot: netSnapshot };
 
     (window as unknown as { __bulliDebug: unknown }).__bulliDebug = {
