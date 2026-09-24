@@ -29,3 +29,7 @@ tools/models/.out/
 tools/models/.cache/
 tools/textures/.cache/
 __pycache__/
+
+# Mutation testing (stryker.config.mjs)
+reports/
+.stryker-tmp/

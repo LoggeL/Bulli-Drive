@@ -1,0 +1,109 @@
+name: Mutation tests
+
+# Stryker over the pure logic (stryker.config.mjs): src/shared and the room
+# rules in src/server/rooms. Far too slow for every push, so it runs weekly
+# and on demand, never as part of CI. The files are split into groups
+# (MUTATION_GROUP) that run in parallel, each with its own incremental
+# result, so only the first run of a group is slow. It is a report, not a
+# gate: a job only fails when Stryker itself fails (e.g. a red unit test in
+# its dry run).
+
+on:
+  schedule:
+    # Mondays 03:17 UTC
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+    inputs:
+      group:
+        description: 'Group of stryker.config.mjs to run'
+        type: choice
+        options: [all, sim, contact, net, world, rooms]
+        default: all
+      mutate:
+        description: 'Only these files within the group (comma-separated globs, e.g. src/shared/sim/contact.ts); empty = the whole group'
+        required: false
+        default: ''
+      full:
+        description: 'Ignore the incremental result and test every mutant again'
+        type: boolean
+        required: false
+        default: false
+
+concurrency:
+  group: mutation-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  stryker:
+    name: Stryker ${{ matrix.group }}
+    runs-on: ubuntu-latest
+    # A first run without incremental result of the biggest groups takes
+    # hours on a 4-core runner (a full local run: see the PR / commit notes)
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [sim, contact, net, world, rooms]
+    steps:
+      - name: Skip groups that were not asked for
+        id: pick
+        env:
+          WANTED: ${{ inputs.group || 'all' }}
+        run: |
+          if [ "$WANTED" = all ] || [ "$WANTED" = "${{ matrix.group }}" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.pick.outputs.run == 'true'
+        uses: actions/checkout@v7
+      - if: steps.pick.outputs.run == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - if: steps.pick.outputs.run == 'true'
+        run: npm ci
+      # The incremental file carries the results of the last run of this
+      # group. Each run saves a new cache entry; the newest one is restored.
+      - name: Restore incremental result
+        if: steps.pick.outputs.run == 'true'
+        uses: actions/cache/restore@v6
+        with:
+          path: reports/stryker-incremental-${{ matrix.group }}.json
+          key: stryker-incremental-${{ matrix.group }}-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            stryker-incremental-${{ matrix.group }}-${{ github.ref_name }}-
+            stryker-incremental-${{ matrix.group }}-main-
+      - name: Run Stryker
+        if: steps.pick.outputs.run == 'true'
+        env:
+          MUTATION_GROUP: ${{ matrix.group }}
+          MUTATE: ${{ inputs.mutate }}
+          FULL: ${{ inputs.full }}
+        run: |
+          args=()
+          if [ -n "$MUTATE" ]; then args+=(--mutate "$MUTATE"); fi
+          if [ "$FULL" = true ]; then args+=(--force); fi
+          npm run test:mutation -- "${args[@]}"
+      - name: Job summary
+        if: always() && steps.pick.outputs.run == 'true' && hashFiles(format('reports/mutation-{0}/mutation.json', matrix.group)) != ''
+        run: npx tsx scripts/mutation-summary.ts --report=reports/mutation-${{ matrix.group }}/mutation.json >> "$GITHUB_STEP_SUMMARY"
+      - name: Save incremental result
+        if: always() && steps.pick.outputs.run == 'true' && hashFiles(format('reports/stryker-incremental-{0}.json', matrix.group)) != ''
+        uses: actions/cache/save@v6
+        with:
+          path: reports/stryker-incremental-${{ matrix.group }}.json
+          key: stryker-incremental-${{ matrix.group }}-${{ github.ref_name }}-${{ github.run_id }}
+      - name: Upload mutation report
+        if: always() && steps.pick.outputs.run == 'true' && hashFiles(format('reports/mutation-{0}/**', matrix.group)) != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: mutation-report-${{ matrix.group }}
+          path: |
+            reports/mutation-${{ matrix.group }}/
+            reports/stryker-incremental-${{ matrix.group }}.json
+          retention-days: 30
