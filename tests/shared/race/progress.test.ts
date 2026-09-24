@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
-    advanceProgress, createCourse, createRaceProgress, finishPassed, lapFor, nextGateIndex, passGate, trackLine,
-    updateWrongWay, type Course, type RaceProgress
+    advanceProgress, createCourse, createRaceProgress, finishPassed, lapFor, nextGateIndex, passGate, resetBeforeNextGate,
+    skipToPoint, trackLine, updateWrongWay, type Course, type RaceProgress
 } from '../../../src/shared/race/progress.js';
 import { buildRacingLine } from '../../../src/shared/race/racingLine.js';
 import type { TrackDef } from '../../../src/shared/race/types.js';
+import { FLAT_TERRAIN } from '../../../src/shared/sim/scenarios.js';
+import { createVehicleState } from '../../../src/shared/sim/types.js';
+import { createSimWorld } from '../../../src/shared/world/colliders.js';
 
 // Progress of one racer (docs/phase-2-design.md, 5.1, 8, 9, 10) on two
 // hand-made tracks whose racing line is the centre line itself (radius
@@ -374,5 +377,79 @@ describe('wrong way (10.1)', () => {
         p.status = 'finished';
         updateWrongWay(p, course, 0, 1, 0, -10, false);
         expect(p.wrongWay).toBe(false);
+    });
+});
+
+describe('resetBeforeNextGate (10.3)', () => {
+    const world = createSimWorld({ ...FLAT_TERRAIN, size: 1000 }, [], []);
+    let course: Course;
+    beforeEach(() => { course = courseOf(SQUARE); });
+
+    it('puts a car reset past the next gate 5 m before it, facing along the line, at rest', () => {
+        const p = createRaceProgress();
+        // G0 passed; the next gate is G1 at (50, 100), s = 150 on the line
+        crossSquareGate(p, course, 0, START + 1);
+        const s = createVehicleState();
+        // The reset left it on the leg x = 100, past G1
+        s.x = 100; s.z = 70; s.yaw = Math.PI; s.vx = 3;
+        expect(resetBeforeNextGate(p, course, s, world)).toBe(true);
+        expect(s.x).toBeCloseTo(45, 6);
+        expect(s.z).toBeCloseTo(100, 6);
+        expect(s.yaw).toBeCloseTo(Math.PI / 2, 9);
+        expect([s.vx, s.vz]).toEqual([0, 0]);
+    });
+
+    it('leaves a car before the next gate, and one just behind the last gate, where they are', () => {
+        const p = createRaceProgress();
+        crossSquareGate(p, course, 0, START + 1);
+        const s = createVehicleState();
+        s.x = 30; s.z = 100;
+        expect(resetBeforeNextGate(p, course, s, world)).toBe(false);
+        expect([s.x, s.z]).toEqual([30, 100]);
+        s.x = 0; s.z = 40;
+        expect(resetBeforeNextGate(p, course, s, world)).toBe(false);
+        // A finished racer: nothing to check
+        p.status = 'finished';
+        s.x = 100; s.z = 70;
+        expect(resetBeforeNextGate(p, course, s, world)).toBe(false);
+    });
+
+    it('checks an open line by the arc length', () => {
+        const sprint = courseOf(SPRINT);
+        const p = createRaceProgress();
+        const s = createVehicleState();
+        // Next gate G0 at z = 0: z = 30 is past it, z = -5 before it
+        s.x = 0; s.z = 30;
+        expect(resetBeforeNextGate(p, sprint, s, world)).toBe(true);
+        expect(s.z).toBeCloseTo(-5, 9);
+        s.z = -10;
+        expect(resetBeforeNextGate(p, sprint, s, world)).toBe(false);
+    });
+});
+
+describe('skipToPoint (E2E placement, 20.3)', () => {
+    it('counts the gates before the point as passed, without times, and never takes gates away', () => {
+        const course = courseOf(SPRINT);
+        const p = createRaceProgress();
+        skipToPoint(p, course, 0, 150);
+        // G0 (z = 0) and G1 (z = 100) are before z = 150
+        expect(p.passed).toBe(2);
+        expect(p.gateTimes).toHaveLength(2);
+        expect(p.gateTimes.every(Number.isNaN)).toBe(true);
+        expect(p.lineIndex).toBe(-1);
+        skipToPoint(p, course, 0, 50);
+        expect(p.passed).toBe(2);
+        // Past the finish: the finish line itself still has to be crossed
+        skipToPoint(p, course, 0, 199);
+        expect(p.passed).toBe(finishPassed(SPRINT) - 1);
+        expect(p.status).toBe('racing');
+    });
+
+    it('counts the gates of the first lap of a circuit', () => {
+        const p = createRaceProgress();
+        skipToPoint(p, courseOf(SQUARE), 90, 0);
+        // G0 at s = 50, G1 at 150, G2 at 250 lie before s = 390
+        expect(p.passed).toBe(3);
+        expect(p.lap).toBe(1);
     });
 });

@@ -282,7 +282,8 @@ function writeProjection(line: Polyline, i: number, t: number, d2: number, out: 
     out.x = a.x + abx * t;
     out.z = a.z + abz * t;
     out.s = a.s + len * t;
-    if (out.s >= line.length) out.s -= line.length;
+    // The end of a closed line's last segment is its start
+    if (line.closed && out.s >= line.length) out.s -= line.length;
     out.dist = Math.sqrt(d2);
     if (len > 0) {
         out.tx = abx / len;
@@ -354,4 +355,29 @@ let segmentParams = new Float64Array(0);
 /** Signed distance from s0 forward to s1 along the line (closed: into [-L/2, L/2)). */
 export function lineDelta(line: Polyline, s0: number, s1: number): number {
     return pathDelta(s0, s1, line.length, line.closed);
+}
+
+/**
+ * The point at arc length s on the line (closed: s wraps; open: clamped to
+ * the ends), with the direction of its segment. dist is 0.
+ */
+export function pointAt(line: Polyline, s: number, out: Projection): Projection {
+    const pts = line.points;
+    const n = pts.length;
+    const segments = segmentCount(line);
+    let at = s;
+    if (line.closed) at = ((at % line.length) + line.length) % line.length;
+    else at = at < 0 ? 0 : at > line.length ? line.length : at;
+    // Last point with pts[i].s <= at, among the segment starts
+    let lo = 0, hi = segments - 1;
+    while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (pts[mid].s <= at) lo = mid;
+        else hi = mid - 1;
+    }
+    const a = pts[lo], b = pts[(lo + 1) % n];
+    const len = Math.hypot(b.x - a.x, b.z - a.z);
+    const t = len > 0 ? Math.min(1, (at - a.s) / len) : 0;
+    writeProjection(line, lo, t, 0, out);
+    return out;
 }

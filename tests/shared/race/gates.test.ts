@@ -65,4 +65,15 @@ describe('crossingTicks', () => {
         // A crossing in the very first tick of the race
         expect(crossingTicks(41, 0.5, 40)).toBe(0.5);
     });
+
+    it('gives the same bits however far the room clock has run (the ghost replay counts from 0)', () => {
+        // 1650 + 0.2848471032878 is exact in the whole ticks; adding the
+        // fraction to a large tick first would round it away
+        const t = 0.2848471032878;
+        const early = crossingTicks(1651 + 30, t, 30);
+        for (const offset of [3505, 123_456, 9_876_543]) {
+            expect(Object.is(crossingTicks(1651 + 30 + offset, t, 30 + offset), early)).toBe(true);
+        }
+        expect(early).toBe(1650 + t);
+    });
 });

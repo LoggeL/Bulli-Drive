@@ -51,6 +51,8 @@ export const WRONG_WAY_BACKTRACK = 25;
 export const MISSED_GATE_DISTANCE = 30;
 // Farther (m) from the line, the remaining distance is the straight line to the gate
 export const OFF_LINE_DISTANCE = 25;
+// A reset that lands past the next gate goes back this far (m) before it (10.3)
+export const RESET_BEFORE_GATE = 5;
 
 // ---- Racing line ----
 
@@ -99,7 +101,8 @@ export const DRAFT_FILL = 0.08;
 
 // ---- Time trial ----
 
-// Pose track of a ghost
+// Pose track of a ghost: one sample every GHOST_POSE_EVERY ticks (20 Hz)
 export const GHOST_POSE_HZ = 20;
+export const GHOST_POSE_EVERY = 3;
 // Personal bests per ghost key kept in memory (LRU)
 export const GHOST_PERSONAL_MAX = 64;

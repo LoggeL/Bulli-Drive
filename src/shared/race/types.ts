@@ -2,13 +2,18 @@
 // Conventions as in the sim: 1 u = 1 m, forward is (sin yaw, cos yaw), left
 // is (cos yaw, -sin yaw); yaw = 0 points to +z, π/2 to +x.
 
-export type TrackId = 'downtown-loop' | 'hill-sprint';
+export const TRACK_IDS = ['downtown-loop', 'hill-sprint'] as const;
+export type TrackId = typeof TRACK_IDS[number];
 
 export type RacePhase = 'lobby' | 'countdown' | 'racing' | 'finished' | 'results';
 
 export type RacerStatus = 'racing' | 'finished' | 'dnf' | 'left';
 
-export type BotLevel = 'easy' | 'medium' | 'hard';
+export const BOT_LEVELS = ['easy', 'medium', 'hard'] as const;
+export type BotLevel = typeof BOT_LEVELS[number];
+
+export const RACE_VOTES = ['rematch', 'next'] as const;
+export type RaceVote = typeof RACE_VOTES[number];
 
 export interface Vec2 { x: number; z: number }
 

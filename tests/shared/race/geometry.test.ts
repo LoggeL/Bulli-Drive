@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
-    createProjection, lineDelta, polylineFromPoints, projectGlobal, projectNear, roundCorners, samplePath
+    createProjection, lineDelta, pointAt, polylineFromPoints, projectGlobal, projectNear, roundCorners, samplePath
 } from '../../../src/shared/race/geometry.js';
 
 // Polylines of the race mode (docs/phase-2-design.md, 5.4). Expected values
@@ -273,5 +273,38 @@ describe('projection', () => {
         // The end of the closing segment is the start: s = 0, not 40
         projectNear(loop, -0.5, -1, 3, out, 0);
         expect([out.index, out.x, out.z, out.s]).toEqual([3, 0, 0, 0]);
+    });
+});
+
+describe('pointAt', () => {
+    // Legs of 10, 10 and 10 m (open), plus the 10 m back (closed)
+    const corners = [{ x: 0, z: 0 }, { x: 0, z: 10 }, { x: 10, z: 10 }, { x: 10, z: 0 }];
+
+    it('walks the arc length along an open line and clamps at its ends', () => {
+        const line = polylineFromPoints(corners, false);
+        const out = createProjection();
+        pointAt(line, 4, out);
+        expect([out.index, out.x, out.z, out.s, out.tx, out.tz, out.dist]).toEqual([0, 0, 4, 4, 0, 1, 0]);
+        pointAt(line, 15, out);
+        expect([out.index, out.x, out.z, out.tx, out.tz]).toEqual([1, 5, 10, 1, 0]);
+        // Exactly on a corner: the start of the next segment
+        pointAt(line, 20, out);
+        expect([out.index, out.x, out.z]).toEqual([2, 10, 10]);
+        pointAt(line, -3, out);
+        expect([out.x, out.z, out.s]).toEqual([0, 0, 0]);
+        pointAt(line, 99, out);
+        expect([out.index, out.x, out.z, out.s]).toEqual([2, 10, 0, 30]);
+    });
+
+    it('wraps round a closed line, onto its closing segment', () => {
+        const loop = polylineFromPoints(corners, true);
+        const out = createProjection();
+        pointAt(loop, 34, out);
+        expect([out.index, out.x, out.z, out.tx, out.tz]).toEqual([3, 6, 0, -1, 0]);
+        pointAt(loop, 44, out);
+        expect([out.x, out.z, out.s]).toEqual([0, 4, 4]);
+        // 6 m before the start: 4 m along the closing segment from (10, 0)
+        pointAt(loop, -6, out);
+        expect([out.x, out.z]).toEqual([6, 0]);
     });
 });

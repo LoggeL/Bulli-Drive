@@ -30,9 +30,14 @@ export function crossGate(gate: GateDef, x0: number, z0: number, x1: number, z1:
     return Math.abs(across) <= gate.width / 2 + GATE_TOLERANCE ? t : -1;
 }
 
-/** Race time (float ticks since startTick) of a crossing at fraction t of tick T. */
+/**
+ * Race time (float ticks since startTick) of a crossing at fraction t of
+ * tick T. The whole ticks first: (T - 1 - S) is exact, so the result does
+ * not depend on how far the room's clock has run (a replay counts from 0
+ * and must give the same bits).
+ */
 export function crossingTicks(tick: number, t: number, startTick: number): number {
-    return tick - 1 + t - startTick;
+    return (tick - 1 - startTick) + t;
 }
 
 /**

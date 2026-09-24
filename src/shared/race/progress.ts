@@ -4,11 +4,14 @@
 // The server runs it for every racer after each stepWorld; the functions
 // are pure apart from writing into the progress object.
 
-import { createProjection, lineDelta, projectGlobal, projectNear, type Polyline, type Projection } from './geometry.js';
+import type { VehicleState } from '../sim/types.js';
+import { placeVehicle } from '../sim/vehicle.js';
+import type { SimWorld } from '../world/colliders.js';
+import { createProjection, lineDelta, pointAt, projectGlobal, projectNear, type Polyline, type Projection } from './geometry.js';
 import { crossGate, crossingTicks, gateArcLengths } from './gates.js';
 import { racingLine } from './racingLine.js';
 import {
-    MISSED_GATE_DISTANCE, OFF_LINE_DISTANCE, WRONG_WAY_BACKTRACK, WRONG_WAY_DOT, WRONG_WAY_ENTER_TICKS,
+    MISSED_GATE_DISTANCE, OFF_LINE_DISTANCE, RESET_BEFORE_GATE, WRONG_WAY_BACKTRACK, WRONG_WAY_DOT, WRONG_WAY_ENTER_TICKS,
     WRONG_WAY_EXIT_DOT, WRONG_WAY_EXIT_TICKS, WRONG_WAY_MIN_SPEED
 } from './rules.js';
 import type { RacerStatus, TrackDef } from './types.js';
@@ -215,4 +218,48 @@ export function advanceProgress(
     const hit = trackLine(p, course, x1, z1, teleported);
     updateWrongWay(p, course, hit.tx, hit.tz, vx, vz, teleported);
     return time;
+}
+
+const resetScratch: Projection = createProjection();
+
+/**
+ * The server's check of a reset onto the racing line (10.3): the sim puts
+ * a reset car on the nearest point of the line, which may lie past the
+ * next gate (a shortcut over a parallel leg). Then the car goes back to
+ * RESET_BEFORE_GATE before that gate, facing along the line, at rest.
+ * Returns whether it moved the car. The room and the ghost replay run it
+ * in the same place of the tick.
+ */
+export function resetBeforeNextGate(p: RaceProgress, course: Course, s: VehicleState, world: SimWorld): boolean {
+    if (p.status !== 'racing') return false;
+    const k = nextGateIndex(course.track, p.passed);
+    if (k < 0) return false;
+    const line = course.line;
+    const at = projectGlobal(line, s.x, s.z, resetScratch).s;
+    const gateS = course.gateS[k];
+    const past = line.closed ? lineDelta(line, gateS, at) > 0 : at > gateS;
+    if (!past) return false;
+    const back = pointAt(line, gateS - RESET_BEFORE_GATE, resetScratch);
+    placeVehicle(s, world, back.x, back.z, Math.atan2(back.tx, back.tz));
+    return true;
+}
+
+/**
+ * E2E only (docs/phase-2-design.md, 20.3): a car put at (x, z) by
+ * debugPlace counts every gate before that point on the line as passed,
+ * without times (NaN), so a test can finish a race right away. Never
+ * takes gates away. Only gates of the first lap count, so the lap stays 1.
+ */
+export function skipToPoint(p: RaceProgress, course: Course, x: number, z: number): void {
+    if (p.status !== 'racing') return;
+    const at = projectGlobal(course.line, x, z, resetScratch).s;
+    let passed = 0;
+    while (passed < course.gateS.length && course.gateS[passed] < at && passed + 1 < finishPassed(course.track)) passed++;
+    while (p.passed < passed) {
+        p.gateTimes.push(NaN);
+        p.passed++;
+    }
+    p.lineIndex = -1;
+    p.maxSSinceGate = -Infinity;
+    p.missedGate = false;
 }

@@ -6,12 +6,15 @@
 // nearest car instead for a few seconds. A car that stops making progress
 // backs off, and after a few tries holds the reset button (back on the road).
 // Pure: no socket, no clock; the Node tests drive it against the sim alone.
-// Phase 2 reuses it for the server-side bots.
+// Pure pursuit, the steer input and the stuck logic are shared with the
+// race bots (src/shared/race/pursuit.ts).
 
 import type { RandomSource } from '../../src/shared/math/rng.js';
-import { BTN_RESET } from '../../src/shared/sim/constants.js';
+import { forwardSpeed, pursuitSteer, StuckWatch } from '../../src/shared/race/pursuit.js';
 import type { VehicleInput, VehicleParams, VehicleState } from '../../src/shared/sim/types.js';
 import type { RoadGrid } from '../../src/shared/world/colliders.js';
+
+export { forwardSpeed, steerForAngle, wrapAngle } from '../../src/shared/race/pursuit.js';
 
 export interface DriverOptions {
     // Cruise speed range (m/s); each route leg draws one
@@ -51,14 +54,6 @@ export interface ChaseTarget {
 interface Node { i: number; j: number }
 interface Point { x: number; z: number }
 
-// Stuck: throttle on but slower than this for STUCK_TICKS
-const STUCK_SPEED = 1.2;
-const STUCK_TICKS = 90;
-// Backing off: reverse (brake held at a standstill) with the wheel turned
-const BACKOFF_TICKS = 70;
-// After this many back-offs without getting going, the reset button
-const BACKOFFS_BEFORE_RESET = 2;
-const RESET_TICKS = 34;
 // Farther than this from the planned line, the route starts over, at most
 // once per REPLAN_HOLD_TICKS (a car that slid far wide steers back first)
 const OFF_ROUTE = 18;
@@ -69,44 +64,18 @@ const ROUTE_AHEAD = 5;
 const CHASE_MAX_TICKS = 240;
 const CHASE_LEAD_S = 0.3;
 
-const TWO_PI = Math.PI * 2;
-
-export function wrapAngle(angle: number): number {
-    return angle - TWO_PI * Math.floor((angle + Math.PI) / TWO_PI);
-}
-
-/** Forward speed of a car (m/s, negative when rolling backwards). */
-export function forwardSpeed(s: VehicleState): number {
-    return s.vx * Math.sin(s.yaw) + s.vz * Math.cos(s.yaw);
-}
-
-/**
- * The steer input (-127..127) that asks the sim for wheel angle delta at
- * forward speed u: the sim shrinks the lock with speed (vehicle.ts, 2a).
- */
-export function steerForAngle(delta: number, u: number, p: VehicleParams): number {
-    const axis = delta * (1 + Math.abs(u) / p.steerFalloff) / p.steerLock;
-    return Math.round(Math.max(-1, Math.min(1, axis)) * 127);
-}
-
 export class RoadDriver {
     // Crossings: route[0] is the one the car comes from, route[1] the next
     private route: Node[] = [];
     private readonly waypoints: Point[] = [];
     private cruise = 25;
-    private stuckTicks = 0;
-    private backoffTicks = 0;
-    private backoffs = 0;
-    private resetTicks = 0;
-    private backoffSteer = 0;
+    private readonly stuck = new StuckWatch();
     private chaseTicks = 0;
     private replanHold = 0;
     private lastX = NaN;
     private lastZ = NaN;
     // For tests and reports
     distance = 0;
-    resets = 0;
-    backoffCount = 0;
     replans = 0;
     readonly lookahead: Point = { x: 0, z: 0 };
     readonly options: DriverOptions;
@@ -115,10 +84,19 @@ export class RoadDriver {
         this.options = { ...DEFAULT_DRIVER_OPTIONS, ...options };
     }
 
+    get resets(): number {
+        return this.stuck.resets;
+    }
+
+    get backoffCount(): number {
+        return this.stuck.backoffCount;
+    }
+
     /** Forgets the route (after a spawn, a respawn or a teleport). */
     restart(): void {
         this.route.length = 0;
-        this.stuckTicks = this.backoffTicks = this.backoffs = this.resetTicks = this.chaseTicks = this.replanHold = 0;
+        this.stuck.restart();
+        this.chaseTicks = this.replanHold = 0;
         this.lastX = this.lastZ = NaN;
     }
 
@@ -133,28 +111,12 @@ export class RoadDriver {
         out.buttons = 0;
         const u = forwardSpeed(s);
 
-        // Holding the reset button: back on the road, then a new route
-        if (this.resetTicks > 0) {
-            this.resetTicks--;
-            out.steer = 0;
-            out.throttle = 0;
-            out.brake = 0;
-            out.buttons = BTN_RESET;
-            if (this.resetTicks === 0) this.restart();
-            return out;
-        }
-        // Backing off an obstacle: reverse with the wheel the other way
-        if (this.backoffTicks > 0) {
-            this.backoffTicks--;
-            out.steer = this.backoffSteer;
-            out.throttle = 0;
-            out.brake = 255;
-            if (this.backoffTicks === 0) {
-                this.route.length = 0;
-                this.stuckTicks = 0;
-            }
-            return out;
-        }
+        // Holding the reset button: back on the road, then a new route;
+        // backing off an obstacle: reverse with the wheel the other way
+        const stuck = this.stuck.override(out);
+        if (stuck === 'resetDone') this.restart();
+        else if (stuck === 'backoffDone') this.route.length = 0;
+        if (stuck !== 'drive') return out;
 
         if (chase && this.chaseTicks < CHASE_MAX_TICKS) {
             this.chaseTicks++;
@@ -168,7 +130,7 @@ export class RoadDriver {
             if (!chase) this.chaseTicks = 0;
             this.followRoads(s, p, u, out);
         }
-        this.watchProgress(s, u, out);
+        this.stuck.watch(s, u, out);
         return out;
     }
 
@@ -232,32 +194,7 @@ export class RoadDriver {
 
     // Pure pursuit: the wheel angle of the arc through the target point
     private pursue(s: VehicleState, p: VehicleParams, u: number, out: VehicleInput, target: Point, ld: number): void {
-        const heading = Math.atan2(target.x - s.x, target.z - s.z);
-        const alpha = wrapAngle(heading - s.yaw);
-        const reach = Math.max(4, ld);
-        const delta = Math.atan2(2 * p.wheelbase * Math.sin(alpha), reach);
-        out.steer = steerForAngle(delta, u, p);
-    }
-
-    // Stuck against something: back off, then reset
-    private watchProgress(s: VehicleState, u: number, out: VehicleInput): void {
-        if (out.throttle > 100 && Math.abs(u) < STUCK_SPEED) this.stuckTicks++;
-        else if (Math.abs(u) > 4) {
-            this.stuckTicks = 0;
-            this.backoffs = 0;
-        }
-        if (this.stuckTicks < STUCK_TICKS) return;
-        this.stuckTicks = 0;
-        if (this.backoffs >= BACKOFFS_BEFORE_RESET || s.flipAngle !== 0) {
-            this.backoffs = 0;
-            this.resets++;
-            this.resetTicks = RESET_TICKS;
-            return;
-        }
-        this.backoffs++;
-        this.backoffCount++;
-        this.backoffTicks = BACKOFF_TICKS;
-        this.backoffSteer = out.steer >= 0 ? -127 : 127;
+        out.steer = pursuitSteer(s, p, u, target.x, target.z, ld);
     }
 
     // ---- Route ----
