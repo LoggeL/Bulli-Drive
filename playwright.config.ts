@@ -1,9 +1,13 @@
 import fs from 'node:fs';
 import { defineConfig, devices } from '@playwright/test';
 
-// Smoke tests run against the production build (dist/), served by the real
-// game server on its own port. "npm run test:e2e" builds first; a bare
-// "npx playwright test" reuses whatever is in dist/.
+// The critical user paths (tests/e2e) run against the production build
+// (dist/), served by the real game server on its own port: desktop, two
+// players, touch on a phone, a new deploy, missing assets. "npm run
+// test:e2e" builds first and runs the desktop and mobile projects; the
+// render checks of the phone tier (tests/e2e-render) are their own
+// project, "npm run test:e2e:render". A bare "npx playwright test" reuses whatever
+// is in dist/ and runs all three.
 const PORT = Number(process.env.E2E_PORT) || 8799;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 
@@ -46,6 +50,13 @@ export default defineConfig({
             testMatch: /mobile\.spec\.ts$/,
             // iPhone 13 viewport, touch and user agent, rendered by Chromium
             use: { ...devices['iPhone 13'], browserName: 'chromium' }
+        },
+        {
+            // Draw call budget and texture placeholders of the phone tier:
+            // renderer measurements, not user paths (own CI job)
+            name: 'render',
+            testDir: 'tests/e2e-render',
+            use: { ...devices['Desktop Chrome'] }
         }
     ],
     webServer: {

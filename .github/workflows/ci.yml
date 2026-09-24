@@ -48,6 +48,11 @@ jobs:
           # The stale-client guard needs the version file and the stamp in index.html
           grep -Eq '^[a-f0-9]{16}$' dist/client/build-version.txt
           grep -q "name=\"bulli-build-version\" content=\"$(cat dist/client/build-version.txt)\"" dist/client/index.html
+          # lil-gui (the ?sandbox=1&tune=1 panel) stays in its lazy chunk:
+          # nothing the page loads up front contains it
+          for file in dist/client/index.html $(grep -oE '/assets/[^"]+\.js' dist/client/index.html | sed 's#^#dist/client#'); do
+            if grep -q "lil-gui" "$file"; then echo "lil-gui is loaded up front by $file"; exit 1; fi
+          done
 
   bots:
     name: Bot integration
@@ -67,15 +72,9 @@ jobs:
       - run: npm run test:bots -- --reporter=verbose
 
   e2e:
-    name: End-to-end (Playwright) ${{ matrix.shard }}/2
+    name: End-to-end (Playwright)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-    # Software WebGL is CPU bound and the suite runs on one worker, so the
-    # tests are split over two runners (each starts its own game server)
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2]
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -84,14 +83,42 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      # Builds, then runs desktop, two-player and mobile smoke tests against
-      # the production server (see playwright.config.ts)
-      - run: npm run test:e2e -- --shard=${{ matrix.shard }}/2
+      # Builds, then runs the critical user paths against the production
+      # server (see playwright.config.ts): desktop, two players, touch on a
+      # phone, a new deploy, missing assets. Everything a unit or bot test
+      # can check lives there instead; the suite stays under ~5 minutes.
+      - run: npm run test:e2e
       - name: Upload Playwright report and traces
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report-${{ matrix.shard }}
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+
+  e2e-render:
+    name: Render checks (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      # The phone tier's draw call and triangle budget and its texture
+      # placeholders, measured by the renderer (SwiftShader): measurements,
+      # not user paths
+      - run: npm run test:e2e:render
+      - name: Upload Playwright report and traces
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-render
           path: |
             playwright-report/
             test-results/
