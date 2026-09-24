@@ -254,10 +254,17 @@ export interface Sky {
  * `beforeEnvironment` resolves when the other inputs of the environment (the
  * world noise texture) are loaded.
  */
+// What rebuildEnvironment needs of THREE.PMREMGenerator (tests hand in a fake)
+export interface PmremFactory {
+    (renderer: THREE.WebGLRenderer): Pick<THREE.PMREMGenerator, 'fromScene' | 'dispose'>;
+}
+
+const createPmrem: PmremFactory = renderer => new THREE.PMREMGenerator(renderer);
+
 export function createSky(
     renderer: THREE.WebGLRenderer,
     scene: THREE.Scene,
-    options: { environment: boolean; hdri: boolean; simple: boolean; beforeEnvironment: Promise<void> }
+    options: { environment: boolean; hdri: boolean; simple: boolean; beforeEnvironment: Promise<void>; pmrem?: PmremFactory }
 ): Sky {
     let textures = fallbackTextures();
     const skyMaterial = createSkyMaterial(textures, false, options.simple);
@@ -276,7 +283,7 @@ export function createSky(
         const material = createSkyMaterial(textures, true);
         const geometry = new THREE.SphereGeometry(50, 64, 32);
         envScene.add(new THREE.Mesh(geometry, material));
-        const pmrem = new THREE.PMREMGenerator(renderer);
+        const pmrem = (options.pmrem ?? createPmrem)(renderer);
         const target = pmrem.fromScene(envScene, 0, 0.1, 200);
         pmrem.dispose();
         material.dispose();
