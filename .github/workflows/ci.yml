@@ -56,6 +56,15 @@ jobs:
           for file in dist/client/index.html $(grep -oE '/assets/[^"]+\.js' dist/client/index.html | sed 's#^#dist/client#'); do
             if grep -q "lil-gui" "$file"; then echo "lil-gui is loaded up front by $file"; exit 1; fi
           done
+          # ...but it is there: the entry imports the tuning panel's chunk
+          # (with lil-gui) and the sandbox's chunk on demand. No browser
+          # starts the sandbox or the panel any more; their code runs in
+          # tests/client/sandbox.test.ts
+          entry=dist/client$(grep -oE '/assets/index-[^"]+\.js' dist/client/index.html | head -1)
+          panel=$(grep -oE 'import\(.\./tuningPanel-[A-Za-z0-9_-]+\.js.\)' "$entry" | grep -oE 'tuningPanel-[A-Za-z0-9_-]+\.js' | head -1)
+          if [ -z "$panel" ]; then echo "$entry does not import the tuning panel lazily"; exit 1; fi
+          if ! grep -q "lil-gui" "dist/client/assets/$panel"; then echo "lil-gui is not in $panel"; exit 1; fi
+          if ! grep -qE 'import\(.\./sandbox-[A-Za-z0-9_-]+\.js.\)' "$entry"; then echo "$entry does not import the sandbox lazily"; exit 1; fi
 
   bots:
     name: Bot integration
