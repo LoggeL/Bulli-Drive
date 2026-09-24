@@ -1,13 +1,16 @@
 import { devices, type Page } from '@playwright/test';
-import { test, expect, joinGame, placeOnClearRunway, waitFrames } from '../e2e/fixtures.js';
+import type { RaceDebugSnapshot } from '../../src/client/e2eHook.js';
+import { test, expect, joinGame, placeOnClearRunway, waitFrames, debugCall } from '../e2e/fixtures.js';
 
 // The touch HUD of the Party in eight phone and tablet viewports: no
 // control, panel or prompt covers another or leaves the screen, the room
 // chip stays clear of the map and the controls, and the controls stay off
 // the standing car and clear of the sandbox banner (?sandbox=1, same
-// CSS). A layout measurement rather than a user path, so it runs in the
-// render job beside the E2E suite; the touch path itself is
-// tests/e2e/mobile.spec.ts.
+// CSS). The same for the race HUD (docs/phase-2-design.md, 17.5): the race
+// pill, BRAKE, and the countdown, the banner and the GO zone clear of the
+// controls. A layout measurement rather than a user path, so it runs in
+// the render job beside the E2E suite; the touch paths themselves are
+// tests/e2e/mobile.spec.ts and race.mobile.spec.ts.
 
 // iPhone 13 with touch, rendered by Chromium like the rest of the project
 const { defaultBrowserType: _browser, ...iPhone13 } = devices['iPhone 13'];
@@ -127,6 +130,84 @@ test('the Party touch HUD in eight viewports: nothing overlaps, the car stays fr
             if (!box || !CONTROLS.includes(selector)) continue;
             if (overlaps(box, carRect)) problems.push(`${viewport.name}: ${selector} ${round(box)} covers the car ${round(carRect)}`);
             if (overlaps(box, banner)) problems.push(`${viewport.name}: the sandbox banner ${round(banner)} covers ${selector} ${round(box)}`);
+        }
+    }
+    expect(problems).toEqual([]);
+});
+
+// The race: the pill instead of the score, BRAKE instead of shooting
+const RACE_HUD = [
+    '#btn-drift', '#btn-boost', '#btn-autogas', '#btn-flip', '#btn-brake', '#btn-honk',
+    '#joystick-move', '#drive-meter', '#map-panel', '#race-hud', '#player-list'
+];
+const RACE_CONTROLS = ['#btn-drift', '#btn-boost', '#btn-autogas', '#btn-flip', '#btn-brake', '#btn-honk', '#joystick-move'];
+// Shown for moments (the countdown, a banner, the GO zone before green):
+// never over a control, the pill, the map or the room chip
+const RACE_TRANSIENT = ['#race-countdown', '#race-banner', '#race-go'];
+
+test('the race touch HUD in eight viewports: nothing overlaps, the car stays free', async ({ openPlayer }) => {
+    const player = await openPlayer('race-hud');
+    const { page } = player;
+    await joinGame(player, 'E2E Race HUD', '', 'race');
+    await expect(page.locator('#race-lobby')).toBeVisible();
+    // Auto-gas off: the car stands on the grid while the bots race the
+    // Downtown Loop (three laps, time enough for the eight viewports)
+    await page.evaluate(() => document.getElementById('btn-autogas')!.click());
+    await expect(page.locator('#btn-autogas')).toHaveAttribute('aria-pressed', 'false');
+    await page.locator('#race-ready').tap();
+    await expect.poll(async () => {
+        const race = await debugCall<RaceDebugSnapshot | null>(page, 'race');
+        return !!race && race.phase === 'racing' && race.tick > race.startTick! + 60;
+    }, { timeout: 30_000 }).toBe(true);
+    await expect(page.locator('#race-hud')).toBeVisible();
+    await expect(page.locator('#btn-brake')).toBeVisible();
+    await expect(page.locator('#btn-shoot')).toBeHidden();
+    await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; }' });
+    // The transient parts as they look at their fullest (the race client
+    // hides them again every frame, so the style keeps them up)
+    await page.addStyleTag({
+        content: '#race-countdown[hidden], #race-banner[hidden] { display: flex !important; } #race-go[hidden] { display: block !important; }'
+    });
+    await page.evaluate(() => {
+        document.querySelectorAll('.race-lights span').forEach(light => light.classList.add('on'));
+        document.getElementById('race-count-label')!.textContent = '1';
+        document.getElementById('race-banner')!.textContent = 'PERFECT START!';
+    });
+    const problems: string[] = [];
+    for (const viewport of VIEWPORTS) {
+        await page.setViewportSize({ width: viewport.width, height: viewport.height });
+        const car = await carBox(page, viewport.width, viewport.height);
+        const boxes = await Promise.all(RACE_HUD.map(async selector => ({ selector, box: await page.locator(selector).boundingBox() })));
+        for (const { selector, box } of boxes) {
+            if (!box) problems.push(`${viewport.name}: ${selector} not shown`);
+            else if (box.x < 0 || box.x + box.width > viewport.width) problems.push(`${viewport.name}: ${selector} off screen ${round(box)}`);
+        }
+        for (let i = 0; i < boxes.length; i++) {
+            for (let j = i + 1; j < boxes.length; j++) {
+                const a = boxes[i].box, b = boxes[j].box;
+                if (a && b && overlaps(a, b)) problems.push(`${viewport.name}: ${boxes[i].selector} ${round(a)} overlaps ${boxes[j].selector} ${round(b)}`);
+            }
+        }
+        const carRect = { x: car.left, y: car.top, width: car.right - car.left, height: car.bottom - car.top };
+        for (const { selector, box } of boxes) {
+            if (box && RACE_CONTROLS.includes(selector) && overlaps(box, carRect)) {
+                problems.push(`${viewport.name}: ${selector} ${round(box)} covers the car ${round(carRect)}`);
+            }
+        }
+        const chip = (await page.locator('#room-chip').boundingBox())!;
+        for (const selector of RACE_TRANSIENT) {
+            const own = await page.locator(selector).boundingBox();
+            if (!own) {
+                problems.push(`${viewport.name}: ${selector} not shown`);
+                continue;
+            }
+            if (own.x < 0 || own.x + own.width > viewport.width) problems.push(`${viewport.name}: ${selector} off screen ${round(own)}`);
+            if (overlaps(own, chip)) problems.push(`${viewport.name}: ${selector} ${round(own)} overlaps #room-chip`);
+            for (const { selector: other, box } of boxes) {
+                // The boost bar is hidden while the lights are on
+                if (!box || other === '#drive-meter' || other === '#player-list') continue;
+                if (overlaps(own, box)) problems.push(`${viewport.name}: ${selector} ${round(own)} overlaps ${other} ${round(box)}`);
+            }
         }
     }
     expect(problems).toEqual([]);

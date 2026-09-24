@@ -124,7 +124,7 @@ export async function openGame(player: Player, extraQuery = '', origin = ''): Pr
  * The splash screen of an opened game: the road name (and the game mode,
  * when given), START ENGINE. Resolves with the player's server id.
  */
-export async function joinFromSplash(player: Player, name: string, mode?: 'party' | 'freeroam'): Promise<string> {
+export async function joinFromSplash(player: Player, name: string, mode?: 'party' | 'freeroam' | 'race'): Promise<string> {
     const { page } = player;
     const splash = page.locator('#splash-screen');
     await page.locator('#splash-name-input').fill(name);
@@ -152,7 +152,7 @@ export async function joinFromSplash(player: Player, name: string, mode?: 'party
 }
 
 /** The whole join flow: loading screen, splash screen, START ENGINE. */
-export async function joinGame(player: Player, name: string, extraQuery = '', mode?: 'party' | 'freeroam', origin = ''): Promise<string> {
+export async function joinGame(player: Player, name: string, extraQuery = '', mode?: 'party' | 'freeroam' | 'race', origin = ''): Promise<string> {
     await openGame(player, extraQuery, origin);
     return joinFromSplash(player, name, mode);
 }
