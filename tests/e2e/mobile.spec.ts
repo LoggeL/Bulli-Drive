@@ -9,8 +9,10 @@ import {
 // the buttons (docs/phase-1a-design.md, 11.2), the room chip back to the
 // Party, a HUD that nothing overlaps in eight viewports, and a lost
 // connection that comes back as a new player after the grace time. The
-// touch rules themselves (brake threshold, DRIFT bit, auto-gas, flip held =
-// reset) are unit-tested in tests/client/input.test.ts.
+// touch rules (brake threshold, auto-gas, flip held = reset) are tested on
+// InputManager in tests/client/input.test.ts, the DOM wiring on the real
+// markup (DRIFT and BOOST bits, a second finger, the stick's Y axis, the
+// flip button's tap and hold) in tests/client/mobileControls.test.ts.
 
 type Box = { x: number; y: number; width: number; height: number };
 
