@@ -7,12 +7,13 @@ import {
 // a phone: the splash screen with the touch controls and thumb-sized mode
 // options, Free Roam from the splash, real touch events on the stick and
 // the buttons (docs/phase-1a-design.md, 11.2), the room chip back to the
-// Party, a HUD that nothing overlaps in eight viewports, and a lost
-// connection that comes back as a new player after the grace time. The
-// touch rules (brake threshold, auto-gas, flip held = reset) are tested on
-// InputManager in tests/client/input.test.ts, the DOM wiring on the real
-// markup (DRIFT and BOOST bits, a second finger, the stick's Y axis, the
-// flip button's tap and hold) in tests/client/mobileControls.test.ts.
+// Party, a HUD that nothing overlaps in eight viewports, a short drop that
+// resumes the same player, and a lost connection that comes back as a new
+// player after the grace time. The touch rules (brake threshold, auto-gas,
+// flip held = reset) are tested on InputManager in
+// tests/client/input.test.ts, the DOM wiring on the real markup (DRIFT and
+// BOOST bits, a second finger, the stick's Y axis, the flip button's tap
+// and hold) in tests/client/mobileControls.test.ts.
 
 type Box = { x: number; y: number; width: number; height: number };
 
@@ -203,11 +204,21 @@ test('touch on a phone: splash, Free Roam, stick and buttons, room chip, HUD lay
         document.getElementById('interaction-prompt')!.classList.add('hidden');
     });
 
+    // ---- A short drop: the same player and car come back ----
+    // Within the grace time the session token resumes the session (11.1)
+    const id = (await snapshot(page)).myId;
+    await page.evaluate(() => (window as unknown as { __bulliDebug: { dropConnection(holdMs: number): void } })
+        .__bulliDebug.dropConnection(0));
+    await expect.poll(async () => (await netState(page)).reconnects, { timeout: 20_000 }).toBe(1);
+    expect((await netState(page)).resumed).toBe(true);
+    expect((await snapshot(page)).myId).toBe(id);
+    await expect.poll(async () => (await netState(page)).spawned).toBe(true);
+    await expect(page.locator('#respawn-overlay')).toHaveCount(0);
+
     // ---- A lost connection ----
     // Drop the socket and keep the reconnect back past the grace time of
     // the e2e server (3 s): the banner shows after a second and leaves the
     // controls and the HUD free, the car holds still meanwhile
-    const id = (await snapshot(page)).myId;
     await page.evaluate(() => (window as unknown as { __bulliDebug: { dropConnection(holdMs: number): void } })
         .__bulliDebug.dropConnection(5000));
     const notice = page.locator('#net-notice');
@@ -227,7 +238,7 @@ test('touch on a phone: splash, Free Roam, stick and buttons, room chip, HUD lay
 
     // Back after the hold as a new session: the banner gone, the car
     // spawned again without the splash screen
-    await expect.poll(async () => (await netState(page)).reconnects, { timeout: 20_000 }).toBe(1);
+    await expect.poll(async () => (await netState(page)).reconnects, { timeout: 20_000 }).toBe(2);
     expect((await netState(page)).resumed).toBe(false);
     await expect(notice).toBeHidden();
     await expect.poll(async () => (await netState(page)).spawned).toBe(true);

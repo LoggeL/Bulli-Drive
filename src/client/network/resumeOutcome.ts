@@ -1,4 +1,5 @@
 import type { ServerMessage } from '../../shared/protocol.js';
+import { hideRespawnOverlay, showRespawnOverlay } from '../ui/respawnOverlay.js';
 
 type RoomState = Extract<ServerMessage, { type: 'roomState' }>;
 
@@ -26,4 +27,35 @@ export function resumeOutcome(
     const party = room.room.kind === 'party';
     if (room.resume && page.playerReady && party && room.members.some(m => m.id === page.myId && m.ready)) return 'deadInParty';
     return page.playerReady ? 'sendReady' : 'wait';
+}
+
+/** The page state applyResumeOutcome changes (the client's `state`). */
+export interface ResumePage {
+    bulli: { flipGroup: { visible: boolean }; health: number } | null;
+    health: number;
+    dead: boolean;
+}
+
+/** Carries out a ResumeOutcome on the page; sendReady asks for the car. */
+export function applyResumeOutcome(outcome: ResumeOutcome, page: ResumePage, sendReady: () => void): void {
+    if (outcome === 'resumedCar') {
+        // The car lives on the server. If it died and respawned while the
+        // connection was gone, the respawn event is lost: undo the death
+        // on screen here
+        if (page.bulli) {
+            page.bulli.flipGroup.visible = true;
+            page.bulli.health = page.health;
+        }
+        hideRespawnOverlay();
+    } else if (outcome === 'deadInParty') {
+        // Dead in the Party (maybe killed while the connection was gone):
+        // the respawn event brings the car back
+        page.dead = true;
+        if (page.bulli) page.bulli.flipGroup.visible = false;
+        showRespawnOverlay();
+    } else if (outcome === 'sendReady') {
+        // Past the splash screen but not driving in this room (a new session
+        // after the grace time or a restart, or 'ready' got lost): drive again
+        sendReady();
+    }
 }
