@@ -129,14 +129,38 @@ describe('RemoteTrack', () => {
         expect(pose.z).toBe(4);
     });
 
-    it('forgets its samples on clear()', () => {
+    it('forgets its samples, its offset and its last render time on clear()', () => {
         const track = new RemoteTrack();
-        track.push(10, car(0, 3, 0, 0, 0));
+        track.push(10, car(0, 3, 0, 0, 20));
         const pose = createRemotePose();
-        expect(track.sample(10, pose)).toBe(true);
+        expect(track.sample(14, pose)).toBe(true);
+        // A late sample after the extrapolation: an offset
+        track.push(12, car(0, 3.1, 0, 0, 5));
+        expect(track.offset.active).toBe(true);
         track.clear();
+        expect(track.offset.active).toBe(false);
         expect(track.newest).toBeNull();
         expect(track.sample(10, pose)).toBe(false);
+        // Fresh samples after the clear start without an offset
+        track.push(20, car(0, 0, 0, 0, 20));
+        track.push(23, car(0, 2, 0, 0, 0));
+        expect(track.offset.active).toBe(false);
+    });
+
+    it('reports the speed along the heading for any heading', () => {
+        // Heading 60°: forward (sin, cos) = (0.866, 0.5); v = (10, 4):
+        // 8.66 + 2 = 10.66 m/s along the heading
+        const along = 10 * Math.sin(Math.PI / 3) + 4 * Math.cos(Math.PI / 3);
+        const track = new RemoteTrack();
+        track.push(0, car(0, 0, Math.PI / 3, 10, 4));
+        track.push(3, car(0.5, 0.2, Math.PI / 3, 10, 4));
+        const pose = createRemotePose();
+        track.sample(1.5, pose);
+        expect(pose.speed).toBeCloseTo(along, 9);
+        track.sample(0, pose);
+        expect(pose.speed).toBeCloseTo(along, 9);
+        track.sample(5, pose);
+        expect(pose.speed).toBeCloseTo(along, 9);
     });
 
     it('snaps after a jump of more than 20 m', () => {
