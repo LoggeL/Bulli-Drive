@@ -1,4 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
+import { mkdirSync, readFileSync, writeFileSync } from 'fs';
+import path from 'path';
 import * as v from 'valibot';
 import { ASSIST_PROFILE_IDS, ROOM_KINDS } from '../shared/protocol.js';
 import { RESUME_TICKET_MS } from '../shared/net/constants.js';
@@ -8,8 +10,10 @@ import { RESUME_TICKET_MS } from '../shared/net/constants.js';
 // what should survive it: name, colour, car and, in the Party, the score.
 // The next process checks the signature and the expiry and takes them
 // over. Format: base64url(payload).base64url(HMAC-SHA256(payload, secret)).
-// The secret comes from SESSION_SECRET; without it every process makes its
-// own and tickets of the one before are void (the player starts at 0).
+// The secret comes from SESSION_SECRET, else from DATA_DIR/session-secret
+// (created on first start; needs a persistent volume). Without either every
+// process makes its own and tickets of the one before are void (the player
+// starts at 0).
 
 const TicketSchema = v.object({
     v: v.literal(1),
@@ -37,12 +41,18 @@ export class TicketSigner {
         this.secret = typeof secret === 'string' ? Buffer.from(secret, 'utf8') : secret;
     }
 
-    /** The secret from the environment, or a random one (with a warning) for this process only. */
+    /**
+     * The secret from SESSION_SECRET; else the one kept in DATA_DIR (made on
+     * the first start, so a persistent volume carries it across restarts);
+     * else a random one (with a warning) for this process only.
+     */
     static fromEnv(env: NodeJS.ProcessEnv = process.env): TicketSigner {
         const secret = env.SESSION_SECRET;
         if (secret && secret.length >= 16) return new TicketSigner(secret);
-        if (secret) console.warn('SESSION_SECRET is shorter than 16 characters; using a random one');
-        else console.warn('SESSION_SECRET is not set: resume tickets do not survive this process');
+        if (secret) console.warn('SESSION_SECRET is shorter than 16 characters; ignoring it');
+        const kept = env.DATA_DIR ? loadOrCreateSecretFile(path.join(env.DATA_DIR, SECRET_FILE)) : null;
+        if (kept) return new TicketSigner(kept);
+        console.warn('Neither SESSION_SECRET nor a writable DATA_DIR: resume tickets do not survive this process');
         return new TicketSigner(randomBytes(32));
     }
 
@@ -85,5 +95,37 @@ export class TicketSigner {
 
     private prune(now: number): void {
         for (const [n, exp] of this.used) if (exp <= now) this.used.delete(n);
+    }
+}
+
+export const SECRET_FILE = 'session-secret';
+
+/**
+ * The 32-byte secret stored at `file`, created (mode 0600) when missing.
+ * null when the directory is not writable or the file is not a valid
+ * secret, so the caller falls back instead of failing to start.
+ */
+export function loadOrCreateSecretFile(file: string): Buffer | null {
+    try {
+        const stored = Buffer.from(readFileSync(file, 'utf8').trim(), 'hex');
+        if (stored.length === 32) return stored;
+        console.warn(`${file} does not hold a 32-byte hex secret; ignoring it`);
+        return null;
+    } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+            console.warn(`Cannot read ${file}: ${(err as Error).message}`);
+            return null;
+        }
+    }
+    const created = randomBytes(32);
+    try {
+        mkdirSync(path.dirname(file), { recursive: true });
+        // 'wx': never overwrite a secret another process wrote meanwhile
+        writeFileSync(file, created.toString('hex') + '\n', { mode: 0o600, flag: 'wx' });
+        return created;
+    } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'EEXIST') return loadOrCreateSecretFile(file);
+        console.warn(`Cannot write ${file}: ${(err as Error).message}`);
+        return null;
     }
 }

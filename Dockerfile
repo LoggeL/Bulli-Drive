@@ -11,6 +11,10 @@ WORKDIR /app
 ENV PUPPETEER_SKIP_DOWNLOAD=1
 # Production: no dev netsim (NETSIM) unless NETSIM_ALLOW=1, lean Express errors
 ENV NODE_ENV=production
+# Persistent state (resume-ticket secret, later the SQLite leaderboards);
+# mount a volume here so it survives redeploys. docs/ops.md
+ENV DATA_DIR=/app/data
+RUN mkdir -p /app/data
 COPY package*.json ./
 RUN npm ci --omit=dev
 # dist/server + dist/shared (tsc) and dist/client (Vite build incl. public/)
