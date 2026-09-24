@@ -1,6 +1,6 @@
 # Plan: Bulli Drive als Open-World-Multiplayer-Rennspiel
 
-**Stand:** 2026-09-24 · **Aktuelle Phase:** Phase 1b auf dem Branch fertig (Branch `net/phase-1b`, Spezifikation und Stand: [`phase-1b-design.md`](phase-1b-design.md)): Server-Sim, Protokoll v2 und Client-Prediction stehen, die Legacy-Physik und `?physics=legacy` sind gelöscht; Reconnect mit 30 s Grace, Graceful Shutdown mit Resume-Ticket, `/healthz` mit Docker-`HEALTHCHECK` und die Dev-Netsim sind da (Betrieb: [`ops.md`](ops.md)); Bot-Clients (`npm run bots`, `npm run test:bots` in der CI) und die Messung mit 32 Bots belegen die Budgets. Offen sind nur Messungen auf echten Geräten und der Playtest Desktop gegen Handy. Phase 1a ist live, v2 ist die einzige Physik. Phase 0 ist gemergt (PR #7, CI grün); offen ist dort nur noch die Messung auf echten Geräten (Referenz-Handy, Desktop im Browserfenster).
+**Stand:** 2026-09-24 · **Aktuelle Phase:** Phase 2 (Rennen) auf `game/phase-2-racing` spielbar, offen sind Schritt 4 und der Playtest ([`phase-2-design.md`](phase-2-design.md), Abschnitt 25). Davor: Phase 1b auf dem Branch fertig (Branch `net/phase-1b`, Spezifikation und Stand: [`phase-1b-design.md`](phase-1b-design.md)): Server-Sim, Protokoll v2 und Client-Prediction stehen, die Legacy-Physik und `?physics=legacy` sind gelöscht; Reconnect mit 30 s Grace, Graceful Shutdown mit Resume-Ticket, `/healthz` mit Docker-`HEALTHCHECK` und die Dev-Netsim sind da (Betrieb: [`ops.md`](ops.md)); Bot-Clients (`npm run bots`, `npm run test:bots` in der CI) und die Messung mit 32 Bots belegen die Budgets. Offen sind nur Messungen auf echten Geräten und der Playtest Desktop gegen Handy. Phase 1a ist live, v2 ist die einzige Physik. Phase 0 ist gemergt (PR #7, CI grün); offen ist dort nur noch die Messung auf echten Geräten (Referenz-Handy, Desktop im Browserfenster).
 
 ## 0. Entscheidungen (2026-09-23)
 
@@ -174,9 +174,9 @@ Verbindliche Spezifikation, Abweichungen und Messwerte: [`phase-1a-design.md`](p
   - [x] Party-Modus spielbar wie vorher, Free Roam wählbar, auch auf dem Handy (E2E)
   - [ ] Messungen auf dem Referenz-Handy (Replay-Kosten bei hohem Lead hinter Verlust, Overlay `?debug=net`)
 
-**Phase 2 – Vertical Slice Rennen (ca. 3 Wochen) → Release**
+**Phase 2 – Vertical Slice Rennen (ca. 3 Wochen) → Release · Status: auf `game/phase-2-racing` spielbar (Server, Bots, Zeitfahren, Client, E2E); offen sind Schritt 4 (Rampen in der Karte für alle Modi) und der Playtest**
 
-Verbindliche Spezifikation, Entscheidungen und Testplan: [`phase-2-design.md`](phase-2-design.md) (Branch `game/phase-2-racing`).
+Verbindliche Spezifikation, Entscheidungen und Testplan: [`phase-2-design.md`](phase-2-design.md) (Branch `game/phase-2-racing`); Stand, Abweichungen und Messwerte dort in Abschnitt 25.
 
 - **Deliverables:**
   - `shared/race` und die RaceRoom-State-Machine (lobby → countdown mit `startAt` und Freeze → racing → finished mit 30 s DNF → results/Rematch)
@@ -189,6 +189,14 @@ Verbindliche Spezifikation, Entscheidungen und Testplan: [`phase-2-design.md`](p
   - Modus-Auswahl im Menü: Free Roam, Rennen, Party
   - Sichtweite 120–600 m
 - **Exit:** Bot-Rennen mit Kontakt in der CI grün. Manipulierte Clients (Input-Flut, Inputs aus der Zukunft, ungültige Werte) werden verworfen, ohne andere Spieler zu stören. Mindestens 70 % der Playtester wollen gleich noch ein Rennen fahren, auf Desktop und Handy.
+- **Stand:**
+  - [x] `shared/race` (Strecken, Ideallinie, Gates mit Sub-Tick-Zeiten, Fortschritt, Positionen, Falschfahrer, Launch, Freeze), Windschatten in der Sim, Protokoll v3
+  - [x] `RaceRoom` mit allen Phasen, Anti-Griefing über den Ghost, Abstimmung; Server-Bots mit drei Stufen; `TimeTrialRoom` mit bitgleicher Nachsimulation und Ghost-Speicher
+  - [x] Bot-Rennen mit Kontakt und manipulierten Clients in der CI (`tests/integration/race.test.ts`)
+  - [x] Client: RACE im Menü und im Room-Chip (auch TIME TRIAL), Lobby, Countdown mit Startampel und Launch-Fenster, Race-HUD (Position, Runde, Zeit, Split, Nächstes-Gate-Pfeil), Ergebnisse mit Rematch, Zuschauer; Start/Ziel-Portal, Checkpoints mit LED-Streifen, Absperrungen, Pfeiltafeln, Leitpfosten, Rampen und Hügelstraße; Ghost-Auto im Zeitfahren; Minimap im Streckenmodus
+  - [x] Mobile: Renn-Layout (Stick lenkt, BRAKE, Auto-Gas ab Tipp auf die GO-Zone oder nach Grün), Render-Messung in acht Viewports, E2E-Test des Renn-Nutzerwegs auf dem Handy
+  - [ ] Schritt 4: Rampen und Hügelstraße in `MapData` (`MAP_VERSION` 3), dann auch in Free Roam und Party
+  - [ ] Playtest (≥ 70 % wollen noch ein Rennen), Messungen auf echten Geräten
 
 **Phase 3 – Kuratierte Map (4–5 Wochen) → Release**
 - **Deliverables:**

@@ -7,6 +7,7 @@ city, collect coins and powerups, and shoot it out with other drivers.
 
 ## Features
 - **Multiplayer:** The server simulates every car at 60 Hz; each client predicts its own car, so driving and bumping into each other feel immediate. Party (combat) and Free Roam rooms of up to 32 players.
+- **Racing:** Race rooms with a lobby, a countdown with start lights and a launch boost, the Downtown Loop (3 laps) and the Hill Sprint (three ramps up to a lookout), real bumping with ghost rules against griefing, slipstream, server bots that fill the grid to six, results and a rematch vote. The time trial races your best run (or the track record) as a ghost car.
 - **Combat:** Shoot projectiles at other players, score kills, climb the scoreboard.
 - **Powerups & coins:** Turbo, Mega, Super Jump, Shield, Magnet and Ghost powerups plus collectible coins, shared across all players.
 - **3D Graphics:** Built with Three.js.
@@ -49,13 +50,13 @@ reachable from the LAN as well: `npm run build && npm start`, then
 | `npm start` | Runs the production build on port 8000 (`PORT` to override) |
 | `npm run typecheck` | Type-checks client, server, tests, scripts and build config |
 | `npm test` | Vitest unit tests in `tests/` (golden tests for world generation, terrain, RNG and the v2 sim scenarios, the binary codec and protocol validation, the tick scheduler, rooms and Party rules, the prediction against the real rooms with simulated latency and loss, speedometer scale, model cache, budgets of the packed models and textures) |
-| `npm run test:e2e` | Builds, then runs the Playwright tests of the critical user paths in `tests/e2e` against the production server (port 8799, `E2E_PORT` to override; the restart test starts its own server on `E2E_PORT + 1`) |
-| `npm run test:e2e:render` | Builds, then runs the render checks in the browser: the phone tier's draw call and triangle budget, a world without its textures that is shaded, not black, and the touch HUD in eight phone and tablet viewports without overlaps (`tests/e2e-render`, Playwright project `render`) |
-| `npm run test:bots` | Bot integration tests in `tests/integration`: starts its own game server process (port 8560-8599, `BOTS_PORT` to override) and runs headless bots over real WebSockets: a head-on bump seen by both cars (also behind the netsim), reconnect within and after the grace time, the protocol version reject and `/healthz`, a room switch, a flood kick, and 16 bots for 30 s behind netsim 150/30/3 with the bandwidth (≤ 30 kB/s per client) and tick budgets (p95 < 4 ms) |
+| `npm run test:e2e` | Builds, then runs the Playwright tests of the critical user paths in `tests/e2e` against the production server (port 8799, `E2E_PORT` to override; the restart test starts its own server on `E2E_PORT + 1`), among them a race on the phone from the splash to the results |
+| `npm run test:e2e:render` | Builds, then runs the render checks in the browser: the phone tier's draw call and triangle budget, a world without its textures that is shaded, not black, and the touch HUD of the Party and of a race in eight phone and tablet viewports without overlaps (`tests/e2e-render`, Playwright project `render`) |
+| `npm run test:bots` | Bot integration tests in `tests/integration`: starts its own game server process (port 8560-8599, `BOTS_PORT` to override) and runs headless bots over real WebSockets: a head-on bump seen by both cars (also behind the netsim), reconnect within and after the grace time, the protocol version reject and `/healthz`, a room switch, a flood kick, and 16 bots for 30 s behind netsim 150/30/3 with the bandwidth (≤ 30 kB/s per client) and tick budgets (p95 < 4 ms); a Hill Sprint race of bots behind the netsim with a bump, a manipulating client and server bots, and a time trial whose ghost comes back after a reload |
 | `npm run test:mutation` | Mutation tests (Stryker, `stryker.config.mjs`) of `src/shared` and `src/server/rooms` against the unit tests: incremental (`reports/stryker-incremental.json`), HTML report in `reports/mutation/`; `-- --mutate src/shared/sim/contact.ts` narrows a run, `npx tsx scripts/mutation-summary.ts --survivors` lists the survivors. Not part of CI: runs weekly and on demand in `.github/workflows/mutation.yml` |
-| `npm run bots -- --url ws://127.0.0.1:8000/ws --count 32 --mix drive:24,ram:6,reconnect:1,hop:1 --netsim 150,30,3 --duration 120` | Load and robustness run against any server (see `tools/bots/cli.ts`): prints snapshot rate, downlink per bot, corrections, contacts and the server's tick times from `/healthz`; `--json` for the whole report. Modes: `drive`, `ram`, `idle`, `reconnect`, `hop`, `flood` |
+| `npm run bots -- --url ws://127.0.0.1:8000/ws --count 32 --mix drive:24,ram:6,reconnect:1,hop:1 --netsim 150,30,3 --duration 120` | Load and robustness run against any server (see `tools/bots/cli.ts`): prints snapshot rate, downlink per bot, corrections, contacts and the server's tick times from `/healthz`; `--json` for the whole report. Modes: `drive`, `ram`, `idle`, `reconnect`, `hop`, `flood`, `race`, `timetrial` |
 | `npm run perf:baseline` | Builds, then drives two headless Chromium clients for 20 s and prints FPS, draw calls and WebSocket bandwidth as JSON (see [docs/baseline.md](docs/baseline.md)); it also reports the sim time per frame, `-- --sandbox` measures the offline sandbox |
-| `npm run screenshots` | Builds, then captures a fixed set of views with headless Chromium for visual before/after comparisons (`-- --out=<dir>`, `--gl=swiftshader`, `--compare=<a>,<b>`; `stats.json` records how much of the frame the car takes; see `scripts/screenshots.ts`) |
+| `npm run screenshots` | Builds, then captures a fixed set of views with headless Chromium for visual before/after comparisons, the race included (lobby, grid, checkpoint, ramps, the finish from 600 m, results, the phone HUD) (`-- --out=<dir>`, `--gl=swiftshader`, `--compare=<a>,<b>`, `--only=<views>`; `stats.json` records how much of the frame the car takes and the draw calls and triangles of the track dressing; see `scripts/screenshots.ts`) |
 | `npx tsx scripts/sim-golden-drift.ts` | Shows how far the v2 golden scenarios drift when `Math.sin` & co. round differently in the last bit, and that the golden tolerance still catches tiny tuning changes |
 | `npm run ci` | typecheck, unit tests and build in one go |
 | `npm run assets:models` | Builds the car models in Blender and packs them (meshopt + KTX2) into `public/models` (needs Blender 5.2 and `npm --prefix tools ci` once; see [tools/models/README.md](tools/models/README.md)) |
@@ -230,3 +231,13 @@ tap and resets when held. Gamepads (standard mapping) work too: RT/LT gas and
 brake, A drift, B boost, Y jump, Back reset, X shoot, LB honk.
 
 The camera automatically swings into a chase view behind the car.
+
+**Races:** pick RACE on the splash screen (or RACE / TIME TRIAL from the room
+chip), choose the track, the bots and your car in the lobby and press READY.
+Press the gas in the last third of a second before green (the green end of
+the bar under the lights) and hold it: a perfect start. Pressed earlier and
+held, the wheels spin for half a second. There is no jump in a race;
+R (or holding the reset button) puts the car back on the racing line. On
+touch screens the stick only steers in a race, **BRAKE** brakes, and
+auto-gas starts with a tap on **TAP ON GREEN** (a tap in the window is a
+perfect start) or by itself right after green.
