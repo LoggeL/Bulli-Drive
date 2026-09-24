@@ -464,7 +464,7 @@ export abstract class Room {
         if (entry) copyInput(car.input, entry.input);
         else {
             m.inputs.missed++;
-            if (m.missing <= INPUT_REPEAT_TICKS) copyInput(car.input, m.lastInput);
+            if (m.missing <= INPUT_REPEAT_TICKS && this.repeatsMissingInput(m)) copyInput(car.input, m.lastInput);
             else stopInput(car.state, car.input);
         }
         // A frozen or hidden client is an idle ghost (5.4) and stops: the
@@ -489,7 +489,7 @@ export abstract class Room {
             m.ghostHold = true;
         }
         const rtt = m.session.rttMs;
-        const lagNow = (rtt > LAGGY_RTT_MS) || m.missCount > LAGGY_MISS_RATE * LAGGY_WINDOW_TICKS;
+        const lagNow = (rtt > LAGGY_RTT_MS && this.rttMakesLaggy(m)) || m.missCount > LAGGY_MISS_RATE * LAGGY_WINDOW_TICKS;
         if (lagNow) {
             m.laggy = true;
             m.lagGoodTicks = 0;
@@ -785,6 +785,12 @@ export abstract class Room {
     // True holds the member's car in the contact ghost this tick like the
     // idle ghost; when it ends, the car stays a ghost while it overlaps
     protected forceGhost(_member: RoomMember, _tick: number): boolean { return false; }
+    // A missing input repeats the last one for INPUT_REPEAT_TICKS (false:
+    // the car gets the stop input at once; a race's lag ghost, phase 2, 11)
+    protected repeatsMissingInput(_member: RoomMember): boolean { return true; }
+    // A round trip over LAGGY_RTT_MS makes the lag ghost (false: only the
+    // missing inputs do; a race's racers, phase 2, 11)
+    protected rttMakesLaggy(_member: RoomMember): boolean { return true; }
     // Where a member's car appears after 'ready' (grid: a race's grid slot);
     // null: no car (a spectator)
     protected spawnPose(member: RoomMember): (SpawnPose & { grid?: number }) | null {

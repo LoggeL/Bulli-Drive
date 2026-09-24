@@ -3,7 +3,7 @@ import { replayRun } from '../../shared/race/replay.js';
 import { RACE_ROOM_MAX_MEMBERS } from '../../shared/race/rules.js';
 import type { TrackId } from '../../shared/race/types.js';
 import type { MapData } from '../../shared/world/mapData.js';
-import { MemoryGhostStore, type GhostStore } from '../race/ghostStore.js';
+import { MemoryGhostStore, ReplayBudget, type GhostStore } from '../race/ghostStore.js';
 import type { Session } from '../session.js';
 import { FreeRoamRoom } from './FreeRoamRoom.js';
 import { PartyRoom } from './PartyRoom.js';
@@ -17,7 +17,10 @@ import { TimeTrialRoom } from './TimeTrialRoom.js';
 // every other instance closes a while after its last player left. Races
 // (docs/phase-2-design.md, 6.5): a room in its lobby first, then a running
 // one to watch until the next start; fresh opens a new one ("START OWN
-// RACE"). Every time trial is a new private instance.
+// RACE"). Every time trial is a new private instance. A race or time trial
+// instance its last player leaves closes at once (nobody would come back
+// to it, and a session could otherwise open one every 2 s and leave it
+// standing for emptyRoomTtlMs).
 
 export interface RoomManagerOptions {
     maxPlayersPerRoom: number;
@@ -38,6 +41,8 @@ export class RoomManager {
     private readonly rooms = new Map<string, Room>();
     private readonly now: () => number;
     readonly ghosts: GhostStore;
+    // The time trial replays of the process (ghostStore.ts)
+    readonly replays = new ReplayBudget();
     // Idle kick (5.4); server/index.ts closes the socket
     onIdleKick: (session: Session) => void = () => { /* set by the server */ };
 
@@ -61,7 +66,7 @@ export class RoomManager {
     private create(kind: RoomKind, index: number, options: JoinOptions = {}): Room {
         const room = kind === 'party' ? new PartyRoom(index, this.map, this.now)
             : kind === 'race' ? new RaceRoom(index, this.map, this.now, { track: options.track })
-                : kind === 'timetrial' ? new TimeTrialRoom(index, this.map, this.now, { track: options.track, ghosts: this.ghosts })
+                : kind === 'timetrial' ? new TimeTrialRoom(index, this.map, this.now, { track: options.track, ghosts: this.ghosts, replays: this.replays })
                     : new FreeRoamRoom(index, this.map, this.now);
         this.rooms.set(room.id, room);
         this.orderedCache = null;
@@ -116,8 +121,12 @@ export class RoomManager {
         if (!current || !session.room) return this.join(session, kind, options);
         if (session.room.kind === kind && !options.fresh) return null;
         const wasReady = current.ready;
-        session.room.leave(current, 'switch');
-        return this.findOrCreate(kind, options).join(session, { ready: wasReady });
+        const old = session.room;
+        old.leave(current, 'switch');
+        // The new one first: its index is never the old one's
+        const member = this.findOrCreate(kind, options).join(session, { ready: wasReady });
+        this.closeIfDone(old);
+        return member;
     }
 
     /**
@@ -131,12 +140,30 @@ export class RoomManager {
             if (room.kind === 'party' && kind === 'party') session.carryScore = room.scoreOf(member);
             room.leave(member, 'disconnect');
         }
-        return this.findOrCreate(kind).join(session);
+        const joined = this.findOrCreate(kind).join(session);
+        if (room) this.closeIfDone(room);
+        return joined;
     }
 
     /** The session disconnected (or was kicked). */
     leave(session: Session, reason: 'disconnect' | 'kicked' = 'disconnect'): void {
-        if (session.room && session.member) session.room.leave(session.member, reason);
+        const room = session.room;
+        if (!room || !session.member) return;
+        room.leave(session.member, reason);
+        this.closeIfDone(room);
+    }
+
+    // An empty race or time trial instance closes at once
+    private closeIfDone(room: Room): void {
+        if (room.size > 0 || (room.kind !== 'race' && room.kind !== 'timetrial') || this.rooms.get(room.id) !== room) return;
+        this.close(room);
+    }
+
+    private close(room: Room): void {
+        room.dispose();
+        this.rooms.delete(room.id);
+        this.orderedCache = null;
+        console.log(`Room ${room.id} closed`);
     }
 
     /** One scheduler tick: every room with members, in id order (5.1). */
@@ -161,10 +188,7 @@ export class RoomManager {
         for (const room of [...this.rooms.values()]) {
             if (room.id === `${DEFAULT_ROOM_KIND}-1`) continue;
             if (room.size > 0 || now - room.emptySinceMs < this.options.emptyRoomTtlMs) continue;
-            room.dispose();
-            this.rooms.delete(room.id);
-            this.orderedCache = null;
-            console.log(`Room ${room.id} closed`);
+            this.close(room);
         }
     }
 

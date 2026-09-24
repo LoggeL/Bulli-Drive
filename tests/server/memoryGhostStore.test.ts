@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GHOST_POSE_CACHE_MAX, MemoryGhostStore, ghostKeyString, simHash } from '../../src/server/race/ghostStore.js';
+import { GHOST_POSE_CACHE_MAX, MemoryGhostStore, ReplayBudget, ghostKeyString, simHash } from '../../src/server/race/ghostStore.js';
 import { GHOST_PERSONAL_MAX } from '../../src/shared/race/rules.js';
 import { SIM_TUNING } from '../../src/shared/sim/constants.js';
 import { resetTuning } from '../../src/shared/sim/tuning.js';
@@ -47,3 +47,18 @@ describe('MemoryGhostStore memory', () => {
         expect(store.bytes()).toBeLessThanOrEqual(5 * 1024 * 1024);
     });
 });
+
+describe('ReplayBudget', () => {
+    it('allows the burst at once, then perSecond replays a second', () => {
+        const budget = new ReplayBudget(2, 2);
+        const t0 = 10_000;
+        expect([budget.take(t0), budget.take(t0), budget.take(t0)]).toEqual([true, true, false]);
+        // Half a second brings one back (2 per second), a quarter only half of one
+        expect(budget.take(t0 + 250)).toBe(false);
+        expect(budget.take(t0 + 500)).toBe(true);
+        expect(budget.take(t0 + 500)).toBe(false);
+        // A long pause fills it up to the burst, not beyond
+        expect([budget.take(t0 + 60_000), budget.take(t0 + 60_000), budget.take(t0 + 60_000)]).toEqual([true, true, false]);
+    });
+});
+

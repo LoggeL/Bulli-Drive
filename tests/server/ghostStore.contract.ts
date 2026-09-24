@@ -77,5 +77,28 @@ export function ghostStoreContract(name: string, make: MakeStore): void {
             store.poses(run);
             expect(calls).toBe(1);
         });
+
+        it('keeps the pose track given with a kept run, and hands out only tracks at hand without computing', () => {
+            let calls = 0;
+            const store = make(() => { calls++; return new Uint8Array(13); }, 64);
+            const run = ghostRun('a', 1500);
+            const given = new Uint8Array([1, 2, 3]);
+            store.submit(run, given);
+            expect(store.cachedPoses(run)).toBe(given);
+            expect(store.poses(run)).toBe(given);
+            // A slower run is not kept, nor its poses
+            const slower = ghostRun('a', 1600);
+            store.submit(slower, new Uint8Array([4]));
+            expect(store.cachedPoses(slower)).toBeNull();
+            // Without poses: none at hand until poses() computes them
+            const other = ghostRun('b', 1400);
+            store.submit(other);
+            expect(store.cachedPoses(other)).toBeNull();
+            expect(calls).toBe(0);
+            store.poses(other);
+            expect(calls).toBe(1);
+            expect(store.cachedPoses(other)).not.toBeNull();
+            expect(calls).toBe(1);
+        });
     });
 }

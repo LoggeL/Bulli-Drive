@@ -413,9 +413,30 @@ describe('race and time trial instances (docs/phase-2-design.md, 6.5)', () => {
         expect(lobby.playerCount()).toBe(1);
         lobby.leave(a);
         expect(room.members.size).toBe(0);
-        clock.advance(60_000);
-        lobby.sweep();
         expect(lobby.get('race-1')).toBeUndefined();
+    });
+
+    it('closes a race or time trial instance at once when its last player leaves, so switching opens no rooms', () => {
+        const a = fakeSession(), b = fakeSession();
+        lobby.join(a, 'party');
+        // 20 switches, one every 2 s at most (dispatch): one room of theirs at a time
+        for (let i = 0; i < 20; i++) {
+            lobby.switch(a, i % 2 ? 'timetrial' : 'race', { fresh: true });
+            expect(lobby.list().map(r => r.id).sort()).toEqual(['party-1', a.room!.id].sort());
+        }
+        // A room somebody is still in stays
+        lobby.switch(a, 'race', { fresh: true });
+        const shared = a.room!;
+        lobby.join(b, 'race');
+        expect(b.room).toBe(shared);
+        lobby.switch(a, 'party');
+        expect(lobby.get(shared.id)).toBe(shared);
+        lobby.leave(b);
+        expect(lobby.get(shared.id)).toBeUndefined();
+        // Free Roam keeps its time to live
+        lobby.switch(a, 'freeroam');
+        lobby.switch(a, 'party');
+        expect(lobby.get('freeroam-1')).toBeDefined();
     });
 
     it('opens a new private time trial for everyone, and a switch with fresh even within the kind', () => {

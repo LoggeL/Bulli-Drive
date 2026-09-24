@@ -83,6 +83,11 @@ export interface Racer {
 
 const RACE_PHASES_RUNNING: readonly RacePhase[] = ['racing', 'finished'];
 
+// Wrong way, finished or DNF: a contact ghost to the end of the race (11)
+function raceGhost(p: RaceProgress): boolean {
+    return p.wrongWay || p.status === 'finished' || p.status === 'dnf';
+}
+
 // Race messages go through the room like shooting in the Party
 type Msg<T extends RoomMessage['type']> = Extract<RoomMessage, { type: T }>;
 
@@ -120,7 +125,7 @@ export class RaceRoom extends Room {
     private readonly seed: number;
     private dirty = false;
     private readonly lastConfigTick = new Map<string, number>();
-    // The racers' car states for the bots' traffic view, per tick
+    // The solid racers' car states for the bots' traffic view, per tick
     private readonly traffic: VehicleState[] = [];
 
     constructor(index: number, map: MapData, now: () => number = Date.now, options: RaceRoomOptions = {}, kind: 'race' | 'timetrial' = 'race') {
@@ -302,7 +307,7 @@ export class RaceRoom extends Room {
             this.markDirty();
         }
         if (msg.track && msg.track !== this.trackId) {
-            this.trackId = msg.track;
+            this.setTrack(msg.track);
             this.markDirty();
             // The lobby cars go onto the new track's grid
             this.placeLobby(this.tick);
@@ -317,6 +322,15 @@ export class RaceRoom extends Room {
 
     protected onRestart(_member: RoomMember): void { /* time trial only */ }
 
+    private setTrack(id: TrackId): void {
+        if (id === this.trackId) return;
+        this.trackId = id;
+        this.onTrackChanged();
+    }
+
+    // The track changed (the clients drop what they had of the old one)
+    protected onTrackChanged(): void { /* time trial: the ghost */ }
+
     // ---- The tick (7) ----
 
     protected beginTick(T: number): void {
@@ -324,10 +338,13 @@ export class RaceRoom extends Room {
             this.phase = 'racing';
             this.markDirty();
         }
+        // The bots see the cars they can hit: a race ghost is driven
+        // through (the start ghost is not left out, so the bots start with
+        // care)
         this.traffic.length = 0;
         for (const r of this.racers) {
             const car = r.member?.car;
-            if (car && r.member!.alive) this.traffic.push(car.state);
+            if (car && r.member!.alive && !raceGhost(r.progress)) this.traffic.push(car.state);
         }
     }
 
@@ -365,15 +382,32 @@ export class RaceRoom extends Room {
         const racer = this.racerById.get(member.id);
         if (!racer) return false;
         if (RACE_PHASES_RUNNING.includes(this.phase) && inStartGhost(T, this.startTick)) return true;
-        const p = racer.progress;
-        return p.wrongWay || p.status === 'finished' || p.status === 'dnf';
+        return raceGhost(racer.progress);
     }
 
     protected carFlags(m: RoomMember): number {
         const racer = this.racerById.get(m.id);
-        const p = racer?.progress;
-        const ghost = !!p && (p.wrongWay || p.status === 'finished' || p.status === 'dnf');
+        const ghost = !!racer && raceGhost(racer.progress);
         return super.carFlags(m) | (ghost ? CAR_RACE_GHOST : 0);
+    }
+
+    // A racer from the countdown to the results
+    private inRace(m: RoomMember): boolean {
+        return this.phase !== 'lobby' && this.phase !== 'results' && this.racerById.has(m.id);
+    }
+
+    // The lag ghost of a race (11, docs/phase-2-design.md 25): it comes
+    // only from missing inputs, and a racer who is a lag ghost gets the stop
+    // input for each of them instead of the last one repeated. So a client
+    // leaving out inputs on purpose loses speed for the ghost, and a
+    // delayed pong (free to fake) makes no ghost at all; the server drives a
+    // car whose inputs arrive in time correctly however long the round trip.
+    protected repeatsMissingInput(m: RoomMember): boolean {
+        return !(m.laggy && this.inRace(m));
+    }
+
+    protected rttMakesLaggy(m: RoomMember): boolean {
+        return !this.inRace(m);
     }
 
     protected afterStep(T: number): void {
@@ -582,7 +616,7 @@ export class RaceRoom extends Room {
             if (choice === 'rematch') rematch++;
             else next++;
         }
-        this.trackId = this.trackAfterVote(rematch, next);
+        this.setTrack(this.trackAfterVote(rematch, next));
         this.ready.clear();
         for (const id of this.votes.keys()) this.ready.add(id);
         this.votes.clear();

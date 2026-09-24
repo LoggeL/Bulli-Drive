@@ -5,12 +5,15 @@ import { RoomManager } from '../../src/server/rooms/lobby.js';
 import type { RaceRoom } from '../../src/server/rooms/RaceRoom.js';
 import { roomOptions } from '../../src/server/rooms/Room.js';
 import type { Session } from '../../src/server/session.js';
-import { CAR_RACE_GHOST } from '../../src/shared/net/codec.js';
+import { CAR_LAGGY, CAR_RACE_GHOST } from '../../src/shared/net/codec.js';
+import { LAGGY_RECOVER_TICKS } from '../../src/shared/net/constants.js';
 import type { ClientMessage } from '../../src/shared/protocol.js';
 import {
     COUNTDOWN_PREP_TICKS, COUNTDOWN_TICKS, DNF_AFTER_FIRST_TICKS, LOBBY_ALL_READY_TICKS, LOBBY_AUTOSTART_TICKS,
     RACE_STATUS_EVERY, RESULTS_TICKS, START_GHOST_TICKS
 } from '../../src/shared/race/rules.js';
+import { createProjection, pointAt } from '../../src/shared/race/geometry.js';
+import { nextGateIndex } from '../../src/shared/race/progress.js';
 import { DOWNTOWN_LOOP, HILL_SPRINT } from '../../src/shared/race/tracks/index.js';
 import { BTN_BOOST, BTN_HANDBRAKE, BTN_JUMP, BTN_RESET } from '../../src/shared/sim/constants.js';
 import { placeVehicle } from '../../src/shared/sim/vehicle.js';
@@ -88,10 +91,18 @@ function pos(player: Session): { x: number; z: number } {
 // 20 m before the Hill Sprint finish gate (356, 30), facing along it (yaw 0.540)
 const BEFORE_FINISH = { x: 356 - 20 * Math.sin(0.54), z: 30 - 20 * Math.cos(0.54), yaw: 0.54 };
 
-/** E2E placement of the players' cars just before the finish, full throttle until the results. */
+/**
+ * E2E placement of the players' cars just before the finish, full throttle
+ * until the results; the i-th one 5 m further back, 3 m to the side (so
+ * they cross in the order given).
+ */
 function finishAll(players: Player[]): void {
     roomOptions.allowDebugPlace = true;
-    players.forEach((p, i) => send(p, { type: 'debugPlace', x: BEFORE_FINISH.x - 4 * i, z: BEFORE_FINISH.z + 2 * i, yaw: BEFORE_FINISH.yaw }));
+    const fx = Math.sin(BEFORE_FINISH.yaw), fz = Math.cos(BEFORE_FINISH.yaw);
+    players.forEach((p, i) => {
+        const back = 5 * i, side = i === 0 ? 0 : i % 2 ? 3 : -3;
+        send(p, { type: 'debugPlace', x: BEFORE_FINISH.x - back * fx + side * fz, z: BEFORE_FINISH.z - back * fz - side * fx, yaw: BEFORE_FINISH.yaw });
+    });
     tickUntil(() => room.phase === 'results', 400, new Map(players.map(p => [p, { throttle: 255 }])));
 }
 
@@ -304,6 +315,9 @@ describe('countdown and start', () => {
         expect(launches.find(e => e.id === a.id)).toEqual({ type: 'launch', id: a.id, result: 'perfect', tick: S });
         expect(launches.find(e => e.id === b.id)?.result).toBe('early');
         expect(launches).toHaveLength(6);
+        // One launch per racer: none in the ticks after green
+        tick(30, inputs);
+        expect(a.transport.events('launch')).toHaveLength(6);
     });
 
     it('keeps two overlapping cars apart in the start ghost, and lets them part without a push after it', () => {
@@ -330,6 +344,12 @@ describe('countdown and start', () => {
         expect(bTop).toBeLessThan(0.5);
         expect(a.member!.car!.state.ghostTicks).toBe(0);
         expect(b.member!.car!.state.ghostTicks).toBe(0);
+        // Nor do the snapshots call a racing car a race ghost: the
+        // prediction would take every bump in the race for a pass-through
+        const snap = b.transport.lastSnapshot!;
+        expect(snap.self!.flags & CAR_RACE_GHOST).toBe(0);
+        expect(snap.cars.find(c => c.slot === a.member!.slot)!.flags & CAR_RACE_GHOST).toBe(0);
+        expect(a.transport.lastSnapshot!.self!.flags & CAR_RACE_GHOST).toBe(0);
     });
 });
 
@@ -340,6 +360,8 @@ describe('finish, DNF and results', () => {
         const b = human('B');
         const S = startRace([a, b]);
         tickUntil(() => room.tick === S + 10, S + 10);
+        // The bots see every car in the start ghost
+        expect(room.trafficStates).toHaveLength(6);
         send(a, { type: 'debugPlace', ...BEFORE_FINISH });
         const go = new Map([[a, { throttle: 255 }]]);
         tickUntil(() => room.phase === 'finished', 300, go);
@@ -354,6 +376,10 @@ describe('finish, DNF and results', () => {
         tickUntil(() => room.tick === S + START_GHOST_TICKS + 20, START_GHOST_TICKS + 20, go);
         expect(a.member!.car!.state.ghostTicks).toBeGreaterThan(0);
         expect(b.member!.car!.state.ghostTicks).toBe(0);
+        // ...and out of the bots' traffic: they drive through it like the players
+        expect(room.trafficStates).not.toContain(a.member!.car!.state);
+        expect(room.trafficStates).toContain(b.member!.car!.state);
+        expect(room.trafficStates).toHaveLength(5);
         tickUntil(() => room.tick === T1 + DNF_AFTER_FIRST_TICKS - 1, DNF_AFTER_FIRST_TICKS, go);
         expect(room.phase).toBe('finished');
         tick(1, go);
@@ -380,15 +406,18 @@ describe('finish, DNF and results', () => {
         roomOptions.allowDebugPlace = true;
         const a = human('A');
         const b = human('B');
-        const S = startRace([a, b]);
+        const c = human('C');
+        const S = startRace([a, b, c]);
         tickUntil(() => room.tick === S + 10, S + 10);
-        finishAll([a, b]);
-        const gates = a.transport.events('gate').filter(e => (e.id === a.id || e.id === b.id) && e.passed === HILL_SPRINT.gates.length);
-        expect(gates).toHaveLength(2);
+        finishAll([a, b, c]);
+        const ids = [a.id, b.id, c.id];
+        const gates = a.transport.events('gate').filter(e => ids.includes(e.id) && e.passed === HILL_SPRINT.gates.length);
+        expect(gates).toHaveLength(3);
         expect(room.tick).toBe(Math.max(...gates.map(e => e.tick)));
         const results = room.lastResults!;
-        expect(results.slice(0, 2).map(e => e.status)).toEqual(['finished', 'finished']);
-        expect(results.slice(2).every(e => e.bot && e.status === 'dnf')).toBe(true);
+        expect(results.slice(0, 3).map(e => e.id)).toEqual(ids);
+        expect(results.slice(0, 3).map(e => e.status)).toEqual(['finished', 'finished', 'finished']);
+        expect(results.slice(3).every(e => e.bot && e.status === 'dnf')).toBe(true);
         // Both finish events reach the players before the results, the final order with them
         const sent = a.transport.sent;
         const resultsAt = sent.findIndex(m => m.type === 'raceResults');
@@ -399,12 +428,15 @@ describe('finish, DNF and results', () => {
         const status = sent.slice(0, resultsAt).filter(m => m.type === 'raceStatus').at(-1);
         expect(status && status.type === 'raceStatus' && status.order.map(e => e.status)).toEqual(results.map(e => e.status));
         // The finish crossings: gate 7 of the sprint, its only lap, the lap
-        // time the race time; B's split against A (directly ahead), none for A
-        const [ga, gb] = [a, b].map(p => gates.find(e => e.id === p.id)!);
+        // time the race time; the split against the car directly ahead (C
+        // against B, not the leader A), none for A
+        const [ga, gb, gc] = [a, b, c].map(p => gates.find(e => e.id === p.id)!);
         expect(ga).toMatchObject({ gate: HILL_SPRINT.gates.length - 1, lap: 1, lapTime: ga.time });
         expect(ga.gapAhead).toBeUndefined();
         expect(gb.gapAhead).toBeCloseTo(gb.time - ga.time, 9);
         expect(gb.gapAhead).toBeGreaterThan(0);
+        expect(gc.gapAhead).toBeCloseTo(gc.time - gb.time, 9);
+        expect(gc.time - gb.time).toBeGreaterThan(0);
     });
 
     it('sends the positions at 5 Hz while racing, in race order', () => {
@@ -519,7 +551,7 @@ describe('spectators and leaving', () => {
         expect(c.member!.car).not.toBeNull();
     });
 
-    it('marks a racer who leaves as left; with the last player gone the bots leave and the room closes', () => {
+    it('marks a racer who leaves as left; with the last player gone the bots leave and the room closes at once', () => {
         const a = human('A');
         const b = human('B');
         const S = startRace([a, b]);
@@ -533,8 +565,6 @@ describe('spectators and leaving', () => {
         expect(room.size).toBe(0);
         expect(room.phase).toBe('lobby');
         expect(room.racers).toHaveLength(0);
-        clock.advance(60_000);
-        lobby.sweep();
         expect(lobby.get(id)).toBeUndefined();
     });
 });
@@ -551,6 +581,9 @@ describe('wrong way and the reset', () => {
         tick(2, new Map([[a, { throttle: 200 }]]));
         expect(a.transport.lastSnapshot!.self!.flags & CAR_RACE_GHOST).toBe(CAR_RACE_GHOST);
         expect(room.racer(a.id)!.progress.wrongWay).toBe(true);
+        // The bots drive through a wrong-way car instead of evading it far ahead
+        expect(room.trafficStates).not.toContain(a.member!.car!.state);
+        expect(room.trafficStates).toHaveLength(5);
         // One event when it starts, not one per tick
         expect(a.transport.events('wrongWay').filter(e => e.id === a.id)).toEqual([{ type: 'wrongWay', id: a.id, on: true }]);
     });
@@ -574,5 +607,67 @@ describe('wrong way and the reset', () => {
         expect(s.z).toBeCloseTo(58, 6);
         expect(s.yaw).toBeCloseTo(Math.PI / 2, 6);
         expect(room.racer(a.id)!.progress.passed).toBe(1);
+    });
+});
+
+describe('the lag ghost in the race', () => {
+    const dist = (p: { x: number; z: number }, q: { x: number; z: number }) => Math.hypot(p.x - q.x, p.z - q.z);
+
+    it('costs a racer who leaves out every 4th input those ticks: the stop input, not the last one repeated', () => {
+        const a = human('A');
+        const b = human('B');
+        const S = startRace([a, b]);
+        const gridA = pos(a), gridB = pos(b);
+        // Full throttle from the countdown on; B leaves out 25 % of the
+        // ticks (more than the 20 % of the lag ghost)
+        while (room.tick < S + 240) {
+            const T = room.tick + 1;
+            feed(room, a, { throttle: 255 });
+            if (T % 4 !== 0) feed(room, b, { throttle: 255 });
+            room.step(clock.now());
+        }
+        expect(b.member!.laggy).toBe(true);
+        expect(a.member!.laggy).toBe(false);
+        // Repeated, B's car would drive like A's; braking every 4th tick
+        // it is left far behind
+        expect(dist(pos(a), gridA)).toBeGreaterThan(40);
+        expect(dist(pos(b), gridB)).toBeLessThan(0.5 * dist(pos(a), gridA));
+    });
+
+    it('takes no lag ghost from the round trip alone in the race, as it does in the lobby', () => {
+        const a = human('A');
+        tick();
+        a.rttMs = 400;
+        tick();
+        expect(a.member!.laggy).toBe(true);
+        a.rttMs = 50;
+        tick(LAGGY_RECOVER_TICKS);
+        expect(a.member!.laggy).toBe(false);
+        const S = startRace([a]);
+        a.rttMs = 400;
+        tickUntil(() => room.tick === S + 60, S + 60, new Map([[a, { throttle: 255 }]]));
+        expect(a.member!.laggy).toBe(false);
+        expect(a.transport.lastSnapshot!.self!.flags & CAR_LAGGY).toBe(0);
+    });
+});
+
+describe('the bots', () => {
+    it('reset a bot that went round a gate to just before it, and it goes through', () => {
+        const a = human('A');
+        const S = startRace([a]);
+        const { course, world } = room.runtime;
+        const bot = room.racers.find(r => r.bot)!;
+        // Past the start ghost, 5 to 15 m before its next gate
+        tickUntil(() => room.tick > S + START_GHOST_TICKS && bot.progress.remaining > 5 && bot.progress.remaining < 15, 3000);
+        const passed = bot.progress.passed;
+        const k = nextGateIndex(course.track, passed);
+        // On the line 35 m past that gate, without crossing it
+        const past = pointAt(course.line, course.gateS[k] + 35, createProjection());
+        placeVehicle(bot.member!.car!.state, world, past.x, past.z, Math.atan2(past.tx, past.tz));
+        tick();
+        expect(bot.progress.missedGate).toBe(true);
+        // The reset puts it 5 m before the gate (10.3); it drives through
+        tickUntil(() => bot.progress.passed > passed, 240);
+        expect(bot.progress.status).toBe('racing');
     });
 });

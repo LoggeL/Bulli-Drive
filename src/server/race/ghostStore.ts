@@ -54,10 +54,16 @@ export interface GhostStore {
     /** The track record (all classes). */
     best(key: GhostKey): GhostRun | null;
     personalBest(key: GhostKey, playerKey: string): GhostRun | null;
-    /** Keeps the run where it beats the record or the player's best. */
-    submit(run: GhostRun): { record: boolean; personal: boolean };
+    /**
+     * Keeps the run where it beats the record or the player's best. poses:
+     * its pose track when the caller has it (the check replay), so a kept
+     * run is not replayed again for it.
+     */
+    submit(run: GhostRun, poses?: Uint8Array): { record: boolean; personal: boolean };
     /** The run's pose track (computed on demand; the latest ones are kept). */
     poses(run: GhostRun): Uint8Array;
+    /** The run's pose track if it is at hand, never computed (null: poses() would replay). */
+    cachedPoses(run: GhostRun): Uint8Array | null;
 }
 
 /**
@@ -81,6 +87,35 @@ export function ghostKeyString(key: GhostKey): string {
 
 // Pose tracks kept (least recently used out): about 23 kB each for 90 s
 export const GHOST_POSE_CACHE_MAX = 16;
+
+// Replays for pose tracks not at hand, per second and process (a replay of
+// a 2 min run takes 15-20 ms in the tick), and how many may come at once
+export const GHOST_REPLAYS_PER_S = 2;
+export const GHOST_REPLAY_BURST = 2;
+
+/**
+ * Bounds the replays the time trial rooms of a process run in the tick
+ * (docs/phase-2-design.md 25): a token bucket over the clock. Without it
+ * a few sessions asking for more ghosts than the pose cache holds would
+ * replay one in every tick.
+ */
+export class ReplayBudget {
+    private tokens: number;
+    private lastMs = NaN;
+
+    constructor(readonly perSecond: number = GHOST_REPLAYS_PER_S, readonly burst: number = GHOST_REPLAY_BURST) {
+        this.tokens = burst;
+    }
+
+    /** One replay now, if the budget has it. */
+    take(nowMs: number): boolean {
+        if (Number.isFinite(this.lastMs)) this.tokens = Math.min(this.burst, this.tokens + Math.max(0, nowMs - this.lastMs) * this.perSecond / 1000);
+        this.lastMs = nowMs;
+        if (this.tokens < 1) return false;
+        this.tokens -= 1;
+        return true;
+    }
+}
 
 interface KeyEntry {
     record: GhostRun | null;
@@ -127,7 +162,7 @@ export class MemoryGhostStore implements GhostStore {
         return run;
     }
 
-    submit(run: GhostRun): { record: boolean; personal: boolean } {
+    submit(run: GhostRun, poses?: Uint8Array): { record: boolean; personal: boolean } {
         const entry = this.entry(run.key);
         const own = entry.personal.get(run.playerKey);
         const personal = !own || run.finishTicks < own.finishTicks;
@@ -144,19 +179,29 @@ export class MemoryGhostStore implements GhostStore {
         }
         const record = !entry.record || run.finishTicks < entry.record.finishTicks;
         if (record) entry.record = run;
+        if (poses && (record || personal)) this.keepPoses(run, poses);
         return { record, personal };
     }
 
     poses(run: GhostRun): Uint8Array {
-        let poses = this.poseCache.get(run);
-        if (poses) {
-            this.poseCache.delete(run);
-        } else {
-            poses = this.posesOf(run);
-            while (this.poseCache.size >= GHOST_POSE_CACHE_MAX) this.poseCache.delete(this.poseCache.keys().next().value as GhostRun);
-        }
+        const poses = this.cachedPoses(run) ?? this.posesOf(run);
+        this.keepPoses(run, poses);
+        return poses;
+    }
+
+    cachedPoses(run: GhostRun): Uint8Array | null {
+        const poses = this.poseCache.get(run);
+        if (!poses) return null;
+        // A use keeps it: to the back of the LRU order
+        this.poseCache.delete(run);
         this.poseCache.set(run, poses);
         return poses;
+    }
+
+    private keepPoses(run: GhostRun, poses: Uint8Array): void {
+        this.poseCache.delete(run);
+        while (this.poseCache.size >= GHOST_POSE_CACHE_MAX) this.poseCache.delete(this.poseCache.keys().next().value as GhostRun);
+        this.poseCache.set(run, poses);
     }
 
     /** Bytes held in inputs and pose tracks (the 5 MB budget, docs/phase-2-design.md 19). */

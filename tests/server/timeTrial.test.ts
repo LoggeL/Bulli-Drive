@@ -3,7 +3,8 @@ import { handleClientMessage } from '../../src/server/dispatch.js';
 import { mapFor } from '../../src/server/maps.js';
 import { RoomManager } from '../../src/server/rooms/lobby.js';
 import { trackRuntime } from '../../src/server/rooms/RaceRoom.js';
-import type { TimeTrialRoom } from '../../src/server/rooms/TimeTrialRoom.js';
+import { MemoryGhostStore, ReplayBudget } from '../../src/server/race/ghostStore.js';
+import { ghostKeyFor, TimeTrialRoom } from '../../src/server/rooms/TimeTrialRoom.js';
 import type { Session } from '../../src/server/session.js';
 import { mulberry32 } from '../../src/shared/math/rng.js';
 import { statesEqual } from '../../src/shared/net/prediction.js';
@@ -16,6 +17,7 @@ import { HILL_SPRINT } from '../../src/shared/race/tracks/index.js';
 import { BTN_RESET } from '../../src/shared/sim/constants.js';
 import { copyVehicleState, createVehicleInput, createVehicleState, type VehicleInput, type VehicleState } from '../../src/shared/sim/types.js';
 import { roomOptions } from '../../src/server/rooms/Room.js';
+import { ghostRun } from './ghostStore.contract.js';
 import { fakeClock, fakeSession, feed, type FakeTransport } from './helpers.js';
 
 // The time trial (docs/phase-2-design.md, 6.2, 15 and 20.1): a run driven
@@ -226,4 +228,104 @@ describe('time trial', () => {
         expect(room.phase).toBe('countdown');
         expect([player.member!.car!.state.x, player.member!.car!.state.z]).toEqual([HILL_SPRINT.grid[0].x, HILL_SPRINT.grid[0].z]);
     });
+
+    it('starts one countdown for a burst of RETRYs, none in the countdown, and sends a ghost only when the client lacks it', () => {
+        const { player, room } = trialPlayer('Solo');
+        driveRun(player, room, 7);
+        const run = lobby.ghosts.personalBest(room.ghostKey, player.id)!;
+        // The check replay's pose track is kept: the countdown replays nothing
+        expect(lobby.ghosts.cachedPoses(run)).not.toBeNull();
+        const stepUntil = (done: () => boolean, input: Partial<VehicleInput> = {}) => {
+            for (let i = 0; i < 600 && !done(); i++) {
+                if (player.member!.car) feed(room, player, input);
+                room.step();
+            }
+            expect(done()).toBe(true);
+        };
+        player.transport.clear();
+        for (let i = 0; i < 20; i++) send(player, { type: 'timeTrialRestart' });
+        const S = room.startTick!;
+        room.step();
+        expect(room.phase).toBe('countdown');
+        // Later in the countdown: still ignored
+        stepUntil(() => room.tick >= S - 100);
+        send(player, { type: 'timeTrialRestart' });
+        room.step();
+        expect(room.startTick).toBe(S);
+        expect(player.transport.events('spawn').filter(e => e.id === player.id)).toHaveLength(1);
+        expect(player.transport.of('ghostData')).toHaveLength(1);
+        // RETRY once racing: a new countdown, the same ghost is not sent again
+        stepUntil(() => room.phase === 'racing');
+        send(player, { type: 'timeTrialRestart' });
+        room.step();
+        expect(room.startTick).toBeGreaterThan(S);
+        expect(player.transport.of('ghostData')).toHaveLength(1);
+        // The client drops the ghost with the track: after a track change
+        // and back it comes again (to the results by an e2e placement)
+        stepUntil(() => room.phase === 'racing');
+        roomOptions.allowDebugPlace = true;
+        send(player, { type: 'debugPlace', x: 356 - 20 * Math.sin(0.54), z: 30 - 20 * Math.cos(0.54), yaw: 0.54 });
+        stepUntil(() => room.phase === 'results', { throttle: 255 });
+        send(player, { type: 'raceVote', choice: 'next' });
+        room.step();
+        expect(room.phase).toBe('lobby');
+        expect(player.transport.of('raceState').at(-1)!.trackId).toBe('downtown-loop');
+        // Back to the Hill Sprint before the voter's countdown starts
+        send(player, { type: 'raceConfig', track: 'hill-sprint' });
+        expect(room.trackId).toBe('hill-sprint');
+        room.step();
+        expect(room.phase).toBe('countdown');
+        expect(player.transport.of('ghostData')).toHaveLength(2);
+        // And after a resume (the client starts over on the room state)
+        room.resume(player.member!);
+        expect(player.transport.of('roomState').at(-1)!.resume).toBeDefined();
+        stepUntil(() => room.phase === 'racing');
+        send(player, { type: 'timeTrialRestart' });
+        expect(player.transport.of('ghostData')).toHaveLength(3);
+    });
+
+    it('waits for the replay budget with a ghost whose pose track is not at hand', () => {
+        let replays = 0;
+        const store = new MemoryGhostStore(() => { replays++; return new Uint8Array(13); });
+        store.submit(ghostRun('someone', 1800, ghostKeyFor(mapFor(), 'hill-sprint')));
+        const budget = new ReplayBudget(1, 1);
+        const room = new TimeTrialRoom(9, mapFor(), clock.now, { track: 'hill-sprint', ghosts: store, replays: budget });
+        const player = fakeSession('Solo');
+        room.join(player);
+        room.markReady(player.member!);
+        room.step();
+        // Another room took the budget just now
+        expect(budget.take(clock.now())).toBe(true);
+        room.onMessage(player.member!, { type: 'raceReady', ready: true });
+        for (let i = 0; i < 30; i++) room.step();
+        expect(room.phase).toBe('countdown');
+        expect(player.transport.of('ghostData')).toHaveLength(0);
+        expect(replays).toBe(0);
+        // A second later the budget has one replay again: the ghost comes
+        clock.advance(1000);
+        room.step();
+        expect(replays).toBe(1);
+        expect(player.transport.of('ghostData').at(-1)).toMatchObject({ kind: 'record', name: 'Name someone', finishTicks: 1800 });
+        room.dispose();
+    });
+
+    it('sends the ghost again once it is a different run: a new record', () => {
+        const key = ghostKeyFor(mapFor(), 'hill-sprint');
+        const store = new MemoryGhostStore(() => new Uint8Array(13));
+        store.submit(ghostRun('first', 1800, key));
+        const room = new TimeTrialRoom(9, mapFor(), clock.now, { track: 'hill-sprint', ghosts: store });
+        const player = fakeSession('Solo');
+        room.join(player);
+        room.markReady(player.member!);
+        room.step();
+        room.onMessage(player.member!, { type: 'raceReady', ready: true });
+        for (let i = 0; i < 300 && room.phase !== 'racing'; i++) room.step();
+        expect(player.transport.of('ghostData').map(g => g.finishTicks)).toEqual([1800]);
+        // Somebody else sets a faster time meanwhile; the next RETRY brings it
+        store.submit(ghostRun('second', 1700, key));
+        room.onMessage(player.member!, { type: 'timeTrialRestart' });
+        expect(player.transport.of('ghostData').map(g => g.finishTicks)).toEqual([1800, 1700]);
+        room.dispose();
+    });
 });
+
