@@ -2,23 +2,27 @@ import { describe, expect, it } from 'vitest';
 import { setWorldColliders, simWorldFor } from '../../src/client/vehicle/simWorldClient.js';
 import { state } from '../../src/client/state.js';
 import { DEFAULT_TERRAIN_CONFIG } from '../../src/shared/constants.js';
-import { buildWorldColliders } from '../../src/shared/world/colliderGen.js';
 import type { ColliderInput } from '../../src/shared/world/colliders.js';
 import { getTerrainHeight } from '../../src/shared/world/terrain.js';
 import { generateWorld } from '../../src/shared/world/worldGen.js';
+import {
+    collidersSha, GOLDEN_COLLIDER_COUNT, GOLDEN_COLLIDERS_SHA, GOLDEN_ROCK_COUNT, GOLDEN_ROCKS_SHA
+} from '../shared/worldGolden.js';
 
 describe('setWorldColliders', () => {
     it('uses the shared collider list of the world the server sent', () => {
         const world = generateWorld();
         setWorldColliders(world);
-        expect(state.worldColliders).toEqual(buildWorldColliders(world));
+        // The golden list of the default world (tests/shared/colliderGen.test.ts)
+        expect(state.worldColliders).toHaveLength(GOLDEN_COLLIDER_COUNT);
+        expect(collidersSha(state.worldColliders)).toBe(GOLDEN_COLLIDERS_SHA);
     });
 
     it('offline (no city) keeps only the rocks', () => {
         setWorldColliders({ trees: [], city: null });
-        expect(state.worldColliders.length).toBeGreaterThan(0);
+        expect(state.worldColliders).toHaveLength(GOLDEN_ROCK_COUNT);
         expect(state.worldColliders.every(c => c.kind === 'circle')).toBe(true);
-        expect(state.worldColliders).toEqual(buildWorldColliders({ trees: [], city: null }));
+        expect(collidersSha(state.worldColliders)).toBe(GOLDEN_ROCKS_SHA);
     });
 });
 

@@ -27,9 +27,6 @@ if (worker?.config && pattern instanceof RegExp && !(WRAPPED in pattern)) {
 // modules, which makes the hot sim code ~30x slower. They are skipped here
 // and keep running in the normal unit test run.
 const SKIPPED_TESTS = new Set([
-    // Wall clock: a stepWorld budget in milliseconds fails for every mutant
-    // it covers and would count as false kills
-    'v2 performance > steps 32 cars for 60 ticks well within budget',
     // Long sweeps with an explicit 30 s timeout (a config testTimeout cannot
     // raise it). Instrumented they take 20-40 s on a fast machine and fail
     // the dry run on a slower one. In the first full run (2026-09-24) they

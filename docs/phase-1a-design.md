@@ -874,7 +874,7 @@ Ein Input-Skript pro **Tick-Index**, `FixedStepLoop` mit Frame-Folgen 1/30, 1/60
 
 ### 14.9 Leistung
 
-Messung (geloggt, nicht als harte CI-Schranke): 32 Autos × 60 Ticks `stepWorld` in Node; Ziel < 2 ms pro Tick. Harte, großzügige Schranke gegen Ausreißer: 60 Ticks < 120 ms.
+Messung (geloggt, nicht als harte CI-Schranke): 32 Autos × 60 Ticks `stepWorld` in Node; Ziel < 2 ms pro Tick. `npm run perf:sim` (`scripts/sim-bench.ts`) misst das allein, die CI zeigt ein Ergebnis über dem Ziel als Warnung. Die frühere Schranke 60 Ticks < 120 ms im Unit-Lauf ist entfernt: In parallelen Workern auf geteilten Runnern war sie flaky-anfällig, und eine 6-mal langsamere Sim bestand sie trotzdem.
 
 *Im Browser gemessen mit `npm run perf:baseline -- --physics=v2` bzw. `--sandbox` (Abschnitt 22, Werte in [`baseline.md`](baseline.md)).*
 

@@ -28,6 +28,9 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      # Sim cost (32 cars, target < 2 ms per tick): logged, warns above the
+      # target, never fails the job (a wall clock on a shared runner)
+      - run: npm run perf:sim
 
   build:
     name: Build
