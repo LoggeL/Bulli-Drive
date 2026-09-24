@@ -129,6 +129,39 @@ describe('prediction against the server', () => {
         }
     });
 
+    it('behind 150/30/3, a page that hangs 300 ms of every 500 ms keeps its car out of the idle ghost (20.7)', () => {
+        // Found in CI: two pages drawing with software WebGL on one runner
+        // drew 2 frames a second. Late reports after each hang were ignored
+        // as the page's own stall, the lead never grew to cover the hangs,
+        // the inputs stayed late and the car an idle ghost for good (2 of 3
+        // seeds here: 100 % idle, 1200 of 1200 inputs missed in 20 s)
+        for (const seed of [1, 2, 3]) {
+            server?.dispose();
+            server = new TestServer();
+            const client = new TestClient(server, 'hangs', 'bulli', { latencyMs: 75, jitterMs: 30, loss: 0.03 }, seed);
+            client.script = () => input(0);
+            let t = 0;
+            const member = () => client.session.member!;
+            let idle = 0;
+            const step = (ms: number, count: boolean) => {
+                const end = t + ms;
+                while (t < end) {
+                    t += 4;
+                    server.advance(t);
+                    if (t % 500 >= 300) client.pump();
+                    if (count && member().idle) idle++;
+                }
+            };
+            client.sendJson({ type: 'ready' });
+            step(10_000, false);
+            const missed = client.net.stats.missedInputs;
+            step(10_000, true);
+            expect(idle, `seed ${seed}`).toBe(0);
+            // 600 ticks in the 10 s
+            expect(client.net.stats.missedInputs - missed, `seed ${seed}`).toBeLessThan(60);
+        }
+    });
+
     it('jumps back on track after the client clock jumps', () => {
         const tickMs = TICK_MS;
         server = new TestServer();

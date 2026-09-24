@@ -36,6 +36,12 @@ const SILENT_RESYNC_MS = 1000;
 // Time after a jump before the reports show its effect: a round trip plus
 // the snapshot interval and the buffer
 const JUMP_SETTLE_MS = 250;
+// Stalls of the client up to this long are left to the lead: a page that
+// hangs this long again and again (a weak device drawing a few frames a
+// second) needs the lead to cover them, or its inputs stay late and the
+// car an idle ghost for good. Longer ones (loading next to another page)
+// are not covered; their late reports are ignored (20.5, 20.7)
+export const COVERED_STALL_MS = 600;
 
 export class LeadControl {
     // Ticks ahead of the estimated server tick
@@ -69,6 +75,7 @@ export class LeadControl {
      * even deliver what it sent before). Those reports do not move the lead.
      */
     holdAfterStall(now: number, rttMs: number, stallMs: number): void {
+        if (stallMs <= COVERED_STALL_MS) return;
         this.ignoreUntil = Math.max(this.ignoreUntil, now + 2 * rttMs + JUMP_SETTLE_MS + stallMs);
     }
 
