@@ -35,7 +35,7 @@ Gemessen wird die Wanduhr des jeweiligen Befehls bzw. CI-Jobs. Wird ein Ziel üb
 
 ## Mutationstests (Stryker)
 
-Stryker prüft, ob die Unit-Tests rot werden, wenn die Logik kaputtgeht. Konfiguration: `stryker.config.mjs` (mutiert `src/shared/**` und `src/server/rooms/**`), Vitest-Konfiguration dafür: `vitest.stryker.config.ts` mit `tests/mutation/strykerSetup.ts`.
+Stryker prüft, ob die Unit-Tests rot werden, wenn die Logik kaputtgeht. Konfiguration: `stryker.config.mjs` (mutiert `src/shared/**`, `src/server/rooms/**` und `src/server/race/**`), Vitest-Konfiguration dafür: `vitest.stryker.config.ts` mit `tests/mutation/strykerSetup.ts`.
 
 - **Gezielt, nach einer Änderung (der Normalfall):** `npm run test:mutation -- --mutate "src/shared/net/prediction.ts"` (mehrere Dateien mit Komma). Inkrementell über `reports/stryker-incremental.json`: Nur Mutanten, deren Code oder abdeckende Tests sich geändert haben, laufen erneut; das dauert Sekunden bis wenige Minuten. Die übrigen Dateien behalten ihr Ergebnis im Bericht.
 - **Eine Gruppe:** `MUTATION_GROUP=sim|contact|net|world|rooms|race npm run test:mutation` (eigene inkrementelle Datei und eigener Bericht je Gruppe, so läuft auch der Workflow `.github/workflows/mutation.yml`).

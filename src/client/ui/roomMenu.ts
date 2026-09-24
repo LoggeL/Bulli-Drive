@@ -12,8 +12,8 @@ const SWITCH_COOLDOWN_MS = 2000;
 // Give up waiting for 'roomState' after this long (the buttons unlock)
 const SWITCH_TIMEOUT_MS = 5000;
 
-const LABELS: Record<RoomKind, string> = { party: 'PARTY', freeroam: 'FREE ROAM' };
-const NAMES: Record<RoomKind, string> = { party: 'Party', freeroam: 'Free Roam' };
+const LABELS: Record<RoomKind, string> = { party: 'PARTY', freeroam: 'FREE ROAM', race: 'RACE', timetrial: 'TIME TRIAL' };
+const NAMES: Record<RoomKind, string> = { party: 'Party', freeroam: 'Free Roam', race: 'Race', timetrial: 'Time Trial' };
 
 let splashChoice: RoomKind = DEFAULT_ROOM_KIND;
 let pendingKind: RoomKind | null = null;

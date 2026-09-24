@@ -934,3 +934,38 @@ Jeder Schritt ist ein Commit (oder wenige), nach dem das Spiel spielbar bleibt. 
 
 **Mutationslauf** (`MUTATION_GROUP=race`, neue Gruppe in `stryker.config.mjs` und im Workflow): 90 % gesamt; `gates.ts` und `inputFilter.ts` 100 %, `standings.ts` 98 %, `launch.ts` 96 %, `racingLine.ts` 91 %, `slipstream.ts` 91 %, `raceWorld.ts` 90 %, `geometry.ts` und `progress.ts` 87 %. Die Überlebenden sind überwiegend äquivalent: Grenzen `<` gegen `<=` auf Floats, die Größe der Scratch-Puffer, Schutzabfragen, die ein anderer Zweig schon abfängt, und die Fehlertexte. Die Streckendaten selbst (`tracks/*.ts`) laufen beim Laden und zählen für Stryker als statisch; sie prüft der Datentest.
 
+
+### 25.2 Schritte 1, 5 bis 8 (Server) und der Bot-Test aus 10: RaceRoom, Bots, Zeitfahren, Spawn-Fix
+
+**Umgesetzt:** Spawn-Fix (18), `RaceRoom` mit allen Phasen, Freeze, Launch, Gates, Positionen, Falschfahrer, Reset-Prüfung, DNF, Ergebnissen und Abstimmung; Anti-Griefing über `Room.forceGhost`; Server-Bots (`BotSession`, `LineDriver` mit drei Stufen, `pursuit.ts`); `TimeTrialRoom` mit Aufzeichnung, bitgleicher Nachsimulation (`replay.ts`), Pose-Spur (`ghostTrack.ts`) und `GhostStore`; Protokoll v3 JSON (16.2, 16.3); Instanzwahl (6.5); die Prediction-Hooks `filterInput` und `ghostFloor` (17.1); die Bot-Modi `race` und `timetrial` und `tests/integration/race.test.ts`. Der Browser (Menü, HUD, Lobby, Ergebnisse, Ghost-Auto, Launch-Mods in der Prediction) folgt in Schritt 9; bis dahin kommt kein Browser in einen Race-Room (das Menü bietet ihn noch nicht an).
+
+**Abweichungen:**
+
+| Stelle | Spezifikation | Umgesetzt | Grund |
+|---|---|---|---|
+| Event `raceSpawn` (16.4) | eigenes Event | **`spawn` mit `grid?`** | Dasselbe wie `spawn`; Client und Bots setzen die Prediction damit schon zurück. Ein zweiter Typ hätte jeden Empfänger doppelt verzweigt. |
+| Zuschauer | – | neues Event **`despawn {id, tick}`** | Wer beim Countdown nicht bereit ist, verliert sein Auto; der eigene Client muss die Prediction anhalten (wie bei `killed`). |
+| Zeitformel (8) | `T − 1 + t − S` | **`(T − 1 − S) + t`** | Gleiche Mathematik, aber die ganzen Ticks zuerst: Sonst hängen die letzten Bits vom Stand der Room-Uhr ab, und der Replay (zählt ab 0) wich um 1 ulp ab (im Test gefunden: 1651,2848471032878 gegen …288). |
+| Aufzeichnung (15.1) | Input nach Filter + rohes Gas des Countdowns | **Input nach Wiederholung und Stopp, vor dem Renn-Filter** | Der Replay wendet `raceInputFilter` und den Launch selbst an; eine Spur statt zwei, dasselbe Ergebnis. |
+| Ghost-Speicher (15.3) | Pose-Spur beim Ghost | **LRU der letzten 16 Pose-Spuren** | Grenzfall 2 Strecken · 64 Bestzeiten · 100 s: Inputs 3,07 MB; mit allen Pose-Spuren wären es 6,4 MB, mit dem LRU 3,49 MB (Budget 5 MB, Unit-Test). |
+| Bot-Verkehr (14) | Korridor ≤ 14 m | **max(14 m, 2 s · Annäherungsgeschwindigkeit)**, Spurwechsel 6 m/s, unter 8 m zählt jedes Auto im Korridor | Mit 14 m prallt ein Bot mit 25 m/s auf ein stehendes Auto, bevor er 3 m versetzt hat (Unit-Test). |
+| Bot-Rettung | Stuck-Logik | zusätzlich **Reset bei verpasstem Gate** und nach **2 s mehr als 25 m neben der Linie** | Ein Bot, der nach einem Rempler neben einem Gate vorbeirutschte, fuhr sonst ohne Wertung bis ans Linienende (im Room-Test gefunden). |
+| Bot-Reaktionsverzug | Ringpuffer | im Countdown **mit dem Countdown-Gas gefüllt** | Sonst lässt ein Bot mit 12 Ticks Verzug bei Grün 12 Ticks lang das Gas los, und kein Bot kam je zum perfekten Start. |
+| Bot-Klassen | aus Seed | alle fünf Klassen | – |
+| Zeitfahren nach den Ergebnissen | – | Strecke bleibt ohne Stimme für `next` | Im Zeitfahren wechselt die Strecke nur auf Wunsch. |
+| Integrationstest (20.2) | 2 WebSocket-Bots + 4 Server-Bots, ≥ 3 Server-Bots im Ziel | **4 WebSocket-Bots + 2 Server-Bots** (Vorgabe der Aufgabe); alle Spieler im Ziel, mindestens ein Server-Bot, DNF nur hinter allen Zielankünften | Mit vier Spielern ist der Test näher am Netzcode; ein Server-Bot, der nach dem letzten Spieler noch fährt, ist nach 6.1 DNF. |
+| `raceResults` | – | die letzten `finish`-Events gehen **vor** `raceStatus` und `raceResults` raus (`Room.flushEventsNow`) | Sonst kam das Ergebnis vor dem Zieleinlauf des Letzten an (im Bot-Test gefunden). |
+| Offene Linie | – | `writeProjection` wickelt `s` nur auf dem Rundkurs | Am Ende einer offenen Linie sprang `s` von der Länge auf 0 (im Test von `pointAt` gefunden). |
+
+**Gemessen:**
+
+| | Wert | Budget |
+|---|---|---|
+| Bot-Rennen Hill Sprint, 4 WebSocket-Bots (Netsim 150/30/3) + 2 Server-Bots | 37 s, Zeiten 23–31 s, Downlink 12,7 kB/s je Client, Tick p99 0,8 ms (lokal) | Downlink ≤ 16 kB/s, p99 < 2 ms |
+| Zeitfahren im Bot-Test (Lauf, Reload, Ghost) | 28 s | – |
+| `race.test.ts` gesamt | 66 s | ≤ 90 s |
+| Unit-Lauf gesamt (96 Dateien, 1300 Tests) | 4,4 s | < 15 s |
+| RaceRoom-Unit-Tests (20) / Zeitfahren (5) | 0,3 s / 0,2 s | – |
+| `LineDriver` `medium`, Bulli allein | Downtown-Runde 34 s, Hill Sprint 25,6 s, ≤ 5,4 m neben der Linie, kein Reset | 24–40 s bzw. 20–40 s, ≤ 8 m |
+
+**Mutationslauf** (`MUTATION_GROUP=race`, die Gruppe umfasst jetzt auch `src/server/race/**`, `RaceRoom.ts` und `TimeTrialRoom.ts`): 84 % gesamt; `botRoster.ts` 96 %, `pursuit.ts` 87 %, `ghostTrack.ts` 90 %, `ghostStore.ts` 85 %, `RaceRoom.ts` 82 %, `replay.ts` 82 %, `TimeTrialRoom.ts` 75 %, `lineDriver.ts` 60 %. Die Überlebenden in den Rooms sind überwiegend äquivalent: Aufräumen von Maps, die ein späterer Schritt ohnehin leert, Schutzabfragen (`!m || !car`), die ein anderer Zweig schon abfängt, Anfangswerte (`-1`), die vor der ersten Nutzung überschrieben werden, das Gate-Modulo des Rundkurses (kein Room-Test fährt eine zweite Runde; `progress.ts` testet die Runden), und der Log-Text eines verworfenen Laufs. Beim `LineDriver` überleben vor allem die Stellgrößen der Heuristik (Pedalregler, Vorschau, Knoten des Linienrauschens, Kurvenregel beim Ausweichen): Sie verschieben Rundenzeiten innerhalb der getesteten Grenzen, ohne dass sich ein prüfbarer Vertrag ändert; die Verträge (Linie, Zeiten, Stufen-Reihenfolge, Ausweichen, Windschatten-Spur, Reset, Launch-Anteile, Deckel der Geschwindigkeit) sind getestet. Der Reset-Check im Replay ist nur durch den Unit-Test von `resetBeforeNextGate` und die Gleichheit von Room und Replay abgedeckt, nicht durch einen Lauf, der ihn auslöst.

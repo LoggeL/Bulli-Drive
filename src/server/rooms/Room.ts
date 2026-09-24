@@ -4,6 +4,7 @@ import type {
     LeaveReason,
     MemberInfo,
     ProfileId,
+    RaceStateBody,
     RoomInfo,
     RoomKind,
     ResumeState,
@@ -27,6 +28,7 @@ import { createVehicleInput, type CarClassId, type SimCar, type VehicleInput } f
 import { createSimCar, placeVehicle, spawnVehicle } from '../../shared/sim/vehicle.js';
 import { createVehicleParams, isCarClassId } from '../../shared/sim/vehicleClasses.js';
 import { stepWorld } from '../../shared/sim/world.js';
+import type { SimWorld } from '../../shared/world/colliders.js';
 import type { MapData } from '../../shared/world/mapData.js';
 import { CAR_CHANGE_INTERVAL_MS, HONK_INTERVAL_MS } from '../config.js';
 import type { Session } from '../session.js';
@@ -47,10 +49,22 @@ export type { LeaveReason };
 export const SLOT_COUNT = 256;
 export const SLOT_REUSE_DELAY_MS = 5000;
 
+/**
+ * A server-side driver (docs/phase-2-design.md, 6.3): a race bot writes the
+ * input of its car for tick T instead of the input buffer.
+ */
+export interface BotController {
+    drive(member: RoomMember, car: SimCar, tick: number, out: VehicleInput): void;
+}
+
 export interface RoomMember {
     readonly id: string;
     readonly session: Session;
     readonly slot: number;
+    // A server-side bot (no socket, no input buffer), null for a player
+    readonly bot: BotController | null;
+    // The room held the contact ghost last tick (forceGhost, 5.4 / phase 2, 11)
+    forcedGhost: boolean;
     // Past the splash screen: drives, visible to the others, on the scoreboard
     ready: boolean;
     // The car in the sim; null before the first spawn
@@ -148,8 +162,18 @@ export abstract class Room {
         return { id: this.id, kind: this.kind, index: this.index };
     }
 
+    /**
+     * The players in the room. Bots do not count (phase 2, 6.3): instance
+     * choice, ticking, closing and the metrics go by players only.
+     */
     get size(): number {
-        return this.members.size;
+        return this.humanCount;
+    }
+
+    get humanCount(): number {
+        let count = 0;
+        for (const m of this.sorted) if (!m.bot) count++;
+        return count;
     }
 
     /** Members in id order: the order of every rule, like stepWorld's. */
@@ -163,11 +187,13 @@ export abstract class Room {
      * Adds the session and sends it the room state. ready = true (a room
      * switch after the splash screen) spawns the car at the next tick.
      */
-    join(session: Session, options: { ready?: boolean } = {}): RoomMember {
+    join(session: Session, options: { ready?: boolean; bot?: BotController } = {}): RoomMember {
         const member: RoomMember = {
             id: session.id,
             session,
             slot: this.allocateSlot(),
+            bot: options.bot ?? null,
+            forcedGhost: false,
             ready: false,
             car: null,
             alive: false,
@@ -201,7 +227,7 @@ export abstract class Room {
         this.sorted = [...this.members.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
         session.room = this;
         session.member = member;
-        this.emptySinceMs = 0;
+        if (!member.bot) this.emptySinceMs = 0;
         this.onJoin(member);
         // A switch after the splash screen: ready at once, so the room state
         // lists the player (scoreboard) and the car spawns at the next tick
@@ -231,7 +257,7 @@ export abstract class Room {
         for (const key of [...this.pairContactTick.keys()]) {
             if (key.includes(member.id)) this.pairContactTick.delete(key);
         }
-        if (this.members.size === 0) this.emptySinceMs = this.now();
+        if (this.humanCount === 0 && this.emptySinceMs === 0) this.emptySinceMs = this.now();
     }
 
     // Lowest slot that is neither taken nor freed less than SLOT_REUSE_DELAY_MS ago
@@ -258,7 +284,8 @@ export abstract class Room {
             color: session.color,
             carType: carClass(session),
             profile: session.profile,
-            ready: member.ready
+            ready: member.ready,
+            ...(member.bot ? { bot: true } : {})
         };
     }
 
@@ -297,8 +324,14 @@ export abstract class Room {
             scoreboard: this.scoreboard(),
             health,
             preview,
-            ...(resume ? { resume: this.resumeState(member) } : {})
+            ...(resume ? { resume: this.resumeState(member) } : {}),
+            ...this.raceField()
         };
+    }
+
+    private raceField(): { race?: RaceStateBody } {
+        const race = this.raceState();
+        return race ? { race } : {};
     }
 
     // Past the splash screen: the others see the player, the car spawns
@@ -351,7 +384,7 @@ export abstract class Room {
 
     private showCarChanges(nowMs: number): void {
         for (const m of this.sorted) {
-            if (!m.carPending || nowMs - m.carShownAtMs < CAR_CHANGE_INTERVAL_MS) continue;
+            if (!m.carPending || nowMs - m.carShownAtMs < CAR_CHANGE_INTERVAL_MS || !this.carChangeAllowed(m)) continue;
             m.carPending = false;
             const carType = carClass(m.session), profile = m.session.profile;
             if (carType === m.shownCar && profile === m.shownProfile) continue;
@@ -377,6 +410,7 @@ export abstract class Room {
     step(nowMs: number = this.now()): void {
         const T = ++this.tick;
         this.lastStepAtMs = nowMs;
+        this.beginTick(T);
         for (const m of this.sorted) this.takeInput(m, T);
         this.beforeStep(T);
         for (const m of this.sorted) {
@@ -385,7 +419,7 @@ export abstract class Room {
         const cars = this.cars;
         cars.length = 0;
         for (const m of this.sorted) if (m.car && m.alive) cars.push(m.car);
-        if (cars.length > 0) stepWorld(cars, this.map.simWorld);
+        if (cars.length > 0) stepWorld(cars, this.world);
         this.contactEvents(T);
         this.afterStep(T);
         this.showCarChanges(nowMs);
@@ -397,8 +431,17 @@ export abstract class Room {
     }
 
     private takeInput(m: RoomMember, T: number): void {
-        const entry = m.inputs.take(T);
         const car = m.car;
+        if (m.bot) {
+            // A bot drives from the server: no buffer, never idle or laggy
+            m.missing = m.ticksWithoutInput = 0;
+            if (!car || !m.alive) return;
+            m.playing = true;
+            m.bot.drive(m, car, T, car.input);
+            this.filterInput(m, car.input, T);
+            return;
+        }
+        const entry = m.inputs.take(T);
         if (entry) {
             copyInput(m.lastInput, entry.input);
             m.missing = 0;
@@ -454,7 +497,10 @@ export abstract class Room {
             m.laggy = false;
             m.ghostHold = true;
         }
-        if (m.idle || m.laggy) {
+        const forced = this.forceGhost(m, T);
+        if (m.forcedGhost && !forced) m.ghostHold = true;
+        m.forcedGhost = forced;
+        if (m.idle || m.laggy || forced) {
             applyContactGhostFloor(car);
         } else if (m.ghostHold) {
             // No car is thrown out of an overlap when the ghost ends
@@ -522,29 +568,56 @@ export abstract class Room {
             }
             if (m.pendingSpawn && m.ready) {
                 m.pendingSpawn = false;
-                m.carDirty = false;
-                const pose = randomSpawnPose(this.map.world.city, this.carPositions(m), this.spawnKeepOut());
-                m.car = createSimCar(m.id, carClass(m.session), m.session.profile);
-                spawnVehicle(m.car.state, this.map.simWorld, pose.x, pose.z, pose.yaw);
-                m.alive = true;
-                m.idle = false;
-                m.laggy = false;
-                m.ghostHold = false;
-                m.missRing.fill(0);
-                m.missCount = 0;
-                m.playing = false;
-                m.ticksWithoutInput = 0;
-                m.spawnTick = T;
-                this.onSpawned(m, T);
-                this.emit({ type: 'spawn', id: m.id, tick: T, x: pose.x, z: pose.z, yaw: pose.yaw });
+                const pose = this.spawnPose(m);
+                if (pose) this.spawnCar(m, pose, T, pose.grid);
             }
             if (m.pendingPlace && m.car) {
                 const place = m.pendingPlace;
                 m.pendingPlace = null;
-                placeVehicle(m.car.state, this.map.simWorld, place.x, place.z, place.yaw);
+                placeVehicle(m.car.state, this.world, place.x, place.z, place.yaw);
                 m.car.state.flipAngle = 0;
+                this.onPlaced(m, T);
             }
         }
+    }
+
+    /**
+     * The car (a new one, in the member's current class) appears at pose at
+     * the end of tick T, fresh and at rest; grid: the race's grid slot.
+     */
+    protected spawnCar(m: RoomMember, pose: SpawnPose, T: number, grid?: number): void {
+        m.carDirty = false;
+        const carType = carClass(m.session), profile = m.session.profile;
+        m.carPending = false;
+        if (carType !== m.shownCar || profile !== m.shownProfile) {
+            // The others learn the class before the car shows up in it
+            m.shownCar = carType;
+            m.shownProfile = profile;
+            if (m.ready) this.broadcast({ type: 'playerUpdated', id: m.id, carType, profile });
+        }
+        m.car = createSimCar(m.id, carType, profile);
+        spawnVehicle(m.car.state, this.world, pose.x, pose.z, pose.yaw);
+        m.alive = true;
+        m.idle = false;
+        m.laggy = false;
+        m.ghostHold = false;
+        m.forcedGhost = false;
+        m.missRing.fill(0);
+        m.missCount = 0;
+        m.playing = false;
+        m.ticksWithoutInput = 0;
+        m.spawnTick = T;
+        this.onSpawned(m, T);
+        this.emit({ type: 'spawn', id: m.id, tick: T, x: pose.x, z: pose.z, yaw: pose.yaw, ...(grid !== undefined ? { grid } : {}) });
+    }
+
+    /** The car leaves the sim at the end of tick T (a race: the player watches). */
+    protected despawnCar(m: RoomMember, T: number): void {
+        if (!m.car) return;
+        m.car = null;
+        m.alive = false;
+        m.pendingPlace = null;
+        this.emit({ type: 'despawn', id: m.id, tick: T });
     }
 
     /** Where no car spawns besides the static obstacles (the Party's pickups). */
@@ -571,6 +644,11 @@ export abstract class Room {
         this.scoreboardDirty = true;
     }
 
+    /** Sends the queued events now instead of with the next snapshot (before a message that must follow them). */
+    protected flushEventsNow(): void {
+        this.flushEvents(this.tick);
+    }
+
     // All events of the ticks since the last snapshot, before the snapshot
     private flushEvents(T: number): void {
         if (this.scoreboardDirty) {
@@ -585,6 +663,7 @@ export abstract class Room {
         } else {
             const range2 = CONTACT_EVENT_RANGE * CONTACT_EVENT_RANGE;
             for (const m of this.sorted) {
+                if (m.bot) continue;
                 const own = m.car && m.alive ? m.car.state : null;
                 const list = this.queued.filter(q => {
                     if (q.exclude === m.id) return false;
@@ -624,6 +703,7 @@ export abstract class Room {
         }
         const compactBytes = at;
         for (const m of this.sorted) {
+            if (m.bot) continue;
             const own = this.compactAt.get(m);
             const hasSelf = own !== undefined;
             const others = hasSelf ? count - 1 : count;
@@ -656,7 +736,7 @@ export abstract class Room {
     broadcast(msg: ServerMessage, excludeId?: string): void {
         const data = JSON.stringify(msg);
         for (const member of this.sorted) {
-            if (member.id === excludeId) continue;
+            if (member.id === excludeId || member.bot) continue;
             member.session.sendRaw(data);
             this.bytesOut += data.length;
         }
@@ -672,6 +752,7 @@ export abstract class Room {
         ranked.forEach((r, i) => rankOf.set(r.id, { score: r.score, rank: i + 1 }));
         const list = JSON.stringify(board);
         for (const m of this.sorted) {
+            if (m.bot) continue;
             const own = rankOf.get(m.id);
             const data = `{"type":"scoreboard","scoreboard":${list}${own ? `,"own":${JSON.stringify(own)}` : ''}}`;
             m.session.sendRaw(data);
@@ -680,6 +761,7 @@ export abstract class Room {
     }
 
     protected sendTo(member: RoomMember, msg: ServerMessage): void {
+        if (member.bot) return;
         const data = JSON.stringify(msg);
         member.session.sendRaw(data);
         this.bytesOut += data.length;
@@ -692,6 +774,28 @@ export abstract class Room {
     }
 
     // ---- Extension points of the room types ----
+
+    /** The sim world the cars drive in: the map's; a race room adds its track (phase 2, 5.6). */
+    protected get world(): SimWorld {
+        return this.map.simWorld;
+    }
+
+    // Right after the tick count went up, before any input (a race starts)
+    protected beginTick(_tick: number): void { /* none */ }
+    // True holds the member's car in the contact ghost this tick like the
+    // idle ghost; when it ends, the car stays a ghost while it overlaps
+    protected forceGhost(_member: RoomMember, _tick: number): boolean { return false; }
+    // Where a member's car appears after 'ready' (grid: a race's grid slot);
+    // null: no car (a spectator)
+    protected spawnPose(member: RoomMember): (SpawnPose & { grid?: number }) | null {
+        return randomSpawnPose(this.map.world.city, this.carPositions(member), this.spawnKeepOut());
+    }
+    // An e2e placement (debugPlace) moved the car at the end of tick
+    protected onPlaced(_member: RoomMember, _tick: number): void { /* none */ }
+    // Whether a car change may show now (a race: only in the lobby)
+    protected carChangeAllowed(_member: RoomMember): boolean { return true; }
+    // The race state for roomState (race and time trial rooms)
+    raceState(): RaceStateBody | null { return null; }
 
     protected onJoin(_member: RoomMember): void { /* no per-member state */ }
     protected onLeave(_member: RoomMember, _reason: LeaveReason): void { /* no per-member state */ }

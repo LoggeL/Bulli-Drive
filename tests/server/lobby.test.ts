@@ -3,6 +3,7 @@ import { handleClientMessage } from '../../src/server/dispatch.js';
 import { mapFor } from '../../src/server/maps.js';
 import { RoomManager } from '../../src/server/rooms/lobby.js';
 import { PartyRoom } from '../../src/server/rooms/PartyRoom.js';
+import type { RaceRoom } from '../../src/server/rooms/RaceRoom.js';
 import { SLOT_REUSE_DELAY_MS } from '../../src/server/rooms/Room.js';
 import { generateWorld } from '../../src/shared/world/worldGen.js';
 import { sha256, stableStringify } from '../helpers.js';
@@ -372,5 +373,78 @@ describe('Free Roam', () => {
         steps(room, 3);
         expect(bob.transport.events('honk')).toEqual([{ type: 'honk', id: alice.id }]);
         expect(alice.transport.events('honk')).toEqual([]);
+    });
+});
+
+describe('race and time trial instances (docs/phase-2-design.md, 6.5)', () => {
+    const phaseOf = (room: unknown) => (room as RaceRoom).phase;
+
+    it('puts a racer into a room in its lobby before a running one, the fuller lobby first', () => {
+        const [a, b, c, d] = Array.from({ length: 4 }, () => fakeSession());
+        lobby.join(a, 'race');
+        const first = a.room as RaceRoom;
+        expect(first.id).toBe('race-1');
+        ready(lobby, a);
+        steps(first, 1);
+        handleClientMessage(lobby, a, { type: 'raceReady', ready: true }, clock.now());
+        steps(first, 62);
+        expect(phaseOf(first)).toBe('countdown');
+        // race-1 runs: a new player watches it rather than open another
+        lobby.join(b, 'race');
+        expect(b.room).toBe(first);
+        // A fresh one on request ("START OWN RACE"), which then takes the next racer
+        lobby.join(c, 'race', { fresh: true, track: 'hill-sprint' });
+        expect(c.room!.id).toBe('race-2');
+        expect((c.room as RaceRoom).trackId).toBe('hill-sprint');
+        lobby.join(d, 'race');
+        expect(d.room!.id).toBe('race-2');
+    });
+
+    it('counts players only: bots neither fill a room nor keep it open', () => {
+        const a = fakeSession();
+        lobby.join(a, 'race');
+        const room = a.room as RaceRoom;
+        ready(lobby, a);
+        steps(room, 1);
+        handleClientMessage(lobby, a, { type: 'raceReady', ready: true }, clock.now());
+        steps(room, 62);
+        expect(room.members.size).toBe(6);
+        expect(room.size).toBe(1);
+        expect(lobby.playerCount()).toBe(1);
+        lobby.leave(a);
+        expect(room.members.size).toBe(0);
+        clock.advance(60_000);
+        lobby.sweep();
+        expect(lobby.get('race-1')).toBeUndefined();
+    });
+
+    it('opens a new private time trial for everyone, and a switch with fresh even within the kind', () => {
+        const a = fakeSession(), b = fakeSession();
+        lobby.join(a, 'timetrial', { track: 'hill-sprint' });
+        lobby.join(b, 'timetrial');
+        expect(a.room!.id).toBe('timetrial-1');
+        expect(b.room!.id).toBe('timetrial-2');
+        expect((a.room as RaceRoom).trackId).toBe('hill-sprint');
+        expect((b.room as RaceRoom).trackId).toBe('downtown-loop');
+        expect(lobby.switch(a, 'timetrial')).toBeNull();
+        expect(a.room!.id).toBe('timetrial-1');
+        const moved = lobby.switch(a, 'race', { fresh: true });
+        expect(moved!.session.room!.id).toBe('race-1');
+        expect(lobby.switch(a, 'race', { fresh: true })!.session.room!.id).toBe('race-2');
+    });
+
+    it('limits a race room to 16 players', () => {
+        const sessions = Array.from({ length: 17 }, () => fakeSession());
+        for (const s of sessions) lobby.join(s, 'race');
+        expect(sessions.slice(0, 16).every(s => s.room!.id === 'race-1')).toBe(true);
+        expect(sessions[16].room!.id).toBe('race-2');
+    });
+
+    it('takes joinRoom with fresh and a track from the client', () => {
+        const a = fakeSession();
+        lobby.join(a, 'party');
+        expect(handleClientMessage(lobby, a, { type: 'joinRoom', kind: 'race', fresh: true, track: 'hill-sprint' }, clock.now())).toBe('ok');
+        expect(a.room!.kind).toBe('race');
+        expect((a.room as RaceRoom).trackId).toBe('hill-sprint');
     });
 });

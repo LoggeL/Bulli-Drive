@@ -54,7 +54,7 @@ describe('acceptHello', () => {
             'not json',
             JSON.stringify({ type: 'update', x: 0, z: 0, angle: 0, flipAngle: 0, isFlipping: false }),
             JSON.stringify({ type: 'playerReady' }),
-            JSON.stringify({ ...hello, room: 'race' }),
+            JSON.stringify({ ...hello, room: 'rally' }),
             JSON.stringify({ ...hello, name: 7 })
         ]) {
             const transport = new FakeTransport();

@@ -14,6 +14,11 @@
 // - hop: drives and switches between Party and Free Roam every 20 s
 // - flood: floods the server with input packets until it is kicked (4003)
 // - manual: the caller sets the input (scripted scenarios in the tests)
+// - race: joins a race room, picks the track, says ready and races along
+//   the racing line (LineDriver on its own prediction, with the race
+//   world, the freeze and the start ghost like the browser;
+//   docs/phase-2-design.md, 20.2); raceOverride scripts single ticks
+// - timetrial: the same alone in a time trial room
 //
 // The clock is performance.now(); the caller runs pump() every few ms
 // (BotSwarm does it for many bots with one timer).
@@ -28,15 +33,25 @@ import { NetsimConnection, type NetsimOptions } from '../../src/shared/net/netsi
 import { closeAction, reconnectDelayMs } from '../../src/shared/net/reconnect.js';
 import { mulberry32, type RandomSource } from '../../src/shared/math/rng.js';
 import {
-    PROTOCOL_VERSION, type ClientMessage, type GameEvent, type MemberInfo, type RoomInfo, type RoomKind, type ServerMessage
+    PROTOCOL_VERSION, type ClientMessage, type GameEvent, type MemberInfo, type RaceStateBody, type RoomInfo, type RoomKind,
+    type ServerMessage
 } from '../../src/shared/protocol.js';
-import { createVehicleInput, type CarClassId, type SimCar, type VehicleInput, type VehicleState } from '../../src/shared/sim/types.js';
+import { raceGhostFloor, raceInputFilter } from '../../src/shared/race/inputFilter.js';
+import { LineDriver, type TrafficCar } from '../../src/shared/race/lineDriver.js';
+import { createCourse, createRaceProgress, trackLine, type Course, type RaceProgress } from '../../src/shared/race/progress.js';
+import { createRaceWorld } from '../../src/shared/race/raceWorld.js';
+import { TRACKS } from '../../src/shared/race/tracks/index.js';
+import type { BotLevel, RacePhase, TrackId } from '../../src/shared/race/types.js';
+import type { SimWorld } from '../../src/shared/world/colliders.js';
+import {
+    createVehicleInput, type CarClassId, type SimCar, type VehicleInput, type VehicleParams, type VehicleState
+} from '../../src/shared/sim/types.js';
 import { createSimCar } from '../../src/shared/sim/vehicle.js';
 import { cityRoadGrid } from '../../src/shared/world/cityGen.js';
 import { createMapData, type MapData } from '../../src/shared/world/mapData.js';
 import { RoadDriver, type ChaseTarget } from './driver.js';
 
-export const BOT_MODES = ['drive', 'ram', 'idle', 'reconnect', 'hop', 'flood', 'manual'] as const;
+export const BOT_MODES = ['drive', 'ram', 'idle', 'reconnect', 'hop', 'flood', 'manual', 'race', 'timetrial'] as const;
 export type BotMode = typeof BOT_MODES[number];
 
 export function isBotMode(value: string): value is BotMode {
@@ -67,8 +82,27 @@ export interface BotOptions {
     ramRange?: number;
     // Mode flood: starts this long after the spawn
     floodAfterMs?: number;
+    // Modes race and timetrial: the track to pick and how the bot drives
+    track?: TrackId;
+    driverLevel?: BotLevel;
+    // Mode race: the level of the server's bots to pick
+    serverBotLevel?: BotLevel;
     log?: (line: string) => void;
 }
+
+// A message of the race modes, kept for the tests
+export type RaceMessage = Extract<ServerMessage, { type: 'raceState' | 'raceStatus' | 'raceResults' | 'ghostData' }>;
+
+// What a race bot sees of a race: the state, the status and results, its events
+export interface RaceSeen {
+    state: RaceStateBody | null;
+    messages: RaceMessage[];
+    events: GameEvent[];
+}
+
+// A scripted tick of a race bot: write the input and return true to use it
+// instead of the line driver's
+export type RaceOverride = (tick: number, startTick: number, s: VehicleState, input: VehicleInput) => boolean;
 
 // What a bot saw of another car in the last snapshot with it
 export interface SeenCar {
@@ -145,7 +179,8 @@ function randomConnId(random: RandomSource): string {
 }
 
 export class Bot {
-    readonly options: Required<Omit<BotOptions, 'netsim' | 'log' | 'carType'>> & Pick<BotOptions, 'netsim' | 'log'> & { carType: CarClassId };
+    readonly options: Required<Omit<BotOptions, 'netsim' | 'log' | 'carType' | 'track' | 'serverBotLevel'>>
+        & Pick<BotOptions, 'netsim' | 'log' | 'track' | 'serverBotLevel'> & { carType: CarClassId };
     readonly net: NetClient;
     readonly driver: RoadDriver;
     readonly stats: BotStats;
@@ -154,6 +189,15 @@ export class Bot {
     readonly seen = new Map<string, SeenCar>();
     // The input used in mode manual
     readonly manualInput: VehicleInput = createVehicleInput();
+    // Modes race and timetrial
+    readonly race: RaceSeen = { state: null, messages: [], events: [] };
+    raceOverride: RaceOverride | null = null;
+    private raceDriver: LineDriver | null = null;
+    private raceDriverFor = -1;
+    private raceCourse: Course | null = null;
+    private raceProgress: RaceProgress = createRaceProgress();
+    private readonly raceWorlds = new Map<TrackId, SimWorld>();
+    private raceConfigSent = false;
     connId: string;
     sessionToken: string | null = null;
     playerId: string | null = null;
@@ -183,12 +227,13 @@ export class Bot {
     private floodAt = Infinity;
     private spawnedAt = -1;
     private dead = false;
+    private map: MapData | null = null;
     private readonly chase: ChaseTarget = { x: 0, z: 0, vx: 0, vz: 0 };
 
     constructor(options: BotOptions) {
         this.random = mulberry32(options.seed * 2654435761 >>> 0);
         this.options = {
-            room: 'party',
+            room: options.mode === 'race' ? 'race' : options.mode === 'timetrial' ? 'timetrial' : 'party',
             dropEveryMs: 20_000,
             reconnectMinMs: 1000,
             reconnectMaxMs: 5000,
@@ -196,6 +241,7 @@ export class Bot {
             ramEveryMs: 6000,
             ramRange: 90,
             floodAfterMs: 2000,
+            driverLevel: 'medium',
             // Keys left undefined keep their default
             ...Object.fromEntries(Object.entries(options).filter(([, value]) => value !== undefined)) as BotOptions,
             carType: options.carType ?? CAR_CLASSES[Math.floor(this.random() * CAR_CLASSES.length)]
@@ -485,7 +531,89 @@ export class Bot {
                 this.restartDelayMs = Math.max(0, Math.min(10_000, msg.reconnectInMs));
                 this.resumeTicket = msg.resume ?? null;
                 return;
+            case 'raceState': {
+                const { type: _type, ...state } = msg;
+                this.race.messages.push(msg);
+                this.onRaceState(state);
+                return;
+            }
+            case 'raceStatus':
+            case 'raceResults':
+            case 'ghostData':
+                this.race.messages.push(msg);
+                return;
         }
+    }
+
+    /** The race messages of one type, in order. */
+    raceMessages<T extends RaceMessage['type']>(type: T): Extract<RaceMessage, { type: T }>[] {
+        return this.race.messages.filter((m): m is Extract<RaceMessage, { type: T }> => m.type === type);
+    }
+
+    /** The race events of one type (gate, finish, launch, wrongWay), in order. */
+    raceEvents<T extends GameEvent['type']>(type: T): Extract<GameEvent, { type: T }>[] {
+        return this.race.events.filter((e): e is Extract<GameEvent, { type: T }> => e.type === type);
+    }
+
+    private raceWorld(track: TrackId): SimWorld {
+        let world = this.raceWorlds.get(track);
+        if (!world) {
+            world = createRaceWorld(this.map!, TRACKS[track]);
+            this.raceWorlds.set(track, world);
+        }
+        return world;
+    }
+
+    // The race state: the prediction drives in the track's race world with
+    // the race rules; the bot picks its track and says ready in the lobby
+    private onRaceState(state: RaceStateBody): void {
+        const before = this.race.state;
+        this.race.state = state;
+        const p = this.net.prediction;
+        if (p && this.map) {
+            p.world = this.raceWorld(state.trackId);
+            p.filterInput = (tick, input) => { raceInputFilter(this.phaseAt(tick), tick, this.race.state?.startTick ?? null, input); };
+            p.ghostFloor = (tick, car) => { raceGhostFloor(this.phaseAt(tick), tick, this.race.state?.startTick ?? null, car); };
+        }
+        if (!before || before.trackId !== state.trackId) this.raceCourse = createCourse(TRACKS[state.trackId]);
+        if (state.phase === 'countdown' && state.startTick !== null && this.raceDriverFor !== state.startTick) {
+            this.raceDriverFor = state.startTick;
+            this.raceDriver = null;
+            this.raceProgress = createRaceProgress();
+        }
+        if (state.phase !== 'lobby' || (this.mode !== 'race' && this.mode !== 'timetrial')) return;
+        const want = this.options.track;
+        if (!this.raceConfigSent && ((want && want !== state.trackId) || this.options.serverBotLevel)) {
+            this.raceConfigSent = true;
+            this.sendJson({
+                type: 'raceConfig',
+                ...(want && want !== state.trackId ? { track: want } : {}),
+                ...(this.options.serverBotLevel ? { botLevel: this.options.serverBotLevel } : {})
+            });
+        }
+        if ((!want || want === state.trackId) && this.playerId && !state.ready.includes(this.playerId)) {
+            this.sendJson({ type: 'raceReady', ready: true });
+        }
+    }
+
+    // The phase the rules of tick t see: frozen before startTick
+    private phaseAt(tick: number): RacePhase {
+        const state = this.race.state;
+        if (!state || state.phase === 'lobby') return 'lobby';
+        if (state.startTick !== null && tick < state.startTick) return 'countdown';
+        return state.phase === 'countdown' ? 'racing' : state.phase;
+    }
+
+    /** Puts the race bot's own input packet with a tick offset on the wire (manipulation tests). */
+    sendInputAhead(ticksAhead: number, input: VehicleInput): void {
+        const p = this.net.prediction;
+        if (!p || p.tick < 0) return;
+        this.sendBinary(encodeInputPacket({ flags: 0, seq: p.seq + 1000, tick: p.tick + ticksAhead, inputs: [input] }));
+    }
+
+    /** Sends raw bytes as a binary frame (a malformed packet in the tests). */
+    sendRawBinary(bytes: Uint8Array): void {
+        this.sendBinary(bytes);
     }
 
     private onWelcome(msg: Extract<ServerMessage, { type: 'welcome' }>, now: number): void {
@@ -508,7 +636,11 @@ export class Bot {
         const self = msg.members.find(m => m.id === id);
         this.slot = self?.slot ?? -1;
         this.stats.rooms.push({ at: now, room: msg.room, slot: this.slot, resumed: !!msg.resume });
+        this.map = map;
         this.net.enterRoom(map.simWorld, msg.room.kind === 'party', msg.members, car, id);
+        this.race.state = null;
+        this.raceConfigSent = false;
+        if (msg.race) this.onRaceState(msg.race);
         if (msg.resume) this.net.resumeOwn(msg.resume);
         this.net.clock.reset();
         this.seen.clear();
@@ -535,6 +667,17 @@ export class Bot {
     private onEvent(event: GameEvent, now: number): void {
         const own = this.net.applyEvent(event);
         switch (event.type) {
+            case 'gate':
+            case 'finish':
+            case 'launch':
+            case 'wrongWay':
+                this.race.events.push(event);
+                if (event.type === 'gate' && event.id === this.playerId) {
+                    this.raceProgress.passed = event.passed;
+                    this.raceProgress.lap = event.lap;
+                }
+                if (event.type === 'finish' && event.id === this.playerId) this.raceProgress.status = 'finished';
+                return;
             case 'spawn':
             case 'respawn':
                 if (!own) return;
@@ -638,13 +781,46 @@ export class Bot {
         const p = this.net.prediction!;
         input.steer = input.throttle = input.brake = input.buttons = 0;
         if (p.spawned && !this.dead) {
-            if (this.mode === 'manual') {
+            if (this.mode === 'race' || this.mode === 'timetrial') {
+                this.raceTick(p.tick + 1, p.car.state, p.car.params, input);
+            } else if (this.mode === 'manual') {
                 Object.assign(input, this.manualInput);
             } else if (this.mode !== 'idle') {
                 this.driver.drive(p.car.state, p.car.params, input, this.chaseTarget(now, p.car.state, p.tick));
             }
         }
         this.net.tickWith(input, 0);
+    }
+
+    // Modes race and timetrial: the line driver on the own prediction,
+    // unless the test scripts the tick; a missed gate holds reset (the
+    // server puts the car back before the gate)
+    private raceTick(tick: number, s: VehicleState, params: VehicleParams, input: VehicleInput): void {
+        const state = this.race.state;
+        const self = this.playerId;
+        if (!state || !self || state.startTick === null || !state.racers.some(r => r.id === self)) return;
+        if (state.phase === 'results' || this.raceProgress.status !== 'racing') return;
+        if (this.raceOverride?.(tick, state.startTick, s, input)) return;
+        const course = this.raceCourse!;
+        if (!this.raceDriver) {
+            this.raceDriver = new LineDriver(course, params, this.options.driverLevel, mulberry32(this.options.seed * 31 + state.startTick));
+            this.raceDriver.startRace(state.startTick);
+        }
+        if (tick >= state.startTick) {
+            trackLine(this.raceProgress, course, s.x, s.z, false);
+            if (this.raceProgress.missedGate) this.raceDriver.requestReset();
+        }
+        this.raceDriver.drive(s, params, tick, state.startTick, this.traffic(tick), input);
+    }
+
+    // The other cars where they are now, from the last snapshots
+    private traffic(tick: number): TrafficCar[] {
+        const out: TrafficCar[] = [];
+        for (const car of this.seen.values()) {
+            const ahead = Math.max(0, tick - car.serverTick) * TICK_MS / 1000;
+            out.push({ x: car.x + car.vx * ahead, z: car.z + car.vz * ahead, vx: car.vx, vz: car.vz });
+        }
+        return out;
     }
 
     // Mode ram: the nearest car in range, where it will be, for a few

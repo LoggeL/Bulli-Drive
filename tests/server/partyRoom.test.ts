@@ -77,7 +77,7 @@ describe('message validation', () => {
         { type: 'rename', name: { toString: 'x' } },
         { type: 'setCar', carType: ['bulli'], profile: 'standard' },
         { type: 'shoot', targetId: null },
-        { type: 'joinRoom', kind: 'race' },
+        { type: 'joinRoom', kind: 'rally' },
         { type: 'ping', t: null },
         { type: 'hello', protocolVersion: 2 }
     ];

@@ -111,6 +111,11 @@ export class Prediction {
     readonly prev = createVehicleState();
     readonly remotes = new Map<number, PredictedRemote>();
     modsFor: ModsProvider = (_tick, mods) => { mods.turbo = mods.mega = mods.superJump = mods.ghost = mods.shield = false; };
+    // Race rules the server applies too (docs/phase-2-design.md, 17.1): the
+    // freeze of the countdown on the own input (the history keeps the raw
+    // one), and the start ghost on the own car and the contact set
+    filterInput: ((tick: number, input: VehicleInput) => void) | null = null;
+    ghostFloor: ((tick: number, car: SimCar) => void) | null = null;
     // Flags of the own car in the last snapshot (idle, lag)
     selfFlags = 0;
     // Newest snapshot tick taken into account
@@ -198,6 +203,7 @@ export class Prediction {
     private stepOnce(t: number, e: HistoryEntry): void {
         const car = this.car;
         copyInput(car.input, e.input);
+        if (this.filterInput) this.filterInput(t, car.input);
         this.modsFor(t, car.mods);
         const idle = (e.flags & (INPUT_FROZEN | INPUT_HIDDEN)) !== 0 || (this.selfFlags & (CAR_IDLE | CAR_LAGGY)) !== 0;
         if (idle) applyContactGhostFloor(car);
@@ -216,6 +222,7 @@ export class Prediction {
             this.prepareRemote(remote, t);
             cars.push(remote.car);
         }
+        if (this.ghostFloor) for (const c of cars) this.ghostFloor(t, c);
         stepWorld(cars, this.world);
         for (const remote of this.remotes.values()) {
             if (remote.tick === t - 1) remote.tick = t;

@@ -317,3 +317,41 @@ describe('contact set', () => {
         expect(touching.contact).toBe(true);
     });
 });
+
+describe('race hooks (docs/phase-2-design.md, 17.1)', () => {
+    it('filters the input the car takes, keeps the raw one for the packets, and filters replays too', () => {
+        const { p } = setup();
+        // Frozen before tick 20: no pedals
+        p.filterInput = (tick, input) => { if (tick < 20) input.throttle = input.brake = input.steer = 0; };
+        p.startAt(1);
+        p.spawnAt(0, 0, 0, 0);
+        for (let i = 0; i < 18; i++) p.advance(gas, 0);
+        expect(p.car.state.z).toBe(0);
+        expect(p.entry(18)!.input).toEqual(gas);
+        for (let i = 0; i < 20; i++) p.advance(gas, 0);
+        expect(p.car.state.z).toBeGreaterThan(0.1);
+        // A correction (the car 5 cm to the side at tick 10) replays through
+        // the filter: still standing until tick 20, so as far along z
+        const server = predicted(p, 10);
+        server.x += 0.05;
+        const before = predicted(p, 38);
+        const result = p.reconcile(snapshot(10, server, [], p.entry(10)!.seq))!;
+        expect(result.matched).toBe(false);
+        expect(predicted(p, 19).z).toBe(0);
+        expect(predicted(p, 38).z).toBeCloseTo(before.z, 6);
+    });
+
+    it('applies the ghost floor to the own car and the contact set before every tick', () => {
+        const { p } = setup({ 3: info(3) });
+        const floored: string[] = [];
+        p.ghostFloor = (tick, car) => { if (tick === 5) floored.push(car.id); car.state.ghostTicks = Math.max(car.state.ghostTicks, 2); };
+        p.startAt(1);
+        p.spawnAt(0, 0, 0, 0);
+        for (let i = 0; i < 3; i++) p.advance(gas, 0);
+        p.reconcile(snapshot(3, predicted(p, 3), [record(3, 3, 0)], p.entry(3)!.seq));
+        p.advance(gas, 0);
+        p.advance(gas, 0);
+        expect(floored.sort()).toEqual(['me', 'r3']);
+        expect(p.car.state.ghostTicks).toBeGreaterThan(0);
+    });
+});
