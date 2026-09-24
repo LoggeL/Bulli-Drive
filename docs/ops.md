@@ -9,7 +9,8 @@ Der Spielserver läuft rund um die Uhr (live: https://bulli.logge.top, Dokploy d
 | Variable | Standard | Wirkung |
 |---|---|---|
 | `PORT` | `8000` | HTTP- und WebSocket-Port |
-| `SESSION_SECRET` | – (Zufall pro Prozess) | Schlüssel für die Resume-Tickets (HMAC-SHA256). **In Dokploy als Secret setzen**, mindestens 16 Zeichen. Ohne ihn verlieren Spieler bei jedem Deploy ihren Party-Score; der Server warnt beim Start. |
+| `SESSION_SECRET` | – | Schlüssel für die Resume-Tickets (HMAC-SHA256), mindestens 16 Zeichen. Optional: Ohne ihn nimmt der Server den Schlüssel aus `DATA_DIR`. |
+| `DATA_DIR` | `/app/data` (Docker) | Persistenter Zustand. Beim ersten Start legt der Server dort `session-secret` an (32 Byte, Modus 0600) und nutzt ihn danach immer wieder. **In Dokploy ein Volume auf `/app/data` mounten**, sonst geht der Schlüssel bei jedem Deploy verloren und Spieler verlieren ihren Party-Score. Später liegen hier auch die SQLite-Bestenlisten (Phase 4). |
 | `NODE_ENV` | im Docker-Image `production` | In Produktion ist die Dev-Netsim gesperrt, Express liefert knappe Fehler. |
 | `MAX_PLAYERS_PER_ROOM` | `32` | Spieler pro Room-Instanz |
 | `MAX_CONNECTIONS` | `160` | offene Sockets des Prozesses; darüber Close 4002 („voll“), der Client versucht es mit Backoff weiter |
