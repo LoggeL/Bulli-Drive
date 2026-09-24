@@ -277,7 +277,7 @@ export class FrameProbe {
     // frame beyond what their speed explains (m)
     readonly remoteJumps: number[] = [];
     readonly remoteRawJumps: number[] = [];
-    private readonly remoteLast = new Map<string, { shown: Pose; raw: Pose; speed: number }>();
+    private readonly remoteLast = new Map<string, { shown: Pose; raw: Pose; speed: number; at: number }>();
     private readonly shown = createPose();
     private readonly a = createPose();
     private readonly b = createPose();
@@ -302,7 +302,10 @@ export class FrameProbe {
         return interpolatePose(this.s0, this.s1, alpha, out);
     }
 
-    private remoteFrame(alpha: number): void {
+    // at: the rendered time in ticks (tick + alpha). A frame usually shows
+    // one frame's worth of motion; after the clock jumped ahead (lead
+    // control) it shows the motion of all ticks it skipped.
+    private remoteFrame(alpha: number, at: number): void {
         const p = this.client.net.prediction!;
         const seen = new Set<string>();
         for (const remote of p.remotes.values()) {
@@ -314,11 +317,12 @@ export class FrameProbe {
             // The frame spans parts of two ticks: the fastest of the speeds involved
             const speed = Math.max(Math.hypot(a.vx, a.vz), Math.hypot(b.vx, b.vz));
             if (last) {
-                const reach = Math.max(speed, last.speed) * this.frameMs / 1000;
+                const spanMs = Math.max(this.frameMs, (at - last.at) * TICK_MS);
+                const reach = Math.max(speed, last.speed) * spanMs / 1000;
                 this.remoteJumps.push(Math.max(0, Math.hypot(shown.x - last.shown.x, shown.z - last.shown.z) - reach));
                 this.remoteRawJumps.push(Math.max(0, Math.hypot(raw.x - last.raw.x, raw.z - last.raw.z) - reach));
             }
-            this.remoteLast.set(remote.id, { shown, raw, speed });
+            this.remoteLast.set(remote.id, { shown, raw, speed, at });
         }
         for (const id of [...this.remoteLast.keys()]) if (!seen.has(id)) this.remoteLast.delete(id);
     }
@@ -332,7 +336,7 @@ export class FrameProbe {
             return;
         }
         const tick = p.tick, alpha = net.renderAlpha(now);
-        this.remoteFrame(alpha);
+        this.remoteFrame(alpha, tick + alpha);
         const snapped = net.cameraSnap;
         net.cameraSnap = false;
         if (snapped) this.snaps++;

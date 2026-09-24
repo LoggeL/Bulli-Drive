@@ -2,9 +2,11 @@
 // A correction moves the sim state at once; what is on screen must not
 // jump. The offset holds the difference between the pose shown before the
 // correction and the new sim pose at the same render time, and fades out:
-// τ = 100 ms + 100 ms · clamp(|offset| / 2 m, 0, 1), gone below 1 mm. After
-// a correction with car contact it is gone at the latest 300 ms after it
-// began. Only the picture uses it, never the sim.
+// τ = 100 ms + 100 ms · clamp(|offset| / 2 m, 0, 1), gone below 1 mm. The
+// offset of a correction with car contact is gone at the latest 300 ms
+// after that correction: on top of the fade it may be at most a linear ramp
+// from its size at the correction down to 0 at the deadline, so it never
+// vanishes in one frame. Only the picture uses it, never the sim.
 
 import { CONTACT_SMOOTH_MAX_MS, SMOOTH_TAU_MAX_MS, SMOOTH_TAU_MIN_MS, SNAP_DISTANCE, SNAP_YAW } from './constants.js';
 import type { VehicleState } from '../sim/types.js';
@@ -42,8 +44,11 @@ export class RenderOffset implements Pose {
     y = 0;
     z = 0;
     yaw = 0;
-    // When the offset of a contact correction began (ms), -1 = none
-    private contactSince = -1;
+    // Deadline of the last contact correction (ms), -1 = none, and the
+    // size and yaw the offset had at that correction (the top of the ramp)
+    private contactUntil = -1;
+    private rampSize = 0;
+    private rampYaw = 0;
     // Tau the offset used last (ms), for the debug numbers
     tauMs = 0;
 
@@ -57,7 +62,7 @@ export class RenderOffset implements Pose {
 
     clear(): void {
         this.x = this.y = this.z = this.yaw = 0;
-        this.contactSince = -1;
+        this.contactUntil = -1;
     }
 
     /**
@@ -75,7 +80,16 @@ export class RenderOffset implements Pose {
             return false;
         }
         this.x = x; this.y = y; this.z = z; this.yaw = yaw;
-        if (contact && this.contactSince < 0) this.contactSince = now;
+        if (contact) {
+            // Each contact correction gets its own 300 ms
+            this.contactUntil = now + CONTACT_SMOOTH_MAX_MS;
+            this.rampSize = this.size;
+            this.rampYaw = Math.abs(yaw);
+        } else {
+            // A correction without contact takes over the whole offset,
+            // with what is left of an earlier one: it fades normally
+            this.contactUntil = -1;
+        }
         if (!this.active) this.clear();
         return true;
     }
@@ -86,7 +100,8 @@ export class RenderOffset implements Pose {
             this.clear();
             return;
         }
-        if (this.contactSince >= 0 && now - this.contactSince >= CONTACT_SMOOTH_MAX_MS) {
+        if (this.contactUntil >= 0 && now >= this.contactUntil) {
+            // The ramp ends here: what is left is at most one frame of it
             this.clear();
             return;
         }
@@ -94,6 +109,16 @@ export class RenderOffset implements Pose {
         this.tauMs = tau;
         const k = Math.exp(-Math.max(0, dtMs) / tau);
         this.x *= k; this.y *= k; this.z *= k; this.yaw *= k;
+        if (this.contactUntil >= 0) {
+            const left = Math.min(1, (this.contactUntil - now) / CONTACT_SMOOTH_MAX_MS);
+            const size = this.size, maxSize = this.rampSize * left;
+            if (size > maxSize) {
+                const f = size > 0 ? maxSize / size : 0;
+                this.x *= f; this.y *= f; this.z *= f;
+            }
+            const maxYaw = this.rampYaw * left;
+            if (Math.abs(this.yaw) > maxYaw) this.yaw = Math.sign(this.yaw) * maxYaw;
+        }
         if (!this.active) this.clear();
     }
 

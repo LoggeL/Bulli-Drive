@@ -53,6 +53,48 @@ describe('ClockSync', () => {
     });
 });
 
+describe('ClockSync after a server hang', () => {
+    // A server that skipped `skipMs` of ticks at local time hangAt; pongs
+    // once a second with random asymmetric delays around rttMs
+    function simulate(rttMs: number, jitterMs: number, skipMs: number, seed: number) {
+        const clock = new ClockSync();
+        const random = mulberry32(seed);
+        let offset = -50_000;
+        const hangAt = 30_000;
+        let skipped = false;
+        const errors: { at: number; error: number }[] = [];
+        for (let now = 1000; now < 60_000; now += 1000) {
+            if (!skipped && now >= hangAt) {
+                offset += skipMs;
+                skipped = true;
+            }
+            const up = rttMs / 2 + (random() - 0.5) * jitterMs, down = rttMs / 2 + (random() - 0.5) * jitterMs;
+            const t = serverTick(now + up, offset);
+            clock.addSample(now, now + up + down, Math.floor(t), t - Math.floor(t));
+            const at = now + up + down;
+            errors.push({ at, error: clock.serverTickAt(at) - serverTick(at, offset) });
+        }
+        return { clock, errors, hangAt };
+    }
+
+    it('takes the moved clock within two pongs of a 400 ms hang (it eased in over 20 s before)', () => {
+        for (const rtt of [40, 100, 200]) {
+            const { clock, errors, hangAt } = simulate(rtt, 10, 400 - 4 * TICK_MS, 7);
+            const after = errors.filter(e => e.at > hangAt + 2100);
+            // Within the uncertainty of a sample (half its round trip) from 2 s on
+            for (const e of after) expect(Math.abs(e.error), `rtt ${rtt}`).toBeLessThan((rtt / 2 + 10) / TICK_MS);
+            expect(clock.jumps).toBe(1);
+        }
+    });
+
+    it('never jumps on ordinary jitter, even at 300 ms with 100 ms of it', () => {
+        for (const seed of [1, 2, 3, 4, 5]) {
+            const { clock } = simulate(300, 100, 0, seed);
+            expect(clock.jumps).toBe(0);
+        }
+    });
+});
+
 describe('LeadControl', () => {
     it('starts half a round trip plus the buffer ahead', () => {
         const lead = new LeadControl();

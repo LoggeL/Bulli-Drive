@@ -223,11 +223,19 @@ export class Prediction {
     }
 
     // Input repeat up to EXTRAPOLATE_MAX_TICKS past the snapshot, then
-    // constant speed; soft contact when predicted far ahead (8.5)
+    // rolling (no throttle, brake or buttons, the steering held); soft
+    // contact when predicted far ahead (8.5). The car stays dynamic: a
+    // kinematic partner would take no share of a bump, the own car would
+    // stop at it as at a wall and be corrected by metres later.
     private prepareRemote(remote: PredictedRemote, t: number): void {
         copyVehicleState(remote.prev, remote.car.state);
         const ahead = t - remote.baseTick;
-        remote.car.kinematic = ahead > EXTRAPOLATE_MAX_TICKS;
+        if (ahead > EXTRAPOLATE_MAX_TICKS) {
+            const input = remote.car.input;
+            input.throttle = 0;
+            input.brake = 0;
+            input.buttons = 0;
+        }
         remote.car.contactScale = ahead <= SOFT_CONTACT_FROM ? 1
             : ahead >= SOFT_CONTACT_TO ? SOFT_CONTACT_SCALE
                 : 1 - (1 - SOFT_CONTACT_SCALE) * (ahead - SOFT_CONTACT_FROM) / (SOFT_CONTACT_TO - SOFT_CONTACT_FROM);

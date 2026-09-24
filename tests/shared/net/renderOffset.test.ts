@@ -64,21 +64,72 @@ describe('RenderOffset', () => {
         expect(t).toBeLessThan(1500);
     });
 
-    it('is gone at the latest 300 ms after a contact correction began', () => {
+    it('is gone at the latest 300 ms after each contact correction', () => {
         const offset = new RenderOffset();
         offset.correct(pose(2, 0), pose(0, 0), true, 1000);
-        // Another contact correction on the way does not extend the window
         offset.decay(100, 1100);
-        offset.correct(offset.applyTo(pose(0, 0)), pose(-1, 0), true, 1100);
-        offset.decay(100, 1200);
         expect(offset.active).toBe(true);
-        offset.decay(CONTACT_SMOOTH_MAX_MS - 200, 1000 + CONTACT_SMOOTH_MAX_MS);
+        offset.decay(CONTACT_SMOOTH_MAX_MS - 100, 1000 + CONTACT_SMOOTH_MAX_MS);
         expect(offset.active).toBe(false);
         expect(offset.size).toBe(0);
         // A new contact correction opens a new window
         offset.correct(pose(1, 0), pose(0, 0), true, 2000);
         offset.decay(16, 2016);
         expect(offset.active).toBe(true);
+    });
+
+    // One 60 fps frame's fade of a 4 m offset at the longest tau: the most
+    // a frame may move the picture (tests/shared/net/reconcile.test.ts)
+    const FRAME = 1000 / 60;
+    const JUMP_LIMIT = SNAP_DISTANCE * (1 - Math.exp(-FRAME / SMOOTH_TAU_MAX_MS)) + 1e-3;
+
+    function frames(offset: RenderOffset, from: number, to: number, onFrame: (jump: number, t: number) => void): number {
+        let t = from;
+        for (; t + FRAME <= to; t += FRAME) {
+            const before = { x: offset.x, z: offset.z };
+            offset.decay(FRAME, t + FRAME);
+            onFrame(Math.hypot(offset.x - before.x, offset.z - before.z), t + FRAME);
+        }
+        return t;
+    }
+
+    it('fades a second contact correction 250 ms after the first without a jump, gone 300 ms after it', () => {
+        const offset = new RenderOffset();
+        const jumps: number[] = [];
+        // A push: a small correction, then 250 ms later one of 1.5 m
+        offset.correct(pose(0.3, 0), pose(0, 0), true, 0);
+        let t = frames(offset, 0, 250, jump => jumps.push(jump));
+        offset.correct(offset.applyTo(pose(0, 0)), pose(-1.5, 0), true, t);
+        const second = t;
+        t = frames(offset, t, second + CONTACT_SMOOTH_MAX_MS + 2 * FRAME, (jump, now) => {
+            jumps.push(jump);
+            if (now >= second + CONTACT_SMOOTH_MAX_MS) expect(offset.active).toBe(false);
+        });
+        expect(Math.max(...jumps)).toBeLessThanOrEqual(JUMP_LIMIT);
+        expect(offset.size).toBe(0);
+    });
+
+    it('lets a correction without contact take over the offset and fade it normally', () => {
+        const offset = new RenderOffset();
+        const jumps: number[] = [];
+        offset.correct(pose(0.05, 0), pose(0, 0), true, 0);
+        let t = frames(offset, 0, 50, jump => jumps.push(jump));
+        // 1.4 m without contact while the small contact offset still fades
+        offset.correct(offset.applyTo(pose(0, 0)), pose(-1.4, 0), false, t);
+        t = frames(offset, t, t + 250, jump => jumps.push(jump));
+        expect(Math.max(...jumps)).toBeLessThanOrEqual(JUMP_LIMIT);
+        expect(offset.size).toBeGreaterThan(0.2);
+    });
+
+    it('fades even a 3.9 m contact correction within 300 ms and without a jump', () => {
+        const offset = new RenderOffset();
+        offset.correct(pose(3.9, 0), pose(0, 0), true, 0);
+        const jumps: number[] = [];
+        frames(offset, 0, CONTACT_SMOOTH_MAX_MS + FRAME, (jump, t) => {
+            jumps.push(jump);
+            if (t >= CONTACT_SMOOTH_MAX_MS) expect(offset.active).toBe(false);
+        });
+        expect(Math.max(...jumps)).toBeLessThanOrEqual(JUMP_LIMIT);
     });
 
     it('jumps (clears) at 4 m, at 45° and on non-finite poses', () => {

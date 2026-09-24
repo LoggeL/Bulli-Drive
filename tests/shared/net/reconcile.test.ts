@@ -346,4 +346,50 @@ describe('smoothing on screen', () => {
             });
         }
     });
+
+    // Behind loss the lead grows past EXTRAPOLATE_MAX_TICKS (15): the
+    // contact set is predicted further than the input repeat reaches. Its
+    // cars stay dynamic there, so a bump splits between both cars as on the
+    // server; a kinematic car would stop the own car like a wall and the
+    // correction would come metres later (up to 1.8 m in one frame, other
+    // cars snapping 4-9 m before this was fixed).
+    it.each([
+        { mode: 'rear-end', net: { latencyMs: 75, jitterMs: 30, loss: 0.03 }, seed: 5 },
+        { mode: 'head-on', net: { latencyMs: 75, jitterMs: 30, loss: 0.03 }, seed: 17 },
+        { mode: 'head-on', net: { latencyMs: 50, jitterMs: 10, loss: 0.01 }, seed: 9 }
+    ])('$mode behind $net.latencyMs ms each way and $net.loss loss: no frame jumps, for neither car', ({ mode, net, seed }) => {
+        server = new TestServer();
+        const a = new TestClient(server, 'a', 'bulli', net, seed);
+        const b = new TestClient(server, 'b', 'bulli', net, seed + 1);
+        a.sendJson({ type: 'ready' });
+        b.sendJson({ type: 'ready' });
+        run(server, [a, b], 600);
+        a.script = () => input(0);
+        b.script = () => input(0);
+        const headOn = mode === 'head-on';
+        a.sendJson({ type: 'debugPlace', x: 300, z: 240, yaw: 0 });
+        b.sendJson({ type: 'debugPlace', x: 300.3, z: 290, yaw: headOn ? Math.PI : 0 });
+        // Long enough for the lead to settle behind the loss
+        run(server, [a, b], 12_000);
+        a.script = () => input(255);
+        if (headOn) b.script = () => input(255);
+        const probes = [new FrameProbe(a), new FrameProbe(b)];
+        const bCar = b.serverCar!;
+        let leadAtContact = -1;
+        run(server, [a, b], 4000, 4, () => {
+            for (const probe of probes) probe.update(server.time);
+            if (leadAtContact < 0 && bCar.events.carImpactId !== '') leadAtContact = Math.min(a.net.lead.lead, b.net.lead.lead);
+        });
+        // The case this is about: both predict more than 15 ticks ahead
+        expect(leadAtContact).toBeGreaterThan(15);
+        // The server bumped them (b was pushed or both bounced)
+        expect(a.results.some(r => r.result.contact)).toBe(true);
+        for (const probe of probes) {
+            // Only the placement before the probe started may snap
+            expect(probe.snaps).toBeLessThanOrEqual(1);
+            expect(Math.max(...probe.jumps)).toBeLessThanOrEqual(JUMP_LIMIT);
+            expect(probe.remoteJumps.length).toBeGreaterThan(30);
+            expect(Math.max(...probe.remoteJumps)).toBeLessThanOrEqual(JUMP_LIMIT);
+        }
+    });
 });

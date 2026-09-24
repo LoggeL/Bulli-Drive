@@ -1,7 +1,8 @@
 // Clock sync (docs/phase-1b-design.md, 3.7): estimates the server tick at
 // a local time from ping/pong samples. The sample with the smallest round
 // trip has the least queueing in it and sets the offset; changes of the
-// offset are eased in. Times are in ms on the client's own clock
+// offset are eased in. A sample that the offset cannot explain at all (the
+// server skipped ticks after a hang) is taken at once. Times are in ms on the client's own clock
 // (performance.now() in the browser), ticks are server ticks with fraction.
 
 import { CLOCK_SAMPLES, TICK_MS } from './constants.js';
@@ -14,6 +15,9 @@ interface Sample {
 
 const OFFSET_BLEND = 0.1;
 const TIE_MS = 1;
+// On top of the uncertainty of two samples: this far off, the server's
+// clock moved (ticks)
+const JUMP_MARGIN_TICKS = 1;
 
 export class ClockSync {
     private readonly samples: Sample[] = [];
@@ -21,6 +25,8 @@ export class ClockSync {
     private synced = false;
     // Number of pongs seen since the last reset
     count = 0;
+    // Times the server's clock was found moved and taken at once
+    jumps = 0;
 
     reset(): void {
         this.samples.length = 0;
@@ -38,6 +44,24 @@ export class ClockSync {
         // The server answered about half a round trip ago
         const serverTicksAtNow = tick + sub + (rtt / 2) / TICK_MS;
         const sample = { rtt, offset: serverTicksAtNow - now / TICK_MS };
+        // The server answered somewhere within the round trip, so a sample
+        // is right within half its round trip, and the offset within half
+        // the smallest one it came from. Further apart than both, the
+        // server's clock moved: after a hang it skips ticks for good
+        // (server/tick.ts). Easing that in would take 20 s, with every
+        // remote car extrapolated meanwhile; the samples from before say
+        // nothing any more.
+        if (this.synced) {
+            const tolerance = (rtt / 2 + this.rtt / 2) / TICK_MS + JUMP_MARGIN_TICKS;
+            if (Math.abs(sample.offset - this.offset) > tolerance) {
+                this.samples.length = 0;
+                this.samples.push(sample);
+                this.count++;
+                this.offset = sample.offset;
+                this.jumps++;
+                return;
+            }
+        }
         this.samples.push(sample);
         if (this.samples.length > CLOCK_SAMPLES) this.samples.shift();
         this.count++;
