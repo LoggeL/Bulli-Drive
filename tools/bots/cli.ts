@@ -19,16 +19,17 @@ interface CliOptions {
     netsim: string | null;
     durationS: number;
     reportS: number;
-    room: RoomKind;
+    // Unset: each mode's own (race and timetrial their rooms, else the Party)
+    room: RoomKind | undefined;
     seed: number;
     json: boolean;
     verbose: boolean;
 }
 
 const USAGE = `usage: npm run bots -- [--url ws://127.0.0.1:8000/ws] [--count N] [--mix drive:24,ram:6,reconnect:1,hop:1]
-                     [--netsim RTT,JITTER,LOSS[,tcp|drop]] [--duration S] [--report S] [--room party|freeroam]
-                     [--seed N] [--json] [--verbose]
-modes: drive, ram, idle, reconnect, hop, flood`;
+                     [--netsim RTT,JITTER,LOSS[,tcp|drop]] [--duration S] [--report S]
+                     [--room party|freeroam|race|timetrial] [--seed N] [--json] [--verbose]
+modes: drive, ram, idle, reconnect, hop, flood, race, timetrial`;
 
 function parseArgs(argv: string[]): CliOptions {
     const args = new Map<string, string>();
@@ -53,8 +54,8 @@ function parseArgs(argv: string[]): CliOptions {
     if (count !== null && (!Number.isInteger(count) || count < 1)) throw new Error('--count must be a positive integer');
     const mix = args.has('mix') ? parseMix(args.get('mix')!) : [{ mode: 'drive' as const, count: count ?? 8 }];
     if (count !== null && mixTotal(mix) !== count) throw new Error(`--mix has ${mixTotal(mix)} bots, --count says ${count}`);
-    const room = args.get('room') ?? 'party';
-    if (!isRoomKind(room)) throw new Error(`unknown room kind "${room}"`);
+    const room = args.get('room');
+    if (room !== undefined && !isRoomKind(room)) throw new Error(`unknown room kind "${room}"`);
     const netsim = args.get('netsim') ?? null;
     if (netsim && !parseNetsimFlag(netsim)) throw new Error(`bad --netsim "${netsim}" (RTT,JITTER,LOSS[,tcp|drop])`);
     return {

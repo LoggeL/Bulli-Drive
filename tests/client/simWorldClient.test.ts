@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { setWorldColliders, simWorldFor } from '../../src/client/vehicle/simWorldClient.js';
+import { setWorldColliders, setWorldOverride, simWorldFor } from '../../src/client/vehicle/simWorldClient.js';
 import { state } from '../../src/client/state.js';
 import { DEFAULT_TERRAIN_CONFIG } from '../../src/shared/constants.js';
 import type { ColliderInput } from '../../src/shared/world/colliders.js';
@@ -39,5 +39,18 @@ describe('simWorldFor', () => {
         const rebuilt = simWorldFor(terrain, more);
         expect(rebuilt).not.toBe(world);
         expect(rebuilt.colliders).toHaveLength(2);
+    });
+
+    it('hands out the race world of a race room instead, and the map world after it', () => {
+        const terrain = { ...DEFAULT_TERRAIN_CONFIG };
+        const colliders: ColliderInput[] = [{ kind: 'circle', x: 30, z: 40, r: 1, top: 5.5 }];
+        const map = simWorldFor(terrain, colliders);
+        const race = simWorldFor(terrain, []);
+        setWorldOverride(race);
+        expect(simWorldFor(terrain, colliders)).toBe(race);
+        setWorldOverride(null);
+        expect(simWorldFor(terrain, colliders)).not.toBe(race);
+        expect(simWorldFor(terrain, colliders).colliders).toHaveLength(1);
+        expect(map.colliders).toHaveLength(1);
     });
 });

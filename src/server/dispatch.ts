@@ -59,7 +59,7 @@ export function handleClientMessage(lobby: RoomManager, session: Session, data: 
             session.lastJoinRoomAt = now;
             // The new room sends its roomState; the car spawns there right
             // away when the player was past the splash screen
-            const joined = lobby.switch(session, msg.kind);
+            const joined = lobby.switch(session, msg.kind, { fresh: msg.fresh, track: msg.track });
             if (joined && session.room) console.log(`${session.name} moved to ${session.room.id}`);
             return 'ok';
         }

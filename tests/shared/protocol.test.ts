@@ -4,8 +4,9 @@ import {
     ClientMessage, HelloSchema, InputPacketSchema, isRoomKind, parseClientMessage, PROTOCOL_VERSION
 } from '../../src/shared/protocol.js';
 
-// Protocol v2 (docs/phase-1b-design.md, 3): the JSON messages of the client
-// and the schema of the decoded binary input packet.
+// Protocol v3 (docs/phase-1b-design.md, 3; docs/phase-2-design.md, 16): the
+// JSON messages of the client and the schema of the decoded binary input
+// packet.
 
 // What actually reaches the server: the object after a JSON round trip.
 function overTheWire(message: unknown): unknown {
@@ -43,20 +44,32 @@ const REAL_CLIENT_MESSAGES: Record<string, ClientMessage> = {
     // network/websocket.ts visibilitychange
     visibility: { type: 'visibility', hidden: true },
     // e2eHook.ts placeLocalCar (E2E server only)
-    debugPlace: { type: 'debugPlace', x: 6, z: -98, yaw: 0 }
+    debugPlace: { type: 'debugPlace', x: 6, z: -98, yaw: 0 },
+    // Race and time trial (docs/phase-2-design.md, 16.2): tools/bots/bot.ts
+    // modes race and timetrial now, the race UI of the browser next
+    joinRace: { type: 'joinRoom', kind: 'race' },
+    joinOwnRace: { type: 'joinRoom', kind: 'race', fresh: true, track: 'hill-sprint' },
+    joinTimeTrial: { type: 'joinRoom', kind: 'timetrial', track: 'downtown-loop' },
+    raceReady: { type: 'raceReady', ready: true },
+    raceConfig: { type: 'raceConfig', track: 'hill-sprint', botLevel: 'hard' },
+    raceConfigLevel: { type: 'raceConfig', botLevel: 'easy' },
+    raceVote: { type: 'raceVote', choice: 'rematch' },
+    timeTrialRestart: { type: 'timeTrialRestart' }
 };
 
 describe('PROTOCOL_VERSION', () => {
-    it('is 2 since the server simulates', () => {
-        expect(PROTOCOL_VERSION).toBe(2);
+    it('is 3 since the race mode changed the snapshot (draft, race bits)', () => {
+        expect(PROTOCOL_VERSION).toBe(3);
     });
 });
 
 describe('isRoomKind', () => {
-    // The room menu keeps a saved choice only if it is one of the two kinds
-    it('accepts party and freeroam only', () => {
+    // The room menu keeps a saved choice only if it is one of the kinds
+    it('accepts party, freeroam, race and timetrial only', () => {
         expect(isRoomKind('party')).toBe(true);
         expect(isRoomKind('freeroam')).toBe(true);
+        expect(isRoomKind('race')).toBe(true);
+        expect(isRoomKind('timetrial')).toBe(true);
         for (const value of ['Party', 'free roam', 'free', '', 'party ', undefined, null, 1, ['party'], { kind: 'party' }]) {
             expect(isRoomKind(value), String(value)).toBe(false);
         }
@@ -73,7 +86,8 @@ describe('parseClientMessage accepts every real client message', () => {
     it('covers every client message type', () => {
         const types = new Set(Object.values(REAL_CLIENT_MESSAGES).map(m => m.type));
         expect([...types].sort()).toEqual([
-            'debugPlace', 'hello', 'honk', 'joinRoom', 'ping', 'ready', 'rename', 'setCar', 'shoot', 'visibility'
+            'debugPlace', 'hello', 'honk', 'joinRoom', 'ping', 'raceConfig', 'raceReady', 'raceVote', 'ready', 'rename',
+            'setCar', 'shoot', 'timeTrialRestart', 'visibility'
         ]);
     });
 
@@ -115,7 +129,7 @@ describe('parseClientMessage rejects invalid messages', () => {
         ['hello without version', { ...hello, protocolVersion: undefined }],
         ['hello with fractional version', { ...hello, protocolVersion: 2.5 }],
         ['hello with unknown profile', { ...hello, profile: 'pro' }],
-        ['hello with unknown room', { ...hello, room: 'race' }],
+        ['hello with unknown room', { ...hello, room: 'rally' }],
         ['hello with a huge name', { ...hello, name: 'x'.repeat(201) }],
         ['ping with NaN (null on the wire)', overTheWire({ ...ping, t: NaN })],
         ['ping with Infinity', { ...ping, t: Infinity }],
@@ -127,7 +141,15 @@ describe('parseClientMessage rejects invalid messages', () => {
         ['shoot with object target', { type: 'shoot', targetId: { id: 'x' } }],
         ['visibility with a string', { type: 'visibility', hidden: 'yes' }],
         ['joinRoom without kind', { type: 'joinRoom' }],
-        ['joinRoom to an unknown kind', { type: 'joinRoom', kind: 'race' }]
+        ['joinRoom to an unknown kind', { type: 'joinRoom', kind: 'rally' }],
+        ['joinRoom to an unknown track', { type: 'joinRoom', kind: 'race', track: 'nordschleife' }],
+        ['joinRoom with fresh as a string', { type: 'joinRoom', kind: 'race', fresh: 'yes' }],
+        ['raceReady without ready', { type: 'raceReady' }],
+        ['raceReady with a number', { type: 'raceReady', ready: 1 }],
+        ['raceConfig with an unknown track', { type: 'raceConfig', track: 'nordschleife' }],
+        ['raceConfig with an unknown level', { type: 'raceConfig', botLevel: 'insane' }],
+        ['raceVote with an unknown choice', { type: 'raceVote', choice: 'quit' }],
+        ['raceVote without a choice', { type: 'raceVote' }]
     ];
 
     for (const [name, value] of invalid) {

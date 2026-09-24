@@ -2,11 +2,18 @@
 // Field shapes must match what is actually serialized on each side.
 
 import * as v from 'valibot';
+import {
+    BOT_LEVELS, RACE_VOTES, TRACK_IDS,
+    type BotLevel, type RacePhase, type RacerStatus, type TrackId
+} from './race/types.js';
 
 // Bumped on every incompatible wire change. The client sends it in 'hello';
 // the server rejects any other version with reload: true
 // (docs/phase-1b-design.md, 3.2). There is no adapter for old versions.
-export const PROTOCOL_VERSION = 2;
+// v3 (docs/phase-2-design.md, 16): draft in the self block, launch/bogged
+// mod bits, race-ghost and drafting car flags; the race and time trial
+// rooms with their messages (JSON, additive).
+export const PROTOCOL_VERSION = 3;
 
 // ---------- DTOs ----------
 
@@ -68,8 +75,9 @@ export interface CityData {
 }
 
 // Room types (docs/phase-1b-design.md, section 2): the Party with coins,
-// powerups, shooting and HP is the default; Free Roam only drives and bumps.
-export const ROOM_KINDS = ['party', 'freeroam'] as const;
+// powerups, shooting and HP is the default; Free Roam only drives and bumps;
+// the race and the solo time trial (docs/phase-2-design.md, 6).
+export const ROOM_KINDS = ['party', 'freeroam', 'race', 'timetrial'] as const;
 export type RoomKind = typeof ROOM_KINDS[number];
 export const DEFAULT_ROOM_KIND: RoomKind = 'party';
 
@@ -107,6 +115,8 @@ export interface MemberInfo {
     profile: ProfileId;
     // Past the splash screen (only ready members drive and are listed)
     ready: boolean;
+    // A server-side race bot (docs/phase-2-design.md, 6.3)
+    bot?: boolean;
 }
 
 // The map is generated on both sides from the seed; the hash proves the
@@ -154,15 +164,24 @@ export const ClientMessageSchema = v.variant('type', [
     v.object({ type: v.literal('ready') }),
     // Clock sync (3.7); t is the client's performance.now()
     v.object({ type: v.literal('ping'), t: finiteNumber }),
-    // Moves the player into a room of that kind (the fullest one with room)
-    v.object({ type: v.literal('joinRoom'), kind: v.picklist(ROOM_KINDS) }),
+    // Moves the player into a room of that kind (the fullest one with room).
+    // fresh: a new instance (race: "START OWN RACE"); track: its track
+    v.object({
+        type: v.literal('joinRoom'), kind: v.picklist(ROOM_KINDS),
+        fresh: v.optional(v.boolean()), track: v.optional(v.picklist(TRACK_IDS))
+    }),
     v.object({ type: v.literal('setCar'), carType: shortString(32), profile: v.picklist(ASSIST_PROFILE_IDS) }),
     v.object({ type: v.literal('rename'), name: shortString(200) }),
     v.object({ type: v.literal('honk') }),
     v.object({ type: v.literal('shoot'), targetId: shortString(64) }),
     v.object({ type: v.literal('visibility'), hidden: v.boolean() }),
     // E2E only (server started with E2E=1): puts the own car at rest there
-    v.object({ type: v.literal('debugPlace'), x: finiteNumber, z: finiteNumber, yaw: finiteNumber })
+    v.object({ type: v.literal('debugPlace'), x: finiteNumber, z: finiteNumber, yaw: finiteNumber }),
+    // Race lobby (docs/phase-2-design.md, 6.4 and 16.2)
+    v.object({ type: v.literal('raceReady'), ready: v.boolean() }),
+    v.object({ type: v.literal('raceConfig'), track: v.optional(v.picklist(TRACK_IDS)), botLevel: v.optional(v.picklist(BOT_LEVELS)) }),
+    v.object({ type: v.literal('raceVote'), choice: v.picklist(RACE_VOTES) }),
+    v.object({ type: v.literal('timeTrialRestart') })
 ]);
 
 export type ClientMessage = v.InferOutput<typeof ClientMessageSchema>;
@@ -199,8 +218,18 @@ export type RejectReason = 'version' | 'hello' | 'full';
 // of the same snapshot tick. Every event carries its own tick where the sim
 // needs it.
 export type GameEvent =
-    // The car appears (after 'ready' or a room switch) at rest, facing yaw
-    | { type: 'spawn'; id: string; tick: number; x: number; z: number; yaw: number }
+    // The car appears (after 'ready' or a room switch) at rest, facing yaw;
+    // grid: the race's grid slot it was put on (the client starts over)
+    | { type: 'spawn'; id: string; tick: number; x: number; z: number; yaw: number; grid?: number }
+    // The car leaves the sim at the end of tick (a race: it became a spectator)
+    | { type: 'despawn'; id: string; tick: number }
+    // Race (docs/phase-2-design.md, 16.4): a counted gate crossing (time in
+    // float ticks since startTick; gapAhead against the car directly ahead
+    // at the same crossing; lapTime when the crossing ended a lap)
+    | { type: 'gate'; id: string; passed: number; gate: number; lap: number; tick: number; time: number; gapAhead?: number; lapTime?: number }
+    | { type: 'finish'; id: string; pos: number; time: number }
+    | { type: 'wrongWay'; id: string; on: boolean }
+    | { type: 'launch'; id: string; result: 'perfect' | 'early' | 'normal'; tick: number }
     // A car-car contact from CONTACT_EVENT_MIN_DV on (for sound and sparks)
     | { type: 'contact'; a: string; b: string; dv: number; x: number; z: number }
     // kind 'powerup' carries the effect window [startTick, endTick)
@@ -219,6 +248,46 @@ export interface ResumeState {
     alive: boolean;
     spawnTick: number;
     powerups: { type: string; startTick: number; endTick: number }[];
+}
+
+// ---- Race (docs/phase-2-design.md, 16.3) ----
+
+export type { BotLevel, RacePhase, RacerStatus, TrackId };
+
+export interface RaceStateBody {
+    mode: 'race' | 'timetrial';
+    phase: RacePhase;
+    trackId: TrackId;
+    trackVersion: number;
+    trackHash: string;
+    laps: number;
+    botLevel: BotLevel;
+    // From the countdown on
+    startTick: number | null;
+    // Lobby autostart, DNF tick, end of the results
+    phaseEndTick: number | null;
+    racers: { id: string; grid: number; bot: boolean }[];
+    // Humans ready (lobby)
+    ready: string[];
+    votes: { rematch: number; next: number } | null;
+}
+
+export interface RaceStatusEntry {
+    id: string;
+    passed: number;
+    lap: number;
+    status: RacerStatus;
+}
+
+export interface RaceResultEntry {
+    id: string;
+    name: string;
+    bot: boolean;
+    carType: string;
+    pos: number;
+    status: RacerStatus;
+    finishTicks: number | null;
+    bestLapTicks: number | null;
 }
 
 export interface RoomStateItems {
@@ -244,6 +313,30 @@ export type ServerMessage =
         // Only for a resumed session (11.1): the own car goes on as the
         // server has it; the client takes its state from the next snapshot
         resume?: ResumeState;
+        // Race and time trial rooms
+        race?: RaceStateBody;
+    }
+    | ({ type: 'raceState' } & RaceStateBody)
+    // 5 Hz while racing: the racers in race order
+    | { type: 'raceStatus'; tick: number; order: RaceStatusEntry[] }
+    | {
+        type: 'raceResults';
+        trackId: TrackId;
+        entries: RaceResultEntry[];
+        // Time trial: the track record and the own best
+        record?: { name: string; finishTicks: number };
+        personal?: { finishTicks: number; improved: boolean };
+    }
+    // Time trial: the ghost's pose track (Base64, 13 B per sample at hz)
+    | {
+        type: 'ghostData';
+        kind: 'record' | 'personal';
+        name: string;
+        carType: string;
+        finishTicks: number;
+        gateTicks: number[];
+        hz: number;
+        poses: string;
     }
     | { type: 'playerJoined'; member: MemberInfo }
     | { type: 'playerLeft'; id: string; reason: LeaveReason }

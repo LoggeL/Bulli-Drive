@@ -85,6 +85,15 @@ describe('events about the own car', () => {
         expect(net.spawnTick).toBe(200);
     });
 
+    it('takes the own car out of the prediction on its despawn (a race spectator), not on another car\'s', () => {
+        const { net } = client();
+        net.applyEvent({ type: 'spawn', id: 'me', tick: 5, x: 1, z: 2, yaw: 0, grid: 3 });
+        expect(net.applyEvent({ type: 'despawn', id: 'bob', tick: 9 })).toBe(false);
+        expect(net.prediction!.spawned).toBe(true);
+        expect(net.applyEvent({ type: 'despawn', id: 'me', tick: 9 })).toBe(true);
+        expect(net.prediction!.spawned).toBe(false);
+    });
+
     it('opens a powerup window only for its own powerup pickups', () => {
         const { net } = client();
         const pickup = { type: 'pickup', kind: 'powerup', itemId: 1, playerId: 'me', powerupType: 'size', startTick: 10, endTick: 70 } as const;

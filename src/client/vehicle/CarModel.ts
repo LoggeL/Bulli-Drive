@@ -241,6 +241,10 @@ export class CarModel {
         liveModels.add(this);
     }
 
+    // How transparent the ghost look is: the Ghost powerup nearly
+    // invisible, the time trial's ghost car clearer (race/GhostCar.ts)
+    ghostOpacity = { scale: 0.2, max: 0.12 };
+
     get ghostVisualOn(): boolean {
         return this._ghostVisualOn;
     }
@@ -310,7 +314,7 @@ export class CarModel {
                         // through the depth buffer. That was the source of the
                         // angle-dependent "half a Bulli" artifact.
                         mat.depthWrite = false;
-                        mat.opacity = Math.min(0.12, mat.opacity * 0.2);
+                        mat.opacity = Math.min(this.ghostOpacity.max, mat.opacity * this.ghostOpacity.scale);
                         mat.needsUpdate = true;
                     }
                 });

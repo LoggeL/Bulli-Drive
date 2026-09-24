@@ -64,6 +64,8 @@ function setupDriveControls() {
     setupHoldButton('btn-flip', down => (down ? inputManager.flipDown() : inputManager.flipUp()));
     setupHoldButton('btn-drift', down => inputManager.touchButton(BTN_HANDBRAKE, down));
     setupHoldButton('btn-boost', down => inputManager.touchButton(BTN_BOOST, down));
+    // Race layout (docs/phase-2-design.md, 17.5): the stick only steers
+    setupHoldButton('btn-brake', down => inputManager.touchBrake(down));
     setupAutoGasToggle();
 }
 

@@ -39,6 +39,7 @@ import { reloadOnce } from './reloadOnce.js';
 import { applyResumeOutcome, resumeOutcome } from './resumeOutcome.js';
 import { hideRespawnOverlay, showRespawnOverlay } from '../ui/respawnOverlay.js';
 import { clearRemoteViews, forgetRemote, noteSnapshotCars, setRemoteDead } from '../net/remotes.js';
+import { raceClient } from '../race/RaceClient.js';
 
 // The connection to the game server on protocol v2 (docs/phase-1b-design.md,
 // 3 and 11): the handshake, the world from the seed, the room state, the
@@ -112,6 +113,7 @@ export function holdReconnect(ms: number): void {
 /** The splash screen is done: the player drives (main.ts). */
 export function markPlayerReady(): void {
     playerReady = true;
+    raceClient.markPlayerReady();
 }
 
 export function initWebSocket() {
@@ -326,6 +328,12 @@ function handleServerMessage(data: ServerMessage) {
             restartDelayMs = Math.max(0, Math.min(10_000, data.reconnectInMs));
             if (data.resume) storageSet(RESUME_KEY, data.resume);
             return;
+        case 'raceState':
+        case 'raceStatus':
+        case 'raceResults':
+        case 'ghostData':
+            raceClient.onMessage(data);
+            return;
     }
 }
 
@@ -394,9 +402,12 @@ function enterRoom(data: Extract<ServerMessage, { type: 'roomState' }>) {
     state.health = data.health[state.myId ?? ''] ?? 100;
     state.dead = false;
 
+    // A race room brings its race world (map + track) along
+    raceClient.enterRoom(data.room, data.race, map, state.myId ?? '');
     const world = simWorldFor(state.terrainConfig ?? DEFAULT_TERRAIN_CONFIG, state.worldColliders);
     const car = state.bulli?.vehicle?.car ?? placeholderCar(state.myId ?? 'local', state.myCarType);
     netDriver.enterRoom(world, party, data.members, car, state.myId ?? '');
+    raceClient.bindPrediction();
     // Back after a lost connection with the car still on the server: the
     // next snapshot brings it (11.1)
     const outcome = resumeOutcome(data, { playerReady, myId: state.myId });
@@ -464,7 +475,17 @@ function updateMember(data: Extract<ServerMessage, { type: 'playerUpdated' }>) {
 
 function handleEvent(event: GameEvent) {
     const me = state.myId;
+    raceClient.onEvent(event);
     switch (event.type) {
+        case 'despawn':
+            // A race without this car (not ready at the countdown): it leaves the sim
+            if (event.id === me) {
+                netDriver.despawnOwn();
+                if (state.bulli) state.bulli.flipGroup.visible = false;
+            } else {
+                setRemoteDead(event.id, true);
+            }
+            return;
         case 'spawn':
         case 'respawn': {
             if (event.id === me) {
@@ -649,6 +670,13 @@ export function addRemotePlayer(member: MemberInfo) {
     // Hidden until its first snapshot places it
     remote.flipGroup.visible = false;
     remote.createNametag(member.name, false);
+    // Race bots carry the tag BOT (docs/phase-2-design.md, 6.3)
+    if (member.bot) {
+        const badge = document.createElement('span');
+        badge.className = 'bot-badge';
+        badge.textContent = ' BOT';
+        remote.nametag?.querySelector('.nametag-name')?.appendChild(badge);
+    }
     remote.updateHealthBar();
 
     state.scene.add(remote.group);

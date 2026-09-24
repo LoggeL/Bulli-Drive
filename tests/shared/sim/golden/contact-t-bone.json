@@ -33,7 +33,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 1,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         },
         "pickup": {
           "x": -16.70227983568283,
@@ -64,7 +65,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 1,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         }
       }
     },
@@ -100,7 +102,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 1,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         },
         "pickup": {
           "x": -2.5422209027303833,
@@ -131,7 +134,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 1,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         }
       }
     },
@@ -167,7 +171,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 1,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         },
         "pickup": {
           "x": 6.977031692886459,
@@ -198,7 +203,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 1,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         }
       }
     },
@@ -234,7 +240,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 1,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         },
         "pickup": {
           "x": 16.36625894685324,
@@ -265,7 +272,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 1,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         }
       }
     },
@@ -301,7 +309,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 1,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         },
         "pickup": {
           "x": 25.432527694359578,
@@ -332,7 +341,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 1,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         }
       }
     },
@@ -368,7 +378,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 1,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         },
         "pickup": {
           "x": 34.09938514844207,
@@ -399,7 +410,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 1,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         }
       }
     }

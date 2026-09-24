@@ -20,6 +20,9 @@ import type { LocalVehicle } from '../vehicle/LocalVehicle.js';
 
 export class NetDriver extends NetClient {
     private readonly input: VehicleInput = createVehicleInput();
+    // Called with the tick right before its input is sampled (race: the
+    // touch auto-gas starts one tick after green, race/RaceClient.ts)
+    beforeSample: ((tick: number) => void) | null = null;
     // The local car during a snapshot: its render pair is what is on screen
     private vehicle: LocalVehicle | null = null;
 
@@ -44,7 +47,10 @@ export class NetDriver extends NetClient {
         const flags = (frozen ? INPUT_FROZEN : 0) | (hidden ? INPUT_HIDDEN : 0);
         // The server stops a frozen or hidden car too (Room.takeInput)
         if (frozen || hidden) stopInput(p.car.state, this.input);
-        else inputManager.sampleTick(this.input);
+        else {
+            this.beforeSample?.(p.tick + 1);
+            inputManager.sampleTick(this.input);
+        }
         return this.tickWith(this.input, flags);
     }
 

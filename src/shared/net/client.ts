@@ -478,6 +478,10 @@ export class NetClient {
                 if (event.target !== this.selfId) return false;
                 this.despawnOwn();
                 return true;
+            case 'despawn':
+                if (event.id !== this.selfId) return false;
+                this.despawnOwn();
+                return true;
             case 'pickup':
                 if (event.playerId !== this.selfId || event.kind !== 'powerup' || !isPowerupType(event.powerupType)
                     || event.startTick === undefined || event.endTick === undefined) return false;

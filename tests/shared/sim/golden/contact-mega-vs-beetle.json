@@ -33,7 +33,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 1,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         },
         "mega": {
           "x": 0,
@@ -64,7 +65,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 2.5,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         }
       }
     },
@@ -100,7 +102,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 1,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         },
         "mega": {
           "x": -0.2868638749330669,
@@ -131,7 +134,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 2.5,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         }
       }
     },
@@ -167,7 +171,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 1,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         },
         "mega": {
           "x": -1.2489234377934846,
@@ -198,7 +203,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 2.5,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         }
       }
     },
@@ -234,7 +240,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 1,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         },
         "mega": {
           "x": -2.8697060609701266,
@@ -265,7 +272,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 2.5,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         }
       }
     },
@@ -301,7 +309,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 1,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         },
         "mega": {
           "x": -6.319885586557495,
@@ -332,7 +341,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 2.5,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         }
       }
     },
@@ -368,7 +378,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 1,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         },
         "mega": {
           "x": -12.083587774945965,
@@ -399,7 +410,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 2.5,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         }
       }
     }

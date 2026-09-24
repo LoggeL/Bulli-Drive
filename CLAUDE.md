@@ -35,10 +35,10 @@ Gemessen wird die Wanduhr des jeweiligen Befehls bzw. CI-Jobs. Wird ein Ziel üb
 
 ## Mutationstests (Stryker)
 
-Stryker prüft, ob die Unit-Tests rot werden, wenn die Logik kaputtgeht. Konfiguration: `stryker.config.mjs` (mutiert `src/shared/**` und `src/server/rooms/**`), Vitest-Konfiguration dafür: `vitest.stryker.config.ts` mit `tests/mutation/strykerSetup.ts`.
+Stryker prüft, ob die Unit-Tests rot werden, wenn die Logik kaputtgeht. Konfiguration: `stryker.config.mjs` (mutiert `src/shared/**`, `src/server/rooms/**` und `src/server/race/**`), Vitest-Konfiguration dafür: `vitest.stryker.config.ts` mit `tests/mutation/strykerSetup.ts`.
 
 - **Gezielt, nach einer Änderung (der Normalfall):** `npm run test:mutation -- --mutate "src/shared/net/prediction.ts"` (mehrere Dateien mit Komma). Inkrementell über `reports/stryker-incremental.json`: Nur Mutanten, deren Code oder abdeckende Tests sich geändert haben, laufen erneut; das dauert Sekunden bis wenige Minuten. Die übrigen Dateien behalten ihr Ergebnis im Bericht.
-- **Eine Gruppe:** `MUTATION_GROUP=sim|contact|net|world|rooms npm run test:mutation` (eigene inkrementelle Datei und eigener Bericht je Gruppe, so läuft auch der Workflow `.github/workflows/mutation.yml`).
+- **Eine Gruppe:** `MUTATION_GROUP=sim|contact|net|world|rooms|race npm run test:mutation` (eigene inkrementelle Datei und eigener Bericht je Gruppe, so läuft auch der Workflow `.github/workflows/mutation.yml`).
 - **Alles:** `npm run test:mutation` ohne Argumente. Der erste Lauf ohne inkrementelle Datei dauert Stunden (die Golden-Läufe decken fast jeden Sim-Mutanten ab); danach inkrementell.
 - **Auswerten:** `npx tsx scripts/mutation-summary.ts` (Score je Datei), `--survivors` listet jeden überlebenden und nicht abgedeckten Mutanten mit Zeile und Ersetzung. HTML-Bericht: `reports/mutation/index.html`.
 - **Umgang mit Überlebenden:** Jeder Überlebende ist entweder eine Testlücke (Test auf der niedrigsten Ebene ergänzen, Erwartung unabhängig begründen) oder äquivalent (z. B. `<` gegen `<=` auf kontinuierlichen Floats, Initialwerte, die vor der ersten Nutzung überschrieben werden, reine Log- und Fehlertexte). Äquivalente im Commit bzw. PR kurz nennen, nicht mit Tests „wegtesten“.

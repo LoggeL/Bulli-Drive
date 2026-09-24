@@ -3,7 +3,13 @@
 // (chase camera on a street, the car up close, its rear with brake lights,
 // a showroom of all car types from the front and the rear, close-ups of
 // the Kaefer, Pritsche, 356 and 181, plaza, park, street furniture, palms,
-// fountain, overview, city edge, mobile).
+// fountain, overview, city edge, mobile), and the race (lobby, the grid
+// in the countdown with the start portal, a checkpoint with barriers and
+// chevrons, the ramps and the hill road, the finish seen from 600 m, the
+// phone HUD in the countdown and the race, the results).
+// race-start also records the meshes and triangles of the track dressing
+// (dressingMeshes, dressingTriangles; budget +20 draw calls and +30 k
+// triangles, docs/phase-2-design.md 17.4).
 //
 //   npm run screenshots -- --out=shots/after                 # build + capture
 //   npm run screenshots -- --out=shots/after --gl=swiftshader
@@ -159,7 +165,7 @@ async function settle(page: Page, minMs: number): Promise<void> {
     while ((await snapshot(page)).render.frame < start + 10 && Date.now() < deadline) await sleep(100);
 }
 
-async function join(browser: Browser, contextOptions: BrowserContextOptions, baseURL: string, name: string): Promise<Page> {
+async function join(browser: Browser, contextOptions: BrowserContextOptions, baseURL: string, name: string, mode: 'party' | 'race' = 'party'): Promise<Page> {
     const context = await browser.newContext({ ...contextOptions, baseURL });
     await context.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, route =>
         route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
@@ -171,8 +177,9 @@ async function join(browser: Browser, contextOptions: BrowserContextOptions, bas
     await page.locator('#loading-screen').waitFor({ state: 'detached', timeout: 90_000 });
     await page.locator('.car-card[data-car="bulli"]').click();
     await page.locator('#splash-name-input').fill(name);
-    if (contextOptions.hasTouch) await page.locator('#start-btn').tap();
-    else await page.locator('#start-btn').click();
+    const tap = (selector: string) => (contextOptions.hasTouch ? page.locator(selector).tap() : page.locator(selector).click());
+    await tap(`.mode-option[data-room="${mode}"]`);
+    await tap('#start-btn');
     await page.locator('#splash-screen.hidden').waitFor({ state: 'attached' });
     await page.waitForFunction(() => {
         const debug = (window as unknown as { __bulliDebug?: Debug }).__bulliDebug;
@@ -181,7 +188,12 @@ async function join(browser: Browser, contextOptions: BrowserContextOptions, bas
     return page;
 }
 
-interface ShotStats { view: string; calls: number; triangles: number; shadowCalls?: number; carWidth?: number; carHeight?: number }
+interface ShotStats {
+    view: string; calls: number; triangles: number; shadowCalls?: number; carWidth?: number; carHeight?: number;
+    // race-start: meshes and triangles of the track dressing and the map features
+    dressingMeshes?: number;
+    dressingTriangles?: number;
+}
 
 // chase: the view comes from the chase camera, so the car's share of the
 // frame is worth recording
@@ -476,6 +488,127 @@ async function captureMobile(browser: Browser, baseURL: string, options: Options
     }
 }
 
+// ---- Race ----
+
+type RaceDebug = { race(): { phase: string; trackId: string; startTick: number | null; tick: number } | null };
+
+function raceState(page: Page) {
+    return page.evaluate(() => (window as unknown as { __bulliDebug: RaceDebug }).__bulliDebug.race());
+}
+
+async function waitRace(page: Page, test: (race: NonNullable<Awaited<ReturnType<typeof raceState>>>) => boolean, what: string): Promise<void> {
+    const deadline = Date.now() + 60_000;
+    for (;;) {
+        const race = await raceState(page);
+        if (race && test(race)) return;
+        if (Date.now() > deadline) throw new Error(`race: timed out waiting for ${what}`);
+        await sleep(100);
+    }
+}
+
+// Meshes (each one draw call, the props also in the shadow pass) and
+// triangles of the track dressing and the map features
+function dressing(page: Page): Promise<{ meshes: number; triangles: number }> {
+    return page.evaluate(() => (window as unknown as { __bulliDebug: { raceDressing(): { meshes: number; triangles: number } } }).__bulliDebug.raceDressing());
+}
+
+const HILL_FINISH = { x: 356, z: 30, yaw: 0.54 };
+const BEFORE_FINISH = { x: HILL_FINISH.x - 25 * Math.sin(HILL_FINISH.yaw), z: HILL_FINISH.z - 25 * Math.cos(HILL_FINISH.yaw) };
+
+async function captureRace(browser: Browser, baseURL: string, options: Options, stats: ShotStats[]): Promise<void> {
+    const views = ['race-lobby', 'race-checkpoint', 'race-start', 'race-portal', 'race-ramps', 'race-finish-far', 'race-results'];
+    const want = (view: string) => !options.only || options.only.includes(view);
+    if (views.some(want)) {
+        const page = await join(browser, {
+            ...devices['Desktop Chrome'], viewport: { width: 1600, height: 900 }, deviceScaleFactor: 1
+        }, baseURL, 'Shots', 'race');
+        await waitRace(page, race => race.phase === 'lobby', 'the lobby');
+        // The Downtown Loop is the first track
+        if (want('race-lobby')) {
+            await settle(page, 1500);
+            await shoot(page, options.out, 'race-lobby', stats);
+            const { meshes, triangles } = await dressing(page);
+            Object.assign(stats[stats.length - 1], { dressingMeshes: meshes, dressingTriangles: triangles });
+            log(`race-lobby (Downtown Loop): the track dressing has ${meshes} meshes and ${triangles} triangles`);
+        }
+        // Checkpoint 1 at the first corner, the barriers across the side street
+        // and the chevron board in its mouth
+        if (want('race-checkpoint')) {
+            await hideHud(page, true);
+            await setCamera(page, { position: [2, 3.2, 20], lookAt: [12, 3.5, 58], fov: 55 });
+            await settle(page, 1500);
+            await shoot(page, options.out, 'race-checkpoint', stats);
+            await setCamera(page, null);
+            await hideHud(page, false);
+        }
+        // The Hill Sprint: the grid in the countdown, two red lights
+        await page.locator('#race-lobby [data-track="hill-sprint"]').click();
+        await waitRace(page, race => race.trackId === 'hill-sprint', 'the Hill Sprint');
+        await page.locator('#race-ready').click();
+        await waitRace(page, race => race.startTick !== null && race.tick >= race.startTick - 110, 'two red lights');
+        if (want('race-start')) {
+            await shoot(page, options.out, 'race-start', stats, true);
+            const { meshes, triangles } = await dressing(page);
+            Object.assign(stats[stats.length - 1], { dressingMeshes: meshes, dressingTriangles: triangles });
+            log(`race-start: the track dressing has ${meshes} meshes and ${triangles} triangles`);
+        }
+        if (want('race-portal')) {
+            await hideHud(page, true);
+            await setCamera(page, { position: [64, 2.2, 94], lookAt: [58, 4.2, 66], fov: 50 });
+            await settle(page, 600);
+            await shoot(page, options.out, 'race-portal', stats);
+            await setCamera(page, null);
+            await hideHud(page, false);
+        }
+        await waitRace(page, race => race.phase === 'racing' && race.tick > (race.startTick ?? 0) + 30, 'the start');
+        if (want('race-ramps')) {
+            await hideHud(page, true);
+            await setCamera(page, { position: [44, 6, -95], lookAt: [70, 0, -150], fov: 55 });
+            await settle(page, 1500);
+            await shoot(page, options.out, 'race-ramps', stats);
+        }
+        // The finish portal on the lookout from 600 m (visibility, fog)
+        if (want('race-finish-far')) {
+            await hideHud(page, true);
+            const back = 600;
+            const dx = -0.94, dz = -0.34;
+            await setCamera(page, { position: [HILL_FINISH.x + dx * back, 45, HILL_FINISH.z + dz * back], lookAt: [HILL_FINISH.x, 18, HILL_FINISH.z], fov: 20 });
+            await settle(page, 1500);
+            await shoot(page, options.out, 'race-finish-far', stats);
+        }
+        await setCamera(page, null);
+        await hideHud(page, false);
+        if (want('race-results')) {
+            await place(page, BEFORE_FINISH.x, BEFORE_FINISH.z, HILL_FINISH.yaw);
+            await page.keyboard.down('w');
+            await waitRace(page, race => race.phase === 'results', 'the results');
+            await page.keyboard.up('w');
+            await page.locator('#race-results').waitFor({ state: 'visible' });
+            await settle(page, 800);
+            await shoot(page, options.out, 'race-results', stats);
+        }
+        await page.context().close();
+    }
+
+    // The phone: the lobby, the countdown with the GO zone, the race HUD
+    const iphone = devices['iPhone 13'];
+    for (const orientation of ['portrait', 'landscape'] as const) {
+        const prefix = `race-mobile-${orientation}`;
+        if (options.only && !options.only.some(view => view.startsWith(prefix))) continue;
+        const viewport = orientation === 'portrait' ? iphone.viewport : { width: iphone.viewport.height, height: iphone.viewport.width };
+        const page = await join(browser, { ...iphone, viewport, screen: viewport }, baseURL, 'Mobile', 'race');
+        await waitRace(page, race => race.phase === 'lobby', 'the lobby');
+        await settle(page, 1500);
+        await shoot(page, options.out, `${prefix}-lobby`, stats);
+        await page.locator('#race-ready').tap();
+        await waitRace(page, race => race.startTick !== null && race.tick >= race.startTick - 50, 'the last light');
+        await shoot(page, options.out, `${prefix}-countdown`, stats, true);
+        await waitRace(page, race => race.phase === 'racing' && race.tick > (race.startTick ?? 0) + 150, 'the race');
+        await shoot(page, options.out, `${prefix}-race`, stats, true);
+        await page.context().close();
+    }
+}
+
 // Side-by-side image per view, composed in the browser (no image library needed)
 async function compare(browser: Browser, [beforeDir, afterDir]: [string, string], out: string): Promise<void> {
     const views = fs.readdirSync(afterDir)
@@ -552,6 +685,7 @@ async function main() {
         const stats: ShotStats[] = [];
         await captureDesktop(browser, baseURL, options, stats);
         await captureMobile(browser, baseURL, options, stats);
+        await captureRace(browser, baseURL, options, stats);
         const summary = { date: new Date().toISOString(), renderer, shots: stats };
         fs.writeFileSync(path.join(options.out, 'stats.json'), JSON.stringify(summary, null, 2) + '\n');
         log(`wrote ${stats.length} screenshots to ${options.out}`);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CAR_IDLE, INPUT_FROZEN, type CompactCar, type Snapshot } from '../../../src/shared/net/codec.js';
+import { CAR_IDLE, CAR_RACE_GHOST, INPUT_FROZEN, type CompactCar, type Snapshot } from '../../../src/shared/net/codec.js';
 import { Prediction, type SlotInfo } from '../../../src/shared/net/prediction.js';
 import { createFlatWorld } from '../../../src/shared/sim/scenarios.js';
 import { createVehicleInput, createVehicleState, type VehicleInput, type VehicleState } from '../../../src/shared/sim/types.js';
@@ -212,6 +212,15 @@ describe('prediction lifecycle', () => {
         plain.p.advance(gas, 0);
         expect(plain.p.car.state.ghostTicks).toBe(0);
     });
+
+    it('holds the contact ghost while the server flags the own car a race ghost (wrong way, finished; phase 2, 11)', () => {
+        const race = driving(3);
+        const server = predicted(race.p, 3);
+        server.ghostTicks = 0;
+        race.p.reconcile(snapshot(3, server, [], -1, CAR_RACE_GHOST));
+        race.p.advance(gas, 0);
+        expect(race.p.car.state.ghostTicks).toBeGreaterThanOrEqual(1);
+    });
 });
 
 describe('contact set', () => {
@@ -307,6 +316,13 @@ describe('contact set', () => {
         expect(p.remotes.get(2)!.car.state.ghostTicks).toBe(0);
     });
 
+    it('treats a race ghost remote (wrong way, finished, DNF) as a contact ghost', () => {
+        const { p } = atRest(12);
+        p.reconcile(snapshot(2, predicted(p, 2), [record(1, 10, 0, { flags: 1 | CAR_RACE_GHOST }), record(2, -10, 0)]));
+        expect(p.remotes.get(1)!.car.state.ghostTicks).toBeGreaterThanOrEqual(1);
+        expect(p.remotes.get(2)!.car.state.ghostTicks).toBe(0);
+    });
+
     it('reports a contact when a remote touches the own car in the replay', () => {
         const { p } = atRest(12);
         // Without the spawn's contact ghost
@@ -315,5 +331,43 @@ describe('contact set', () => {
         expect(apart.contact).toBe(false);
         const touching = p.reconcile(snapshot(3, own(3), [record(1, 2.2, 0, { vx: -8 })]))!;
         expect(touching.contact).toBe(true);
+    });
+});
+
+describe('race hooks (docs/phase-2-design.md, 17.1)', () => {
+    it('filters the input the car takes, keeps the raw one for the packets, and filters replays too', () => {
+        const { p } = setup();
+        // Frozen before tick 20: no pedals
+        p.filterInput = (tick, input) => { if (tick < 20) input.throttle = input.brake = input.steer = 0; };
+        p.startAt(1);
+        p.spawnAt(0, 0, 0, 0);
+        for (let i = 0; i < 18; i++) p.advance(gas, 0);
+        expect(p.car.state.z).toBe(0);
+        expect(p.entry(18)!.input).toEqual(gas);
+        for (let i = 0; i < 20; i++) p.advance(gas, 0);
+        expect(p.car.state.z).toBeGreaterThan(0.1);
+        // A correction (the car 5 cm to the side at tick 10) replays through
+        // the filter: still standing until tick 20, so as far along z
+        const server = predicted(p, 10);
+        server.x += 0.05;
+        const before = predicted(p, 38);
+        const result = p.reconcile(snapshot(10, server, [], p.entry(10)!.seq))!;
+        expect(result.matched).toBe(false);
+        expect(predicted(p, 19).z).toBe(0);
+        expect(predicted(p, 38).z).toBeCloseTo(before.z, 6);
+    });
+
+    it('applies the ghost floor to the own car and the contact set before every tick', () => {
+        const { p } = setup({ 3: info(3) });
+        const floored: string[] = [];
+        p.ghostFloor = (tick, car) => { if (tick === 5) floored.push(car.id); car.state.ghostTicks = Math.max(car.state.ghostTicks, 2); };
+        p.startAt(1);
+        p.spawnAt(0, 0, 0, 0);
+        for (let i = 0; i < 3; i++) p.advance(gas, 0);
+        p.reconcile(snapshot(3, predicted(p, 3), [record(3, 3, 0)], p.entry(3)!.seq));
+        p.advance(gas, 0);
+        p.advance(gas, 0);
+        expect(floored.sort()).toEqual(['me', 'r3']);
+        expect(p.car.state.ghostTicks).toBeGreaterThan(0);
     });
 });

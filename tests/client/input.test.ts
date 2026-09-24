@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-    ButtonLatch, InputManager, createDriveAxes, quantizeSteer, quantizeUnit, touchDriveAxes
+    ButtonLatch, InputManager, createDriveAxes, quantizeSteer, quantizeUnit, raceTouchAxes, touchDriveAxes
 } from '../../src/client/input/InputManager.js';
 import {
     PAD_BUTTON, createPadState, findStandardPad, padSteer, radialDeadzoneScale, readPad, type PadLike
@@ -95,6 +95,57 @@ describe('touch', () => {
         }
         input.flipUp();
         expect(input.sampleTick(out).buttons).toBe(0);
+    });
+});
+
+describe('touch in a race (docs/phase-2-design.md, 17.5)', () => {
+    it('steers with the stick only; the BRAKE button brakes and cuts the gas', () => {
+        // Stick pulled far down: no brake in a race, only steering
+        expect(raceTouchAxes(0.5, 0.9, true, false, createDriveAxes())).toEqual({ steer: -0.5, throttle: 1, brake: 0 });
+        expect(raceTouchAxes(-1, 0, true, true, createDriveAxes())).toEqual({ steer: 1, throttle: 0, brake: 1 });
+        // Without auto-gas the stick pushed up still gives gas
+        expect(raceTouchAxes(0, -0.6, false, false, createDriveAxes())).toEqual({ steer: 0, throttle: 0.6, brake: 0 });
+        expect(raceTouchAxes(0, 0.6, false, false, createDriveAxes())).toEqual({ steer: 0, throttle: 0, brake: 0 });
+    });
+
+    it('holds auto-gas back until the race client arms it, whatever the stick does', () => {
+        const input = new InputManager();
+        input.touchUi = true;
+        input.setRaceTouch(true);
+        const out = createVehicleInput();
+        // Steering in the countdown: no gas
+        input.setStick(0.4, 0, true);
+        expect(input.sampleTick(out)).toEqual({ steer: -51, throttle: 0, brake: 0, buttons: 0 });
+        input.setStick(0, 0, false);
+        // GO: full gas from now on, with the stick released too
+        input.armRaceGas(true);
+        expect(input.sampleTick(out).throttle).toBe(255);
+        // BRAKE held
+        input.touchBrake(true);
+        expect(input.sampleTick(out)).toEqual({ steer: 0, throttle: 0, brake: 255, buttons: 0 });
+        input.touchBrake(false);
+        expect(input.sampleTick(out).throttle).toBe(255);
+        // A respawn releases the controls but keeps the race's gas; leaving
+        // the race disarms it and the stick arms plain auto-gas again
+        input.releaseTouch();
+        expect(input.sampleTick(out).throttle).toBe(255);
+        input.setRaceTouch(false);
+        expect(input.sampleTick(out).throttle).toBe(0);
+        input.setStick(0, 0, true);
+        input.setStick(0, 0, false);
+        expect(input.sampleTick(out).throttle).toBe(255);
+        // The next race starts disarmed
+        input.setRaceTouch(true);
+        expect(input.sampleTick(out).throttle).toBe(0);
+    });
+
+    it('brakes with the button alone when auto-gas is switched off', () => {
+        const input = new InputManager();
+        input.touchUi = true;
+        input.autoGasEnabled = false;
+        input.setRaceTouch(true);
+        input.touchBrake(true);
+        expect(input.sampleTick(createVehicleInput())).toEqual({ steer: 0, throttle: 0, brake: 255, buttons: 0 });
     });
 });
 

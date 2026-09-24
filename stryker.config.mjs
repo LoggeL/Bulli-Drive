@@ -10,7 +10,7 @@
 // It is incremental: a later run only tests the mutants again whose code or
 // covering tests changed, so after the first full run it is quick.
 //
-// MUTATION_GROUP=sim|contact|net|world|rooms runs one group of files with
+// MUTATION_GROUP=sim|contact|net|world|rooms|race runs one group of files with
 // its own incremental file and report (the workflow runs the groups in
 // parallel). Without it every file is mutated. --mutate narrows further:
 //   npm run test:mutation -- --mutate "src/shared/sim/contact.ts"
@@ -31,7 +31,14 @@ const GROUPS = {
     ],
     net: ['src/shared/net/**/*.ts', 'src/shared/protocol.ts', 'src/shared/party/**/*.ts'],
     world: ['src/shared/world/**/*.ts', 'src/shared/math/**/*.ts', 'src/shared/constants.ts'],
-    rooms: ['src/server/rooms/**/*.ts']
+    rooms: ['src/server/rooms/**/*.ts', '!src/server/rooms/RaceRoom.ts', '!src/server/rooms/TimeTrialRoom.ts'],
+    // Race mode (docs/phase-2-design.md, 20): tracks, racing line, gates,
+    // progress, standings, launch, freeze, the slipstream, the bots, the
+    // ghosts and the race and time trial rooms
+    race: [
+        'src/shared/race/**/*.ts', 'src/shared/sim/slipstream.ts', 'src/server/race/**/*.ts',
+        'src/server/rooms/RaceRoom.ts', 'src/server/rooms/TimeTrialRoom.ts'
+    ]
 };
 
 const group = process.env.MUTATION_GROUP || '';
@@ -56,7 +63,7 @@ export default {
 
     mutate: group
         ? GROUPS[group]
-        : ['src/shared/**/*.ts', 'src/server/rooms/**/*.ts', '!src/**/*.d.ts'],
+        : ['src/shared/**/*.ts', 'src/server/rooms/**/*.ts', 'src/server/race/**/*.ts', '!src/**/*.d.ts'],
     ignorePatterns: [
         'dist', 'public', 'test-results', 'playwright-report', 'reports',
         'screenshots', 'output', 'tools/models', 'tools/textures'

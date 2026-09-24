@@ -48,8 +48,33 @@ describe('applyModifiers', () => {
         expect(out.contactMass).toBe(3000);
     });
 
+    it('race start: launch ×1.6, bogged ×0.5 on the acceleration only (phase-2-design 12.2)', () => {
+        const launch = applyModifiers(base, { ...createVehicleModifiers(), launch: true }, 1, createVehicleParams('bulli'));
+        expect(launch.accel).toBeCloseTo(8.5 * 1.6, 12);
+        expect(launch.topSpeed).toBe(50);
+        const bogged = applyModifiers(base, { ...createVehicleModifiers(), bogged: true }, 1, createVehicleParams('bulli'));
+        expect(bogged.accel).toBeCloseTo(8.5 * 0.5, 12);
+        expect(bogged.topSpeed).toBe(50);
+        // On top of Turbo
+        const both = applyModifiers(base, { ...createVehicleModifiers(), turbo: true, launch: true }, 1, createVehicleParams('bulli'));
+        expect(both.accel).toBeCloseTo(8.5 * 1.5 * 1.6, 12);
+    });
+
+    it('slipstream: draft 1 adds 4 m/s top speed and 15 % acceleration, draft 0.5 half of it (phase-2-design 13)', () => {
+        const none = createVehicleModifiers();
+        const full = applyModifiers(base, none, 1, createVehicleParams('bulli'), 1);
+        expect(full.topSpeed).toBe(54);
+        expect(full.accel).toBeCloseTo(8.5 * 1.15, 12);
+        const half = applyModifiers(base, none, 1, createVehicleParams('bulli'), 0.5);
+        expect(half.topSpeed).toBe(52);
+        expect(half.accel).toBeCloseTo(8.5 * 1.075, 12);
+        expect(applyModifiers(base, none, 1, createVehicleParams('bulli'), 0)).toStrictEqual(base);
+        // With Turbo the slipstream adds to the raised top speed
+        expect(applyModifiers(base, { ...none, turbo: true }, 1, createVehicleParams('bulli'), 1).topSpeed).toBeCloseTo(65 + 4, 12);
+    });
+
     it('never changes the base params', () => {
-        applyModifiers(base, { turbo: true, mega: true, superJump: true, ghost: true, shield: true }, 2, createVehicleParams('bulli'));
+        applyModifiers(base, { turbo: true, mega: true, superJump: true, ghost: true, shield: true, launch: true, bogged: true }, 2, createVehicleParams('bulli'), 1);
         expect(JSON.stringify(base)).toBe(frozen);
     });
 });

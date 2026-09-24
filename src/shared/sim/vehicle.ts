@@ -9,6 +9,7 @@
 import { MEGA_SCALE } from '../constants.js';
 import type { RoadGrid, SimWorld } from '../world/colliders.js';
 import { pushOutOfColliders, supportHeight } from './collision.js';
+import { DRAFT_FILL } from '../race/rules.js';
 import { BTN_BOOST, BTN_HANDBRAKE, BTN_JUMP, BTN_RESET, DEG, DT, SIM_TUNING as T, V_ABS, V_SAFE } from './constants.js';
 import { createVehicleParams } from './vehicleClasses.js';
 import { tireCurve } from './tire.js';
@@ -158,6 +159,7 @@ export function resetVehicle(s: VehicleState, p: VehicleParams, world: SimWorld)
     s.flipAngle = s.flipRate = 0;
     s.driftTicks = s.driftLowTicks = 0;
     s.boosting = false;
+    s.draft = 0;
     s.y = world.groundHeight(s.x, s.z);
     s.grounded = true;
     s.airTicks = 0;
@@ -182,9 +184,10 @@ export function integrateForces(car: SimCar, world: SimWorld): void {
     const handbrake = (buttons & BTN_HANDBRAKE) !== 0;
     s.resetHold = (buttons & BTN_RESET) !== 0 ? Math.min(s.resetHold + 1, T.RESET_HOLD_TICKS + 1) : 0;
     if (s.resetHold === T.RESET_HOLD_TICKS) {
-        // The player's reset goes back onto the road; teleports and
-        // respawns call resetVehicle directly
-        if (world.roads) moveToRoad(s, world.roads);
+        // The player's reset goes back onto the road (in a race world onto
+        // the racing line); teleports and respawns call resetVehicle directly
+        if (world.resetPose) world.resetPose(s);
+        else if (world.roads) moveToRoad(s, world.roads);
         resetVehicle(s, P, world);
         ev.reset = true;
         return;
@@ -448,6 +451,8 @@ export function finishTick(car: SimCar, world: SimWorld): void {
     // Scrubbing along a wall does not count
     if (s.wallTicks < WALL_FILL_BLOCK_TICKS) fill = 0;
     if (!s.grounded && s.airTicks > AIR_FILL_AFTER_TICKS) fill += T.AIR_FILL;
+    // The slipstream fills the meter too (docs/phase-2-design.md, 13)
+    fill += DRAFT_FILL * s.draft;
     s.boostMeter = Math.min(1, s.boostMeter + fill * DT);
     const wasBoosting = s.boosting;
     s.boosting = (car.input.buttons & BTN_BOOST) !== 0 && u > 0

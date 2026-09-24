@@ -33,11 +33,36 @@ import { gameHooks } from './game/hooks.js';
 import { assistProfileForDevice, type LocalVehicle } from './vehicle/LocalVehicle.js';
 import { updateRemoteCars } from './net/remotes.js';
 import type { ProfileId } from '../shared/protocol.js';
+import { raceClient } from './race/RaceClient.js';
+import { isRaceKind } from './ui/roomMenu.js';
 
 const chaseCamera = new ChaseCamera(RACE_CAMERA);
 const _chaseTarget: ChaseTarget = { position: new THREE.Vector3(), yaw: 0, speedRatio: 0, boost: false };
 
 let renderQuality: AdaptiveRenderQuality;
+
+// A new body for the local car where the old one stood (the splash, the
+// race lobby), saved for the next visit and told to the server
+function switchLocalCar(carType: string): void {
+    localStorage.setItem('bulli-car-type', carType);
+    state.myCarType = carType;
+    if (state.bulli && state.bulli.carType !== carType) {
+        const previousPosition = state.bulli.group.position.clone();
+        const previousAngle = state.bulli.angle;
+        const visible = state.bulli.flipGroup.visible;
+        state.scene.remove(state.bulli.group);
+        state.bulli.dispose();
+
+        state.bulli = new Bulli(state.myColor!, true, carType as CarType);
+        state.bulli.group.position.copy(previousPosition);
+        state.bulli.angle = previousAngle;
+        state.bulli.group.rotation.y = previousAngle;
+        state.bulli.flipGroup.visible = visible;
+        state.bulli.createNametag(state.myName, true);
+        state.scene.add(state.bulli.group);
+    }
+    sendToServer({ type: 'setCar', carType, profile: assistProfileForDevice() as ProfileId });
+}
 // Only set with ?debug=perf (FPS/draw call/bandwidth overlay)
 let perfMonitor: PerfMonitor | null = null;
 
@@ -92,29 +117,12 @@ function init() {
 
         // Save name and car type
         localStorage.setItem('bulli-player-name', name);
-        localStorage.setItem('bulli-car-type', carType);
         state.myName = name;
-        state.myCarType = carType;
 
-        // Rebuild local car with selected type
-        if (state.bulli) {
-            const previousPosition = state.bulli.group.position.clone();
-            const previousAngle = state.bulli.angle;
-            state.scene.remove(state.bulli.group);
-            state.bulli.dispose();
-
-            state.bulli = new Bulli(state.myColor!, true, carType as CarType);
-            state.bulli.group.position.copy(previousPosition);
-            state.bulli.angle = previousAngle;
-            state.bulli.group.rotation.y = previousAngle;
-            state.bulli.createNametag(name, true);
-            state.scene.add(state.bulli.group);
-        }
-
-        // Notify server of name and car type, move to the chosen mode
-        // (Party or Free Roam), then the car spawns
+        // Notify server of name and car type (the local car is rebuilt in
+        // the chosen type), move to the chosen mode, then the car spawns
         sendToServer({ type: 'rename', name });
-        sendToServer({ type: 'setCar', carType, profile: assistProfileForDevice() as ProfileId });
+        switchLocalCar(carType);
         applySplashChoice();
         sendToServer({ type: 'ready' });
         markPlayerReady();
@@ -149,6 +157,7 @@ function init() {
     initAboutModal();
     initModeSelector();
     initRoomMenu();
+    raceClient.setCarSwitcher(switchLocalCar);
 
     // Test-only state probe, a no-op unless the page URL has ?e2e=1
     installE2EHook();
@@ -178,6 +187,16 @@ function onWindowResize() {
 
 // The camera swings a little towards the travel direction in a drift
 function updateRaceCamera(dt: number, carPos: THREE.Vector3, vehicle: LocalVehicle) {
+    // A race spectator follows another car (race/RaceClient.ts)
+    const spectate = raceClient.spectateTarget();
+    if (spectate) {
+        _chaseTarget.position.copy(spectate.position);
+        _chaseTarget.yaw = spectate.yaw;
+        _chaseTarget.speedRatio = 0.5;
+        _chaseTarget.boost = false;
+        if (chaseCamera.update(dt, state.camera, _chaseTarget, state.cameraSnapPending)) state.cameraSnapPending = false;
+        return;
+    }
     const s = vehicle.car.state;
     const u = vehicle.forwardSpeed;
     _chaseTarget.position.copy(carPos);
@@ -236,7 +255,8 @@ function animate(frameTime: number) {
         updateSpeedometer();
         if (vehicle) updateDriveHud(vehicle);
         updateHealthBar();
-        const jumpControlMode = state.bulli.canRecover
+        // No jump in a race (E4): the button only resets when held
+        const jumpControlMode = state.bulli.canRecover || isRaceKind(state.room?.kind)
             ? 'recover'
             : (state.bulli.powerups.jump.active ? 'super-jump' : 'jump');
         updateJumpControl(jumpControlMode, !state.dead);
@@ -281,6 +301,9 @@ function animate(frameTime: number) {
             }
         }
     }
+
+    // Race HUD, lobby and results, gate lights, the time trial ghost
+    raceClient.frame(dt, performance.now(), time);
 
     updateParticles(dt);
     updateMinimap(frameTime);

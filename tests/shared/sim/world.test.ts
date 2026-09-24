@@ -133,3 +133,25 @@ describe('stepWorld', () => {
         expect(fine.state.boostMeter).toBeGreaterThan(0.6);
     });
 });
+
+describe('vehicle state', () => {
+    it('copyVehicleState copies every field (the prediction history relies on it)', () => {
+        const source = createVehicleState();
+        let value = 1;
+        for (const key of Object.keys(source) as (keyof typeof source)[]) {
+            if (typeof source[key] === 'boolean') (source as unknown as Record<string, boolean>)[key] = !source[key];
+            else (source as unknown as Record<string, number>)[key] = value++;
+        }
+        expect(copyVehicleState(createVehicleState(), source)).toEqual(source);
+    });
+
+    it('recovers a car whose slipstream value went NaN, with the draft back at 0', () => {
+        const world = createFlatWorld();
+        const car = spawnCar(world, 'a', 'bulli', 0, 0, 0, 20);
+        car.state.draft = Number.NaN;
+        stepWorld([car], world);
+        expect(car.events.reset).toBe(true);
+        expect(car.state.draft).toBe(0);
+        expect(Number.isFinite(car.state.boostMeter)).toBe(true);
+    });
+});
