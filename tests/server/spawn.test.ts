@@ -163,13 +163,13 @@ describe('randomSpawn: rejected points', () => {
 
 describe('randomSpawn: fallback after 80 rejected draws', () => {
     // The generated city: roads along z at x = -98, -46, 6, 58, 110 and
-    // along x at z = the same values, so 25 crossings, plus four plaza
-    // corners at (-20 ± 11.2, -20 ± 11.2)
+    // along x at z = the same values, so 25 crossings, plus four points on
+    // the plaza (below)
     const generated = generateWorld().city!;
     // Every draw lands on the crossing (6, 6): road 5 of 10, centre
     const always = (): number => 0.5;
 
-    it('takes the crossing or plaza corner farthest from the other cars', () => {
+    it('takes the crossing or plaza point farthest from the other cars', () => {
         let draws = 0;
         const counting = (): number => { draws++; return 0.5; };
         // A car on (6, 6) blocks every draw. The farthest candidates are the
@@ -202,28 +202,42 @@ describe('randomSpawn: fallback after 80 rejected draws', () => {
     it('crosses only roads along z with roads along x', () => {
         // One road along z at x = 100, one along x at z = 300 (centred on
         // x = 500): their crossing is (100, 300), not (500, 300). A pickup
-        // circle over the whole map rejects every draw; a car sits on the
-        // crossing, so any other candidate would be preferred
+        // circle over the whole map rejects every draw; a car on the plaza
+        // leaves the crossing (341 m away) as the farthest candidate, where
+        // (500, 300) would be 614 m away
         const c = city([road(100, 200, 0), road(500, 300, Math.PI / 2)]);
-        expect(randomSpawn(c, [{ x: 100, z: 300 }], [{ x: 0, z: 0, radius: 1000 }], always)).toEqual({ x: 100, z: 300 });
+        expect(randomSpawn(c, [{ x: -20, z: -20 }], [{ x: 0, z: 0, radius: 1000 }], always)).toEqual({ x: 100, z: 300 });
     });
 
-    // Known issue (regression lock, reported): the four plaza corner
-    // candidates at ±11.2 m lie 2.5 m from the planters at ±13 m, inside
-    // their 3.6 m clearance, so they never pass clearsStaticObstacles; and
-    // the defensive last resort (-8.8, -8.8) is one of them.
-    it('never takes a plaza corner as a candidate', () => {
-        for (const sx of [-1, 1]) {
-            for (const sz of [-1, 1]) {
-                expect(clearsStaticObstacles(city([]), { x: -20 + sx * 11.2, z: -20 + sz * 11.2 })).toBe(false);
-            }
-        }
+    // The plaza candidates (docs/phase-2-design.md, 18) lie on the middles
+    // of the plaza's edges, 12.5 m from the centre (-20, -20) on the axes.
+    // By hand for (-7.5, -20): fountain 12.5 m >= 9; nearest planter
+    // (-7, -7) sqrt(0.5² + 13²) = 13.0 m >= 3.6; nearest parasol
+    // (-12.46, -12.46) sqrt(4.96² + 7.54²) = 9.0 m >= 2.9; the others by
+    // symmetry.
+    const PLAZA_CANDIDATES = [{ x: -32.5, z: -20 }, { x: -7.5, z: -20 }, { x: -20, z: -32.5 }, { x: -20, z: -7.5 }];
+
+    it('every plaza candidate clears the static obstacles', () => {
+        for (const point of PLAZA_CANDIDATES) expect(clearsStaticObstacles(city([]), point)).toBe(true);
     });
 
-    it('returns the fixed last resort when no candidate is clear', () => {
+    it('takes the plaza candidate farthest from the other cars when every crossing is built over', () => {
+        // A building on each of the 25 crossings rejects them; a car on
+        // (-7.5, -20) leaves (-32.5, -20) 25 m away, (-20, ±12.5 - 20)
+        // sqrt(12.5² + 12.5²) = 17.7 m
+        const blocked = { ...generated, buildings: [...generated.buildings] };
+        for (const x of [-98, -46, 6, 58, 110]) for (const z of [-98, -46, 6, 58, 110]) blocked.buildings.push(building(x, z, 4, 4));
+        expect(randomSpawn(blocked, [{ x: -7.5, z: -20 }], [], always)).toEqual({ x: -32.5, z: -20 });
+        // A car on (-32.5, -20) instead: (-7.5, -20) is the farthest
+        expect(randomSpawn(blocked, [{ x: -32.5, z: -20 }], [], always)).toEqual({ x: -7.5, z: -20 });
+    });
+
+    it('returns the fixed last resort when no candidate is clear, and it clears the planters', () => {
         // No roads, and a building over the whole plaza
         const c = city([], [building(-20, -20, 60, 60)]);
-        expect(randomSpawn(c, [], [], always)).toEqual({ x: -20 + 16 * 0.7, z: -20 + 16 * 0.7 });
+        const lastResort = randomSpawn(c, [], [], always);
+        expect(lastResort).toEqual({ x: -32.5, z: -20 });
+        expect(clearsStaticObstacles(city([]), lastResort)).toBe(true);
     });
 });
 

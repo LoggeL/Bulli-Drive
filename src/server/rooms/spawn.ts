@@ -135,9 +135,27 @@ function distanceToClosestSq(point: SpawnPoint, others: readonly SpawnPoint[]): 
     return closest;
 }
 
+/**
+ * The four plaza candidates of the fallback (docs/phase-2-design.md, 18):
+ * the middles of the plaza's edges, halfway between the fountain clearance
+ * and the plaza edge, (9 + 16) / 2 = 12.5 m from the centre on the axes.
+ * The planters and parasols stand on the diagonals, so these points keep
+ * clear of them (the plaza corners at 0.7 · halfSize did not).
+ */
+function plazaCandidates(): SpawnPoint[] {
+    const plaza = plazaLayout();
+    const d = (SPAWN_FOUNTAIN_CLEARANCE + plaza.halfSize) / 2;
+    return [
+        { x: plaza.x - d, z: plaza.z },
+        { x: plaza.x + d, z: plaza.z },
+        { x: plaza.x, z: plaza.z - d },
+        { x: plaza.x, z: plaza.z + d }
+    ];
+}
+
 function fallbackSpawn(city: CityData, others: readonly SpawnPoint[], keepOut: readonly SpawnKeepOut[]): SpawnPoint {
     // Road intersections are guaranteed map surfaces and maximize the number
-    // of escape directions. Plaza corners add four more crowd-safe options.
+    // of escape directions. The plaza adds four more crowd-safe options.
     const verticalRoads = city.roads.filter(road => Math.abs(Math.sin(road.rotation)) < 0.001);
     const horizontalRoads = city.roads.filter(road => Math.abs(Math.cos(road.rotation)) < 0.001);
     const candidates: SpawnPoint[] = [];
@@ -148,24 +166,14 @@ function fallbackSpawn(city: CityData, others: readonly SpawnPoint[], keepOut: r
         }
     }
 
-    const plaza = plazaLayout();
-    const plazaOffset = plaza.halfSize * 0.7;
-    for (const xSign of [-1, 1]) {
-        for (const zSign of [-1, 1]) {
-            candidates.push({
-                x: plaza.x + xSign * plazaOffset,
-                z: plaza.z + zSign * plazaOffset
-            });
-        }
-    }
-
+    candidates.push(...plazaCandidates());
     const staticSafe = candidates.filter(point => clearsStaticObstacles(city, point));
     const clearOfPickups = staticSafe.filter(point => clearsKeepOut(point, keepOut));
     const safeCandidates = clearOfPickups.length > 0 ? clearOfPickups : staticSafe;
     if (safeCandidates.length === 0) {
         // Defensive: the generated central plaza is always building-free,
-        // and this point is outside the fountain clearance.
-        return { x: plaza.x + plaza.halfSize * 0.7, z: plaza.z + plaza.halfSize * 0.7 };
+        // and its first candidate clears the fountain and the plaza props
+        return plazaCandidates()[0];
     }
 
     let best = safeCandidates[0];
