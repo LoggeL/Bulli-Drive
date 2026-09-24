@@ -33,6 +33,11 @@ const DRIVE_KEYS: Record<string, DriveKey> = {
     r: 'reset'
 };
 
+/** The drive key a KeyboardEvent.key stands for, if any. */
+export function driveKeyFor(key: string): DriveKey | undefined {
+    return DRIVE_KEYS[key.toLowerCase()];
+}
+
 function onKeyDown(e: KeyboardEvent) {
     if (document.activeElement?.tagName === 'INPUT') return;
     // Don't register new driving inputs while a modal/overlay is open.
@@ -42,7 +47,7 @@ function onKeyDown(e: KeyboardEvent) {
     if (spaceActivatesButton(e)) return;
 
     const key = e.key.toLowerCase();
-    const driveKey = DRIVE_KEYS[key];
+    const driveKey = driveKeyFor(e.key);
     if (driveKey) {
         inputManager.keyDown(driveKey, e.repeat);
         e.preventDefault();
@@ -59,8 +64,7 @@ function onKeyDown(e: KeyboardEvent) {
 
 function onKeyUp(e: KeyboardEvent) {
     if (spaceActivatesButton(e)) return;
-    const key = e.key.toLowerCase();
-    const driveKey = DRIVE_KEYS[key];
+    const driveKey = driveKeyFor(e.key);
     if (driveKey) {
         inputManager.keyUp(driveKey);
         e.preventDefault();
