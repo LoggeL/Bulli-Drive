@@ -53,6 +53,6 @@ describe('ramp edge walls', () => {
         expect(front).toEqual(expect.objectContaining({ x: 10 + 4 + 0.25, z: 20, hw: 0.25, hd: 2 + 0.5, top: 2, ramp: 5 }));
         const sides = walls.slice(1);
         expect(new Set(sides.map(w => w.z))).toEqual(new Set([20 + 2.25, 20 - 2.25]));
-        expect(sides.every(w => w.hd === 0.25 && w.hw === 2)).toBe(true);
+        expect(sides.every(w => w.kind === 'box' && w.hd === 0.25 && w.hw === 2)).toBe(true);
     });
 });
