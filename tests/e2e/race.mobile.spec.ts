@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import type { RaceDebugSnapshot } from '../../src/client/e2eHook.js';
 import { HILL_SPRINT } from '../../src/shared/race/tracks/index.js';
-import { test, expect, openGame, joinFromSplash, debugCall, snapshot } from './fixtures.js';
+import { test, expect, openGame, joinFromSplash, debugCall } from './fixtures.js';
 
 // The race on a phone (docs/phase-2-design.md, 20.3), the one E2E test of
 // phase 2, in the "mobile" project (touch; the keyboard drives the same
@@ -10,11 +10,12 @@ import { test, expect, openGame, joinFromSplash, debugCall, snapshot } from './f
 // GO! (auto-gas starts one tick after green). The test hook puts the car
 // 30 m before the finish (the server counts the gates before it as
 // passed, E2E only), auto-gas drives it over the line: position, time,
-// FINISH, the results with the own name, REMATCH, the next race on the
-// same track, and back to the Party from the room chip. Everything behind it (the rules, the views, the taps)
-// is tested on its own level: tests/client/raceModel.test.ts,
-// raceUi.test.ts, input.test.ts, tests/server/raceRoom.test.ts and the
-// bot race in tests/integration/race.test.ts.
+// FINISH, the results with the own name, REMATCH and the next race on the
+// same track. Everything behind it (the rules, the views, the taps) is
+// tested on its own level: tests/client/raceModel.test.ts, raceUi.test.ts,
+// input.test.ts, tests/server/raceRoom.test.ts and the bot race in
+// tests/integration/race.test.ts; the way out of a room by the room chip
+// in mobile.spec.ts (the E2E job stays under 5 min, CLAUDE.md).
 
 const FINISH = HILL_SPRINT.gates[HILL_SPRINT.gates.length - 1];
 // 30 m before the finish gate, facing along it
@@ -24,7 +25,7 @@ function race(page: Page): Promise<RaceDebugSnapshot | null> {
     return debugCall<RaceDebugSnapshot | null>(page, 'race');
 }
 
-test('a race on the phone: splash, lobby, countdown, over the finish line, results, rematch, back to the Party', async ({ openPlayer }) => {
+test('a race on the phone: splash, lobby, countdown, over the finish line, results, rematch', async ({ openPlayer }) => {
     const player = await openPlayer('racer');
     const { page } = player;
 
@@ -83,12 +84,4 @@ test('a race on the phone: splash, lobby, countdown, over the finish line, resul
         const next = await race(page);
         return next && next.startTick !== null && next.startTick > done!.startTick! ? next.trackId : null;
     }).toBe('hill-sprint');
-
-    // ---- Out of the race: the room chip back to the Party, its HUD instead ----
-    await page.locator('#room-chip').tap();
-    await page.locator('.room-option[data-room="party"]').tap();
-    await expect.poll(async () => (await snapshot(page)).room?.kind).toBe('party');
-    await expect(page.locator('#race-hud')).toBeHidden();
-    await expect(page.locator('#score-container')).toBeVisible();
-    expect(await race(page)).toBeNull();
 });
