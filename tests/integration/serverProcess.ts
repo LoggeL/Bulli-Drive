@@ -17,6 +17,9 @@ export interface ServerProcess {
     child: ChildProcess;
     // The last lines the server printed (for failure messages)
     output(): string;
+    // Every line that reports an error the server caught and went on
+    // (a handler threw, a socket failed): the bots would not notice them
+    problems(): string[];
     stop(): Promise<void>;
 }
 
@@ -36,17 +39,26 @@ export async function freePort(from: number, to: number): Promise<number> {
     throw new Error(`no free port in ${from}-${to}`);
 }
 
+// What server/index.ts prints when it catches an error and goes on, or
+// right before it exits on one
+const PROBLEM = /Handler error|ws error|Uncaught|Unhandled/;
+
 export async function startServer(env: Record<string, string> = {}): Promise<ServerProcess> {
     const fixed = Number(process.env.BOTS_PORT);
     const port = Number.isInteger(fixed) && fixed > 0 ? fixed : await freePort(8560, 8599);
     const lines: string[] = [];
+    const problems: string[] = [];
     const child = spawn(process.execPath, ['--import', 'tsx', 'src/server/index.ts'], {
         cwd: ROOT,
         env: { ...process.env, PORT: String(port), E2E: '1', GRACE_MS: '5000', ...env },
         stdio: ['ignore', 'pipe', 'pipe']
     });
     const keep = (chunk: Buffer) => {
-        for (const line of chunk.toString().split('\n')) if (line.trim()) lines.push(line);
+        for (const line of chunk.toString().split('\n')) {
+            if (!line.trim()) continue;
+            lines.push(line);
+            if (PROBLEM.test(line)) problems.push(line);
+        }
         if (lines.length > 400) lines.splice(0, lines.length - 400);
     };
     child.stdout!.on('data', keep);
@@ -74,6 +86,7 @@ export async function startServer(env: Record<string, string> = {}): Promise<Ser
         origin,
         child,
         output: () => lines.slice(-60).join('\n'),
+        problems: () => [...problems],
         async stop() {
             if (child.exitCode !== null) return;
             // Graceful shutdown (11.2) by PID, a hard kill if it hangs

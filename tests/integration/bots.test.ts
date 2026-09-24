@@ -23,9 +23,14 @@ beforeAll(async () => {
     server = await startServer({ GRACE_MS: String(GRACE_MS) });
 });
 
-afterEach(async () => {
+afterEach(async (context) => {
     await swarm?.stop();
     swarm = null;
+    // A failed test shows what the server said meanwhile (CI has no other log)
+    if (context.task.result?.state === 'fail') console.log(`Server output:\n${server.output()}`);
+    // An error the server caught and logged fails the test, even when the
+    // bots saw nothing of it
+    expect(server.problems(), 'errors in the server log').toEqual([]);
 });
 
 afterAll(async () => {
@@ -188,8 +193,11 @@ describe('flood', () => {
         const flood = s.bots[3];
         await s.waitFor(() => s.bots.slice(0, 3).every(bot => bot.driving), 20_000, 'the drivers');
         s.markWindow();
-        await s.waitFor(() => flood.stats.kicked !== null, 15_000, 'the kick');
-        expect(flood.stats.closes.at(-1)!.code).toBe(4003);
+        // The close, not the 'kicked' message before it: the close handshake
+        // takes a few turns of the event loop more
+        await s.waitFor(() => flood.stats.closes.some(close => !close.own), 15_000, 'the kick');
+        expect(flood.stats.kicked).toBe('policy');
+        expect(flood.stats.closes.find(close => !close.own)!.code).toBe(4003);
         // Two more seconds' worth of snapshots for everyone after the kick
         const after = s.bots.slice(0, 3).map(bot => bot.stats.counters.snapshots + 40);
         await s.waitFor(() => s.bots.slice(0, 3).every((bot, i) => bot.stats.counters.snapshots >= after[i]), 10_000, 'snapshots after the kick');
@@ -232,8 +240,10 @@ describe('16 bots for 30 s behind netsim 150/30/3', () => {
         expect(report.correctionMeanCm).toBeLessThan(10);
         // The server tick stays well inside the budget (5.7)
         expect(report.server!.tickP95Ms).toBeLessThan(4);
-        // Bumps that both cars felt
-        expect(report.mutualContacts).toBeGreaterThanOrEqual(3);
+        // Bumps that both cars felt: at least one (how many depends on when
+        // the ram bots meet, 3-19 in 25 runs; the scripted head-on tests
+        // above check the bump itself)
+        expect(report.mutualContacts).toBeGreaterThanOrEqual(1);
         // The reconnect bot came back as the same player, the hop bot switched
         const reconnect = s.bots.find(bot => bot.mode === 'reconnect')!;
         expect(reconnect.stats.welcomes.filter(w => w.resumed).length).toBeGreaterThanOrEqual(1);
