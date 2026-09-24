@@ -268,4 +268,101 @@ describe('LeadControl', () => {
         expect(lead.onSnapshot(null, 1, 1100, 40)).toBe(true);
         expect(lead.lead).toBeCloseTo(20 / TICK_MS + 1, 9);
     });
+
+    // 8.3 and 20.5: after a jump the reports are ignored for a round trip
+    // plus 250 ms (plus the ticks it moved the lead down); a stall of the
+    // page longer than 600 ms makes them ignored for 2 round trips + 250 ms
+    // + the stall
+    it('ignores the reports for a round trip plus 250 ms after a late jump', () => {
+        const lead = new LeadControl();
+        lead.start(40, 1);
+        lead.onSnapshot(-11, 1, 1000, 40);   // 12 short: a jump
+        const jumped = lead.lead;
+        lead.onSnapshot(-11, 1, 1000 + 40 + 249, 40);
+        expect(lead.lead).toBe(jumped);
+        lead.onSnapshot(-11, 1, 1000 + 40 + 250, 40);
+        expect(lead.lead).toBeCloseTo(jumped + 12, 9);
+    });
+
+    it('waits the ticks an early jump took back on top', () => {
+        const lead = new LeadControl();
+        lead.start(40, 1);
+        lead.lead = 40;
+        lead.onSnapshot(1 + 20, 1, 1000, 40);   // 20 early: a clock jump
+        expect(lead.lead).toBeCloseTo(20, 9);
+        lead.onSnapshot(1 + 20, 1, 1000 + 40 + 250 + 20 * TICK_MS - 1, 40);
+        expect(lead.lead).toBeCloseTo(20, 9);
+        lead.onSnapshot(1 + 20, 1, 1000 + 40 + 250 + 20 * TICK_MS, 40);
+        expect(lead.lead).toBeCloseTo(0, 9);
+    });
+
+    it('counts a jump of more than 8 ticks as a resync, smaller ones not', () => {
+        const lead = new LeadControl();
+        lead.start(40, 1);
+        expect(lead.onSnapshot(1 - 8, 1, 1000, 40)).toBe(false);
+        expect(lead.resyncs).toBe(0);
+        expect(lead.onSnapshot(1 - 9, 1, 5000, 40)).toBe(true);
+        expect(lead.resyncs).toBe(1);
+        // Exactly 16 early (no margin left after the start) is no jump yet
+        const fresh = new LeadControl();
+        fresh.start(40, 1);
+        const before = fresh.lead;
+        fresh.onSnapshot(1 + 16, 1, 1000, 40);
+        expect(fresh.lead).toBeCloseTo(before - 0.15, 9);
+    });
+
+    it('slows the ticks for an early report and speeds them up for a late one', () => {
+        const early = new LeadControl();
+        early.start(40, 1);
+        early.onSnapshot(1 + 1, 1, 1000, 40);
+        // Step -0.1 of the 3 ticks between snapshots
+        expect(early.rate).toBeCloseTo(1 - 0.1 / 3, 12);
+        const late = new LeadControl();
+        late.start(40, 1);
+        late.onSnapshot(1 - 1, 1, 1000, 40);
+        expect(late.rate).toBeCloseTo(1 + 0.1 / 3, 12);
+    });
+
+    it('takes back only the late margin with the slow steps down', () => {
+        const lead = new LeadControl();
+        lead.start(40, 1);
+        lead.onSnapshot(1 - 10, 1, 1000, 40);       // 10 short: margin 10
+        expect(lead.margin).toBe(10);
+        lead.onSnapshot(1 - 1, 1, 5000, 40);        // a little late: step up, margin stays
+        expect(lead.margin).toBe(10);
+        lead.onSnapshot(1 + 3, 1, 6000, 40);        // early: steps down eat the margin
+        expect(lead.margin).toBeLessThan(10);
+    });
+
+    it('holds the reports after a stall of its own of more than 600 ms', () => {
+        const short = new LeadControl();
+        short.start(40, 1);
+        short.holdAfterStall(1000, 40, 600);
+        const before = short.lead;
+        short.onSnapshot(1 - 12, 1, 1001, 40);
+        expect(short.lead).toBeCloseTo(before + 12, 9);
+
+        const long = new LeadControl();
+        long.start(40, 1);
+        long.holdAfterStall(1000, 40, 700);
+        const held = long.lead;
+        // Until 1000 + 2 · 40 + 250 + 700
+        long.onSnapshot(1 - 12, 1, 2029, 40);
+        expect(long.lead).toBe(held);
+        long.onSnapshot(1 - 12, 1, 2030, 40);
+        expect(long.lead).toBeCloseTo(held + 12, 9);
+    });
+
+    it('waits a round trip plus 250 ms after restarting a silent client', () => {
+        const lead = new LeadControl();
+        lead.start(40, 1);
+        lead.onSnapshot(null, 1, 0, 40);
+        expect(lead.onSnapshot(null, 1, 1001, 40)).toBe(true);
+        expect(lead.resyncs).toBe(1);
+        const restarted = lead.lead;
+        lead.onSnapshot(1 - 12, 1, 1001 + 289, 40);
+        expect(lead.lead).toBe(restarted);
+        lead.onSnapshot(1 - 12, 1, 1001 + 290, 40);
+        expect(lead.lead).toBeCloseTo(restarted + 12, 9);
+    });
 });

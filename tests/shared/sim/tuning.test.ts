@@ -84,6 +84,45 @@ describe('v2 tuning', () => {
         expect(() => importTuning({ format: 1, global: { A: 1, B: 2 } })).toThrow(/global\.A.*global\.B/);
     });
 
+    it('names each problem of a rejected import', () => {
+        const message = (input: unknown) => {
+            try {
+                importTuning(input);
+            } catch (err) {
+                return (err as Error).message;
+            }
+            return 'accepted';
+        };
+        expect(message('{')).toBe('tuning is not valid JSON');
+        expect(message([])).toBe('tuning is not an object');
+        expect(message(null)).toBe('tuning is not an object');
+        expect(message({ format: 2 })).toBe('invalid tuning: format must be 1');
+        expect(message({ format: 1, extra: 1 })).toBe('invalid tuning: extra is unknown');
+        expect(message({ format: 1, global: [] })).toBe('invalid tuning: global is not an object');
+        expect(message({ format: 1, global: { NOPE: 1 } })).toBe('invalid tuning: global.NOPE is unknown');
+        expect(message({ format: 1, global: { STICK: Infinity } })).toBe('invalid tuning: global.STICK must be a finite number');
+        expect(message({ format: 1, classes: [] })).toBe('invalid tuning: classes is not an object');
+        expect(message({ format: 1, classes: { tank: {} } })).toBe('invalid tuning: classes.tank is unknown');
+        expect(message({ format: 1, classes: { bulli: null } })).toBe('invalid tuning: classes.bulli is not an object');
+        expect(message({ format: 1, classes: { jeep: { drive: 4 } } })).toBe("invalid tuning: classes.jeep.drive must be 'rear' or 'all'");
+        expect(message({ format: 1, profiles: 'touch' })).toBe('invalid tuning: profiles is not an object');
+        expect(message({ format: 1, profiles: { touch: { counterSteer: '1' } } }))
+            .toBe('invalid tuning: profiles.touch.counterSteer must be a finite number');
+        expect(message({ format: 1, global: { A: 1 }, classes: { tank: {} } }))
+            .toBe('invalid tuning: global.A is unknown; classes.tank is unknown');
+        expect(message({ format: 1, classes: { jeep: { drive: 'all' } }, profiles: {} })).toBe('accepted');
+    });
+
+    it('is not the default once a class or a profile alone changed', () => {
+        VEHICLE_CLASSES.beetle.mass = 950;
+        expect(tuningIsDefault()).toBe(false);
+        resetTuning();
+        ASSIST_PROFILES.standard.counterSteer = 0.1;
+        expect(tuningIsDefault()).toBe(false);
+        resetTuning();
+        expect(tuningIsDefault()).toBe(true);
+    });
+
     it('reaches new and existing cars of the tuned class', () => {
         const bulli = createSimCar('b', 'bulli', 'touch');
         const sport = createSimCar('s', 'sport');
