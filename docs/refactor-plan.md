@@ -1,6 +1,6 @@
 # Plan: Bulli Drive als Open-World-Multiplayer-Rennspiel
 
-**Stand:** 2026-09-23 · **Aktuelle Phase:** Phase 1a – live: v2 ist auf Wunsch des Nutzers ohne URL-Parameter Standard, `?physics=legacy` bleibt vorerst als Notausgang. Der Blindtest entfällt als Gate ([Vergleich mit Legacy](phase-1a-playtest.md) freiwillig); die Legacy-Physik wird gelöscht, wenn v2 einige Tage ohne Probleme läuft. Phase 0 ist gemergt (PR #7, CI grün); offen ist dort nur noch die Messung auf echten Geräten (Referenz-Handy, Desktop im Browserfenster).
+**Stand:** 2026-09-24 · **Aktuelle Phase:** Phase 1b auf dem Branch fertig (Branch `net/phase-1b`, Spezifikation und Stand: [`phase-1b-design.md`](phase-1b-design.md)): Server-Sim, Protokoll v2 und Client-Prediction stehen, die Legacy-Physik und `?physics=legacy` sind gelöscht; Reconnect mit 30 s Grace, Graceful Shutdown mit Resume-Ticket, `/healthz` mit Docker-`HEALTHCHECK` und die Dev-Netsim sind da (Betrieb: [`ops.md`](ops.md)); Bot-Clients (`npm run bots`, `npm run test:bots` in der CI) und die Messung mit 32 Bots belegen die Budgets. Offen sind nur Messungen auf echten Geräten und der Playtest Desktop gegen Handy. Phase 1a ist live, v2 ist die einzige Physik. Phase 0 ist gemergt (PR #7, CI grün); offen ist dort nur noch die Messung auf echten Geräten (Referenz-Handy, Desktop im Browserfenster).
 
 ## 0. Entscheidungen (2026-09-23)
 
@@ -120,9 +120,9 @@ Die Dauer ist in Wochen fokussierter Arbeit angegeben, im Kalender wird es läng
 - Kampf, Coins, Powerups und Sprung bleiben in Phase 0 unverändert im Spiel.
 - **Exit:** Das Spiel verhält sich auf Desktop und Mobile identisch zu `1d39c07` (bis auf den Tacho), der Stale-Client-Reload funktioniert, und die CI ist grün.
 
-**Phase 1a – Fahrgefühl und Kontakt (3–4 Wochen) · Status: live, v2 ist Standard; Legacy (`?physics=legacy`) wird nach einigen Tagen ohne Probleme gelöscht**
+**Phase 1a – Fahrgefühl und Kontakt (3–4 Wochen) · Status: live, v2 ist Standard; Legacy (`?physics=legacy`) ist mit Phase 1b gelöscht**
 
-Verbindliche Spezifikation, Abweichungen und Messwerte: [`phase-1a-design.md`](phase-1a-design.md). Playtest und Vergleich mit Legacy: [`phase-1a-playtest.md`](phase-1a-playtest.md). Entwickelt hinter `?physics=v2`; seit dem Livegang (Nutzerwunsch: neue Features direkt live, nicht hinter Flags) ist v2 Standard und `?physics=legacy` der Notausgang (Spezifikation, Abschnitt 25). Das Protokoll ist unverändert, Multiplayer funktioniert in beiden Modi, auch gemischt.
+Verbindliche Spezifikation, Abweichungen und Messwerte: [`phase-1a-design.md`](phase-1a-design.md). Playtest und Vergleich mit Legacy: [`phase-1a-playtest.md`](phase-1a-playtest.md). Entwickelt hinter `?physics=v2`; seit dem Livegang (Nutzerwunsch: neue Features direkt live, nicht hinter Flags) war v2 Standard und `?physics=legacy` der Notausgang (Spezifikation, Abschnitt 25); mit Phase 1b ist die Legacy-Physik samt Schalter gelöscht, v2 ist die einzige Physik und läuft auch auf dem Server.
 
 - **Deliverables:**
   - [x] `stepVehicle` mit Längs- und Quergrip, Handbremse, Drift, die ein Boost-Meter füllt, und echter Gravitation — Einspurmodell mit Reifenkennlinie und drei Fahrassists in `src/shared/sim`, fester Takt 1/60 s
@@ -139,16 +139,16 @@ Verbindliche Spezifikation, Abweichungen und Messwerte: [`phase-1a-design.md`](p
   - [x] Messung der Sim-Kosten: `npm run perf:baseline` (seit dem Livegang Standard; damals `-- --physics=v2`) bzw. `--sandbox`, im Mittel höchstens 0,09 ms pro Frame auch mit 6 Autos, p95 0,2 ms, einzelne Frames bis 0,4 ms ([`baseline.md`](baseline.md), Abschnitt Phase 1a)
 - **Exit:** ~~Mindestens 4 von 5 Testern ziehen das neue Fahren im Blindtest vor, auch auf dem Handy.~~ (entfällt: v2 ist auf Nutzerwunsch direkt live) Die Trajektorie ist bei 30, 60 und 144 FPS identisch. Der Tunneling-Test ist grün, auch für Auto gegen Auto bei Frontalzusammenstoß mit Topspeed. Ein Golden-Test für Kontaktszenarien (frontal, seitlich, Heck, drei Autos) läuft in Node und im Browser mit Toleranz gleich. Die Legacy-Physik ist gelöscht.
 - **Stand des Exits:**
-  - [x] ~~Blindtest durch den Nutzer~~ — entfällt als Gate: v2 ist live Standard auf Nutzerwunsch. Ein Vergleich mit `?physics=legacy` bleibt freiwillig möglich ([`phase-1a-playtest.md`](phase-1a-playtest.md)); getunte Werte kommen als JSON aus dem Panel zurück
+  - [x] ~~Blindtest durch den Nutzer~~ — entfällt als Gate: v2 ist live Standard auf Nutzerwunsch. Der Vergleich mit `?physics=legacy` war bis Phase 1b freiwillig möglich ([`phase-1a-playtest.md`](phase-1a-playtest.md)), mit 1b ist der Schalter gelöscht; getunte Werte kommen als JSON aus dem Panel zurück
   - [x] Trajektorie bei 30, 60 und 144 FPS identisch — bitgleich pro Tick, auch bei unregelmäßigen Frames: `tests/client/loop.test.ts` (Loop und Sim) und `tests/client/fpsIndependence.test.ts` (der ganze Client-Tick mit InputManager, Powerup-Timern, Sandbox-Welt und Dummies, seit dem Review auch Rempeln eines fahrenden Mitspielers als Proxy)
   - [x] Tunneling-Test grün, auch Auto gegen Auto frontal mit 2 × 85 m/s und T-Bone mit 85 m/s; seit dem Review mit Sweep der Startphase, sodass er mit nur einem Substep anschlägt
   - [x] Golden-Tests für 19 Szenarien (darunter frontal, T-Bone, PIT, drei Autos, Mega gegen Käfer, Boost, Sprung und Reset, Touch-Profil, Proxy-Rempler, Bremsen in den Rückwärtsgang je Klasse) plus die ausgelieferte Abstimmung als Golden in Node und im Browser mit derselben Toleranz (1e-9 relativ, Zähler exakt; plattformrobust, siehe phase-1a-design.md 24.2)
-  - [x] v2 ist Standard (ohne URL-Parameter), `?physics=legacy` schaltet die alte Physik ein; E2E prüft beides (`physics-default.spec.ts`)
-  - [ ] **Legacy-Physik löschen** (Aufräumpunkt) — wenn v2 einige Tage ohne Probleme live läuft: `vehicle/legacyPhysics.ts`, die Legacy-Zweige in `controls/keyboard.ts`, `controls/mobile.ts`, `main.ts` und `ui/hud.ts`, die `.legacy-only`-Elemente in `index.html`, `LEGACY_CAMERA`, die Legacy-E2E-Tests und `?physics=legacy`
+  - [x] v2 ist Standard (ohne URL-Parameter); `?physics=legacy` schaltete bis Phase 1b die alte Physik ein (mit 1b gelöscht, der Parameter bewirkt nichts mehr)
+  - [x] **Legacy-Physik löschen** — mit Phase 1b (Server-Sim, [`phase-1b-design.md`](phase-1b-design.md) Abschnitt 10 und 20.2): `vehicle/legacyPhysics.ts`, die Legacy-Zweige in `controls/keyboard.ts`, `controls/mobile.ts`, `main.ts` und `ui/hud.ts`, die `.legacy-only`-Elemente und die Klasse `physics-v2` in `index.html`, `LEGACY_CAMERA`, die Legacy-E2E-Tests und `?physics=legacy`
 - **Review nach 1a:** 21 bestätigte Befunde (Sim, Netcode-Tauglichkeit, Mobile, Tests) behoben bzw. für 1b festgehalten, siehe [`phase-1a-design.md`](phase-1a-design.md), Abschnitt 23.
-- **Außerdem noch offen:** E2E-Test für eine gemischte Session aus v2- und Legacy-Client (funktioniert per Konstruktion, weil das Protokoll unverändert ist; drei Software-WebGL-Seiten gleichzeitig sind in der CI zu langsam), Messung der Sim-Kosten und Feinschliff von Renn-Kamera und Touch auf dem Referenz-Handy.
+- **Außerdem noch offen:** Messung der Sim-Kosten und Feinschliff von Renn-Kamera und Touch auf dem Referenz-Handy. (Der E2E-Test für eine gemischte Session aus v2- und Legacy-Client entfällt mit dem Löschen der Legacy-Physik.)
 
-**Phase 1b – Server-autoritativer Netz-Kern (3–4 Wochen)**
+**Phase 1b – Server-autoritativer Netz-Kern (3–4 Wochen) · Status: auf `net/phase-1b` umgesetzt, offen nur Messungen auf echten Geräten und der Playtest mit Netsim**
 - **Deliverables:**
   - Zuerst Rooms: Die Singletons in `state.ts:6` und `world.ts:4-9` werden zu Instanzfeldern. Das heutige Spiel läuft danach als **`PartyRoom`** (Kampf-, Coin- und Powerup-Code verschoben nach `server/party` und `client/party`), dazu kommt ein schlanker `FreeRoamRoom` ohne Kampf.
   - Room-Tick: Der Server simuliert mit 60 Hz über `stepWorld` und schickt mit 20 Hz (im Rennen 30 Hz) einen gebündelten Snapshot mit Zustand aller Autos und der letzten verarbeiteten Input-`seq` pro Spieler.
@@ -163,8 +163,16 @@ Verbindliche Spezifikation, Abweichungen und Messwerte: [`phase-1a-design.md`](p
   - Regel für `visibilitychange` und fehlende Inputs: Der Server wiederholt den letzten Input höchstens 250 ms lang, danach neutral mit Bremse; im Hintergrund wird das Auto zum Ghost (kein Kontakt). Das ersetzt den AFK-Hack durch ein serverseitiges Idle-Flag.
   - Graceful Shutdown: Bei SIGTERM werden Clients benachrichtigt und reconnecten nach dem Neustart
   - `/healthz` (Prozess lebt, Room-Tick läuft) als `HEALTHCHECK` im Dockerfile; der Container-Smoke in der CI prüft `/healthz` statt `/build-version.txt`
-  - Restart-Policy dokumentiert und gesetzt (`restart: unless-stopped` bzw. das Äquivalent beim Hoster, offene Frage 8), inklusive Neustart nach fehlgeschlagenem Health-Check
+  - Restart-Policy dokumentiert und gesetzt (`restart: unless-stopped` bzw. das Äquivalent beim Hoster, offene Frage 8), inklusive Neustart nach fehlgeschlagenem Health-Check (umgesetzt: Dokploy/Swarm ersetzt `unhealthy` Tasks, siehe [`ops.md`](ops.md); `SESSION_SECRET` muss in Dokploy gesetzt werden)
 - **Exit:** Bei 150 ms RTT, 30 ms Jitter und 3 % Verlust fährt sich das eigene Auto ohne sichtbares Rubberbanding (Korrektur ohne Kontakt unter 10 cm im Mittel), Remote-Autos laufen flüssig, und Rempeln fühlt sich für beide Seiten nachvollziehbar an (Playtest Desktop gegen Handy). Ein Server-Tick mit 32 Autos bleibt unter 2 ms. Ein Reconnect innerhalb von 30 s behält den Spieler. Ein Container-Neustart trennt die Spieler nur kurz, und ein Server, dessen Tick hängt, fällt über `/healthz` auf und wird von der Restart-Policy neu gestartet. Der Party-Modus ist spielbar wie vorher.
+- **Stand des Exits** (Messwerte: [`phase-1b-design.md`](phase-1b-design.md) Abschnitt 20.5, [`baseline.md`](baseline.md) Abschnitt Phase 1b):
+  - [x] Korrektur ohne Kontakt hinter Netsim 150/30/3 (TCP): im Mittel 0,02–0,06 cm mit 16 bzw. 32 Bots über echte WebSockets, < 0,01 cm im Reconcile-Test. Die Bots haben dabei einen Fehler des Lead-Reglers aufgedeckt (ein Drittel der Inputs kam zu spät, die Spieler wurden zu Lag-Ghosts), der behoben ist
+  - [x] Rempeln wirkt auf beiden Seiten: Bot-Integrationstest (Kontakt-Event, geschobenes Auto, bremsender Rammer, mit und ohne Netsim) und E2E `net-contact.spec.ts` mit zwei Browsern, auch mit `?netsim=150,30,3`
+  - [ ] Playtest Desktop gegen Handy, beide mit Netsim 150/30/3
+  - [x] Server-Tick mit 32 Autos: p99 1,3–1,8 ms (lokal), Downlink 24,2 kB/s pro Client (Budget 30 kB/s)
+  - [x] Reconnect innerhalb der Grace behält Spieler, Slot und Auto (Bot-Test, E2E), Neustart trennt nur kurz (E2E, CI-Smoke), hängender Tick → `/healthz` 503
+  - [x] Party-Modus spielbar wie vorher, Free Roam wählbar, auch auf dem Handy (E2E)
+  - [ ] Messungen auf dem Referenz-Handy (Replay-Kosten bei hohem Lead hinter Verlust, Overlay `?debug=net`)
 
 **Phase 2 – Vertical Slice Rennen (ca. 3 Wochen) → Release**
 - **Deliverables:**

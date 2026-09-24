@@ -14,10 +14,12 @@ test('?debug=perf shows the overlay and records frame and bandwidth stats', asyn
     // It never takes clicks or touches away from the game.
     await expect(overlay).toHaveCSS('pointer-events', 'none');
 
-    // The init message with the whole world has already been counted.
+    // The handshake, the room state and the first snapshots have been
+    // counted (the world comes from the seed, not over the wire)
+    await expect.poll(async () => (await page.evaluate(() =>
+        (window as unknown as { __bulliPerf: PerfHook }).__bulliPerf.wsTotals())).bytesIn).toBeGreaterThan(1_000);
     const totals = await page.evaluate(() =>
         (window as unknown as { __bulliPerf: PerfHook }).__bulliPerf.wsTotals());
-    expect(totals.bytesIn).toBeGreaterThan(10_000);
     expect(totals.messagesOut).toBeGreaterThan(0);
 
     // Drive on a free stretch of road: the random spawn can face a wall
@@ -28,6 +30,9 @@ test('?debug=perf shows the overlay and records frame and bandwidth stats', asyn
     await page.keyboard.down('w');
     await expect.poll(async () => distance(start, (await snapshot(page)).local!)).toBeGreaterThan(5);
     await page.keyboard.up('w');
+    // Online the sim runs between frames too: a few more frames for the numbers
+    const frame = (await snapshot(page)).render.frame;
+    await expect.poll(async () => (await snapshot(page)).render.frame).toBeGreaterThan(frame + 4);
     const recording = await page.evaluate(() =>
         (window as unknown as { __bulliPerf: PerfHook }).__bulliPerf.stopRecording()) as PerfRecording;
 
@@ -38,7 +43,7 @@ test('?debug=perf shows the overlay and records frame and bandwidth stats', asyn
     expect(recording.triangles.max).toBeGreaterThan(1000);
     expect(recording.geometries).toBeGreaterThan(0);
     expect(recording.textures).toBeGreaterThan(0);
-    // Driving sends position updates
+    // Driving sends input packets
     expect(recording.ws.messagesOut).toBeGreaterThan(0);
     expect(recording.ws.bytesOut).toBeGreaterThan(0);
     // The v2 physics (the default) counts the sim ticks of the own car
@@ -46,23 +51,6 @@ test('?debug=perf shows the overlay and records frame and bandwidth stats', asyn
     expect(recording.sim!.ticks).toBeGreaterThan(0);
     expect(recording.sim!.cars.max).toBe(1);
     await expect(overlay).toContainText(/sim\s+\d+\.\d+ ms\s+1 cars/);
-});
-
-test('?debug=perf has no sim line with the legacy physics', async ({ openPlayer }) => {
-    const player = await openPlayer('perf-legacy');
-    const { page } = player;
-    await joinGame(player, 'E2E Perf Legacy', '&debug=perf&physics=legacy');
-
-    const overlay = page.locator('#perf-overlay');
-    await expect(overlay).toContainText(/FPS\s+\d/);
-    await page.evaluate(() => (window as unknown as { __bulliPerf: PerfHook }).__bulliPerf.startRecording());
-    const startFrame = (await snapshot(page)).render.frame;
-    await expect.poll(async () => (await snapshot(page)).render.frame).toBeGreaterThan(startFrame + 5);
-    const recording = await page.evaluate(() =>
-        (window as unknown as { __bulliPerf: PerfHook }).__bulliPerf.stopRecording()) as PerfRecording;
-    expect(recording.frames).toBeGreaterThan(3);
-    expect(recording.sim).toBeNull();
-    await expect(overlay).not.toContainText('sim');
 });
 
 test('?debug=perf counts the v2 sim ticks with the sandbox dummies', async ({ openPlayer }) => {

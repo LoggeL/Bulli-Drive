@@ -52,8 +52,7 @@
     "CONTACT_DV_CAP": 30,
     "CONTACT_SLOP": 0.01,
     "CONTACT_CORRECTION": 0.8,
-    "CONTACT_MAX_CORRECTION": 0.5,
-    "PROXY_CONTACT_SCALE": 0.7
+    "CONTACT_MAX_CORRECTION": 0.5
   },
   "classes": {
     "bulli": {

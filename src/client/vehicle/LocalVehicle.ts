@@ -1,8 +1,7 @@
 import * as THREE from 'three';
-import { MEGA_SCALE } from '../../shared/constants.js';
-import { BTN_HANDBRAKE, DT } from '../../shared/sim/constants.js';
-import { copyVehicleState, createVehicleState, type AssistProfile, type CarClassId, type SimCar } from '../../shared/sim/types.js';
-import { createSimCar, placeVehicle, resetVehicle } from '../../shared/sim/vehicle.js';
+import { BTN_HANDBRAKE, DT, SIM_TUNING } from '../../shared/sim/constants.js';
+import { copyVehicleState, createVehicleState, type AssistProfile, type CarClassId, type SimCar, type VehicleState } from '../../shared/sim/types.js';
+import { createSimCar, placeVehicle } from '../../shared/sim/vehicle.js';
 import { isCarClassId } from '../../shared/sim/vehicleClasses.js';
 import { stepWorld } from '../../shared/sim/world.js';
 import type { SimWorld } from '../../shared/world/colliders.js';
@@ -10,12 +9,13 @@ import { gameHooks } from '../game/hooks.js';
 import { FixedStepLoop } from '../game/loop.js';
 import { inputManager } from '../input/InputManager.js';
 import { state } from '../state.js';
-import { collectRemoteProxies } from './remoteProxies.js';
+import type { NetDriver } from '../net/netDriver.js';
 
 // The local car on the v2 physics (docs/phase-1a-design.md, 12.2/12.3): the
 // sim car, the fixed-step loop, the prev/curr pair for the render
-// interpolation and the pose, springs and legacy adapter fields written
-// onto the Bulli model. Not created with ?physics=legacy.
+// interpolation and the pose, springs and adapter fields written onto the
+// Bulli model. Online a NetDriver ticks it (prediction against the server,
+// docs/phase-1b-design.md 8); offline and in the sandbox it steps itself.
 
 const TWO_PI = Math.PI * 2;
 const POWERUP_KEYS = ['speed', 'size', 'jump', 'shield', 'magnet', 'ghost'] as const;
@@ -28,7 +28,7 @@ const SPRING_RATE = 10;
 const SQUASH_RATE = 8;
 // A flip cut short by the landing turns the rest within about 6 frames
 const FLIP_FINISH_RATE = 18;
-// Terrain tilt like the legacy car: ±2 m samples, eased
+// Terrain tilt: ±2 m samples, eased
 const SLOPE_STEP = 2.0;
 const TILT_RATE = 6;
 // Reset hint (6.7): pushing into a wall at a standstill for a second
@@ -81,6 +81,8 @@ export class LocalVehicle {
     readonly loop = new FixedStepLoop();
     // Sim state before the last tick; car.state is the one after it
     private readonly prev = createVehicleState();
+    // Online: the prediction ticks the car (null offline and in the sandbox)
+    net: NetDriver | null = null;
     alpha = 0;
     private readonly cars: SimCar[] = [];
     readonly events: FrameEvents = {
@@ -89,6 +91,8 @@ export class LocalVehicle {
     };
     // Counters for the e2e hook
     ticks = 0;
+    private lastJumpTick = -Infinity;
+    private lastResetTick = -Infinity;
     jumps = 0;
     resets = 0;
     private stuckTicks = 0;
@@ -110,6 +114,7 @@ export class LocalVehicle {
     profile: AssistProfile;
     // Remote players in the contact set of the last tick
     proxyCount = 0;
+    private readonly renderScratch = { x: 0, y: 0, z: 0, yaw: 0 };
     // For ?debug=perf: CPU time of all ticks so far (ms) and the cars
     // stepped in the last one (perfMonitor turns them into per-frame costs)
     simMsTotal = 0;
@@ -152,40 +157,74 @@ export class LocalVehicle {
         this.syncPrev();
     }
 
-    // Server respawn (Party mode): full reset at the new spot
-    respawn(x: number, z: number): void {
-        const s = this.car.state;
-        s.x = x;
-        s.z = z;
-        s.scale = 1;
-        s.boostMeter = 0;
-        resetVehicle(s, this.car.params, this.world);
-        this.syncPrev();
-        this.loop.reset();
-    }
-
     private syncPrev(): void {
         copyVehicleState(this.prev, this.car.state);
         this.visualFlip = 0;
         this.finishingFlip = false;
     }
 
+    /** The state before the current tick after the prediction replayed it. */
+    syncPrevFrom(prev: VehicleState): void {
+        copyVehicleState(this.prev, prev);
+    }
+
+    /**
+     * The pose the last frame would show with the current prev/curr pair
+     * (x, y, z, yaw), with or without the net render offset. Shared scratch.
+     */
+    renderPose(withOffset = true): { x: number; y: number; z: number; yaw: number } {
+        const a = this.alpha, prev = this.prev, curr = this.car.state, out = this.renderScratch;
+        out.x = prev.x + (curr.x - prev.x) * a;
+        out.y = prev.y + (curr.y - prev.y) * a;
+        out.z = prev.z + (curr.z - prev.z) * a;
+        out.yaw = prev.yaw + (curr.yaw - prev.yaw) * a;
+        const offset = this.net?.offset;
+        if (withOffset && offset) {
+            out.x += offset.x; out.y += offset.y; out.z += offset.z; out.yaw += offset.yaw;
+        }
+        return { ...out };
+    }
+
     /** Runs the ticks due this frame and writes the interpolated pose onto host. */
     update(dt: number, host: VehicleHost, now: number): void {
+        if (this.net) {
+            // Online the ticks follow the server clock plus the lead (8.3);
+            // a timer runs them between frames too (net/netDriver.ts), so
+            // the frame events are cleared after they played (endFrame)
+            this.pumpNet(host, now);
+            this.alpha = this.net.renderAlpha(now);
+            this.net.decayOffsets(dt * 1000, now);
+        } else {
+            this.endFrame();
+            const start = performance.now();
+            this.alpha = this.loop.advance(dt, lag => this.tick(host, now - lag * 1000));
+            this.simMsTotal += performance.now() - start;
+        }
+        this.applyPose(dt, host);
+    }
+
+    /** Online: the ticks due by now, then the inputs out. Also called from a timer between frames. */
+    pumpNet(host: VehicleHost, now: number): void {
+        const net = this.net;
+        if (!net) return;
+        const start = performance.now();
+        net.advanceFrame(now, () => this.tick(host, now));
+        net.flushInputs();
+        this.simMsTotal += performance.now() - start;
+    }
+
+    /** Clears the events of the frame (after the sounds and particles played). */
+    endFrame(): void {
         const ev = this.events;
         ev.wallImpact = ev.carImpact = ev.landedImpact = 0;
         ev.jumped = ev.boostStarted = ev.reset = false;
         this.hintChanged = false;
-        const start = performance.now();
-        this.alpha = this.loop.advance(dt, lag => this.tick(host, now - lag * 1000));
-        this.simMsTotal += performance.now() - start;
-        this.applyPose(dt, host);
     }
 
     /**
      * Counts the powerup timers down, a Party rule (section 10): per tick
      * while the sim runs, per frame while it is frozen (modal, dead, GL
-     * context lost), so they run out then too, like in legacy.
+     * context lost), so they run out then too.
      */
     countPowerups(host: VehicleHost, seconds: number): void {
         for (const key of POWERUP_KEYS) {
@@ -201,26 +240,33 @@ export class LocalVehicle {
         const car = this.car;
         copyVehicleState(this.prev, car.state);
 
-        this.countPowerups(host, DT);
-        const mods = car.mods;
-        mods.turbo = host.powerups.speed.active;
-        mods.mega = host.powerups.size.active;
-        mods.superJump = host.powerups.jump.active;
-        mods.ghost = host.powerups.ghost.active;
-        mods.shield = host.powerups.shield.active || state.respawnShield;
+        if (this.net) {
+            // The prediction samples, stores and steps (with the contact set)
+            if (!this.net.tickLocal(this, now)) return;
+            const remotes = this.net.prediction?.remotes.size ?? 0;
+            this.proxyCount = remotes;
+            this.simCars = 1 + remotes;
+        } else {
+            this.countPowerups(host, DT);
+            const mods = car.mods;
+            mods.turbo = host.powerups.speed.active;
+            mods.mega = host.powerups.size.active;
+            mods.superJump = host.powerups.jump.active;
+            mods.ghost = host.powerups.ghost.active;
+            mods.shield = host.powerups.shield.active;
 
-        inputManager.sampleTick(car.input);
+            inputManager.sampleTick(car.input);
 
-        const cars = this.cars;
-        cars.length = 0;
-        cars.push(car);
-        collectRemoteProxies(now, this.world, cars);
-        this.proxyCount = cars.length - 1;
-        // Sandbox dummies (game/hooks.ts), empty in the game
-        for (const hook of gameHooks.beforeTick) hook(this);
-        for (const extra of gameHooks.extraCars) cars.push(extra);
-        this.simCars = cars.length;
-        stepWorld(cars, this.world);
+            const cars = this.cars;
+            cars.length = 0;
+            cars.push(car);
+            this.proxyCount = 0;
+            // Sandbox dummies (game/hooks.ts), empty in the game
+            for (const hook of gameHooks.beforeTick) hook(this);
+            for (const extra of gameHooks.extraCars) cars.push(extra);
+            this.simCars = cars.length;
+            stepWorld(cars, this.world);
+        }
         this.ticks++;
         for (const hook of gameHooks.afterTick) hook(this);
 
@@ -233,12 +279,20 @@ export class LocalVehicle {
         }
         ev.carImpact = Math.max(ev.carImpact, tickEvents.carImpact);
         ev.landedImpact = Math.max(ev.landedImpact, tickEvents.landedImpact);
-        if (tickEvents.jumped) {
+        // Online a correction can bring a jump or reset the player already
+        // saw a few ticks later again (the server got the input late); a real
+        // second one needs the cooldown or another full hold
+        const tick = this.ticks;
+        if (tickEvents.jumped && !(this.net && tick - this.lastJumpTick < SIM_TUNING.JUMP_COOLDOWN)) {
             ev.jumped = true;
             this.jumps++;
+            this.lastJumpTick = tick;
         }
         if (tickEvents.boostStarted) ev.boostStarted = true;
-        if (tickEvents.reset) {
+        if (tickEvents.reset && this.net && tick - this.lastResetTick < SIM_TUNING.RESET_HOLD_TICKS) {
+            this.syncPrev();
+        } else if (tickEvents.reset) {
+            this.lastResetTick = tick;
             ev.reset = true;
             this.resets++;
             // No interpolation across the jump onto the road
@@ -264,6 +318,14 @@ export class LocalVehicle {
         pose.z = prev.z + (curr.z - prev.z) * a;
         pose.y = prev.y + (curr.y - prev.y) * a;
         pose.yaw = prev.yaw + (curr.yaw - prev.yaw) * a;
+        // A correction of the prediction fades out instead of jumping
+        const offset = this.net?.offset;
+        if (offset) {
+            pose.x += offset.x;
+            pose.y += offset.y;
+            pose.z += offset.z;
+            pose.yaw += offset.yaw;
+        }
         pose.scale = prev.scale + (curr.scale - prev.scale) * a;
         pose.ground = this.world.groundHeight(pose.x, pose.z);
 
@@ -325,22 +387,11 @@ export class LocalVehicle {
         const braking = grounded && ((input.brake > 20 && u > 0.5) || ((input.buttons & BTN_HANDBRAKE) !== 0 && Math.abs(u) > 0.5));
         host.setDriveState?.(u, curr.steerAngle, braking);
 
-        // Legacy adapter: speeds in units per 1/60 s tick (section 12.3)
+        // Adapter: speeds in units per 1/60 s tick (section 12.3)
         host.speed = u / 60;
         host.maxSpeed = this.car.params.topSpeed / 60;
         host.angle = pose.yaw;
         host.isFlipping = curr.flipAngle > 0;
         host.canRecover = this.resetHint;
-    }
-
-    // Anything left for the server to see move (like the legacy check)
-    get moving(): boolean {
-        const s = this.car.state;
-        return Math.hypot(s.vx, s.vz) > 0.01
-            || Math.abs(s.yawRate) > 0.001
-            || !s.grounded
-            || s.flipAngle > 0
-            || this.visualFlip > 0
-            || Math.abs(s.scale - (this.car.mods.mega ? MEGA_SCALE : 1)) > 0.001;
     }
 }

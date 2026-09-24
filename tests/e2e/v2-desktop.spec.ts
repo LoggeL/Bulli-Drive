@@ -9,11 +9,10 @@ test('the v2 physics drives, steers, jumps, drifts and resets', async ({ openPla
     const { page } = player;
     await joinGame(player, 'E2E V2');
 
-    expect((await snapshot(page)).physics).toBe('v2');
     const initial = await v2(page);
     expect(initial.classId).toBeTruthy();
     expect(initial.profile).toBe('standard');
-    // The race camera sits low and close behind the car (legacy: 23 m up)
+    // The race camera sits low and close behind the car (the old camera: 23 m up)
     await expect.poll(async () => {
         const { camera, local } = await snapshot(page);
         return Math.hypot(camera.x - local!.x, camera.z - local!.z);
@@ -29,10 +28,14 @@ test('the v2 physics drives, steers, jumps, drifts and resets', async ({ openPla
     await expect.poll(async () => distance(start, (await snapshot(page)).local!)).toBeGreaterThan(10);
     const reading = await page.evaluate(() => ({
         shown: Number(document.getElementById('speedo-value')!.textContent),
-        u: (window as unknown as { __bulliDebug: { snapshot(): { v2: { u: number } } } }).__bulliDebug.snapshot().v2.u
+        // The speed the last frame showed (u / 60 per tick): online the sim
+        // also ticks between frames, so the live state may be ahead of it
+        u: (window as unknown as { __bulliDebug: { snapshot(): { local: { speed: number } } } }).__bulliDebug.snapshot().local.speed * 60
     }));
-    expect(Math.abs(reading.shown - reading.u * 3.6)).toBeLessThanOrEqual(3);
-    expect(player.sentMessages.some(message => message.type === 'update')).toBe(true);
+    expect(Math.abs(reading.shown - reading.u * 3.6)).toBeLessThanOrEqual(1);
+    // Online the car sends inputs (binary), never positions
+    expect(player.binarySent).toBeGreaterThan(0);
+    expect(player.sentMessages.some(message => message.type === 'update')).toBe(false);
 
     // Handbrake (Space) plus A at speed: the tail steps out, the car slides
     // with a slip angle and turns left (yaw grows)
@@ -62,13 +65,18 @@ test('the v2 physics drives, steers, jumps, drifts and resets', async ({ openPla
 
     // Brake to a stop with S. Held on, S reverses after 8 ticks at a
     // standstill, so the page watches every frame for the stop instead of
-    // polling (a poll can miss the short standstill and see the reverse)
+    // polling (a poll can miss the short standstill and see the reverse).
+    // Below 7.5 fps (software WebGL on a CI runner) one frame runs more than
+    // 8 ticks and can hold the stop and the start of the reverse, so a
+    // speed that turned against the one before braking counts as a stop too
     await page.keyboard.down('s');
     const stopped = await page.evaluate(async () => {
         const debug = (window as unknown as { __bulliDebug: { snapshot(): { v2: { u: number } } } }).__bulliDebug;
+        const before = Math.sign(debug.snapshot().v2.u);
         const until = performance.now() + 15_000;
         while (performance.now() < until) {
-            if (Math.abs(debug.snapshot().v2.u) < 1) return true;
+            const u = debug.snapshot().v2.u;
+            if (Math.abs(u) < 1 || Math.sign(u) === -before) return true;
             await new Promise(resolve => requestAnimationFrame(resolve));
         }
         return false;
@@ -81,7 +89,6 @@ test('the v2 physics drives, steers, jumps, drifts and resets', async ({ openPla
     await page.keyboard.press('q');
     await expect.poll(async () => (await v2(page)).jumps).toBe(jumpsBefore + 1);
     await expect.poll(async () => (await v2(page)).grounded).toBe(true);
-    expect(player.sentMessages.some(message => message.type === 'update' && message.isFlipping === true)).toBe(true);
 
     // Holding R resets the car (onto the nearest road, with a short contact ghost)
     const resetsBefore = (await v2(page)).resets;

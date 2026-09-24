@@ -3,7 +3,8 @@ import type { SandboxDummySnapshot } from '../../src/client/sandbox/sandbox.js';
 import { test, expect, snapshot, v2, distance, openSandbox } from './fixtures.js';
 
 // The offline v2 sandbox (?sandbox=1) and the tuning panel (?tune=1),
-// docs/phase-1a-design.md 12.7 and 13.
+// docs/phase-1a-design.md 12.7 and 13; online the panel is locked
+// (docs/phase-1b-design.md, 7).
 
 interface SimHook {
     dummies(): SandboxDummySnapshot[];
@@ -34,7 +35,6 @@ test('the sandbox runs offline with dummy cars that move when rammed', async ({ 
 
     // v2 physics without a server: no WebSocket at all
     const state = await snapshot(page);
-    expect(state.physics).toBe('v2');
     expect(state.connected).toBe(false);
     expect(player.sentMessages).toEqual([]);
     await expect(page.locator('#sandbox-banner')).toBeVisible();
@@ -115,4 +115,17 @@ test('the tuning panel shows live telemetry and changes the sim', async ({ openP
     await page.evaluate(() => (window as unknown as { __bulliTune: { reset(): void } }).__bulliTune.reset());
     await expect.poll(async () => (await v2(page)).topSpeed).toBe(before.topSpeed);
     await expect.poll(() => panelValues(page)).toContain('ja (Defaults)');
+});
+
+test('online ?tune=1 loads no panel: the server drives with the default tuning', async ({ openPlayer }) => {
+    const player = await openPlayer('online-tune');
+    const { page } = player;
+    await page.goto('/?e2e=1&tune=1');
+    await expect(page.locator('#loading-screen')).toHaveCount(0, { timeout: 60_000 });
+    // A hint instead of the panel (the text stays when the prompt fades)
+    await expect(page.locator('#interaction-prompt')).toContainText('TUNING ONLY IN THE SANDBOX');
+    await expect(page.locator('#tuning-panel')).toHaveCount(0);
+    expect(await page.evaluate(() => '__bulliTune' in window)).toBe(false);
+    // It still joins the game on the server
+    expect(player.sentMessages.map(message => message.type)).toContain('hello');
 });

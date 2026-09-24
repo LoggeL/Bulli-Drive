@@ -5,5 +5,5 @@
     "moduleResolution": "bundler",
     "types": ["node", "vite/client"]
   },
-  "include": ["tests/**/*", "scripts/**/*", "src/shared/**/*", "src/server/**/*", "src/client/assets/virtual.d.ts"]
+  "include": ["tests/**/*", "scripts/**/*", "tools/**/*", "src/shared/**/*", "src/server/**/*", "src/client/assets/virtual.d.ts"]
 }

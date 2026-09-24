@@ -1,316 +1,644 @@
 import { state } from '../state.js';
 import { CONFIG } from '../config.js';
-import type { ServerMessage, PlayerData, CityData } from '../../shared/protocol.js';
-import { Bulli } from '../entities/Bulli.js';
+import {
+    PROTOCOL_VERSION,
+    type GameEvent,
+    type MemberInfo,
+    type ServerMessage
+} from '../../shared/protocol.js';
+import { decodeSnapshot } from '../../shared/net/codec.js';
+import { CLOCK_BURST_INTERVAL_MS, CLOCK_BURST_PINGS, CLOCK_INTERVAL_MS, CLOSE_FULL } from '../../shared/net/constants.js';
+import { closeAction, reconnectDelayMs } from '../../shared/net/reconnect.js';
+import { isPowerupType } from '../../shared/party/rules.js';
+import { resetTuning, tuningIsDefault } from '../../shared/sim/tuning.js';
+import { createMapData, type MapData } from '../../shared/world/mapData.js';
+import { Bulli, type CarType } from '../entities/Bulli.js';
 import { createEnvironment } from '../world/environment.js';
 import { createCity } from '../world/city.js';
-import { createPowerupMarker, applyPowerupEffect, setPowerupCollectedVisual } from '../world/powerups.js';
-import { DEFAULT_TERRAIN_CONFIG, WORLD_BOUND } from '../../shared/constants.js';
-import { createCoinsFromServer, removeCoinById, resetCoinById } from '../world/coins.js';
+import { clearPowerupMarkers, createPowerupMarker, applyPowerupEffect, setPowerupCollectedVisual } from '../world/powerups.js';
+import { clearProjectiles } from '../world/projectiles.js';
+import { DEFAULT_TERRAIN_CONFIG } from '../../shared/constants.js';
+import { clearCoins, confirmCoinPickup, createCoinsFromServer, removeCoinById, resetCoinById } from '../world/coins.js';
 import { updateScoreboardUI } from '../ui/playerList.js';
 import { getTerrainHeight } from '../world/environment.js';
-import { playHitSound } from '../effects/sounds.js';
-import { spawnExplosion } from '../effects/particles.js';
-import { addKillfeedEntry } from '../ui/hud.js';
+import { playCollisionSound, playHitSound } from '../effects/sounds.js';
+import { spawnExplosion, spawnParticles } from '../effects/particles.js';
+import { addKillfeedEntry, showHitmarker, updateScoreUI } from '../ui/hud.js';
 import { initMinimap } from '../ui/minimap.js';
 import { releaseKeyboardInputs } from '../controls/keyboard.js';
 import { resetMobileControls } from '../controls/mobile.js';
-import { sendToServer } from './socket.js';
-import { PHYSICS_V2 } from '../flags.js';
-import { noteRemoteUpdate, removeRemoteProxy } from '../vehicle/remoteProxies.js';
+import { sendToServer, setSocketNetsim } from './socket.js';
+import { createSocketNetsim } from '../net/netsim.js';
+import { hideConnectionOverlay, showConnectionNotice, showReconnecting } from '../ui/connectionOverlay.js';
+import { setWorldColliders, simWorldFor } from '../vehicle/simWorldClient.js';
+import { assistProfileForDevice } from '../vehicle/LocalVehicle.js';
+import { startNetPump } from '../vehicle/v2Driver.js';
+import { preferredRoomKind, setCurrentRoom } from '../ui/roomMenu.js';
+import { netDriver, placeholderCar } from '../net/netDriver.js';
+import { clearRemoteViews, forgetRemote, noteSnapshotCars, setRemoteDead } from '../net/remotes.js';
+
+// The connection to the game server on protocol v2 (docs/phase-1b-design.md,
+// 3 and 11): the handshake, the world from the seed, the room state, the
+// events and the binary snapshots, which go to the prediction
+// (net/netDriver.ts) and the remote cars (net/remotes.ts). A lost
+// connection comes back on its own: the session token brings the same
+// player and car back within the grace time, a resume ticket from a
+// restart the colour and the Party score.
 
 let environmentInitialized = false;
-let cityInitialized = false;
+let map: MapData | null = null;
+let clockTimer = 0;
+let snapshotWarned = false;
+// Random per page load, only in memory (duplicated tabs, 11.1)
+const connId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+
+const VERSION_RELOAD_KEY = 'bulli-protocol-reload';
+const BUILD_RELOAD_KEY = 'bulli-build-version-reload';
+const WORLD_RELOAD_KEY = 'bulli-world-reload';
+const SESSION_KEY = 'bulli-session';
+const RESUME_KEY = 'bulli-resume';
+
+// Connection state: which socket is current (older ones are ignored), whether
+// this page ever had a socket open, the reconnect attempt and since when
+// the connection is gone (-1 while connected)
+let socketGeneration = 0;
+let everOpened = false;
+let reconnectAttempt = 0;
+let reconnectTimer = 0;
+let restartDelayMs: number | null = null;
+let disconnectedAt = -1;
+// Past the splash screen: after a reconnect as a new session the car
+// spawns again right away
+let playerReady = false;
+// E2E only: no reconnect before this time (performance.now), so a test
+// can look at the banner
+let holdReconnectUntil = 0;
+
+// For the e2e hook and the net overlay
+export const connectionInfo = {
+    reconnects: 0,
+    resumed: false,
+    lastCloseCode: 0,
+    get disconnectedAt(): number { return disconnectedAt; }
+};
+
+function pageBuild(): string | null {
+    return document.querySelector<HTMLMetaElement>('meta[name="bulli-build-version"]')?.content || null;
+}
+
+/** Reloads once per key value (sessionStorage guard); false when the guard holds. */
+function reloadOnce(key: string, value: string): boolean {
+    try {
+        if (sessionStorage.getItem(key) === value) return false;
+        sessionStorage.setItem(key, value);
+    } catch {
+        return false;
+    }
+    window.location.reload();
+    return true;
+}
+
+function storageGet(key: string): string | undefined {
+    try {
+        return sessionStorage.getItem(key) || undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+function storageSet(key: string, value: string | null): void {
+    try {
+        if (value === null) sessionStorage.removeItem(key);
+        else sessionStorage.setItem(key, value);
+    } catch { /* private mode */ }
+}
+
+/** E2E hook: keeps the next reconnect back for ms (the banner stays up). */
+export function holdReconnect(ms: number): void {
+    holdReconnectUntil = performance.now() + ms;
+}
+
+/** The splash screen is done: the player drives (main.ts). */
+export function markPlayerReady(): void {
+    playerReady = true;
+}
 
 export function initWebSocket() {
-    state.ws = new WebSocket(CONFIG.serverUrl);
+    // Online the server drives every car with the default tuning (7)
+    if (!tuningIsDefault()) resetTuning();
 
-    state.ws.onopen = () => {
-        console.log('Connected to server');
+    // Background tabs get throttled: the server treats the car as idle, and
+    // back in front the client jumps to a fresh tick estimate (5.4, 8.3)
+    document.addEventListener('visibilitychange', () => {
+        sendToServer({ type: 'visibility', hidden: document.hidden });
+        if (!document.hidden) netDriver.resync(performance.now());
+    });
+    connect();
+}
+
+function connect() {
+    window.clearTimeout(reconnectTimer);
+    reconnectTimer = 0;
+    const generation = ++socketGeneration;
+    const ws = new WebSocket(CONFIG.serverUrl);
+    ws.binaryType = 'arraybuffer';
+    state.ws = ws;
+    // ?netsim: both directions of this socket go through the simulated network
+    const netsim = createSocketNetsim();
+    setSocketNetsim(netsim);
+    const current = () => generation === socketGeneration;
+
+    ws.onopen = () => {
+        if (!current()) return;
+        everOpened = true;
+        sendHello();
     };
 
-    state.ws.onmessage = (event) => {
-        let data: ServerMessage;
-        try {
-            data = JSON.parse(event.data);
-        } catch (err) {
-            console.warn('Dropping malformed server message', err);
-            return;
-        }
-        if (!data || typeof data !== 'object' || typeof (data as any).type !== 'string') {
-            console.warn('Dropping server message without type');
-            return;
-        }
-        handleServerMessage(data);
+    ws.onmessage = (event) => {
+        if (!current()) return;
+        const data = event.data as string | ArrayBuffer;
+        if (netsim) netsim.down.send(() => { if (current()) onFrame(data); }, typeof data !== 'string');
+        else onFrame(data);
     };
 
-    state.ws.onerror = (e) => {
-        console.warn('WebSocket error, offline mode?', e);
-        if (!state.bulli) {
-            state.terrainConfig = { ...DEFAULT_TERRAIN_CONFIG };
-            if (!environmentInitialized) {
-                createEnvironment([]);
-                environmentInitialized = true;
-            }
-            
-            const savedName = localStorage.getItem('bulli-player-name');
-            createLocalPlayer(0xD32F2F, savedName || "Offline");
-            removeLoader();
-        }
+    ws.onerror = (e) => {
+        if (!current()) return;
+        // The close event follows and decides what to do
+        console.warn('WebSocket error', e);
+    };
+
+    ws.onclose = (event) => {
+        if (!current()) return;
+        const { code, reason } = event;
+        // The close waits behind whatever the netsim still holds
+        if (netsim) netsim.down.send(() => { netsim.close(); if (current()) onClosed(code, reason); }, false, true);
+        else onClosed(code, reason);
     };
 }
 
+function sendHello() {
+    const savedName = localStorage.getItem('bulli-player-name') || '';
+    const sessionToken = storageGet(SESSION_KEY);
+    const resume = storageGet(RESUME_KEY);
+    sendToServer({
+        type: 'hello',
+        protocolVersion: PROTOCOL_VERSION,
+        build: pageBuild(),
+        connId,
+        ...(sessionToken ? { sessionToken } : {}),
+        ...(resume ? { resume } : {}),
+        name: savedName,
+        carType: localStorage.getItem('bulli-car-type') || 'bulli',
+        profile: assistProfileForDevice(),
+        room: state.room?.kind ?? preferredRoomKind()
+    });
+}
+
+function onFrame(data: string | ArrayBuffer) {
+    if (typeof data !== 'string') {
+        onSnapshotFrame(data);
+        return;
+    }
+    let msg: ServerMessage;
+    try {
+        msg = JSON.parse(data);
+    } catch (err) {
+        console.warn('Dropping malformed server message', err);
+        return;
+    }
+    if (!msg || typeof msg !== 'object' || typeof (msg as { type?: unknown }).type !== 'string') {
+        console.warn('Dropping server message without type');
+        return;
+    }
+    handleServerMessage(msg);
+}
+
+// The socket is gone: what happens next depends on why (11.1)
+function onClosed(code: number, reason: string) {
+    window.clearTimeout(clockTimer);
+    connectionInfo.lastCloseCode = code;
+    const now = performance.now();
+    netDriver.suspend(now);
+    console.warn(`Connection closed (${code}${reason ? ` ${reason}` : ''})`);
+    if (disconnectedAt < 0) disconnectedAt = now;
+    switch (closeAction(code, reason)) {
+        case 'reload':
+            // The reject handler reloads (or shows why it does not)
+            return;
+        case 'manual':
+            showConnectionNotice(code === 4005 ? 'Playing in another tab' : code === 4001
+                ? 'Could not join the game' : 'Disconnected by the server', 'Reconnect', reconnectNow);
+            return;
+        case 'continue':
+            showConnectionNotice('Disconnected after a long break', 'Continue', reconnectNow);
+            return;
+        case 'reconnect': {
+            // Never connected yet (a deploy restarting the server, a flaky
+            // mobile network): the loader stays and the banner says why
+            const text = code === CLOSE_FULL ? 'The server is full, retrying…'
+                : everOpened ? 'Reconnecting…' : 'Connecting to the server…';
+            const delay = Math.max(restartDelayMs ?? reconnectDelayMs(reconnectAttempt, Math.random), holdReconnectUntil - now);
+            restartDelayMs = null;
+            reconnectAttempt++;
+            showReconnecting(disconnectedAt, text);
+            reconnectTimer = window.setTimeout(connect, delay);
+            return;
+        }
+    }
+}
+
+function reconnectNow() {
+    reconnectAttempt = 0;
+    if (disconnectedAt < 0) disconnectedAt = performance.now();
+    showReconnecting(performance.now() - 1000, 'Reconnecting…');
+    connect();
+}
+
+// ---- Clock ----
+
+function startClockSync() {
+    window.clearTimeout(clockTimer);
+    netDriver.clock.reset();
+    let sent = 0;
+    const ping = () => {
+        if (!sendToServer({ type: 'ping', t: performance.now() })) return;
+        sent++;
+        clockTimer = window.setTimeout(ping, sent < CLOCK_BURST_PINGS ? CLOCK_BURST_INTERVAL_MS : CLOCK_INTERVAL_MS);
+    };
+    ping();
+}
+
+// ---- Messages ----
+
 function handleServerMessage(data: ServerMessage) {
     switch (data.type) {
-        case 'init':
-            state.myId = data.id;
+        case 'reject':
+            // Full: the close that follows retries with backoff
+            if (data.reason === 'full') return;
+            if (data.reason === 'version' && data.reload && reloadOnce(VERSION_RELOAD_KEY, String(data.serverProtocol))) return;
+            showConnectionNotice(data.reason === 'version' ? 'A new version is out' : 'Could not join the game');
+            return;
+        case 'welcome': {
+            // The token first: it has to survive a reload right below
+            storageSet(SESSION_KEY, data.sessionToken);
+            storageSet(RESUME_KEY, null);
+            if (disconnectedAt >= 0) connectionInfo.reconnects++;
+            connectionInfo.resumed = data.resumed;
+            reconnectAttempt = 0;
+            disconnectedAt = -1;
+            hideConnectionOverlay();
+            // A new deploy with the same protocol: load the new client once
+            const build = pageBuild();
+            if (build && data.serverBuild && build !== data.serverBuild && reloadOnce(BUILD_RELOAD_KEY, data.serverBuild)) return;
+            state.myId = data.playerId;
             state.myColor = data.color;
-            
-            const savedName = localStorage.getItem('bulli-player-name');
-            if (savedName) {
-                state.myName = savedName;
-                sendToServer({
-                    type: 'rename',
-                    name: state.myName
-                });
-            } else {
-                state.myName = data.name;
-            }
-
-            if (data.terrain) {
-                state.terrainConfig = data.terrain;
-                if (!environmentInitialized) {
-                    createEnvironment(data.trees);
-                    environmentInitialized = true;
-                }
-            }
-
-            if (data.city) {
-                if (!cityInitialized) {
-                    createCity(data.city);
-                    cityInitialized = true;
-                }
-                initMinimap(data.city);
-            }
-            
-            if (data.scoreboard) {
-                state.scoreboard = data.scoreboard;
-            }
-
-            createLocalPlayer(state.myColor!, state.myName, data.spawn);
-            state.respawnShield = true;
-            state.respawnMoveStart = 0;
-            removeLoader();
-
-            for (const pid in data.players) {
-                if (pid !== state.myId) {
-                    addRemotePlayer(data.players[pid]);
-                }
-            }
-
-            if (data.powerups) {
-                state.worldPowerups = data.powerups;
-                state.worldPowerups.forEach(p => {
-                    createPowerupMarker(p);
-                });
-            }
-
-            if (data.coins) {
-                state.serverCoins = data.coins;
-                createCoinsFromServer(data.coins);
-            }
-            break;
-
-        case 'newPlayer':
-            if (data.player.id !== state.myId) {
-                addRemotePlayer(data.player);
-            }
-            break;
-
-        case 'update':
-            if (data.id !== state.myId) {
-                updateRemotePlayer(data);
-            }
-            break;
-
-        case 'removePlayer':
+            state.myName = data.name;
+            // The own car carries the player id in the sim (contacts, order)
+            if (state.bulli?.vehicle) state.bulli.vehicle.car.id = data.playerId;
+            return;
+        }
+        case 'roomState':
+            enterRoom(data);
+            return;
+        case 'playerJoined':
+            netDriver.setMember(data.member);
+            if (data.member.id !== state.myId) addRemotePlayer(data.member);
+            updateScoreboardUI();
+            return;
+        case 'playerLeft':
             removeRemotePlayer(data.id);
-            break;
+            netDriver.removeMember(data.id);
+            return;
+        case 'playerUpdated':
+            updateMember(data);
+            return;
+        case 'pong':
+            netDriver.clock.addSample(data.t, performance.now(), data.tick, data.sub);
+            return;
+        case 'events':
+            for (const event of data.list) handleEvent(event);
+            return;
+        case 'scoreboard':
+            state.scoreboard = data.scoreboard;
+            if (data.own) {
+                state.score = data.own.score;
+                state.rank = data.own.rank;
+            } else {
+                takeOwnScoreFromBoard();
+            }
+            updateScoreUI();
+            updateScoreboardUI();
+            return;
+        case 'kicked':
+            // The close that follows (4003 / 4004) shows what to do
+            return;
+        case 'shutdown':
+            // A restart: come back after reconnectInMs with the ticket (11.2, 11.3)
+            restartDelayMs = Math.max(0, Math.min(10_000, data.reconnectInMs));
+            if (data.resume) storageSet(RESUME_KEY, data.resume);
+            return;
+    }
+}
 
-        case 'powerupCollected':
-            const p = state.worldPowerups.find(pu => pu.id === data.powerupId);
-            if (p) {
-                p.collected = true;
-                // Dim the marker and clear our pending-collect guard for this id.
-                setPowerupCollectedVisual(data.powerupId, true);
-                if (data.playerId === state.myId) {
+function onSnapshotFrame(buffer: ArrayBuffer) {
+    const snap = decodeSnapshot(new Uint8Array(buffer));
+    if (!snap) {
+        if (!snapshotWarned) console.warn('Dropping a malformed snapshot');
+        snapshotWarned = true;
+        return;
+    }
+    noteSnapshotCars(snap);
+    netDriver.onSnapshot(snap, state.bulli?.vehicle ?? null, performance.now());
+}
+
+// The world comes from the seed; the hash proves it is the server's
+function buildWorld(seed: number, worldHash: string): MapData {
+    const built = createMapData(seed, DEFAULT_TERRAIN_CONFIG);
+    if (built.worldHash !== worldHash) {
+        console.warn(`World ${built.worldHash} differs from the server's ${worldHash}`);
+        reloadOnce(WORLD_RELOAD_KEY, worldHash);
+    }
+    return built;
+}
+
+// A room: the first after joining or another after a switch
+// (docs/phase-1b-design.md, 9): same map, so the scene stays; players,
+// items and the car start over.
+function enterRoom(data: Extract<ServerMessage, { type: 'roomState' }>) {
+    if (!map || map.seed !== data.world.seed) {
+        map = buildWorld(data.world.seed, data.world.worldHash);
+        state.terrainConfig = map.terrain;
+        if (!environmentInitialized) {
+            createEnvironment(map.world.trees);
+            createCity(map.world.city);
+            initMinimap(map.world.city);
+            environmentInitialized = true;
+        }
+        setWorldColliders(map.world);
+    }
+
+    for (const id of Object.keys(state.remotePlayers)) removeRemotePlayer(id);
+    clearRemoteViews();
+    clearProjectiles();
+    clearCoins();
+    clearPowerupMarkers();
+
+    setCurrentRoom(data.room);
+    const party = data.room.kind === 'party';
+    if (data.items) {
+        const collectedPowerups = new Set(data.items.powerups.filter(p => p.collected).map(p => p.id));
+        const collectedCoins = new Set(data.items.coins.filter(c => c.collected).map(c => c.id));
+        state.worldPowerups = map.world.powerups.map(p => ({ ...p, collected: collectedPowerups.has(p.id) }));
+        state.worldPowerups.forEach(p => createPowerupMarker(p));
+        state.serverCoins = map.world.coins.map(c => ({ ...c, collected: collectedCoins.has(c.id) }));
+        createCoinsFromServer(state.serverCoins);
+    } else {
+        state.worldPowerups = [];
+        state.serverCoins = [];
+    }
+    state.scoreboard = data.scoreboard;
+    // Until the next scoreboard brings the exact numbers
+    state.score = 0;
+    state.rank = 0;
+    takeOwnScoreFromBoard();
+    updateScoreUI();
+    state.health = data.health[state.myId ?? ''] ?? 100;
+    state.dead = false;
+
+    const world = simWorldFor(state.terrainConfig ?? DEFAULT_TERRAIN_CONFIG, state.worldColliders);
+    const car = state.bulli?.vehicle?.car ?? placeholderCar(state.myId ?? 'local', state.myCarType);
+    netDriver.enterRoom(world, party, data.members, car, state.myId ?? '');
+    // Back after a lost connection with the car still on the server: the
+    // next snapshot brings it (11.1)
+    const resumedCar = !!data.resume?.alive;
+    if (data.resume) netDriver.resumeOwn(data.resume);
+
+    const firstJoin = !state.bulli;
+    if (firstJoin) {
+        createLocalPlayer(state.myColor ?? 0xD32F2F, state.myName, data.preview);
+        removeLoader();
+    } else if (!resumedCar) {
+        // Until the spawn the car waits at the preview spot
+        placeLocalCarVisual(data.preview.x, data.preview.z, data.preview.yaw);
+    }
+    // Nothing carries over from the old room
+    resetLocalPowerups();
+
+    for (const member of data.members) {
+        if (member.id !== state.myId && member.ready) addRemotePlayer(member);
+        const remote = state.remotePlayers[member.id] as unknown as Bulli | undefined;
+        if (remote) {
+            remote.health = data.health[member.id] ?? 100;
+            remote.updateHealthBar();
+        }
+    }
+    updateScoreboardUI();
+    startClockSync();
+    startNetPump();
+    if (resumedCar) {
+        // The car lives on the server. If it died and respawned while the
+        // connection was gone, the respawn event is lost: undo the death
+        // on screen here
+        if (state.bulli) {
+            state.bulli.flipGroup.visible = true;
+            state.bulli.health = state.health;
+        }
+        hideRespawnOverlay();
+    } else if (data.resume && playerReady && party && data.members.some(m => m.id === state.myId && m.ready)) {
+        // Dead in the Party (maybe killed while the connection was gone):
+        // the respawn event brings the car back
+        state.dead = true;
+        if (state.bulli) state.bulli.flipGroup.visible = false;
+        showRespawnOverlay();
+    }
+    // Past the splash screen but not driving in this room (a new session
+    // after the grace time or a restart, or 'ready' got lost): drive again
+    if (playerReady && !resumedCar && !state.dead) sendToServer({ type: 'ready' });
+}
+
+// The own score and rank as far as the top 10 tell
+function takeOwnScoreFromBoard() {
+    const index = state.scoreboard.findIndex(entry => entry.id === state.myId);
+    if (index < 0) return;
+    state.score = state.scoreboard[index].score;
+    state.rank = index + 1;
+}
+
+function updateMember(data: Extract<ServerMessage, { type: 'playerUpdated' }>) {
+    const member = netDriver.members.get(data.id);
+    if (!member) return;
+    const next: MemberInfo = {
+        ...member,
+        ...(data.name !== undefined ? { name: data.name } : {}),
+        ...(data.carType !== undefined ? { carType: data.carType } : {}),
+        ...(data.profile !== undefined ? { profile: data.profile } : {})
+    };
+    netDriver.setMember(next);
+    const remote = state.remotePlayers[data.id] as unknown as Bulli | undefined;
+    if (remote && data.name !== undefined) {
+        remote.name = data.name;
+        const nameEl = remote.nametag?.querySelector('.nametag-name');
+        if (nameEl) nameEl.textContent = data.name;
+    }
+    if (remote && data.carType !== undefined && data.carType !== remote.carType) {
+        // A new body: rebuild the model where the old one stood
+        removeRemotePlayer(data.id);
+        addRemotePlayer(next);
+    }
+    updateScoreboardUI();
+}
+
+// ---- Events (3.6) ----
+
+function handleEvent(event: GameEvent) {
+    const me = state.myId;
+    switch (event.type) {
+        case 'spawn':
+        case 'respawn': {
+            if (event.id === me) {
+                netDriver.spawnOwn(event.tick, event.x, event.z, event.yaw);
+                const vehicle = state.bulli?.vehicle;
+                if (vehicle && netDriver.prediction) vehicle.syncPrevFrom(netDriver.prediction.prev);
+                respawnLocalCar(event.type === 'respawn' ? event.health : 100);
+            } else {
+                setRemoteDead(event.id, false);
+                const remote = state.remotePlayers[event.id] as unknown as Bulli | undefined;
+                if (remote && event.type === 'respawn') {
+                    remote.health = event.health;
+                    remote.updateHealthBar();
+                }
+            }
+            return;
+        }
+        case 'contact': {
+            // Own bumps sound from the prediction already
+            if (event.a === me || event.b === me) return;
+            const y = getTerrainHeight(event.x, event.z) + 1.2;
+            spawnParticles(event.x, y, event.z, 0xFFB347, Math.min(12, Math.floor(event.dv)), 0.3, 2.0, 0.5);
+            return;
+        }
+        case 'pickup':
+            if (event.kind === 'coin') {
+                if (event.playerId === me) confirmCoinPickup(event.itemId);
+                else removeCoinById(event.itemId);
+                return;
+            }
+            {
+                const p = state.worldPowerups.find(pu => pu.id === event.itemId);
+                if (p) p.collected = true;
+                setPowerupCollectedVisual(event.itemId, true);
+                if (event.playerId === me && p && isPowerupType(event.powerupType)
+                    && event.startTick !== undefined && event.endTick !== undefined) {
+                    netDriver.setWindow(event.powerupType, event.startTick, event.endTick);
                     applyPowerupEffect(p);
                 }
             }
-            break;
-
-        case 'powerupReset':
-            const pr = state.worldPowerups.find(pu => pu.id === data.powerupId);
-            if (pr) {
-                pr.collected = false;
-                setPowerupCollectedVisual(data.powerupId, false);
-            }
-            break;
-
-        case 'coinCollected':
-            // Another player collected a coin - remove it visually
-            if (data.playerId !== state.myId) {
-                removeCoinById(data.coinId);
-            }
-            break;
-
-        case 'coinReset':
-            resetCoinById(data.coinId);
-            break;
-
-        case 'honk':
-            const remote = state.remotePlayers[data.id];
-            if (remote) remote.honk();
-            break;
-
-        case 'shieldBreak':
-            if (data.targetId === state.myId) {
-                // Local player's shield was broken
-                if (state.bulli) {
-                    state.bulli.powerups.shield.active = false;
-                    state.bulli.powerups.shield.timer = 0;
-                }
-                // Flash blue briefly instead of red
-                flashScreenBlue();
+            return;
+        case 'itemReset':
+            if (event.kind === 'coin') {
+                resetCoinById(event.itemId);
             } else {
-                // Remote player's shield was broken
-                const shieldRemote = state.remotePlayers[data.targetId] as any;
-                if (shieldRemote && shieldRemote.shieldMesh) {
-                    const mat = shieldRemote.shieldMesh.material as any;
-                    mat.opacity = 0;
-                    mat.emissiveIntensity = 0;
-                }
+                const p = state.worldPowerups.find(pu => pu.id === event.itemId);
+                if (p) p.collected = false;
+                setPowerupCollectedVisual(event.itemId, false);
             }
-            break;
-
-        case 'playerRenamed':
-            const rp = state.remotePlayers[data.id];
-            if (rp) {
-                rp.name = data.name;
-                if (rp.nametag) {
-                    const nameEl = rp.nametag.querySelector('.nametag-name');
-                    if (nameEl) nameEl.textContent = data.name;
-                }
-            }
-            updateScoreboardUI();
-            break;
-            
-        case 'scoreboard':
-            state.scoreboard = data.scoreboard;
-            updateScoreboardUI();
-            break;
-
-        case 'playerHit':
-            if (data.targetId === state.myId) {
-                // Local player was hit
-                state.health = data.newHealth;
+            return;
+        case 'hit':
+            if (event.target === me) {
+                state.health = event.health;
                 playHitSound();
                 flashScreenRed();
             } else {
-                // Remote player was hit - update their health bar
-                const hitRemote = state.remotePlayers[data.targetId] as any;
-                if (hitRemote) {
-                    hitRemote.health = data.newHealth;
-                    if (hitRemote.updateHealthBar) hitRemote.updateHealthBar();
+                const remote = state.remotePlayers[event.target] as unknown as Bulli | undefined;
+                if (remote) {
+                    remote.health = event.health;
+                    remote.updateHealthBar();
+                }
+                if (event.source === me && event.cause === 'ram') {
+                    playCollisionSound(0.5);
+                    showHitmarker();
                 }
             }
-            break;
-
-        case 'playerKilled':
-            // Killfeed for all kills
-            addKillfeedEntry(data.killerName || 'Unknown', data.targetName || 'Unknown');
-
-            if (data.targetId === state.myId) {
-                // Local player was killed - explode and show respawn
-                state.dead = true;
-                state.health = 0;
-                releaseKeyboardInputs();
-                resetMobileControls();
-                if (state.bulli) {
-                    spawnExplosion(
-                        state.bulli.group.position.x,
-                        state.bulli.group.position.y,
-                        state.bulli.group.position.z,
-                        state.bulli.colorCode
-                    );
-                    state.bulli.flipGroup.visible = false;
-                }
-                showRespawnOverlay();
+            return;
+        case 'killed':
+            addKillfeedEntry(event.killerName || 'Unknown', event.targetName || 'Unknown');
+            if (event.target === me) {
+                killLocalCar();
             } else {
-                // Remote player was killed - explode their car
-                const killedRemote = state.remotePlayers[data.targetId] as any;
-                if (killedRemote) {
-                    killedRemote.health = 0;
-                    if (killedRemote.updateHealthBar) killedRemote.updateHealthBar();
-                    spawnExplosion(
-                        killedRemote.group.position.x,
-                        killedRemote.group.position.y,
-                        killedRemote.group.position.z,
-                        killedRemote.colorCode
-                    );
-                    killedRemote.flipGroup.visible = false;
+                const remote = state.remotePlayers[event.target] as unknown as Bulli | undefined;
+                if (remote) {
+                    remote.health = 0;
+                    remote.updateHealthBar();
+                    spawnExplosion(remote.group.position.x, remote.group.position.y, remote.group.position.z, remote.colorCode);
                 }
+                setRemoteDead(event.target, true);
             }
-            break;
-
-        case 'playerRespawn':
-            if (data.playerId === state.myId) {
-                // Local player respawned at new location
-                state.dead = false;
-                state.health = data.health;
-                releaseKeyboardInputs();
-                resetMobileControls();
-                state.respawnShield = true;
-                state.respawnMoveStart = 0;
-                if (state.bulli) {
-                    state.bulli.powerups.shield.active = false;
-                    state.bulli.powerups.shield.timer = 0;
-                    state.bulli.powerups.ghost.active = false;
-                    state.bulli.powerups.ghost.timer = 0;
-                    state.bulli.powerups.size.active = false;
-                    state.bulli.powerups.size.timer = 0;
-                    state.bulli.group.scale.set(1, 1, 1);
-                    state.bulli.group.position.x = data.x;
-                    state.bulli.group.position.z = data.z;
-                    state.bulli.group.position.y = getTerrainHeight(data.x, data.z);
-                    state.bulli.speed = 0;
-                    state.cameraSnapPending = true;
-                    state.bulli.flipGroup.visible = true;
-                    state.bulli.health = data.health;
-                    // v2: the sim car follows (no vehicle exists without the flag)
-                    state.bulli.vehicle?.respawn(data.x, data.z);
-                }
-                hideRespawnOverlay();
-            } else {
-                // Remote player respawned
-                const respawnRemote = state.remotePlayers[data.playerId] as any;
-                if (respawnRemote) {
-                    respawnRemote.health = data.health;
-                    if (respawnRemote.powerups) {
-                        respawnRemote.powerups.ghost.active = false;
-                        respawnRemote.powerups.shield.active = false;
-                    }
-                    respawnRemote.group.scale.set(1, 1, 1);
-                    if (respawnRemote.setGhostVisual) respawnRemote.setGhostVisual(false);
-                    respawnRemote.group.position.set(data.x, getTerrainHeight(data.x, data.z), data.z);
-                    respawnRemote.flipGroup.visible = true;
-                    respawnRemote._respawnShield = true;
-                    respawnRemote._respawnMoveStart = 0;
-                    if (respawnRemote.updateHealthBar) respawnRemote.updateHealthBar();
-                }
-            }
-            break;
+            return;
+        case 'carChanged': {
+            const member = netDriver.members.get(event.id);
+            if (member) netDriver.setMember({ ...member, carType: event.carType, profile: event.profile });
+            return;
+        }
+        case 'honk': {
+            const remote = state.remotePlayers[event.id];
+            if (remote) remote.honk();
+            return;
+        }
     }
+}
+
+function resetLocalPowerups() {
+    if (!state.bulli) return;
+    for (const key of ['speed', 'size', 'jump', 'shield', 'magnet', 'ghost'] as const) {
+        state.bulli.powerups[key].active = false;
+        state.bulli.powerups[key].timer = 0;
+    }
+}
+
+function killLocalCar() {
+    state.dead = true;
+    state.health = 0;
+    netDriver.despawnOwn();
+    releaseKeyboardInputs();
+    resetMobileControls();
+    if (state.bulli) {
+        spawnExplosion(
+            state.bulli.group.position.x,
+            state.bulli.group.position.y,
+            state.bulli.group.position.z,
+            state.bulli.colorCode
+        );
+        state.bulli.flipGroup.visible = false;
+    }
+    resetLocalPowerups();
+    showRespawnOverlay();
+}
+
+// The car is back (spawn or respawn): whole, visible, the camera jumps
+function respawnLocalCar(health: number) {
+    state.dead = false;
+    state.health = health;
+    releaseKeyboardInputs();
+    resetMobileControls();
+    resetLocalPowerups();
+    if (state.bulli) {
+        state.bulli.flipGroup.visible = true;
+        state.bulli.health = health;
+        state.bulli.speed = 0;
+    }
+    state.cameraSnapPending = true;
+    hideRespawnOverlay();
+}
+
+// Before the spawn: the car stands at the preview spot of the room
+function placeLocalCarVisual(x: number, z: number, yaw: number) {
+    const car = state.bulli;
+    if (!car) return;
+    car.group.position.set(x, getTerrainHeight(x, z), z);
+    car.angle = yaw;
+    car.group.rotation.y = yaw;
+    if (car.vehicle && !netDriver.prediction?.spawned) car.vehicle.place(x, z, yaw);
+    state.cameraSnapPending = true;
 }
 
 function flashScreenRed() {
@@ -323,18 +651,6 @@ function flashScreenRed() {
     }
     overlay.style.opacity = '1';
     setTimeout(() => { overlay!.style.opacity = '0'; }, 200);
-}
-
-function flashScreenBlue() {
-    let overlay = document.getElementById('shield-flash');
-    if (!overlay) {
-        overlay = document.createElement('div');
-        overlay.id = 'shield-flash';
-        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,191,255,0.3);pointer-events:none;z-index:200;transition:opacity 0.3s;';
-        document.body.appendChild(overlay);
-    }
-    overlay.style.opacity = '1';
-    setTimeout(() => { overlay!.style.opacity = '0'; }, 300);
 }
 
 let respawnInterval: number = 0;
@@ -390,34 +706,34 @@ function hideRespawnOverlay() {
     if (overlay) overlay.style.display = 'none';
 }
 
-export function createLocalPlayer(color: number, name: string, spawn = { x: 0, z: 0 }) {
+export function createLocalPlayer(color: number, name: string, spawn: { x: number; z: number; yaw?: number } = { x: 0, z: 0 }) {
     state.myColor = color;
     state.myName = name;
     const savedCarType = localStorage.getItem('bulli-car-type') || 'bulli';
     state.myCarType = savedCarType;
-    state.bulli = new Bulli(color, true, savedCarType as any);
+    state.bulli = new Bulli(color, true, savedCarType as CarType);
     state.bulli.group.position.set(spawn.x, getTerrainHeight(spawn.x, spawn.z), spawn.z);
+    state.bulli.angle = spawn.yaw ?? 0;
+    state.bulli.group.rotation.y = spawn.yaw ?? 0;
     state.cameraSnapPending = true;
     state.bulli.createNametag(name, true);
     state.scene.add(state.bulli.group);
     updateScoreboardUI();
 }
 
-export function addRemotePlayer(p: PlayerData) {
-    if (state.remotePlayers[p.id]) return;
+export function addRemotePlayer(member: MemberInfo) {
+    if (state.remotePlayers[member.id]) return;
 
-    const remote = new Bulli(p.color, false, (p.carType as any) || undefined);
-    remote.name = p.name;
-    remote.health = p.health ?? 100;
-    const px = p.x || 0;
-    const pz = p.z || 0;
-    remote.group.position.set(px, getTerrainHeight(px, pz), pz);
-    remote.group.rotation.y = p.angle || 0;
-    remote.createNametag(p.name, false);
+    const remote = new Bulli(member.color, false, (member.carType as CarType) || undefined);
+    remote.name = member.name;
+    remote.health = 100;
+    // Hidden until its first snapshot places it
+    remote.flipGroup.visible = false;
+    remote.createNametag(member.name, false);
     remote.updateHealthBar();
 
     state.scene.add(remote.group);
-    state.remotePlayers[p.id] = remote as any;
+    state.remotePlayers[member.id] = remote as any;
     updateScoreboardUI();
 }
 
@@ -427,80 +743,22 @@ export function removeRemotePlayer(id: string) {
         state.scene.remove(remote.group);
         remote.dispose();
         delete state.remotePlayers[id];
-        removeRemoteProxy(id);
+        forgetRemote(id);
         updateScoreboardUI();
-    }
-}
-
-function updateRemotePlayer(data: { id: string; x: number; z: number; y?: number; angle: number; flipAngle: number; isFlipping: boolean; scale?: number; ghostActive?: boolean; shieldActive?: boolean }) {
-    const remote = state.remotePlayers[data.id] as any;
-    if (!remote) return;
-
-    // Reject any non-finite coords/angles - prevents NaN/Infinity from corrupting the scene
-    if (!Number.isFinite(data.x) || !Number.isFinite(data.z) ||
-        !Number.isFinite(data.angle) || !Number.isFinite(data.flipAngle)) {
-        return;
-    }
-    const x = Math.max(-WORLD_BOUND, Math.min(WORLD_BOUND, data.x));
-    const z = Math.max(-WORLD_BOUND, Math.min(WORLD_BOUND, data.z));
-
-    remote.group.position.set(x, getTerrainHeight(x, z), z);
-    remote.group.rotation.y = data.angle;
-    remote.flipGroup.rotation.x = data.flipAngle;
-    if (data.scale && Number.isFinite(data.scale)) {
-        const s = Math.max(0.1, Math.min(10, data.scale));
-        remote.group.scale.set(s, s, s);
-    }
-
-    if (data.y !== undefined && Number.isFinite(data.y)) {
-        remote.flipGroup.position.y = Math.max(-100, Math.min(500, data.y));
-    } else if (data.isFlipping) {
-        const normRot = data.flipAngle;
-        const lift = Math.sin(normRot / 2);
-        remote.flipGroup.position.y = lift * 8;
-    } else {
-        remote.flipGroup.position.y = 0;
-    }
-
-    // v2: the remote car as a kinematic contact partner of the local sim
-    if (PHYSICS_V2) noteRemoteUpdate(data.id, remote, performance.now());
-
-    // Ghost visual on remote player
-    if (data.ghostActive !== undefined && remote.setGhostVisual) {
-        const wasGhost = remote.powerups?.ghost?.active ?? false;
-        if (data.ghostActive !== wasGhost) {
-            remote.setGhostVisual(data.ghostActive);
-            if (remote.powerups) remote.powerups.ghost.active = data.ghostActive;
-        }
-    }
-
-    // Shield visual on remote player
-    if (data.shieldActive !== undefined && remote.shieldMesh) {
-        if (remote.powerups?.shield) remote.powerups.shield.active = data.shieldActive;
-        const mat = remote.shieldMesh.material;
-        if (data.shieldActive) {
-            remote.shieldMesh.visible = true;
-            mat.opacity = 0.25 + Math.sin(Date.now() * 0.005) * 0.1;
-            mat.emissiveIntensity = 0.4;
-        } else if (!remote._respawnShield) {
-            remote.shieldMesh.visible = false;
-            mat.opacity = 0;
-            mat.emissiveIntensity = 0;
-        }
     }
 }
 
 export function removeLoader() {
     const loader = document.getElementById('loading-screen');
     const splash = document.getElementById('splash-screen');
-    
+
     // Setup splash input with saved name
     const savedName = localStorage.getItem('bulli-player-name');
     const splashInput = document.getElementById('splash-name-input') as HTMLInputElement;
     if (splashInput && savedName) {
         splashInput.value = savedName;
     }
-    
+
     // Show splash screen immediately behind loader
     if (splash) {
         splash.classList.remove('hidden');

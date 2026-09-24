@@ -3,8 +3,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { gameHooks } from '../../src/client/game/hooks.js';
 import { inputManager, type DriveKey } from '../../src/client/input/InputManager.js';
 import { LocalVehicle, type VehicleHost } from '../../src/client/vehicle/LocalVehicle.js';
-import { noteRemoteUpdate, removeRemoteProxy } from '../../src/client/vehicle/remoteProxies.js';
-import { state } from '../../src/client/state.js';
 import { mulberry32 } from '../../src/shared/math/rng.js';
 import { DT } from '../../src/shared/sim/constants.js';
 import { createDummy, driveDummy } from '../../src/shared/sim/dummies.js';
@@ -182,59 +180,5 @@ describe('client tick at any frame rate', () => {
         for (let frame = 0; frame < 20; frame++) vehicle.countPowerups(host, 1 / 60);
         expect(host.powerups.ghost.active).toBe(false);
         expect(vehicle.ticks).toBe(0);
-    });
-
-    it('meets a moving remote player (kinematic proxy) the same way at any frame rate', () => {
-        // The remote Bulli drives west at 8 m/s and sends its pose every
-        // 50 ms; the local car drives east into it. Each tick poses the
-        // proxy at its own moment, so the frame rate does not matter.
-        const REMOTE_ID = 'remote';
-        const remote = {
-            carType: 'bulli',
-            group: { position: { x: 40, z: 0.5 }, rotation: { y: -Math.PI / 2 }, scale: { x: 1 } },
-            flipGroup: { visible: true, position: { y: 0 } },
-            powerups: { ghost: { active: false }, shield: { active: false } }
-        };
-        const runProxy = (frames: number[]) => {
-            const vehicle = new LocalVehicle('local', 'bulli', 'standard', createFlatWorld());
-            vehicle.place(0, 0, Math.PI / 2);
-            const host = createHost();
-            const states: VehicleState[] = [];
-            gameHooks.afterTick.push(current => states.push(copyVehicleState(createVehicleState(), current.car.state)));
-            (state.remotePlayers as Record<string, unknown>)[REMOTE_ID] = remote;
-            inputManager.keyDown('up');
-            let now = 0, nextUpdate = 0;
-            for (const frame of frames) {
-                now += frame * 1000;
-                // Updates arrive at fixed moments, whatever the frame rate
-                while (nextUpdate <= now) {
-                    remote.group.position.x = 40 - 8 * nextUpdate / 1000;
-                    noteRemoteUpdate(REMOTE_ID, remote, nextUpdate);
-                    nextUpdate += 50;
-                }
-                vehicle.update(frame, host, now);
-            }
-            delete (state.remotePlayers as Record<string, unknown>)[REMOTE_ID];
-            removeRemoteProxy(REMOTE_ID);
-            return { states, carImpacts: vehicle.events.carImpact };
-        };
-        const reference = runProxy(fixedFrames(1 / 60));
-        resetClient();
-        // The cars met: the local car was pushed back below its free speed
-        const peak = Math.max(...reference.states.map(s => s.vx));
-        expect(peak).toBeGreaterThan(8);
-        expect(reference.states[reference.states.length - 1].vx).toBeLessThan(peak - 3);
-        for (const frames of [fixedFrames(1 / 30), fixedFrames(1 / 144), jitteredFrames(7)]) {
-            const run = runProxy(frames);
-            resetClient();
-            const common = Math.min(run.states.length, reference.states.length);
-            expect(common).toBeGreaterThanOrEqual(TOTAL_SECONDS / DT - 1);
-            // Not bit for bit: the proxy's clock is the summed frame time
-            for (let i = 0; i < common; i++) {
-                expect(run.states[i].x).toBeCloseTo(reference.states[i].x, 6);
-                expect(run.states[i].vx).toBeCloseTo(reference.states[i].vx, 6);
-                expect(run.states[i].yaw).toBeCloseTo(reference.states[i].yaw, 6);
-            }
-        }
     });
 });

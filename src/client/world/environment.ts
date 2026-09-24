@@ -3,7 +3,13 @@ import { state } from '../state.js';
 import type { TreeData } from '../../shared/protocol.js';
 import { mulberry32 } from '../../shared/math/rng.js';
 import { CITY_TERRAIN_AREA, getTerrainHeight as getSharedTerrainHeight } from '../../shared/world/terrain.js';
-import { COLLIDER_TOPS } from '../../shared/world/colliders.js';
+import {
+    insideCitySceneryExclusion,
+    rockPlacements,
+    ROCK_VISUAL_SEED,
+    SCENERY_SEED
+} from '../../shared/world/props.js';
+import { markColliderAt } from './colliderTags.js';
 import { WORLD_BOUND } from '../../shared/constants.js';
 import { lightingTier } from '../render/lighting.js';
 import { SUN_DIRECTION } from '../render/look.js';
@@ -17,10 +23,10 @@ import { addShrub, createTreeCards, type TreeSpot } from './vegetation.js';
 // rise to a ridge line against the sky (render only: inside WORLD_BOUND the
 // visual ground follows the shared terrain height exactly as before).
 //
-// Collisions are unchanged: trees and rocks push the same obstacles as
-// before, and the scenery random sequence is consumed in the same order.
-
-const SCENERY_SEED = 0x42554c4c; // "BULL"
+// Collisions come from the map, not from here: trees from the server's
+// world and rocks from shared/world/props.ts, the same data the sim's
+// colliders are built from (shared/world/colliderGen.ts). Only the looks
+// are drawn here.
 
 // Visual terrain: fine grid over the playable area, growing cells beyond it
 const TERRAIN_EXTENT = 1650;
@@ -28,12 +34,7 @@ const PLAYABLE = WORLD_BOUND + 10;
 // Hills beyond the playable area (render only)
 const HILLS = { start: WORLD_BOUND + 40, full: 1350, base: 40, relief: 170 };
 
-function isInsideCitySceneryExclusion(x: number, z: number): boolean {
-    return Math.abs(x - CITY_TERRAIN_AREA.centerX) < CITY_TERRAIN_AREA.halfExtent &&
-        Math.abs(z - CITY_TERRAIN_AREA.centerZ) < CITY_TERRAIN_AREA.halfExtent;
-}
-
-// Height of the terrain the server configured (flat 0 before 'init').
+// Height of the terrain of the map (flat 0 before the world is built).
 export function getTerrainHeight(x: number, z: number) {
     if (!state.terrainConfig) return 0;
     return getSharedTerrainHeight(state.terrainConfig, x, z);
@@ -235,7 +236,9 @@ export function createEnvironment(treeData: TreeData[]) {
     const tier = lightingTier();
     const M = worldMaterials();
     // Reset on every environment build so every client and reconnect produces
-    // exactly the same procedural scenery.
+    // exactly the same procedural scenery. Rocks take position and size from
+    // shared/world/props.ts (their colliders) and only their looks from here.
+    const rockRandom = mulberry32(ROCK_VISUAL_SEED);
     const sceneryRandom = mulberry32(SCENERY_SEED);
     const group = new THREE.Group();
     group.name = 'environment';
@@ -250,46 +253,44 @@ export function createEnvironment(treeData: TreeData[]) {
     const cypresses: TreeSpot[] = [];
     const bushes: TreeSpot[] = [];
 
-    // Obstacles (Trees) - server-driven, keep all
-    state.obstacles = [];
+    // Trees from the server's world (colliders: shared/world/colliderGen.ts)
     treeData.forEach(t => {
         const spot = { x: t.x, y: ground(t.x, t.z), z: t.z, scale: (t.height + 4) / 10 };
         if (t.id % 5 === 0) cypresses.push({ ...spot, scale: spot.scale * 1.1 });
         else oaks.push(spot);
-        state.obstacles.push({ x: t.x, z: t.z, radius: 1.5, top: COLLIDER_TOPS.tree });
+        markColliderAt('tree', t.x, t.z);
     });
 
-    // Scattered rocks (same random sequence and colliders as before)
+    // Rocks around the city. Every rock draws the same number of values from
+    // its visual stream, so one rock's looks never shift another's.
     const rocks = new Batch('rocks');
     const rockShapes = [rockGeometry(1), rockGeometry(2), rockGeometry(3)];
     const matrix = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
     const euler = new THREE.Euler();
-    for (let i = 0; i < 40; i++) {
-        const rx = (sceneryRandom() - 0.5) * 700;
-        const rz = (sceneryRandom() - 0.5) * 700;
-        // Skip city area
-        if (isInsideCitySceneryExclusion(rx, rz)) continue;
+    for (const placement of rockPlacements()) {
+        const { x: rx, z: rz, size: rockSize, index: i } = placement;
+        const shade = rockRandom() > 0.5 ? 1 : 0.8;
+        const tiltX = rockRandom() * 0.5, turnY = rockRandom() * Math.PI;
+        const squash = 0.5 + rockRandom() * 0.4;
+        const second = rockRandom() > 0.5;
+        const smallTiltX = rockRandom() * 0.5, smallTurnY = rockRandom() * Math.PI;
 
         const h = ground(rx, rz);
-        const rockSize = 0.8 + sceneryRandom() * 2.0;
-        const shade = sceneryRandom() > 0.5 ? 1 : 0.8;
-        euler.set(sceneryRandom() * 0.5, sceneryRandom() * Math.PI, 0);
-        s.set(rockSize, rockSize * (0.5 + sceneryRandom() * 0.4), rockSize);
+        euler.set(tiltX, turnY, 0);
+        s.set(rockSize, rockSize * squash, rockSize);
         matrix.compose(p.set(rx, h + rockSize * 0.3, rz), q.setFromEuler(euler), s);
         rocks.add(rockShapes[i % 3], matrix, [shade, shade * 0.97, shade * 0.93], { box: 3 });
 
-        // Sometimes add a second smaller rock
-        if (sceneryRandom() > 0.5) {
+        // Sometimes a second, smaller rock
+        if (second) {
             const smallSize = rockSize * 0.5;
-            euler.set(sceneryRandom() * 0.5, sceneryRandom() * Math.PI, 0);
+            euler.set(smallTiltX, smallTurnY, 0);
             s.set(smallSize, smallSize * 0.6, smallSize);
             matrix.compose(p.set(rx + rockSize * 0.8, h + smallSize * 0.2, rz + rockSize * 0.3), q.setFromEuler(euler), s);
             rocks.add(rockShapes[(i + 1) % 3], matrix, [0.8, 0.78, 0.74], { box: 3 });
         }
 
-        if (rockSize > 1.2) {
-            state.obstacles.push({ x: rx, z: rz, radius: rockSize * 0.7, top: COLLIDER_TOPS.rockPerSize * rockSize });
-        }
+        if (placement.collider) markColliderAt('rock', rx, rz);
     }
     const rockMesh = rocks.mesh(M.rock, { cast: true });
     if (rockMesh) group.add(rockMesh);
@@ -300,7 +301,7 @@ export function createEnvironment(treeData: TreeData[]) {
     for (let i = 0; i < 30; i++) {
         const bx = (sceneryRandom() - 0.5) * 600;
         const bz = (sceneryRandom() - 0.5) * 600;
-        if (isInsideCitySceneryExclusion(bx, bz)) continue;
+        if (insideCitySceneryExclusion(bx, bz)) continue;
         const bushSize = 1.0 + sceneryRandom() * 1.5;
         sceneryRandom();
         sceneryRandom();
@@ -312,7 +313,7 @@ export function createEnvironment(treeData: TreeData[]) {
     for (let i = 0; i < 20; i++) {
         const fx = (sceneryRandom() - 0.5) * 500;
         const fz = (sceneryRandom() - 0.5) * 500;
-        if (isInsideCitySceneryExclusion(fx, fz)) continue;
+        if (insideCitySceneryExclusion(fx, fz)) continue;
         const flowerCount = 5 + Math.floor(sceneryRandom() * 10);
         sceneryRandom();
         for (let j = 0; j < flowerCount; j++) {

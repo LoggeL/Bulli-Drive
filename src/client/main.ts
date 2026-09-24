@@ -1,21 +1,19 @@
 import * as THREE from 'three';
-import { CONFIG } from './config.js';
 import { state } from './state.js';
-import { initWebSocket } from './network/websocket.js';
+import { initWebSocket, markPlayerReady } from './network/websocket.js';
 import { initKeyboard } from './controls/keyboard.js';
 import { setupMobileControls } from './controls/mobile.js';
 import { updateParticles, spawnDriftParticle, spawnBoostFireParticle, spawnDamageSmoke } from './effects/particles.js';
-import { playCollisionSound } from './effects/sounds.js';
-import { updateJumpControl, showHitmarker } from './ui/hud.js';
+import { updateJumpControl, showInteractionPrompt } from './ui/hud.js';
 import { initSounds, startEngineSound, updateEngineSound } from './effects/sounds.js';
 import { checkCoinCollection, animateCoins } from './world/coins.js';
-import { checkPowerupCollection, animatePowerups } from './world/powerups.js';
+import { animatePowerups } from './world/powerups.js';
 import { updatePowerupsUI, updateSpeedometer, updateHealthBar, updateDriveHud } from './ui/hud.js';
 import { updateProjectiles } from './world/projectiles.js';
 import { initSplashScreen, initAboutModal } from './ui/screens.js';
+import { applySplashChoice, initModeSelector, initRoomMenu } from './ui/roomMenu.js';
 import { updatePalms } from './world/palms.js';
 import { updateMinimap } from './ui/minimap.js';
-import { SPEED_BOOST_FACTOR } from '../shared/constants.js';
 import { Bulli, type CarType } from './entities/Bulli.js';
 import { sendToServer } from './network/socket.js';
 import { AdaptiveRenderQuality, detectRenderTier } from './effects/renderQuality.js';
@@ -29,27 +27,21 @@ import { renderFrame } from './render/frameStats.js';
 import { startModelPreload } from './assets/gameModels.js';
 import { waitForGameAssets } from './ui/assetGate.js';
 import { updateCarModels } from './vehicle/CarModel.js';
-import { ChaseCamera, LEGACY_CAMERA, RACE_CAMERA, RACE_CAMERA_SLIP_BLEND, type ChaseTarget } from './camera/ChaseCamera.js';
-import { PHYSICS_V2, SANDBOX, TUNE_PANEL } from './flags.js';
+import { ChaseCamera, RACE_CAMERA, RACE_CAMERA_SLIP_BLEND, type ChaseTarget } from './camera/ChaseCamera.js';
+import { E2E_DRAW_INTERVAL_MS, SANDBOX, TUNE_PANEL, TUNE_REQUESTED } from './flags.js';
 import { gameHooks } from './game/hooks.js';
-import type { LocalVehicle } from './vehicle/LocalVehicle.js';
+import { assistProfileForDevice, type LocalVehicle } from './vehicle/LocalVehicle.js';
+import { updateRemoteCars } from './net/remotes.js';
+import type { ProfileId } from '../shared/protocol.js';
 
-const chaseCamera = new ChaseCamera(PHYSICS_V2 ? RACE_CAMERA : LEGACY_CAMERA);
-gameHooks.camera = chaseCamera;
+const chaseCamera = new ChaseCamera(RACE_CAMERA);
 const _chaseTarget: ChaseTarget = { position: new THREE.Vector3(), yaw: 0, speedRatio: 0, boost: false };
 
 let renderQuality: AdaptiveRenderQuality;
 // Only set with ?debug=perf (FPS/draw call/bandwidth overlay)
 let perfMonitor: PerfMonitor | null = null;
 
-// Mega ram cooldown per player
-const ramCooldowns: Record<string, number> = {};
-
 function init() {
-    // index.html starts with body.physics-v2 (v2 HUD and control hints,
-    // style.css: .v2-only, .legacy-only); ?physics=legacy swaps them back
-    document.body.classList.toggle('physics-v2', PHYSICS_V2);
-
     // Scene
     state.scene = new THREE.Scene();
 
@@ -62,7 +54,7 @@ function init() {
         // The rendered hills beyond the playable area reach 1.6 km out
         2600
     );
-    state.camera.position.set(0, CONFIG.cameraHeight, CONFIG.cameraDistance);
+    state.camera.position.set(0, RACE_CAMERA.height, RACE_CAMERA.distance);
 
     // Renderer
     state.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -119,10 +111,13 @@ function init() {
             state.scene.add(state.bulli.group);
         }
 
-        // Notify server of name and car type
+        // Notify server of name and car type, move to the chosen mode
+        // (Party or Free Roam), then the car spawns
         sendToServer({ type: 'rename', name });
-        sendToServer({ type: 'setCarType', carType });
-        sendToServer({ type: 'playerReady' });
+        sendToServer({ type: 'setCar', carType, profile: assistProfileForDevice() as ProfileId });
+        applySplashChoice();
+        sendToServer({ type: 'ready' });
+        markPlayerReady();
 
         // Hide splash screen
         if (splashScreen) {
@@ -152,16 +147,21 @@ function init() {
 
     // UI modules
     initAboutModal();
+    initModeSelector();
+    initRoomMenu();
 
     // Test-only state probe, a no-op unless the page URL has ?e2e=1
     installE2EHook();
     // Performance overlay, a no-op unless the page URL has ?debug=perf
     perfMonitor = installPerfMonitor();
-    // lil-gui tuning panel of the v2 physics, only loaded with ?tune=1
+    // lil-gui tuning panel of the physics, only loaded with ?tune=1 in the
+    // sandbox: online the server drives with the default tuning
     if (TUNE_PANEL) {
         import('./debug/tuningPanel.js')
             .then(panel => panel.installTuningPanel())
             .catch(error => console.error('Tuning panel failed to load', error));
+    } else if (TUNE_REQUESTED) {
+        showInteractionPrompt('TUNING ONLY IN THE SANDBOX (?sandbox=1&tune=1)');
     }
 
     // Start Loop
@@ -176,24 +176,7 @@ function onWindowResize() {
     renderQuality.resize(window.innerWidth, window.innerHeight);
 }
 
-function updateChaseCamera(
-    dt: number,
-    carPos: THREE.Vector3,
-    carAngle: number,
-    carSpeed: number,
-    boostActive: boolean
-) {
-    const maxSpeed = Math.max(0.001, state.bulli.maxSpeed * (boostActive ? SPEED_BOOST_FACTOR : 1));
-    _chaseTarget.position.copy(carPos);
-    _chaseTarget.yaw = carAngle;
-    _chaseTarget.speedRatio = Math.min(1, Math.abs(carSpeed) / maxSpeed);
-    _chaseTarget.boost = boostActive;
-    if (chaseCamera.update(dt, state.camera, _chaseTarget, state.cameraSnapPending)) {
-        state.cameraSnapPending = false;
-    }
-}
-
-// v2: the camera swings a little towards the travel direction in a drift
+// The camera swings a little towards the travel direction in a drift
 function updateRaceCamera(dt: number, carPos: THREE.Vector3, vehicle: LocalVehicle) {
     const s = vehicle.car.state;
     const u = vehicle.forwardSpeed;
@@ -207,12 +190,14 @@ function updateRaceCamera(dt: number, carPos: THREE.Vector3, vehicle: LocalVehic
     }
 }
 
+// Last frame drawn under ?e2e=1&drawfps (flags.ts)
+let lastDrawAt = -Infinity;
+
 function animate(frameTime: number) {
     requestAnimationFrame(animate);
     perfMonitor?.beginFrame();
     const dt = state.clock.getDelta();
     const time = state.clock.elapsedTime;
-    const nowMs = Date.now();
 
     if (state.bulli) {
         state.bulli.update(dt);
@@ -230,11 +215,7 @@ function animate(frameTime: number) {
         // shortest arc, while position, framing and FOV use independent damping
         // so a quick turn feels deliberate instead of whipping the view around.
         const carPos = state.bulli.group.position;
-        if (vehicle) {
-            updateRaceCamera(dt, carPos, vehicle);
-        } else {
-            updateChaseCamera(dt, carPos, state.bulli.angle, state.bulli.speed, state.bulli.powerups.speed.active);
-        }
+        if (vehicle) updateRaceCamera(dt, carPos, vehicle);
 
         // Effects based on speed
         const speed = Math.abs(state.bulli.speed);
@@ -245,71 +226,10 @@ function animate(frameTime: number) {
         }
 
         checkCoinCollection();
-        checkPowerupCollection();
         updateProjectiles(dt);
         // Boost fire trails
         if (boostActive && speed > 0.05) {
             spawnBoostFireParticle();
-        }
-
-        // Mega ram: collide with other players to damage them
-        if (state.bulli.powerups.size.active && speed > 0.05 && !state.dead) {
-            const myX = state.bulli.group.position.x;
-            const myZ = state.bulli.group.position.z;
-            const ramRadiusSquared = 36;
-
-            for (const id in state.remotePlayers) {
-                const remote = state.remotePlayers[id] as any;
-                if (!remote.flipGroup.visible) continue;
-                const dx = myX - remote.group.position.x;
-                const dz = myZ - remote.group.position.z;
-                const distanceSquared = dx * dx + dz * dz;
-
-                if (distanceSquared < ramRadiusSquared && (!ramCooldowns[id] || nowMs - ramCooldowns[id] > 1000)) {
-                    ramCooldowns[id] = nowMs;
-                    sendToServer({ type: 'shoot', targetId: id });
-                    playCollisionSound(0.5);
-                    showHitmarker();
-                }
-            }
-        }
-
-        // Respawn shield decay
-        if (state.respawnShield && state.bulli.shieldMesh) {
-            const speed = Math.abs(state.bulli.speed);
-            if (speed > 0.05 && state.respawnMoveStart === 0) {
-                state.respawnMoveStart = nowMs;
-            }
-
-            const shieldMat = state.bulli.shieldMesh.material as any;
-            state.bulli.shieldMesh.visible = true;
-
-            if (state.respawnMoveStart > 0) {
-                const elapsed = nowMs - state.respawnMoveStart;
-                const decay = 3000;
-                const progress = Math.min(1, elapsed / decay);
-                shieldMat.opacity = 0.3 * (1 - progress);
-                shieldMat.emissiveIntensity = 0.4 * (1 - progress);
-                state.bulli.shieldMesh.rotation.y += dt * 2;
-
-                if (progress >= 1) {
-                    state.respawnShield = false;
-                    if (state.bulli.powerups.shield.active) {
-                        state.bulli.shieldMesh.visible = true;
-                        shieldMat.opacity = 0.25;
-                        shieldMat.emissiveIntensity = 0.4;
-                    } else {
-                        state.bulli.shieldMesh.visible = false;
-                        shieldMat.opacity = 0;
-                        shieldMat.emissiveIntensity = 0;
-                    }
-                    sendToServer({ type: 'respawnShieldExpired' });
-                }
-            } else {
-                shieldMat.opacity = 0.25 + Math.sin(nowMs * 0.005) * 0.1;
-                shieldMat.emissiveIntensity = 0.4 + Math.sin(nowMs * 0.008) * 0.2;
-                state.bulli.shieldMesh.rotation.y += dt * 2;
-            }
         }
 
         updatePowerupsUI();
@@ -342,87 +262,14 @@ function animate(frameTime: number) {
     animateCoins(time);
     animatePowerups(time);
 
-    // Update remote players (smoothness)
+    // Remote cars: interpolated snapshots, the contact set predicted
+    // (net/remotes.ts), idle ones grey
+    updateRemoteCars(dt, performance.now(), state.bulli?.vehicle?.alpha ?? 0);
     for (const id in state.remotePlayers) {
         const remote = state.remotePlayers[id] as any;
-        remote.updateNametag();
-
-        // AFK detection: track last position change
-        const px = remote.group.position.x;
-        const pz = remote.group.position.z;
-        if (remote._lastPx !== px || remote._lastPz !== pz) {
-            remote._lastPx = px;
-            remote._lastPz = pz;
-            remote._lastMoveTime = nowMs;
-        }
-        const isAfk = remote._lastMoveTime && (nowMs - remote._lastMoveTime > 3000);
-
-        // AFK visualization: gray out + show ZZZ
-        if (isAfk && !remote._afkApplied) {
-            remote._afkApplied = true;
-            // Grey car: the model's own material copies, never shared ones
-            remote.setAfkVisual(true);
-            if (remote.nametag) {
-                remote.nametag.style.opacity = '0.4';
-                const nameEl = remote.nametag.querySelector('.nametag-name');
-                if (nameEl && !remote.nametag.querySelector('.afk-badge')) {
-                    const badge = document.createElement('span');
-                    badge.className = 'afk-badge';
-                    badge.textContent = ' ZZZ';
-                    nameEl.appendChild(badge);
-                }
-            }
-        } else if (!isAfk && remote._afkApplied) {
-            remote._afkApplied = false;
-            remote.setAfkVisual(false);
-            if (remote.nametag) {
-                remote.nametag.style.opacity = '';
-                const badge = remote.nametag.querySelector('.afk-badge');
-                if (badge) badge.remove();
-            }
-        }
-
-        // Respawn shield decay for remote players
-        if (remote._respawnShield && remote.shieldMesh) {
-            const hasMoved = remote._lastPx !== undefined &&
-                (remote._lastPx !== remote.group.position.x || remote._lastPz !== remote.group.position.z);
-
-            if (hasMoved && remote._respawnMoveStart === 0) {
-                remote._respawnMoveStart = nowMs;
-            }
-
-            const rsMat = remote.shieldMesh.material as any;
-            remote.shieldMesh.visible = true;
-
-            if (remote._respawnMoveStart > 0) {
-                const elapsed = nowMs - remote._respawnMoveStart;
-                const decay = 3000;
-                const progress = Math.min(1, elapsed / decay);
-                rsMat.opacity = 0.3 * (1 - progress);
-                rsMat.emissiveIntensity = 0.4 * (1 - progress);
-                remote.shieldMesh.rotation.y += dt * 2;
-
-                if (progress >= 1) {
-                    remote._respawnShield = false;
-                    if (remote.powerups?.shield?.active) {
-                        remote.shieldMesh.visible = true;
-                        rsMat.opacity = 0.25;
-                        rsMat.emissiveIntensity = 0.4;
-                    } else {
-                        remote.shieldMesh.visible = false;
-                        rsMat.opacity = 0;
-                        rsMat.emissiveIntensity = 0;
-                    }
-                }
-            } else {
-                rsMat.opacity = 0.25 + Math.sin(nowMs * 0.005) * 0.1;
-                rsMat.emissiveIntensity = 0.4 + Math.sin(nowMs * 0.008) * 0.2;
-                remote.shieldMesh.rotation.y += dt * 2;
-            }
-        }
-
+        remote.update(dt);
         // Damage smoke for remote players
-        if (remote.health < 100 && remote.flipGroup.visible && !isAfk) {
+        if (remote.health < 100 && remote.flipGroup.visible) {
             const damagePercent = 1 - remote.health / 100;
             if (Math.random() < damagePercent * 0.15) {
                 spawnDamageSmoke(
@@ -434,19 +281,15 @@ function animate(frameTime: number) {
             }
         }
     }
-    for (const id in ramCooldowns) {
-        if (!state.remotePlayers[id] || nowMs - ramCooldowns[id] > 1000) {
-            delete ramCooldowns[id];
-        }
-    }
-
 
     updateParticles(dt);
     updateMinimap(frameTime);
 
     // While the GL context is lost three.js skips rendering anyway; skip the
     // adaptive quality sampling too so the gap doesn't lower the resolution.
-    if (state.renderer && state.scene && state.camera && !isWebGLContextLost()) {
+    const drawNow = E2E_DRAW_INTERVAL_MS === 0 || frameTime - lastDrawAt >= E2E_DRAW_INTERVAL_MS;
+    if (drawNow && state.renderer && state.scene && state.camera && !isWebGLContextLost()) {
+        lastDrawAt = frameTime;
         updateWorldShaders(state.clock.elapsedTime);
         updateLighting();
         // Near geometry or impostor per palm, for the final camera

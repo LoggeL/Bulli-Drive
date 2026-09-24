@@ -1,8 +1,6 @@
-import { createHash } from 'node:crypto';
 import type { Page } from '@playwright/test';
 import { test, expect, joinGame, snapshot } from './fixtures.js';
 import type { CameraPose, WorldInfo } from '../../src/client/e2eHook.js';
-import type { Obstacle } from '../../src/client/types.js';
 import { roadLineCenter } from '../../src/shared/world/cityGen.js';
 
 // The realistic world look (graphics G1) in the production build: world
@@ -16,7 +14,6 @@ interface WorldHook {
     spawnCar(type: string, color: number, x: number, z: number, yaw?: number): unknown;
     carModels(): { gltf: boolean; lod: number; local: boolean; shadowCasters: number }[];
     worldInfo(): WorldInfo;
-    obstacles(): Obstacle[];
     placeLocalCar(x: number, z: number, angle: number): void;
     setCameraOverride(pose: CameraPose | null): void;
 }
@@ -32,11 +29,6 @@ function settled(page: Page): Promise<WorldInfo> {
     return page.evaluate(() => (window as unknown as { __bulliDebug: WorldHook }).__bulliDebug.worldSettled());
 }
 
-// sha1 of the client's obstacle list (JSON) as it was before the world look
-// changed: 241 obstacles (trees, rocks, buildings, park, plaza, lamps, palms,
-// signs). A visual change of the world must not move a single collider.
-const OBSTACLES_SHA1 = '3622d9d9cbbf5f9c3232f3486244cc7da18b5d1a';
-
 // The chase camera on the middle road looking north (the screenshot "street")
 const STREET = { x: roadLineCenter(2, 'x'), z: -60 };
 
@@ -45,7 +37,7 @@ async function waitFrames(page: Page, frames: number): Promise<void> {
     await expect.poll(async () => (await snapshot(page)).render.frame, { timeout: 60_000 }).toBeGreaterThan(start + frames);
 }
 
-test('the world loads its textures and sky and keeps every collider', async ({ openPlayer }) => {
+test('the world loads its textures and sky', async ({ openPlayer }) => {
     const player = await openPlayer('world');
     await joinGame(player, 'E2E World');
     const { page } = player;
@@ -59,9 +51,9 @@ test('the world loads its textures and sky and keeps every collider', async ({ o
     // The software tier renders without the environment map
     expect(info.environment).toBeNull();
 
-    const obstacles = await page.evaluate(() => (window as unknown as { __bulliDebug: WorldHook }).__bulliDebug.obstacles());
-    expect(obstacles).toHaveLength(241);
-    expect(createHash('sha1').update(JSON.stringify(obstacles)).digest('hex')).toBe(OBSTACLES_SHA1);
+    // The colliders come from the shared map (golden in
+    // tests/shared/colliderGen.test.ts); collider-parity.spec.ts checks that
+    // every rendered prop stands on one of them
 
     // Instanced street furniture (streetLayout.ts) inside those colliders,
     // and the 12 palms with a baked impostor atlas

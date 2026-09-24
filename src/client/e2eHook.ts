@@ -3,10 +3,6 @@ import { state } from './state.js';
 import { focusLightingOn, lightingTier, whenSkyReady } from './render/lighting.js';
 import { textureStats, whenWorldTexturesLoaded } from './world/textures.js';
 import { frameStats } from './render/frameStats.js';
-import type { Obstacle } from './types.js';
-import { PHYSICS_V2 } from './flags.js';
-import type { LocalVehicle } from './vehicle/LocalVehicle.js';
-import type { VehicleInput } from '../shared/sim/types.js';
 import { models } from './assets/gameModels.js';
 import { getTerrainHeight } from './world/environment.js';
 import { palmStats, setPalmImpostorDistance, updatePalms, whenPalmImpostorsReady } from './world/palms.js';
@@ -14,6 +10,19 @@ import { getKTX2Loader } from './assets/gltfLoader.js';
 import type { ModelCacheSnapshot } from './assets/ModelCache.js';
 import { CarModel, liveCarModels, refreshCarLods, type CarType } from './vehicle/CarModel.js';
 import { gameHooks } from './game/hooks.js';
+import type { LocalVehicle } from './vehicle/LocalVehicle.js';
+import type { VehicleInput } from '../shared/sim/types.js';
+import type { RoomInfo } from '../shared/protocol.js';
+import type { ColliderInput } from '../shared/world/colliders.js';
+import { listTaggedColliders, type TaggedCollider } from './world/colliderTags.js';
+import { sendToServer } from './network/socket.js';
+import { netDriver } from './net/netDriver.js';
+import type { NetStats } from '../shared/net/client.js';
+import { remoteFlags } from './net/remotes.js';
+import { connectionInfo, holdReconnect } from './network/websocket.js';
+import { connectionOverlayText } from './ui/connectionOverlay.js';
+import { NETSIM } from './net/netsim.js';
+import type { NetsimOptions } from '../shared/net/netsim.js';
 
 // Hook for the Playwright smoke tests (tests/e2e) and the screenshot script
 // (scripts/screenshots.ts). It is only installed when the page is opened with
@@ -29,9 +38,11 @@ interface CarSnapshot {
     z: number;
     angle: number;
     speed: number;
+    // The car is drawn (false while dead)
+    visible: boolean;
 }
 
-// State of the local v2 sim car, null with the legacy physics (?physics=legacy)
+// State of the local sim car, null before the car's first frame
 export interface V2Snapshot {
     // Sim pose: y is the height above the ground under the car
     x: number;
@@ -66,9 +77,13 @@ export interface V2Snapshot {
 }
 
 export interface BulliDebugSnapshot {
-    physics: 'legacy' | 'v2';
     myId: string | null;
     connected: boolean;
+    // Own Party score from the scoreboard (0 when not on it)
+    score: number;
+    // The room the server put this page in, and its items in the scene
+    room: RoomInfo | null;
+    items: { coins: number; powerups: number };
     local: CarSnapshot | null;
     remotes: Record<string, CarSnapshot & { name: string }>;
     // Combined keyboard/touch drive axes
@@ -443,12 +458,71 @@ function carSnapshot(car: any): CarSnapshot {
         y: car.group.position.y,
         z: car.group.position.z,
         angle: car.group.rotation.y,
-        speed: car.speed ?? 0
+        speed: car.speed ?? 0,
+        visible: !!car.flipGroup?.visible
+    };
+}
+
+// Netcode numbers for tests (docs/phase-1b-design.md, 12)
+export interface NetDebugSnapshot {
+    tick: number;
+    serverTick: number;
+    lead: number;
+    rate: number;
+    leadTicks: number;
+    leadError: number;
+    rtt: number;
+    jitter: number;
+    bufferTarget: number;
+    selfFlags: number;
+    spawned: boolean;
+    contactSet: number;
+    offset: number;
+    // Car flags of the other players from their latest snapshot
+    remoteFlags: Record<string, number>;
+    stats: NetStats;
+    // The connection (11.1): reconnects so far, whether the last welcome
+    // resumed the session, the last close code, what the banner says
+    // (null while hidden), the prediction held for a lost connection
+    reconnects: number;
+    resumed: boolean;
+    lastCloseCode: number;
+    overlay: string | null;
+    suspended: boolean;
+    netsim: NetsimOptions | null;
+}
+
+function netSnapshot(): NetDebugSnapshot {
+    const p = netDriver.prediction;
+    const o = netDriver.offset;
+    return {
+        tick: p?.tick ?? -1,
+        serverTick: p?.lastSnapshotTick ?? -1,
+        lead: p?.lead ?? 0,
+        rate: netDriver.lead.rate,
+        leadTicks: netDriver.lead.lead,
+        leadError: netDriver.lead.lastError,
+        rtt: netDriver.clock.rtt,
+        jitter: netDriver.clock.jitter,
+        bufferTarget: netDriver.bufferTarget,
+        selfFlags: netDriver.selfFlags,
+        spawned: p?.spawned ?? false,
+        contactSet: p?.remotes.size ?? 0,
+        offset: Math.hypot(o.x, o.y, o.z),
+        remoteFlags: Object.fromEntries(Object.keys(state.remotePlayers).map(id => [id, remoteFlags(id)])),
+        stats: { ...netDriver.stats },
+        reconnects: connectionInfo.reconnects,
+        resumed: connectionInfo.resumed,
+        lastCloseCode: connectionInfo.lastCloseCode,
+        overlay: connectionOverlayText(),
+        suspended: netDriver.suspended,
+        netsim: NETSIM
     };
 }
 
 export function installE2EHook(): void {
     if (new URLSearchParams(window.location.search).get('e2e') !== '1') return;
+    (window as unknown as { __bulliNet: { snapshot(): NetDebugSnapshot } }).__bulliNet = { snapshot: netSnapshot };
 
     (window as unknown as { __bulliDebug: unknown }).__bulliDebug = {
         snapshot(): BulliDebugSnapshot {
@@ -458,9 +532,11 @@ export function installE2EHook(): void {
                 remotes[id] = { ...carSnapshot(remote), name: remote.name };
             }
             return {
-                physics: PHYSICS_V2 ? 'v2' : 'legacy',
                 myId: state.myId,
                 connected: state.ws?.readyState === WebSocket.OPEN,
+                score: state.scoreboard.find(entry => entry.id === state.myId)?.score ?? 0,
+                room: state.room ? { ...state.room } : null,
+                items: { coins: state.coins.length, powerups: state.worldPowerups.length },
                 local: state.bulli ? carSnapshot(state.bulli) : null,
                 remotes,
                 inputs: { throttle: state.inputs.throttle, steer: state.inputs.steer },
@@ -481,6 +557,10 @@ export function installE2EHook(): void {
                 v2: v2Snapshot(state.bulli?.vehicle),
                 models: models.snapshot()
             };
+        },
+        // The same as the sim's collider list (shared/world/colliderGen.ts)
+        colliders(): ColliderInput[] {
+            return state.worldColliders.map(collider => ({ ...collider }));
         },
         // Resolves once the model preload (and shader warmup) has finished
         async modelsSettled(): Promise<ModelCacheSnapshot> {
@@ -536,15 +616,20 @@ export function installE2EHook(): void {
             }
             return counts;
         },
-        // Collision obstacles of the local car (buildings, trees, props)
-        obstacles(): Obstacle[] {
-            return state.obstacles.map(obstacle => ({ ...obstacle }));
+        // Rendered objects that stand on a collider (world/colliderTags.ts)
+        colliderProps(): TaggedCollider[] {
+            return state.scene ? listTaggedColliders(state.scene) : [];
         },
-        // Puts the local car at rest at (x, z), facing angle. Like any move it
-        // reaches the server with the car's next position update.
+        // Puts the local car at rest at (x, z), facing angle. Online the
+        // server places it (debugPlace, only with E2E=1) and the next
+        // snapshot brings it there; offline and in the sandbox right away.
         placeLocalCar(x: number, z: number, angle: number): void {
             const car = state.bulli;
             if (!car) throw new Error('No local car yet');
+            if (netDriver.prediction && state.ws) {
+                sendToServer({ type: 'debugPlace', x, z, yaw: angle });
+                return;
+            }
             car.group.position.x = x;
             car.group.position.z = z;
             car.angle = angle;
@@ -552,6 +637,16 @@ export function installE2EHook(): void {
             car.speed = 0;
             // v2 physics: the sim car is the source of the pose
             car.vehicle?.place(x, z, angle);
+        },
+        // Closes the socket as if the connection broke: the client
+        // reconnects like after a lost connection, not before holdMs
+        dropConnection(holdMs = 0): void {
+            if (holdMs > 0) holdReconnect(holdMs);
+            state.ws?.close(4999, 'e2e drop');
+        },
+        // The Party's coins of the room (positions from the seed)
+        coins(): { id: number; x: number; z: number; collected: boolean }[] {
+            return (state.serverCoins ?? []).map(c => ({ id: c.id, x: c.x, z: c.z, collected: c.collected }));
         },
         // Where the local car is on screen (screenshot script: car size)
         localCarScreenBox,

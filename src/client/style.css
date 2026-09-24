@@ -1714,7 +1714,9 @@ canvas {
     position: fixed;
     left: max(2rem, env(safe-area-inset-left, 0px));
     bottom: max(2rem, env(safe-area-inset-bottom, 0px));
-    width: clamp(410px, 32vw, 500px);
+    /* Seven hints: as wide as its content */
+    width: max-content;
+    max-width: calc(100vw - 14rem);
     padding: 0.75rem 1rem;
     background: linear-gradient(145deg, rgba(31, 49, 42, 0.83), rgba(24, 32, 30, 0.72));
     border: 1px solid rgba(243, 210, 142, 0.55);
@@ -1735,20 +1737,12 @@ canvas {
 .hint-row {
     position: relative;
     min-height: 62px;
-    padding: 0 1rem;
+    padding: 0 0.6rem;
     flex: 1 1 0;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 0.55rem;
-}
-
-.hint-row:first-child {
-    padding-left: 0.25rem;
-}
-
-.hint-row:last-child {
-    padding-right: 0.25rem;
 }
 
 .hint-row + .hint-row {
@@ -2419,16 +2413,8 @@ canvas {
 }
 
 /* ==========================================================================
-   PHYSICS V2 (default; ?physics=legacy switches back): drive HUD and touch
-   buttons
+   DRIVE HUD AND TOUCH BUTTONS
    ========================================================================== */
-
-/* Elements for one physics only; index.html starts with body.physics-v2 and
-   main.ts removes it for ?physics=legacy */
-body:not(.physics-v2) .v2-only,
-body.physics-v2 .legacy-only {
-    display: none !important;
-}
 
 /* Splash: touch controls instead of the keys on phones */
 .preview-touch {
@@ -2436,23 +2422,13 @@ body.physics-v2 .legacy-only {
 }
 
 @media (pointer: coarse) {
-    body.physics-v2 .preview-keyboard {
+    .preview-keyboard {
         display: none;
     }
 
-    body.physics-v2 .preview-touch {
+    .preview-touch {
         display: flex;
     }
-}
-
-/* Seven hints instead of four: as wide as its content */
-body.physics-v2 .controls-hint {
-    width: max-content;
-    max-width: calc(100vw - 14rem);
-}
-
-body.physics-v2 .hint-row {
-    padding: 0 0.6rem;
 }
 
 .hint-text {
@@ -2722,12 +2698,12 @@ body.physics-v2 .hint-row {
 /* 320 px phones: a smaller stick and DRIFT, so DRIFT stays clear of the
    stick, and a narrower meter clear of the minimap */
 @media (max-width: 340px) and (orientation: portrait) {
-    body.physics-v2 .joystick-base {
+    .joystick-base {
         width: 104px;
         height: 104px;
     }
 
-    body.physics-v2 .joystick-stick {
+    .joystick-stick {
         width: 46px;
         height: 46px;
     }
@@ -2755,9 +2731,10 @@ body.physics-v2 .hint-row {
 
 /* Touch: the reset and powerup prompt moves above the drive buttons, which
    stand where it was at the bottom centre. On one line: it shows exactly
-   when the player is stuck ("HOLD JUMP TO RESET") */
+   when the player is stuck ("HOLD JUMP TO RESET"). The body prefix puts
+   these above the base and touch rules of #interaction-prompt */
 @media (max-width: 768px), (pointer: coarse) {
-    body.physics-v2 #interaction-prompt {
+    body #interaction-prompt {
         bottom: calc(max(1.1rem, env(safe-area-inset-bottom, 0px)) + 236px);
         max-width: calc(100vw - 2rem);
         white-space: nowrap;
@@ -2768,7 +2745,7 @@ body.physics-v2 .hint-row {
    the prompt stays at the bottom, between the stick (108 px) and DRIFT,
    and wraps where that gap is narrow */
 @media (max-width: 900px) and (orientation: landscape) {
-    body.physics-v2 #interaction-prompt {
+    body #interaction-prompt {
         left: auto;
         right: calc(max(0.75rem, env(safe-area-inset-right, 0px)) + 248px);
         bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
@@ -2778,13 +2755,13 @@ body.physics-v2 .hint-row {
         text-align: center;
     }
 
-    body.physics-v2 #interaction-prompt.hidden {
+    body #interaction-prompt.hidden {
         transform: translateY(80px);
     }
 }
 
 @media (max-width: 600px) and (orientation: portrait) {
-    body.physics-v2 #interaction-prompt {
+    body #interaction-prompt {
         bottom: calc(max(1.1rem, env(safe-area-inset-bottom, 0px)) + 222px);
     }
 }
@@ -2899,6 +2876,363 @@ body.sandbox #player-list {
         top: calc(max(0.65rem, env(safe-area-inset-top, 0px)) + 10.5rem);
         max-height: calc(100% - 12rem);
     }
+}
+
+/* ==========================================================================
+   ROOMS: Party (default) or Free Roam, chosen on the splash and switched
+   with the room chip next to the rank chip (ui/roomMenu.ts)
+   ========================================================================== */
+
+/* Free Roam has no score, HP, shooting, powerups or scoreboard */
+body.room-freeroam .party-only,
+body.room-freeroam #killfeed,
+body.room-freeroam #respawn-overlay,
+body.room-freeroam .nametag-hp {
+    display: none !important;
+}
+
+/* Splash: two large options, easy to hit with a thumb */
+#splash-screen {
+    overflow-y: auto;
+    align-items: flex-start;
+}
+
+.splash-content {
+    /* Centred while it fits, scrollable from the top when it does not */
+    margin: auto;
+}
+
+.mode-selector {
+    margin-bottom: 1.5rem;
+}
+
+.mode-selector .input-label {
+    margin-bottom: 0.7rem;
+}
+
+.mode-selector-row {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.mode-option,
+.room-option {
+    flex: 1 1 0;
+    min-height: 56px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.15rem;
+    padding: 0.45rem 0.5rem;
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.04);
+    border: 2px solid rgba(255, 255, 255, 0.08);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    font-family: var(--font-body);
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.mode-option:hover,
+.room-option:hover:not(:disabled) {
+    border-color: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.mode-option[aria-checked="true"],
+.room-option[aria-current="true"] {
+    color: var(--sunset-orange);
+    border-color: var(--sunset-orange);
+    background: rgba(245, 166, 35, 0.12);
+    box-shadow: 0 0 16px rgba(245, 166, 35, 0.2);
+}
+
+.mode-option:focus-visible,
+.room-option:focus-visible {
+    outline: 2px solid var(--sunset-gold);
+    outline-offset: 2px;
+}
+
+.mode-name {
+    font-family: var(--font-display);
+    font-size: 0.95rem;
+    letter-spacing: 1.5px;
+    line-height: 1.1;
+}
+
+.mode-desc {
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    color: var(--text-muted);
+}
+
+/* In the game: room chip below the rank chip (desktop), beside it (touch) */
+#player-list {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.45rem;
+}
+
+#room-chip {
+    width: 144px;
+    min-height: 44px;
+    padding: 0.35rem 0.8rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.05rem;
+    color: var(--cream);
+    background: linear-gradient(145deg, rgba(31, 49, 42, 0.91), rgba(24, 32, 30, 0.82));
+    border: 1px solid rgba(243, 210, 142, 0.68);
+    border-radius: 16px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.26), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.18s ease, border-color 0.18s ease, transform 0.12s ease;
+}
+
+#room-chip:hover,
+#room-chip:focus-visible,
+#room-chip[aria-expanded="true"] {
+    background: linear-gradient(145deg, rgba(45, 67, 58, 0.96), rgba(29, 39, 36, 0.9));
+    border-color: rgba(255, 213, 79, 0.9);
+    outline: none;
+}
+
+#room-chip:active {
+    transform: scale(0.97);
+}
+
+#room-chip-mode {
+    font-family: var(--font-display);
+    font-size: 0.9rem;
+    letter-spacing: 1px;
+    line-height: 1.1;
+    white-space: nowrap;
+}
+
+#room-chip-index {
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: rgba(255, 248, 231, 0.65);
+    white-space: nowrap;
+}
+
+#room-panel {
+    position: absolute;
+    top: calc(100% + 0.55rem);
+    right: 0;
+    width: min(260px, calc(100vw - 2rem));
+    padding: 0.8rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    color: var(--cream);
+    background: linear-gradient(145deg, rgba(31, 49, 42, 0.96), rgba(17, 25, 23, 0.94));
+    border: 1px solid rgba(243, 210, 142, 0.48);
+    border-radius: 16px;
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.36);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+}
+
+#room-panel[hidden] {
+    display: none;
+}
+
+#room-panel h3 {
+    margin: 0;
+    padding: 0 0 0.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    font-family: var(--font-display);
+    font-size: 0.86rem;
+    font-weight: 400;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.room-option {
+    flex: 0 0 auto;
+    min-height: 52px;
+}
+
+.room-option:disabled {
+    cursor: default;
+}
+
+.room-option:disabled:not([aria-current="true"]) {
+    opacity: 0.5;
+}
+
+@media (max-width: 768px), (pointer: coarse) {
+    #player-list {
+        flex-direction: row-reverse;
+        align-items: flex-start;
+        gap: 0.4rem;
+    }
+
+    #room-chip {
+        width: auto;
+        min-width: 72px;
+        min-height: 48px;
+        padding: 0.3rem 0.55rem;
+        border-radius: 16px;
+    }
+
+    #room-chip-mode {
+        font-size: 0.72rem;
+    }
+
+    #room-chip-index {
+        font-size: 0.52rem;
+    }
+
+    #room-panel {
+        width: min(240px, calc(100vw - 1.3rem));
+        max-height: calc(100vh - 5rem);
+        overflow: auto;
+    }
+
+    .mode-option {
+        min-height: 52px;
+    }
+}
+
+/* Phones upright: the boost meter sits top centre, so the room chip goes
+   below the rank chip, and the killfeed below the score pill */
+@media (max-width: 600px) and (orientation: portrait) {
+    #player-list {
+        flex-direction: column;
+        align-items: flex-end;
+    }
+
+    #room-chip {
+        min-width: 68px;
+        min-height: 44px;
+    }
+
+    #killfeed {
+        top: max(10.8rem, calc(env(safe-area-inset-top, 0px) + 10rem));
+    }
+}
+
+/* Short screens (phones in landscape): a slimmer splash */
+@media (max-height: 480px) {
+    .mode-selector {
+        margin-bottom: 1rem;
+    }
+
+    .mode-option {
+        min-height: 44px;
+    }
+
+    .mode-desc {
+        display: none;
+    }
+}
+
+/* ==========================================================================
+   CONNECTION NOTICE: the server closed the connection or turned it away
+   (network/websocket.ts). Reconnecting comes with phase 1b step 9
+   ========================================================================== */
+#net-notice {
+    /* Between the HUD along the top edge (score, boost meter, chips) and the
+       touch controls at the bottom; the car stands still meanwhile anyway */
+    position: fixed;
+    top: 42%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    max-width: calc(100vw - 2rem);
+    padding: 0.6rem 0.7rem 0.6rem 1.2rem;
+    border-radius: var(--radius-pill);
+    background: rgba(20, 20, 20, 0.85);
+    border: 1px solid var(--glass-border);
+    color: var(--text);
+    font-family: var(--font-display);
+    font-size: 0.95rem;
+    letter-spacing: 0.5px;
+    /* Above the loader (9999) and the splash (9000): a notice that comes
+       before the first room state must not be hidden behind them */
+    z-index: 10001;
+    pointer-events: auto;
+}
+
+#net-notice[hidden],
+#net-notice .net-notice-reload[hidden] {
+    display: none;
+}
+
+#net-notice:not(.busy) .net-notice-spinner {
+    display: none;
+}
+
+#net-notice.busy {
+    padding-right: 1.2rem;
+}
+
+#net-notice.busy:has(.net-notice-reload:not([hidden])) {
+    padding-right: 0.7rem;
+}
+
+.net-notice-spinner {
+    flex: none;
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid rgba(255, 255, 255, 0.25);
+    border-top-color: var(--text);
+    border-radius: 50%;
+    animation: net-notice-spin 0.9s linear infinite;
+}
+
+/* Short landscape phones: smaller, and left of the middle, where neither
+   the stick (bottom left) nor the drive buttons (right) are */
+@media (orientation: landscape) and (max-height: 500px) {
+    #net-notice {
+        top: 50%;
+        left: 40%;
+        gap: 0.6rem;
+        padding: 0.4rem 0.6rem 0.4rem 0.9rem;
+        font-size: 0.85rem;
+    }
+
+    #net-notice.busy {
+        padding-right: 0.9rem;
+    }
+}
+
+@keyframes net-notice-spin {
+    to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .net-notice-spinner {
+        animation: none;
+    }
+}
+
+.net-notice-reload {
+    min-height: 44px;
+    padding: 0 1.1rem;
+    border: none;
+    border-radius: var(--radius-pill);
+    background: linear-gradient(135deg, var(--sunset-red), #D63031);
+    color: white;
+    font-family: var(--font-display);
+    font-size: 0.9rem;
+    cursor: pointer;
 }
 
 /* Start button while the world textures and car models finish loading */

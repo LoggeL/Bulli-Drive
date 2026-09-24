@@ -1,15 +1,17 @@
 import { test as base, expect, type BrowserContext, type Page } from '@playwright/test';
-import type { BulliDebugSnapshot, V2Snapshot } from '../../src/client/e2eHook.js';
-import type { Obstacle } from '../../src/client/types.js';
-import { CITY_BOUNDS, CITY_CONFIG, roadLineCenter } from '../../src/shared/world/cityGen.js';
-import { MEGA_SCALE } from '../../src/shared/constants.js';
+import type { BulliDebugSnapshot, NetDebugSnapshot, V2Snapshot } from '../../src/client/e2eHook.js';
+import type { ColliderInput } from '../../src/shared/world/colliders.js';
+import { longestRunway } from '../../tools/bots/runway.js';
 
 export { expect };
 
 export interface Player {
     page: Page;
-    // Client -> server messages this page sent over the game WebSocket
+    // Client -> server JSON messages this page sent over the game WebSocket
     sentMessages: Array<{ type: string; [key: string]: unknown }>;
+    // Binary frames it sent (input packets) and received (snapshots)
+    binarySent: number;
+    binaryReceived: number;
 }
 
 interface PlayerOptions {
@@ -39,7 +41,7 @@ export const test = base.extend<Fixtures>({
                 route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
 
             const page = await context.newPage();
-            const player: Player = { page, sentMessages: [] };
+            const player: Player = { page, sentMessages: [], binarySent: 0, binaryReceived: 0 };
             const report = (problem: string) => {
                 if (!options.allowedProblems?.test(problem)) problems.push(`[${label}] ${problem}`);
             };
@@ -52,9 +54,16 @@ export const test = base.extend<Fixtures>({
             });
             page.on('websocket', socket => {
                 socket.on('framesent', frame => {
+                    if (typeof frame.payload !== 'string') {
+                        player.binarySent++;
+                        return;
+                    }
                     try {
-                        player.sentMessages.push(JSON.parse(String(frame.payload)));
+                        player.sentMessages.push(JSON.parse(frame.payload));
                     } catch { /* not JSON, not ours */ }
+                });
+                socket.on('framereceived', frame => {
+                    if (typeof frame.payload !== 'string') player.binaryReceived++;
                 });
             });
 
@@ -78,25 +87,33 @@ export function snapshot(page: Page): Promise<BulliDebugSnapshot> {
     }).__bulliDebug.snapshot());
 }
 
-// The local v2 sim car (created with the car's first frame); fails when the
-// page runs the legacy physics
+// The netcode numbers of the page (window.__bulliNet)
+export function netState(page: Page): Promise<NetDebugSnapshot> {
+    return page.evaluate(() => (window as unknown as {
+        __bulliNet: { snapshot(): NetDebugSnapshot };
+    }).__bulliNet.snapshot());
+}
+
+// The local sim car (created with the car's first frame)
 export async function v2(page: Page): Promise<V2Snapshot> {
     let state = await snapshot(page);
-    if (!state.v2) {
-        expect(state.physics, 'the page runs the legacy physics (?physics=legacy)').toBe('v2');
-        await expect.poll(async () => (state = await snapshot(page)).v2).not.toBeNull();
-    }
+    if (!state.v2) await expect.poll(async () => (state = await snapshot(page)).v2).not.toBeNull();
     return state.v2!;
+}
+
+async function tap(page: Page, selector: string): Promise<void> {
+    if (await page.evaluate(() => navigator.maxTouchPoints > 0)) await page.locator(selector).tap();
+    else await page.locator(selector).click();
 }
 
 /**
  * Walks through the real join flow: loading screen, splash screen with the
- * road name, START ENGINE. Resolves with the player's server id.
- * extraQuery is appended to the URL, e.g. '&debug=perf'.
+ * road name (and the game mode, when given), START ENGINE. Resolves with the
+ * player's server id. extraQuery is appended to the URL, e.g. '&debug=perf'.
  */
-export async function joinGame(player: Player, name: string, extraQuery = ''): Promise<string> {
+export async function joinGame(player: Player, name: string, extraQuery = '', mode?: 'party' | 'freeroam', origin = ''): Promise<string> {
     const { page } = player;
-    await page.goto(`/?e2e=1${extraQuery}`);
+    await page.goto(`${origin}/?e2e=1${extraQuery}`);
 
     // The loader is removed once the server's init message has built the world.
     await expect(page.locator('#loading-screen')).toHaveCount(0, { timeout: 60_000 });
@@ -105,12 +122,11 @@ export async function joinGame(player: Player, name: string, extraQuery = ''): P
     await expect(splash).not.toHaveClass(/\bhidden\b/);
 
     await page.locator('#splash-name-input').fill(name);
-    const startButton = page.locator('#start-btn');
-    if (await page.evaluate(() => navigator.maxTouchPoints > 0)) {
-        await startButton.tap();
-    } else {
-        await startButton.click();
+    if (mode) {
+        await tap(page, `.mode-option[data-room="${mode}"]`);
+        await expect(page.locator(`.mode-option[data-room="${mode}"]`)).toHaveAttribute('aria-checked', 'true');
     }
+    await tap(page, '#start-btn');
 
     // The start waits for the world textures and car models (ui/assetGate.ts)
     await expect(splash).toHaveClass(/\bhidden\b/, { timeout: 45_000 });
@@ -118,9 +134,27 @@ export async function joinGame(player: Player, name: string, extraQuery = ''): P
         const state = await snapshot(page);
         return state.connected && !!state.local && state.myId;
     }).toBeTruthy();
-    expect(player.sentMessages.map(message => message.type)).toContain('playerReady');
+    // (a moment later with ?netsim, which holds the frames back)
+    await expect.poll(() => player.sentMessages.map(message => message.type)).toContain('ready');
+    // The server spawned the car and the prediction runs
+    await expect.poll(async () => {
+        const net = await netState(page);
+        return net.spawned && net.tick >= 0;
+    }).toBe(true);
+    if (mode) await expect.poll(async () => (await snapshot(page)).room?.kind).toBe(mode);
 
     return (await snapshot(page)).myId!;
+}
+
+/** Whether the element under the middle of `selector` belongs to it (nothing covers it). */
+export async function topmostAtCenter(page: Page, selector: string): Promise<boolean> {
+    return page.evaluate(sel => {
+        const el = document.querySelector(sel);
+        if (!el) return false;
+        const box = el.getBoundingClientRect();
+        const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+        return !!hit && el.contains(hit);
+    }, selector);
 }
 
 /** Opens the sandbox and starts from the splash screen, without a server connection. */
@@ -138,41 +172,21 @@ export async function openSandbox(player: Player, extraQuery = ''): Promise<void
     await v2(page);
 }
 
-export function distance(a: { x: number; z: number }, b: { x: number; z: number }): number {
-    return Math.hypot(a.x - b.x, a.z - b.z);
+/** Waits until no session of a closed page waits on the page's server any more. */
+export async function noClosedPlayersLeft(page: Page): Promise<void> {
+    const origin = new URL(page.url()).origin;
+    await expect.poll(async () => {
+        try {
+            const response = await page.request.get(`${origin}/healthz`);
+            return (await response.json() as { graceSessions: number }).graceSessions;
+        } catch {
+            return -1;
+        }
+    }, { timeout: 20_000 }).toBe(0);
 }
 
-// Collision radius of the car (CAR_HALF in entities/Bulli.ts), grown by the
-// Mega powerup it might pick up on the way, plus some room to spare.
-const RUNWAY_CLEARANCE = 1.5 * MEGA_SCALE + 1;
-
-/**
- * Free length ahead of a car at (x, z0) driving towards +z (angle 0) until an
- * obstacle (grown by RUNWAY_CLEARANCE) blocks the line x = const.
- */
-function freeRunway(obstacles: Obstacle[], x: number, z0: number): number {
-    let free = CITY_BOUNDS.maxZ - z0;
-    for (const obstacle of obstacles) {
-        let halfAcross: number;
-        let halfAlong: number;
-        if (obstacle.type === 'rect') {
-            halfAcross = obstacle.halfWidth + RUNWAY_CLEARANCE;
-            halfAlong = obstacle.halfDepth + RUNWAY_CLEARANCE;
-        } else {
-            const dx = Math.abs(obstacle.x - x);
-            const reach = obstacle.radius + RUNWAY_CLEARANCE;
-            if (dx >= reach) continue;
-            halfAcross = reach;
-            halfAlong = Math.sqrt(reach * reach - dx * dx);
-        }
-        if (Math.abs(obstacle.x - x) >= halfAcross) continue;
-        const nearEdge = obstacle.z - halfAlong;
-        const farEdge = obstacle.z + halfAlong;
-        if (farEdge <= z0) continue;
-        if (nearEdge <= z0) return 0;
-        free = Math.min(free, nearEdge - z0);
-    }
-    return free;
+export function distance(a: { x: number; z: number }, b: { x: number; z: number }): number {
+    return Math.hypot(a.x - b.x, a.z - b.z);
 }
 
 /**
@@ -182,22 +196,16 @@ function freeRunway(obstacles: Obstacle[], x: number, z0: number): number {
  * Returns where the car was put and how much room it has ahead.
  */
 export async function placeOnClearRunway(page: Page, minLength = 120): Promise<{ x: number; z: number; free: number }> {
-    const obstacles = await page.evaluate(() => (window as unknown as {
-        __bulliDebug: { obstacles(): Obstacle[] };
-    }).__bulliDebug.obstacles());
-    expect(obstacles.length, 'city obstacles').toBeGreaterThan(0);
+    // Every test drives off the same runway: the cars of the pages an
+    // earlier test closed wait there as idle ghosts for the grace time
+    // (docs/phase-1b-design.md, 11.1) and have to be gone first
+    await noClosedPlayersLeft(page);
+    const colliders = await page.evaluate(() => (window as unknown as {
+        __bulliDebug: { colliders(): ColliderInput[] };
+    }).__bulliDebug.colliders());
+    expect(colliders.length, 'city colliders').toBeGreaterThan(0);
 
-    let best = { x: 0, z: 0, free: -1 };
-    const laneOffset = CITY_CONFIG.roadWidth / 4;
-    for (let line = 0; line <= CITY_CONFIG.gridSize; line++) {
-        for (const lane of [-laneOffset, 0, laneOffset]) {
-            const x = roadLineCenter(line, 'x') + lane;
-            for (let z = CITY_BOUNDS.minZ + 5; z < CITY_BOUNDS.maxZ; z += 2) {
-                const free = freeRunway(obstacles, x, z);
-                if (free > best.free) best = { x, z, free };
-            }
-        }
-    }
+    const best = longestRunway(colliders);
     expect(best.free, 'free runway on a north-south road').toBeGreaterThanOrEqual(minLength);
 
     await page.evaluate(({ x, z }) => (window as unknown as {

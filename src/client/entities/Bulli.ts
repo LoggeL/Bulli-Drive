@@ -2,19 +2,15 @@ import * as THREE from 'three';
 import { state } from '../state.js';
 import { playHonkSound, playShootSound } from '../effects/sounds.js';
 import { createProjectile } from '../world/projectiles.js';
-import { LEGACY_CAR_MAX_SPEED, UPDATE_SEND_INTERVAL_MS } from '../../shared/constants.js';
 import { sendToServer } from '../network/socket.js';
 import { CarModel, randomCarType, type CarType } from '../vehicle/CarModel.js';
 import { Nametag } from '../vehicle/Nametag.js';
-import { createLegacyPhysicsState, updateLegacyMovement, type LegacyPhysicsState } from '../vehicle/legacyPhysics.js';
 import type { LocalVehicle } from '../vehicle/LocalVehicle.js';
 import { driveLocalCar } from '../vehicle/v2Driver.js';
-import { PHYSICS_V2 } from '../flags.js';
+import { partyRulesActive } from '../ui/roomMenu.js';
 
 // Muzzle distance for mega shots - just past the enlarged nose.
 const MEGA_PROJECTILE_FRONT_OFFSET = 6.5;
-const STATIONARY_UPDATE_INTERVAL_MS = 1000;
-const POWERUP_KEYS = ['speed', 'size', 'jump', 'shield', 'magnet', 'ghost'] as const;
 
 
 export { randomCarType, type CarType };
@@ -30,14 +26,13 @@ export class Bulli {
     carType: CarType;
     name: string = "Unknown";
     pitchOffset: number;
+    // Adapter fields for HUD, sound and particles (LocalVehicle writes them):
+    // speeds in m per 1/60 s tick, like before the v2 physics
     speed: number = 0;
     angle: number = 0;
-    acceleration: number = 0.015;
-    maxSpeed: number = LEGACY_CAR_MAX_SPEED;
-    friction: number = 0.96;
+    maxSpeed: number = 50 / 60;
     isFlipping: boolean = false;
     canRecover: boolean = false;
-    flipVelocity: number = 0;
     nextHonkTime: number = 0;
     lastShootTime: number = 0;
     powerups = {
@@ -49,9 +44,7 @@ export class Bulli {
         ghost: { active: false, timer: 0 }
     };
     health: number = 100;
-    // State of the legacy physics (vehicle/legacyPhysics.ts)
-    readonly legacy: LegacyPhysicsState = createLegacyPhysicsState();
-    // The v2 sim car; only the local car gets one (none with ?physics=legacy)
+    // The sim car; only the local car gets one
     vehicle?: LocalVehicle;
     wheels: THREE.Group[];
     // Remote cars only. nametag/healthBarFill are the tag's elements, kept
@@ -60,13 +53,6 @@ export class Bulli {
     nametag?: HTMLDivElement;
     healthBarFill?: HTMLDivElement;
     private _disposed = false;
-    private _hasSentUpdate = false;
-    private _lastUpdateSentAt = -Infinity;
-    private _lastSentMoving = false;
-    private _lastSentIsFlipping = false;
-    private _lastSentGhostActive = false;
-    private _lastSentShieldActive = false;
-    private _lastSentMegaActive = false;
 
 
     constructor(colorCode = 0xD32F2F, isLocal = false, carType?: CarType) {
@@ -156,6 +142,10 @@ export class Bulli {
 
     // Honk (F) and shoot (E) pulses from keyboard, touch and gamepad
     handleActions() {
+        if (state.dead || state.isModalOpen) {
+            state.inputs.e = state.inputs.f = false;
+            return;
+        }
         if (state.inputs.f) {
             const now = Date.now();
             if (now >= this.nextHonkTime) {
@@ -168,31 +158,22 @@ export class Bulli {
         }
 
         if (state.inputs.e) {
-            this.shoot();
+            // No shooting in Free Roam
+            if (partyRulesActive()) this.shoot();
             state.inputs.e = false;
         }
     }
 
+    // Once per frame. The powerup flags come from the local car's sim
+    // (offline), the server's windows (online, own car) or the snapshot
+    // flags (remote cars); this only shows them.
     update(dt: number) {
         this.updateNametag();
-        // The v2 sim counts the powerup timers per tick instead (LocalVehicle)
-        const v2 = PHYSICS_V2 && this.isLocal;
 
-        for (const key of v2 ? [] : POWERUP_KEYS) {
-            const p = this.powerups[key];
-            if (p.active) {
-                p.timer -= dt;
-                if (p.timer <= 0) {
-                    p.active = false;
-                    if (key === 'size') this.group.scale.set(1, 1, 1);
-                    // ghost visuals are restored centrally by the ghost visual sync below
-                }
-            }
-        }
-
-        // Update shield visual
+        // Shield bubble: the powerup, and for the local car the respawn shield
         if (this.shieldMesh) {
-            if (this.powerups.shield.active) {
+            const respawnShield = this.isLocal && state.respawnShield;
+            if (this.powerups.shield.active || respawnShield) {
                 this.shieldMesh.visible = true;
                 const shieldMat = this.shieldMesh.material as THREE.MeshStandardMaterial;
                 shieldMat.opacity = 0.25 + Math.sin(Date.now() * 0.005) * 0.1;
@@ -209,52 +190,7 @@ export class Bulli {
             this.setGhostVisual(this.powerups.ghost.active);
         }
 
-        if (!this.isLocal) return;
-        if (v2) {
-            driveLocalCar(this, dt);
-            return;
-        }
-        if (state.isModalOpen) return;
-        if (state.dead) return;
-
-        updateLegacyMovement(this, dt);
-    }
-
-    sendMovementSnapshot(now: number, moving: boolean) {
-        const ghostActive = this.powerups.ghost.active;
-        const shieldActive = this.powerups.shield.active;
-        const megaActive = this.powerups.size.active;
-        const stateChanged =
-            !this._hasSentUpdate ||
-            moving !== this._lastSentMoving ||
-            this.isFlipping !== this._lastSentIsFlipping ||
-            ghostActive !== this._lastSentGhostActive ||
-            shieldActive !== this._lastSentShieldActive ||
-            megaActive !== this._lastSentMegaActive;
-        const interval = moving ? UPDATE_SEND_INTERVAL_MS : STATIONARY_UPDATE_INTERVAL_MS;
-        if (!stateChanged && now - this._lastUpdateSentAt < interval) return;
-
-        if (!sendToServer({
-            type: 'update',
-            x: this.group.position.x,
-            z: this.group.position.z,
-            y: this.flipGroup.position.y,
-            angle: this.angle,
-            flipAngle: this.flipGroup.rotation.x,
-            isFlipping: this.isFlipping,
-            scale: this.group.scale.x,
-            ghostActive,
-            shieldActive,
-            megaActive
-        })) return;
-
-        this._hasSentUpdate = true;
-        this._lastUpdateSentAt = now;
-        this._lastSentMoving = moving;
-        this._lastSentIsFlipping = this.isFlipping;
-        this._lastSentGhostActive = ghostActive;
-        this._lastSentShieldActive = shieldActive;
-        this._lastSentMegaActive = megaActive;
+        if (this.isLocal) driveLocalCar(this, dt);
     }
 
     dispose() {

@@ -1,13 +1,11 @@
 import { state } from '../state.js';
-import { releaseTouchDriveAxes, setTouchDriveAxes } from './driveInput.js';
-import { PHYSICS_V2 } from '../flags.js';
 import { BTN_BOOST, BTN_HANDBRAKE } from '../../shared/sim/constants.js';
 import { inputManager } from '../input/InputManager.js';
 
 const JOYSTICK_DEADZONE = 0.12;
 const JOYSTICK_RESPONSE_CURVE = 1.15;
-// The v2 sim already smooths the steering through the wheel angle rate
-const JOYSTICK_FILTER_RATE = PHYSICS_V2 ? 30 : 18;
+// The sim already smooths the steering through the wheel angle rate
+const JOYSTICK_FILTER_RATE = 30;
 const AUTO_GAS_STORAGE_KEY = 'bulli-auto-gas';
 
 interface ControlHandle {
@@ -15,7 +13,7 @@ interface ControlHandle {
     destroy(): void;
 }
 
-type ActionKey = 'e' | 'f' | 'space';
+type ActionKey = 'e' | 'f';
 
 const activeControls: ControlHandle[] = [];
 let removeLifecycleListeners: (() => void) | null = null;
@@ -24,19 +22,7 @@ export function setupMobileControls() {
     // Make setup idempotent for hot reloads/reinitialisation.
     destroyMobileControls();
 
-    if (PHYSICS_V2) {
-        setupV2Controls();
-    } else {
-        setupJoystick('joystick-move', (x, y, active) => {
-            // DOM Y grows downwards, while positive throttle means forward. The
-            // steering sign preserves the established A/left and D/right behavior.
-            setTouchDriveAxes(-y, -x, active);
-        });
-
-        setupActionButton('btn-honk', 'f');
-        setupActionButton('btn-flip', 'space');
-        setupActionButton('btn-shoot', 'e');
-    }
+    setupDriveControls();
 
     const resetForLifecycle = () => resetMobileControls();
     const resetWhenHidden = () => {
@@ -57,10 +43,8 @@ export function setupMobileControls() {
 export function resetMobileControls() {
     activeControls.forEach(control => control.reset());
     inputManager.releaseTouch();
-    releaseTouchDriveAxes();
     state.inputs.e = false;
     state.inputs.f = false;
-    state.inputs.space = false;
 }
 
 export function destroyMobileControls() {
@@ -70,10 +54,10 @@ export function destroyMobileControls() {
     removeLifecycleListeners = null;
 }
 
-// Touch controls of the v2 physics (docs/phase-1a-design.md, 11.2): the
-// stick steers and brakes, auto-gas drives; DRIFT and BOOST are held; the
-// flip button jumps on a short press and resets when held
-function setupV2Controls() {
+// Touch controls (docs/phase-1a-design.md, 11.2): the stick steers and
+// brakes, auto-gas drives; DRIFT and BOOST are held; the flip button jumps
+// on a short press and resets when held
+function setupDriveControls() {
     setupJoystick('joystick-move', (x, y, active) => inputManager.setStick(x, y, active));
     setupActionButton('btn-honk', 'f');
     setupActionButton('btn-shoot', 'e');

@@ -3,10 +3,10 @@
 
 import * as v from 'valibot';
 
-// Bumped on every incompatible wire change. Not negotiated yet: a later
-// phase makes the client send it in a handshake and the server reject
-// mismatches instead of silently dropping unknown messages.
-export const PROTOCOL_VERSION = 1;
+// Bumped on every incompatible wire change. The client sends it in 'hello';
+// the server rejects any other version with reload: true
+// (docs/phase-1b-design.md, 3.2). There is no adapter for old versions.
+export const PROTOCOL_VERSION = 2;
 
 // ---------- DTOs ----------
 
@@ -67,19 +67,21 @@ export interface CityData {
     roads: RoadData[];
 }
 
-export interface PlayerData {
+// Room types (docs/phase-1b-design.md, section 2): the Party with coins,
+// powerups, shooting and HP is the default; Free Roam only drives and bumps.
+export const ROOM_KINDS = ['party', 'freeroam'] as const;
+export type RoomKind = typeof ROOM_KINDS[number];
+export const DEFAULT_ROOM_KIND: RoomKind = 'party';
+
+export function isRoomKind(value: unknown): value is RoomKind {
+    return typeof value === 'string' && (ROOM_KINDS as readonly string[]).includes(value);
+}
+
+// The room instance a player is in: id 'party-1', kind 'party', index 1
+export interface RoomInfo {
     id: string;
-    color: number;
-    name: string;
-    carType?: string;
-    x: number;
-    z: number;
-    angle: number;
-    flipAngle: number;
-    isFlipping: boolean;
-    scale?: number;
-    score?: number;
-    health?: number;
+    kind: RoomKind;
+    index: number;
 }
 
 export interface ScoreboardEntry {
@@ -89,47 +91,78 @@ export interface ScoreboardEntry {
     color: number;
 }
 
-// ---------- Client -> Server ----------
-// Runtime schemas: the server validates every inbound frame against these
-// and drops anything that does not match. The TypeScript types are derived
-// from them, so sender and validator cannot drift apart.
-// Note: no 'scoreUpdate' (server is sole score authority) and 'shoot' carries no damage.
+// ---------- Shared shapes ----------
+
+export const ASSIST_PROFILE_IDS = ['standard', 'touch'] as const;
+export type ProfileId = typeof ASSIST_PROFILE_IDS[number];
+
+// A member of a room as the others see it. slot addresses the car in the
+// binary snapshots.
+export interface MemberInfo {
+    id: string;
+    slot: number;
+    name: string;
+    color: number;
+    carType: string;
+    profile: ProfileId;
+    // Past the splash screen (only ready members drive and are listed)
+    ready: boolean;
+}
+
+// The map is generated on both sides from the seed; the hash proves the
+// client built the same world and colliders (3.2)
+export interface WorldRef {
+    seed: number;
+    mapVersion: number;
+    worldHash: string;
+}
+
+export type LeaveReason = 'disconnect' | 'switch' | 'closed' | 'kicked';
+
+// ---------- Client -> Server (JSON) ----------
+// Runtime schemas: the server validates every inbound text frame against
+// these and drops anything that does not match (and counts it against the
+// policy limit). The TypeScript types are derived from them, so sender and
+// validator cannot drift apart. Non-finite numbers never pass (3.1).
 
 const finiteNumber = v.pipe(v.number(), v.finite());
+const shortString = (max: number) => v.pipe(v.string(), v.maxLength(max));
+
+export const HelloSchema = v.object({
+    type: v.literal('hello'),
+    protocolVersion: v.pipe(v.number(), v.integer()),
+    // The page's build stamp (null from the Vite dev server)
+    build: v.nullable(shortString(64)),
+    // Random per page load, only kept in memory (duplicated tabs, 11.1)
+    connId: shortString(64),
+    sessionToken: v.optional(shortString(64)),
+    // Resume ticket from a 'shutdown' (11.3)
+    resume: v.optional(shortString(1024)),
+    // Length and control characters are cleaned up by the server
+    name: shortString(200),
+    // Unknown car types fall back to the Bulli (VALID_CAR_TYPES)
+    carType: shortString(32),
+    profile: v.picklist(ASSIST_PROFILE_IDS),
+    room: v.picklist(ROOM_KINDS)
+});
+
+export type HelloMessage = v.InferOutput<typeof HelloSchema>;
 
 export const ClientMessageSchema = v.variant('type', [
-    v.object({
-        type: v.literal('update'),
-        // Only the position and angles make an update invalid. The other
-        // fields are as lenient as the pre-valibot handler on main (1d39c07),
-        // so a bad value (e.g. a NaN, which JSON turns into null) never drops
-        // the whole update and freezes the car for everyone else.
-        x: finiteNumber,
-        z: finiteNumber,
-        // Visual bob/jump offset; the server falls back to 0 when it is not a number.
-        y: v.fallback(v.optional(v.number()), undefined),
-        angle: finiteNumber,
-        flipAngle: finiteNumber,
-        // Any truthy value counts and a missing one is false, like
-        // `!!msg.isFlipping` on main.
-        isFlipping: v.pipe(v.optional(v.unknown(), false), v.transform(value => !!value)),
-        // Client-side hints only; the server tracks these effects itself and
-        // ignores them, so a wrong type is dropped instead.
-        scale: v.fallback(v.optional(v.number()), undefined),
-        ghostActive: v.fallback(v.optional(v.boolean()), undefined),
-        shieldActive: v.fallback(v.optional(v.boolean()), undefined),
-        megaActive: v.fallback(v.optional(v.boolean()), undefined)
-    }),
-    v.object({ type: v.literal('collectPowerup'), powerupId: v.number() }),
-    v.object({ type: v.literal('collectCoin'), coinId: v.number() }),
+    HelloSchema,
+    // Past the splash screen: the car spawns
+    v.object({ type: v.literal('ready') }),
+    // Clock sync (3.7); t is the client's performance.now()
+    v.object({ type: v.literal('ping'), t: finiteNumber }),
+    // Moves the player into a room of that kind (the fullest one with room)
+    v.object({ type: v.literal('joinRoom'), kind: v.picklist(ROOM_KINDS) }),
+    v.object({ type: v.literal('setCar'), carType: shortString(32), profile: v.picklist(ASSIST_PROFILE_IDS) }),
+    v.object({ type: v.literal('rename'), name: shortString(200) }),
     v.object({ type: v.literal('honk') }),
-    // Length and control characters are cleaned up by the server.
-    v.object({ type: v.literal('rename'), name: v.string() }),
-    // Unknown car types are ignored by the server (VALID_CAR_TYPES).
-    v.object({ type: v.literal('setCarType'), carType: v.string() }),
-    v.object({ type: v.literal('playerReady') }),
-    v.object({ type: v.literal('respawnShieldExpired') }),
-    v.object({ type: v.literal('shoot'), targetId: v.string() })
+    v.object({ type: v.literal('shoot'), targetId: shortString(64) }),
+    v.object({ type: v.literal('visibility'), hidden: v.boolean() }),
+    // E2E only (server started with E2E=1): puts the own car at rest there
+    v.object({ type: v.literal('debugPlace'), x: finiteNumber, z: finiteNumber, yaw: finiteNumber })
 ]);
 
 export type ClientMessage = v.InferOutput<typeof ClientMessageSchema>;
@@ -141,21 +174,85 @@ export function parseClientMessage(value: unknown): ClientMessage | null {
     return result.success ? result.output : null;
 }
 
-// ---------- Server -> Client ----------
+// The binary input packet after decoding (shared/net/codec.ts) goes through
+// this schema too, so the binary path has the same single source. The value
+// ranges are clamped afterwards (server/rooms/InputBuffer.ts).
+const u32 = v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(0xffffffff));
+const byteInt = v.pipe(v.number(), v.integer(), v.minValue(-128), v.maxValue(255));
+export const InputPacketSchema = v.object({
+    flags: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(255)),
+    seq: u32,
+    tick: u32,
+    inputs: v.pipe(v.array(v.object({
+        steer: byteInt,
+        throttle: byteInt,
+        brake: byteInt,
+        buttons: byteInt
+    })), v.minLength(1), v.maxLength(8))
+});
+
+// ---------- Server -> Client (JSON) ----------
+
+export type RejectReason = 'version' | 'hello' | 'full';
+
+// Events of a tick (3.6), sent in one 'events' message before the snapshot
+// of the same snapshot tick. Every event carries its own tick where the sim
+// needs it.
+export type GameEvent =
+    // The car appears (after 'ready' or a room switch) at rest, facing yaw
+    | { type: 'spawn'; id: string; tick: number; x: number; z: number; yaw: number }
+    // A car-car contact from CONTACT_EVENT_MIN_DV on (for sound and sparks)
+    | { type: 'contact'; a: string; b: string; dv: number; x: number; z: number }
+    // kind 'powerup' carries the effect window [startTick, endTick)
+    | { type: 'pickup'; kind: 'coin' | 'powerup'; itemId: number; playerId: string; powerupType?: string; startTick?: number; endTick?: number }
+    | { type: 'itemReset'; kind: 'coin' | 'powerup'; itemId: number }
+    | { type: 'hit'; target: string; source: string; damage: number; health: number; cause: 'shot' | 'ram' }
+    | { type: 'killed'; target: string; killer: string; killerName: string; targetName: string; cause: 'shot' | 'ram' }
+    // Back from the dead at (x, z): the car state is reset at tick
+    | { type: 'respawn'; id: string; tick: number; x: number; z: number; yaw: number; health: number }
+    | { type: 'carChanged'; id: string; carType: string; profile: ProfileId; tick: number }
+    | { type: 'honk'; id: string };
+
+// The own car of a resumed session: whether it is in the sim, the tick it
+// last spawned (respawn shield) and its powerup windows
+export interface ResumeState {
+    alive: boolean;
+    spawnTick: number;
+    powerups: { type: string; startTick: number; endTick: number }[];
+}
+
+export interface RoomStateItems {
+    powerups: { id: number; collected: boolean }[];
+    coins: { id: number; collected: boolean }[];
+}
 
 export type ServerMessage =
-    | { type: 'init', id: string, color: number, name: string, spawn: { x: number; z: number }, players: Record<string, PlayerData>, powerups: PowerupData[], coins: CoinData[], terrain: TerrainConfig, trees: TreeData[], city: CityData, scoreboard: ScoreboardEntry[] }
-    | { type: 'newPlayer', player: PlayerData }
-    | { type: 'update', id: string, x: number, z: number, y?: number, angle: number, flipAngle: number, isFlipping: boolean, scale?: number, ghostActive?: boolean, shieldActive?: boolean }
-    | { type: 'removePlayer', id: string }
-    | { type: 'powerupCollected', powerupId: number, playerId: string }
-    | { type: 'powerupReset', powerupId: number }
-    | { type: 'coinCollected', coinId: number, playerId: string }
-    | { type: 'coinReset', coinId: number }
-    | { type: 'honk', id: string }
-    | { type: 'playerRenamed', id: string, name: string }
-    | { type: 'scoreboard', scoreboard: ScoreboardEntry[] }
-    | { type: 'playerHit', targetId: string, shooterId: string, newHealth: number, damage: number }
-    | { type: 'playerKilled', targetId: string, killerId: string, killerName: string, targetName: string }
-    | { type: 'playerRespawn', playerId: string, health: number, x: number, z: number, y?: number, angle?: number }
-    | { type: 'shieldBreak', targetId: string, shooterId: string };
+    | { type: 'reject'; reason: RejectReason; reload: boolean; serverProtocol: number }
+    | { type: 'welcome'; playerId: string; sessionToken: string; resumed: boolean; serverBuild: string | null; tickRate: number; snapshotRate: number; color: number; name: string }
+    // After 'welcome' and after every room switch. items only in the Party
+    | {
+        type: 'roomState';
+        room: RoomInfo;
+        tick: number;
+        world: WorldRef;
+        members: MemberInfo[];
+        items: RoomStateItems | null;
+        scoreboard: ScoreboardEntry[];
+        health: Record<string, number>;
+        // Where the camera looks while the splash screen is up
+        preview: { x: number; z: number; yaw: number };
+        // Only for a resumed session (11.1): the own car goes on as the
+        // server has it; the client takes its state from the next snapshot
+        resume?: ResumeState;
+    }
+    | { type: 'playerJoined'; member: MemberInfo }
+    | { type: 'playerLeft'; id: string; reason: LeaveReason }
+    | { type: 'playerUpdated'; id: string; name?: string; carType?: string; profile?: ProfileId }
+    // Clock sync: the room tick and how far (0..1) the running tick interval is
+    | { type: 'pong'; t: number; tick: number; sub: number }
+    | { type: 'events'; tick: number; list: GameEvent[] }
+    // The top 10, and for the receiver its own score and rank (also when it
+    // is not among the 10; missing from older servers)
+    | { type: 'scoreboard'; scoreboard: ScoreboardEntry[]; own?: { score: number; rank: number } }
+    | { type: 'shutdown'; reconnectInMs: number; resume?: string }
+    | { type: 'kicked'; reason: 'policy' | 'idle' };

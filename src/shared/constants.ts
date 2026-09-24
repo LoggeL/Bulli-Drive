@@ -17,20 +17,9 @@ export const METERS_PER_UNIT = 1;
 // Multiply a speed in m/s by this to get km/h
 export const MS_TO_KMH = 3.6;
 
-// The legacy client car (entities/Bulli.ts) integrates its speed in units per
-// 1/60 s tick, independent of the actual frame rate down to 30 FPS. It caps a
-// frame at 1/30 s, so below 30 FPS the car covers less ground per second than
-// its speed (and the speedometer) says, e.g. 2/3 of it at 20 FPS.
-export const LEGACY_SPEED_TICKS_PER_SECOND = 60;
-// Legacy top speed in units per tick: 1.0 u/tick = 60 m/s = 216 km/h, and
-// 108 m/s = 388.8 km/h while the Turbo powerup (SPEED_BOOST_FACTOR) is active.
-export const LEGACY_CAR_MAX_SPEED = 1.0;
-
-// Turbo (speed powerup) multiplier applied to acceleration AND max speed for the
-// full duration of the boost (constant, not decaying with the remaining timer).
-export const SPEED_BOOST_FACTOR = 1.8;
-
-// Powerup effect durations (ms): shield/ghost last longer than the rest
+// Powerup effect durations (ms): shield/ghost last longer than the rest.
+// Online the server's windows in ticks rule (shared/party/rules.ts); the
+// offline car counts these down itself
 export const POWERUP_DURATIONS_MS: Record<string, number> = {
     speed: 5000,
     size: 5000,
@@ -40,26 +29,10 @@ export const POWERUP_DURATIONS_MS: Record<string, number> = {
     ghost: 8000
 };
 
-export const RESPAWN_DELAY_MS = 3000;
-// Server-side hard cap on the post-respawn invulnerability shield
-export const RESPAWN_SHIELD_MAX_MS = 8000;
-
-// Players with no 'update' for this long are considered AFK (invulnerable)
-export const AFK_THRESHOLD_MS = 3000;
-export const SHOT_COOLDOWN_MS = 400;
+// Shot reach (m) against the server's car positions
 export const MAX_SHOT_RANGE = 150;
-
-// Server-side acceptance radii for collect messages (2D distance player -> item)
-export const COIN_ACCEPT_RADIUS = 35;
-export const POWERUP_ACCEPT_RADIUS = 15;
+// The magnet pulls coins within this range (the look on the client)
 export const MAGNET_RANGE = 25;
-
-// Item respawn delays after collection
-export const POWERUP_RESPAWN_DELAY_MS = 20000;
-export const COIN_RESPAWN_DELAY_MS = 15000;
-
-// Client sends position updates at most every 50ms (20 Hz)
-export const UPDATE_SEND_INTERVAL_MS = 50;
 
 export const MAX_NAME_LENGTH = 20;
 
@@ -101,5 +74,8 @@ export const DEFAULT_TERRAIN_CONFIG = {
     amplitude3: 1.2
 };
 
-// Positions beyond this on |x| or |z| are rejected by the server
+// Half the side of the playable area plus a margin (m): the rendered
+// terrain follows the shared height inside and rises to hills beyond it
+// (client/world/environment.ts). The server no longer checks positions,
+// it simulates the cars itself.
 export const WORLD_BOUND = DEFAULT_TERRAIN_CONFIG.size / 2 + 50;

@@ -1,6 +1,5 @@
 import { state } from '../state.js';
-import { carSpeedToKmh, speedoFill, SPEEDO_SCALE_MAX_KMH, SPEEDO_SCALE_MAX_KMH_V2, SPEEDO_TICK_INTERVALS } from './speedoScale.js';
-import { PHYSICS_V2 } from '../flags.js';
+import { carSpeedToKmh, speedoFill, SPEEDO_SCALE_MAX_KMH, SPEEDO_TICK_INTERVALS } from './speedoScale.js';
 import { SIM_TUNING } from '../../shared/sim/constants.js';
 import type { LocalVehicle } from '../vehicle/LocalVehicle.js';
 
@@ -196,7 +195,6 @@ let lastSpeedoRedraw = -Infinity;
 let lastDisplayedKmh = -1;
 let lastTurboActive: boolean | null = null;
 let lastTurboLabel = '';
-const speedoScaleMaxKmh = PHYSICS_V2 ? SPEEDO_SCALE_MAX_KMH_V2 : SPEEDO_SCALE_MAX_KMH;
 
 function initSpeedoRefs() {
     speedoCanvas = document.getElementById('speedo-canvas') as HTMLCanvasElement | null;
@@ -285,7 +283,7 @@ export function updateSpeedometer() {
     const cx = w / 2;
     const cy = h / 2;
     const r = w / 2 - 10;
-    const pct = speedoFill(kmh, speedoScaleMaxKmh);
+    const pct = speedoFill(kmh, SPEEDO_SCALE_MAX_KMH);
     speedoCtx.clearRect(0, 0, w, h);
     if (speedoStaticLayer) speedoCtx.drawImage(speedoStaticLayer, 0, 0);
     if (pct <= 0.005) return;

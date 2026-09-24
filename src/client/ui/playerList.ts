@@ -46,8 +46,9 @@ export function updateScoreboardUI() {
     // Use scoreboard from server, sorted by score desc
     const sortedEntries = [...state.scoreboard].sort((a, b) => b.score - a.score);
     const entries = sortedEntries.slice(0, 10);
+    // The server tells the own rank, also outside the top 10
     const localRankIndex = sortedEntries.findIndex(entry => entry.id === state.myId);
-    const localRank = localRankIndex >= 0 ? localRankIndex + 1 : 1;
+    const localRank = state.rank > 0 ? state.rank : localRankIndex >= 0 ? localRankIndex + 1 : 1;
     const rankDisplay = document.getElementById('player-rank');
     const scoreboardToggle = document.getElementById('scoreboard-toggle');
     if (rankDisplay) rankDisplay.textContent = `#${localRank}`;

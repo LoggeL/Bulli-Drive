@@ -36,7 +36,7 @@ test('v2 touch controls: auto-gas, steering, drift, jump and reset', async ({ op
     for (const selector of ['#joystick-move', '#btn-flip', '#btn-shoot', '#btn-honk', '#btn-drift', '#btn-boost', '#btn-autogas', '#drive-meter']) {
         await expect(page.locator(selector), selector).toBeVisible();
     }
-    // The v2 buttons do not cover the legacy ones
+    // The drive buttons do not cover each other
     const boxes = await Promise.all(['#btn-drift', '#btn-boost', '#btn-autogas', '#btn-flip', '#btn-shoot', '#btn-honk', '#joystick-move']
         .map(async selector => ({ selector, box: (await page.locator(selector).boundingBox())! })));
     for (let i = 0; i < boxes.length; i++) {
@@ -169,6 +169,13 @@ test('v2 touch HUD: nothing overlaps on narrow phones and in landscape, prompt i
     const problems: string[] = [];
     for (const viewport of VIEWPORTS) {
         await page.setViewportSize({ width: viewport.width, height: viewport.height });
+        // Auto-gas drives on: a powerup picked up meanwhile puts its own,
+        // longer text into the prompt; the reset hint is what is measured
+        await page.evaluate(() => {
+            const prompt = document.getElementById('interaction-prompt')!;
+            prompt.textContent = 'HOLD JUMP TO RESET';
+            prompt.classList.remove('hidden');
+        });
         await page.waitForTimeout(100);
         const boxes = await Promise.all(HUD.map(async selector => ({ selector, box: await page.locator(selector).boundingBox() })));
         const round = (box: { x: number; y: number; width: number; height: number }) =>

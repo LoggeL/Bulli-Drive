@@ -6,7 +6,7 @@ city, collect coins and powerups, and shoot it out with other drivers.
 ![Screenshot](docs/screenshot.png)
 
 ## Features
-- **Multiplayer:** Real-time sync of position, rotation, flipping, honks and shots.
+- **Multiplayer:** The server simulates every car at 60 Hz; each client predicts its own car, so driving and bumping into each other feel immediate. Party (combat) and Free Roam rooms of up to 32 players.
 - **Combat:** Shoot projectiles at other players, score kills, climb the scoreboard.
 - **Powerups & coins:** Turbo, Mega, Super Jump, Shield, Magnet and Ghost powerups plus collectible coins, shared across all players.
 - **3D Graphics:** Built with Three.js.
@@ -48,47 +48,66 @@ reachable from the LAN as well: `npm run build && npm start`, then
 | `npm run build` | Client with Vite to `dist/client` (hashed assets, `build-version.txt`), server with `tsc` to `dist/server` and `dist/shared` |
 | `npm start` | Runs the production build on port 8000 (`PORT` to override) |
 | `npm run typecheck` | Type-checks client, server, tests, scripts and build config |
-| `npm test` | Vitest unit tests in `tests/` (golden tests for world generation, terrain, RNG and the v2 sim scenarios, protocol validation, server handlers, speedometer scale, model cache, budgets of the packed models and textures) |
+| `npm test` | Vitest unit tests in `tests/` (golden tests for world generation, terrain, RNG and the v2 sim scenarios, the binary codec and protocol validation, the tick scheduler, rooms and Party rules, the prediction against the real rooms with simulated latency and loss, speedometer scale, model cache, budgets of the packed models and textures) |
 | `npm run test:e2e` | Builds, then runs the Playwright smoke tests in `tests/e2e` against the production server (port 8799, `E2E_PORT` to override) |
-| `npm run perf:baseline` | Builds, then drives two headless Chromium clients for 20 s and prints FPS, draw calls and WebSocket bandwidth as JSON (see [docs/baseline.md](docs/baseline.md)); with the v2 physics it also reports the sim time per frame; `-- --physics=legacy` measures the old physics, `-- --sandbox` the offline sandbox |
-| `npm run screenshots` | Builds, then captures a fixed set of views with headless Chromium for visual before/after comparisons (`-- --out=<dir>`, `--gl=swiftshader`, `--physics=legacy`, `--compare=<a>,<b>`; `stats.json` records how much of the frame the car takes; see `scripts/screenshots.ts`) |
+| `npm run test:bots` | Bot integration tests in `tests/integration`: starts its own game server process (port 8560-8599, `BOTS_PORT` to override) and runs headless bots over real WebSockets: a head-on bump seen by both cars (also behind the netsim), reconnect within the grace time, a room switch, a flood kick, and 16 bots for 30 s behind netsim 150/30/3 with the bandwidth (≤ 30 kB/s per client) and tick budgets (p95 < 4 ms) |
+| `npm run bots -- --url ws://127.0.0.1:8000/ws --count 32 --mix drive:24,ram:6,reconnect:1,hop:1 --netsim 150,30,3 --duration 120` | Load and robustness run against any server (see `tools/bots/cli.ts`): prints snapshot rate, downlink per bot, corrections, contacts and the server's tick times from `/healthz`; `--json` for the whole report. Modes: `drive`, `ram`, `idle`, `reconnect`, `hop`, `flood` |
+| `npm run perf:baseline` | Builds, then drives two headless Chromium clients for 20 s and prints FPS, draw calls and WebSocket bandwidth as JSON (see [docs/baseline.md](docs/baseline.md)); it also reports the sim time per frame, `-- --sandbox` measures the offline sandbox |
+| `npm run screenshots` | Builds, then captures a fixed set of views with headless Chromium for visual before/after comparisons (`-- --out=<dir>`, `--gl=swiftshader`, `--compare=<a>,<b>`; `stats.json` records how much of the frame the car takes; see `scripts/screenshots.ts`) |
 | `npx tsx scripts/sim-golden-drift.ts` | Shows how far the v2 golden scenarios drift when `Math.sin` & co. round differently in the last bit, and that the golden tolerance still catches tiny tuning changes |
 | `npm run ci` | typecheck, unit tests and build in one go |
 | `npm run assets:models` | Builds the car models in Blender and packs them (meshopt + KTX2) into `public/models` (needs Blender 5.2 and `npm --prefix tools ci` once; see [tools/models/README.md](tools/models/README.md)) |
 | `npm run assets:textures` | Downloads the CC0 textures and HDRIs (Poly Haven) and encodes them to KTX2 in `public/textures` ([tools/textures/README.md](tools/textures/README.md)) |
 
-The Playwright tests cover the v2 physics as the default (driving on desktop
-and phone, two players bumping into each other, the sandbox with its dummy
-cars, the tuning panel and the golden sim scenarios in the browser), the old
-physics behind `?physics=legacy` (desktop join and drive, two players seeing
-each other move, the touch controls on an emulated iPhone 13), which physics
-each URL starts, the stale-client reload, a lost WebGL context, the perf
-overlay and the car model loading (GLB + KTX2) with its procedural fallback.
+The Playwright tests cover driving on desktop and phone, two players bumping
+into each other (a head-on ram also behind `?netsim=150,30,3`), the sandbox with its dummy cars, the tuning panel and the
+golden sim scenarios in the browser, Party and Free Roam rooms, the collider
+parity between browser and server, the stale-client reload, a lost WebGL
+context, the perf overlay, the car model loading (GLB + KTX2) with its
+procedural fallback, the world look, a lost connection and a server restart
+(the page reconnects on its own), the protocol version check, `/healthz` and
+the dev netsim.
 They need Chromium once:
 `npx playwright install chromium`.
 
 GitHub Actions (`.github/workflows/ci.yml`) runs typecheck and unit tests, the
-build, the Playwright tests and a Docker build with a container smoke test on
-every pull request and push to `main`.
+build, the Playwright tests, the bot integration tests and a Docker build with
+a container smoke test (`/healthz`, the image's health check and a graceful
+`docker stop`) on every pull request and push to `main`.
+
+### Operations
+The server runs 24/7. `GET /healthz` answers 200 while the 60 Hz tick runs
+(503 when it stalls), the Docker image has a `HEALTHCHECK` on it, and on
+`SIGTERM` the server tells every client to reconnect with a signed resume
+ticket (colour and Party score survive a deploy) before it exits. Set
+`SESSION_SECRET` in the hosting environment for that. A lost connection
+keeps the player's session and car for 30 s. Details, environment variables
+and the restart policy: [docs/ops.md](docs/ops.md).
 
 ### URL flags
 The game drives with the fixed-step v2 physics (single-track model with
 drift, boost and car contact, see
 [docs/phase-1a-design.md](docs/phase-1a-design.md)) without any flag.
 
-- `?physics=legacy` switches back to the old driving physics, camera, HUD
-  and controls. It is a temporary escape hatch and goes away once v2 has run
-  for a few days without problems. Multiplayer works with both, also mixed.
-  (`?physics=v2` is still accepted and changes nothing.)
 - `?sandbox=1` opens the offline test pad of the v2 physics instead of the
   city (always v2, no server connection needed). See below.
-- `?tune=1` adds the live tuning panel with telemetry to the v2 physics
-  (not with `?physics=legacy`). It is loaded on demand.
+- `?tune=1` together with `?sandbox=1` adds the live tuning panel with
+  telemetry. It is loaded on demand. Online the server drives every car with
+  the default tuning, so the game only shows a hint there.
 - `?debug=perf` shows a performance overlay (FPS, frame time, draw calls,
-  triangles, geometries, textures, WebSocket bytes per second, and with the
-  v2 physics the sim time per frame). Use it to measure on real devices.
+  triangles, geometries, textures, WebSocket bytes per second, JSON and
+  binary apart, and the sim time per frame), online also the netcode (tick,
+  lead, round trip, snapshots per second, corrections, the connection) and
+  the server's tick times from `/healthz`. `?debug=net` shows the same
+  overlay. Use it to measure on real devices.
+- `?netsim=RTT,JITTER,LOSS[,tcp|drop]`, e.g. `?netsim=150,30,3`, puts a
+  simulated bad network in front of this tab's connection (both
+  directions; the server has the same as `NETSIM=rtt=150,jitter=30,loss=3`
+  outside production). For playtesting the netcode.
 - `?e2e=1` installs a state hook for the Playwright tests (read-only, apart
-  from placing the car on a free stretch of road).
+  from placing the car on a free stretch of road, which online only a server
+  started with `E2E=1` accepts) and `window.__bulliNet` with the netcode
+  numbers (lead, corrections, snaps, missed inputs).
 
 Apart from these, the flags change nothing about the game.
 
@@ -129,9 +148,10 @@ in `src/shared/sim/vehicleClasses.ts`).
 index.html            Vite entry (HUD markup, loading and splash screens)
 src/client/           Browser game (three.js)
   main.ts             Bootstrap, render loop, chase camera
-  entities/Bulli.ts   Cars: models, local driving physics, nametags
+  entities/Bulli.ts   Cars: model, powerup looks, shooting, nametags
   world/              City, terrain, coins, powerups, projectiles
-  network/            WebSocket client and message dispatch
+  network/            WebSocket, handshake, room state and events
+  net/                The own car's prediction (NetDriver) and the remote cars
   controls/           Keyboard and touch (joystick, action buttons)
   ui/                 HUD, speedometer, minimap, screens, WebGL context-loss notice
   effects/            Particles, sounds, adaptive render quality
@@ -141,26 +161,40 @@ src/client/           Browser game (three.js)
   sandbox/            Offline test pad of the v2 physics (?sandbox=1)
   assets/             Model cache: GLB (meshopt) + KTX2 loading, preload and
                       shader warmup during the splash screen, procedural fallback
-src/server/           Express + ws game server: world state, message handlers, broadcasting
+src/server/           Express + ws game server: handshake, sessions, rooms that
+                      simulate at 60 Hz (rooms/), Party rules, tick scheduler
 src/shared/           Code for both sides: protocol schemas (valibot), constants,
                       seeded RNG, city/world generation, terrain height, the v2
                       driving sim (sim/) and its collision world and sandbox
-                      layout (world/)
-tests/                Vitest (shared/, server/, client/) and Playwright (e2e/)
+                      layout (world/), the netcode (net/: binary codec, clock,
+                      lead control, prediction with the contact set, render
+                      offsets, interpolation) and the Party
+                      rules in ticks (party/)
+tests/                Vitest (shared/, server/, client/, tools/), bot integration
+                      tests (integration/) and Playwright (e2e/)
+tools/bots/           Headless bot clients over real WebSockets (shared NetClient,
+                      pure-pursuit driving on the road grid), npm run bots
 scripts/              perf-baseline.ts, screenshots.ts
 public/models/        Packed car GLBs (3 LODs each) + manifest.json
 public/icons/         Rendered car-select icons (WebP)
 public/textures/      KTX2 world textures, HDRIs + manifest.json
 tools/                Offline asset pipeline (own package.json): Blender car builds,
                       gltfpack/KTX2 packing, texture download and encoding
-docs/                 Refactor plan, performance baseline, phase 1a spec, blind test
-                      guide, asset provenance and licences (assets.md), world look (world-look.md),
-                      cars (cars.md)
+docs/                 Refactor plan, performance baseline, phase 1a/1b specs, blind
+                      test guide, operations (ops.md), asset provenance and
+                      licences (assets.md), world look (world-look.md), cars (cars.md)
 ```
 
-The server generates the world from a fixed seed and sends it to every client
-on join; clients drive locally and send position updates at up to 20 Hz, which
-the server validates and broadcasts. One world unit is one metre.
+Server and clients build the same world from a fixed seed (the server sends
+only the seed and a hash). The server is authoritative
+([docs/phase-1b-design.md](docs/phase-1b-design.md)): clients send only their
+inputs (binary, 60 Hz), every room steps all its cars with the shared v2 sim
+and sends each player a binary snapshot 20 times a second. The client runs its
+own car a few ticks ahead of the server, predicts it with the same sim and
+replays from the server's state when a snapshot differs; remote cars are
+shown slightly in the past, the ones close by are predicted along. Pickups,
+hits, the Mega ram and respawns are decided by the server in its tick.
+One world unit is one metre.
 
 Code in `src/shared` runs in the browser and on the server, so it must not
 import three, the DOM or Node modules (a test enforces this).
@@ -190,8 +224,5 @@ brakes when pulled back; hold **DRIFT** for the handbrake and **BOOST** to
 boost, **AUTO** switches auto-gas on and off, and the jump button jumps on a
 tap and resets when held. Gamepads (standard mapping) work too: RT/LT gas and
 brake, A drift, B boost, Y jump, Back reset, X shoot, LB honk.
-
-With `?physics=legacy`: WASD drive, **SPACE** jumps / flips and recovers
-when stuck, E shoots, F honks.
 
 The camera automatically swings into a chase view behind the car.

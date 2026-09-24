@@ -1,39 +1,35 @@
-import type { TerrainConfig } from '../../shared/protocol.js';
+import type { CityData, TerrainConfig, TreeData } from '../../shared/protocol.js';
 import { cityRoadGrid } from '../../shared/world/cityGen.js';
+import { buildWorldColliders } from '../../shared/world/colliderGen.js';
 import { createSimWorld, type ColliderInput, type SimWorld } from '../../shared/world/colliders.js';
-import type { Obstacle } from '../types.js';
+import { state } from '../state.js';
 
-// The static collision world of the v2 sim, built from the obstacles the
-// client placed while building the city and the scenery (state.obstacles).
-// In phase 1b the placement moves to shared/world so the server builds the
-// same world (docs/phase-1a-design.md, 7.2).
+// The static collision world of the v2 sim. The colliders come from the
+// shared generator (shared/world/colliderGen.ts), exactly the list the
+// server builds (docs/phase-1b-design.md, 6), never from what the client
+// happened to render.
 
-export function obstaclesToColliders(obstacles: readonly Obstacle[]): ColliderInput[] {
-    return obstacles.map((obstacle): ColliderInput => {
-        const top = obstacle.top ?? Infinity;
-        if (obstacle.type === 'rect') {
-            return { kind: 'box', x: obstacle.x, z: obstacle.z, hw: obstacle.halfWidth, hd: obstacle.halfDepth, top };
-        }
-        return { kind: 'circle', x: obstacle.x, z: obstacle.z, r: obstacle.radius, top };
-    });
+/**
+ * Sets the colliders of the world (trees and city; city null offline).
+ */
+export function setWorldColliders(world: { trees: readonly TreeData[]; city: CityData | null }): void {
+    state.worldColliders = buildWorldColliders(world);
 }
 
 let cachedWorld: SimWorld | null = null;
 let cachedTerrain: TerrainConfig | null = null;
-let cachedObstacles: readonly Obstacle[] | null = null;
-let cachedCount = -1;
+let cachedColliders: readonly ColliderInput[] | null = null;
 
 /**
- * The sim world for the current terrain and obstacle list. Built once and
- * rebuilt only when the world changes (the obstacle list is filled while
- * the city is built, before the first tick normally).
+ * The sim world for the current terrain and collider list. Built once and
+ * rebuilt only when either changes (the list is set with the server's
+ * world, before the first tick normally).
  */
-export function simWorldFor(terrain: TerrainConfig, obstacles: readonly Obstacle[]): SimWorld {
-    if (!cachedWorld || terrain !== cachedTerrain || obstacles !== cachedObstacles || obstacles.length !== cachedCount) {
-        cachedWorld = createSimWorld(terrain, obstaclesToColliders(obstacles), [], cityRoadGrid());
+export function simWorldFor(terrain: TerrainConfig, colliders: readonly ColliderInput[]): SimWorld {
+    if (!cachedWorld || terrain !== cachedTerrain || colliders !== cachedColliders) {
+        cachedWorld = createSimWorld(terrain, colliders, [], cityRoadGrid());
         cachedTerrain = terrain;
-        cachedObstacles = obstacles;
-        cachedCount = obstacles.length;
+        cachedColliders = colliders;
     }
     return cachedWorld;
 }

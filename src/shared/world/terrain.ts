@@ -1,5 +1,5 @@
 // Procedural terrain height, shared by client and server. The heightfield is
-// a sum of sine waves from the TerrainConfig the server sends in 'init',
+// a sum of sine waves from the TerrainConfig of the map,
 // flattened over the city footprint so roads and buildings sit level.
 
 import { CITY_LAYOUT } from '../constants.js';

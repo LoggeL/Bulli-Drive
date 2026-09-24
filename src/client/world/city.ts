@@ -2,17 +2,18 @@ import * as THREE from 'three';
 import { state } from '../state.js';
 import type { BuildingData, RoadData, CityData } from '../../shared/protocol.js';
 import { getTerrainHeight } from './environment.js';
-import { CITY_LAYOUT, PLAZA_PROP_LAYOUT } from '../../shared/constants.js';
+import { CITY_LAYOUT } from '../../shared/constants.js';
 import { positionHash } from '../../shared/math/rng.js';
 import { blockCenter, PARK_BLOCK, PLAZA_BLOCK, roadLineCenter } from '../../shared/world/cityGen.js';
-import { COLLIDER_TOPS } from '../../shared/world/colliders.js';
+import { boulevardPalms, districtSigns, parkLayout, plazaLayout, type PropPoint } from '../../shared/world/props.js';
+import { markColliderAt } from './colliderTags.js';
 import { lightingTier } from '../render/lighting.js';
 import { Batch, orientedQuad, quad, rgb, rng, scaleRgb, type RGB } from './batch.js';
 import { worldMaterials } from './worldMaterials.js';
 import { addShrub } from './vegetation.js';
 import { createPalms, type PalmSpot } from './palms.js';
 import { createFurniture, FINISH, lathe, PropBatch, type Finish, type FurnitureSpot } from './furniture.js';
-import { BENCH_COLLIDER_RADIUS, LAMP_COLLIDER_RADIUS, parkBenches, parkFurniture, streetFurniture, streetPosts, type FurniturePlacement } from './streetLayout.js';
+import { parkBenches, parkFurniture, streetFurniture, streetPosts, type FurniturePlacement } from './streetLayout.js';
 import { addPondRim, buildFountain } from './fountain.js';
 
 // The city in the realistic look (graphics G1): asphalt with worn markings,
@@ -340,16 +341,8 @@ function createBuildings(B: CityBatches, buildings: BuildingData[]) {
         const shopSlot = firstInBlock && (bxIndex + bzIndex) % 2 === 0 ? blockIndex % 4 : -1;
         addBuilding(B, building, center, shopSlot);
 
-        // Add as a rectangular (AABB) obstacle so collision matches the actual
-        // building footprint instead of an undersized circle fit.
-        state.obstacles.push({
-            type: 'rect',
-            x: building.x,
-            z: building.z,
-            halfWidth: building.width / 2,
-            halfDepth: building.depth / 2,
-            top: COLLIDER_TOPS.building
-        });
+        // Collides as a box of its footprint
+        markColliderAt('building', building.x, building.z);
     });
 }
 
@@ -551,7 +544,8 @@ function hipRoof(B: CityBatches, x0: number, x1: number, z0: number, z1: number,
 // --- Park ---------------------------------------------------------------------------
 
 function createPark(B: CityBatches, extras: CityExtras) {
-    const { x: parkX, z: parkZ } = blockCenter(PARK_BLOCK.x, PARK_BLOCK.z);
+    const layout = parkLayout();
+    const { x: parkX, z: parkZ } = layout.center;
     const terrainY = getTerrainHeight(parkX, parkZ);
     const half = (blockSize - 2) / 2;
     const path = 1.6;
@@ -589,21 +583,17 @@ function createPark(B: CityBatches, extras: CityExtras) {
     // Reflecting pond with a moulded stone coping at the centre of Palm Park
     B.pond.add(new THREE.CircleGeometry(pondRadius, 48).rotateX(-Math.PI / 2).translate(parkX, terrainY + 0.09, parkZ));
     addPondRim(B.stucco, parkX, terrainY, parkZ, lightingTier());
+    // The pond with its rim collides as one circle
+    markColliderAt('pond', layout.pond.x, layout.pond.z);
 
     // Benches facing the pond (and two trash cans) inside the bench colliders
     parkBenches().forEach(bench => {
-        state.obstacles.push({ x: bench.x, z: bench.z, radius: BENCH_COLLIDER_RADIUS, top: COLLIDER_TOPS.bench });
+        markColliderAt('bench', bench.x, bench.z);
     });
     extras.furniture.push(...parkFurniture().map(toSpot));
 
     // Canary Island date palms on the four tree spots (same colliders)
-    const parkTreePositions = [
-        { x: parkX - 13, z: parkZ - 13 },
-        { x: parkX + 13, z: parkZ - 13 },
-        { x: parkX - 13, z: parkZ + 13 },
-        { x: parkX + 13, z: parkZ + 13 }
-    ];
-    parkTreePositions.forEach(pos => {
+    layout.trees.forEach(pos => {
         extras.palms.push({
             kind: 'date',
             x: pos.x,
@@ -612,18 +602,12 @@ function createPark(B: CityBatches, extras: CityExtras) {
             scale: 0.95 + positionHash(pos.x, pos.z, 91) * 0.25,
             yaw: positionHash(pos.x, pos.z, 92) * Math.PI * 2
         });
-        state.obstacles.push({ x: pos.x, z: pos.z, radius: 1, top: COLLIDER_TOPS.parkTree });
+        markColliderAt('parkTree', pos.x, pos.z);
     });
 
     // Flower beds: bougainvillea shrubs on a ring of soil with a stone edge
     const R = rng(0xf10e);
-    const flowerPositions = [
-        { x: parkX - 9, z: parkZ },
-        { x: parkX + 9, z: parkZ },
-        { x: parkX, z: parkZ - 9 },
-        { x: parkX, z: parkZ + 9 }
-    ];
-    flowerPositions.forEach((pos, index) => {
+    layout.flowerBeds.forEach((pos, index) => {
         B.props.add(new THREE.CylinderGeometry(1.7, 1.75, 0.12, 24).translate(pos.x, terrainY + 0.06, pos.z), FINISH.soil);
         B.props.add(new THREE.TorusGeometry(1.76, 0.07, 5, 28).rotateX(Math.PI / 2).translate(pos.x, terrainY + 0.08, pos.z), FINISH.concrete);
         for (let k = 0; k < 3; k++) {
@@ -631,14 +615,13 @@ function createPark(B: CityBatches, extras: CityExtras) {
             addShrub(B.shrub, R, pos.x + Math.cos(a) * 0.7, terrainY + 0.1, pos.z + Math.sin(a) * 0.7, 1.4 + R() * 0.4, index % 2 === 0 ? 0 : 1);
         }
     });
-
-    state.obstacles.push({ x: parkX, z: parkZ, radius: 5.7, top: COLLIDER_TOPS.pond });
 }
 
 // --- Plaza --------------------------------------------------------------------------
 
 function createPlaza(B: CityBatches, extras: CityExtras) {
-    const { x: plazaX, z: plazaZ } = blockCenter(PLAZA_BLOCK.x, PLAZA_BLOCK.z);
+    const layout = plazaLayout();
+    const { x: plazaX, z: plazaZ } = layout.center;
     const terrainAtFountain = getTerrainHeight(plazaX, plazaZ);
     const outer = (blockSize - 2) / 2;
     const inner = (blockSize - 4) / 2;
@@ -657,18 +640,14 @@ function createPlaza(B: CityBatches, extras: CityExtras) {
     flat(B.pavers, -inner, inner, -inner, inner, 0.031, tier === 'software' ? rgb(0xD2A07E) : [1, 1, 1]);
 
     // Central fountain: stone basin and pedestal (merged), water meshes
-    extras.water.push(...buildFountain(B.stucco, worldMaterials(), plazaX, terrainAtFountain, plazaZ, tier));
+    extras.water.push(...buildFountain(B.stucco, worldMaterials(), layout.fountain.x, terrainAtFountain, layout.fountain.z, tier));
+    markColliderAt('fountain', layout.fountain.x, layout.fountain.z);
 
-    const planterOffset = PLAZA_PROP_LAYOUT.planterOffset;
-    const cornerOffsets = [
-        { x: -planterOffset, z: -planterOffset }, { x: planterOffset, z: -planterOffset },
-        { x: -planterOffset, z: planterOffset }, { x: planterOffset, z: planterOffset }
-    ];
     const R = rng(0x91a2);
     const segments = tier === 'desktop' ? 28 : 16;
-    cornerOffsets.forEach((offset, index) => {
-        const planterX = plazaX + offset.x;
-        const planterZ = plazaZ + offset.z;
+    // One planter and one parasol per corner
+    layout.planters.forEach((planter, index) => {
+        const { x: planterX, z: planterZ } = planter;
         const y = terrainAtFountain + 0.04;
         // Terracotta pot with a rolled rim, on a low plinth, filled with soil
         B.props.add(lathe([[1.2, 0], [1.24, 0.05], [1.32, 0.35], [1.42, 0.78], [1.47, 0.84], [1.52, 0.9], [1.52, 1.0], [1.46, 1.04], [1.39, 1.0], [1.37, 0.9]], segments)
@@ -676,12 +655,11 @@ function createPlaza(B: CityBatches, extras: CityExtras) {
         B.props.add(new THREE.CylinderGeometry(1.37, 1.37, 0.02, segments).translate(planterX, y + 0.93, planterZ), FINISH.soil);
         addShrub(B.shrub, R, planterX, y + 0.9, planterZ, 2.6, 1);
         addShrub(B.shrub, R, planterX + 0.3, y + 0.9, planterZ - 0.2, 1.6, 0);
-        state.obstacles.push({ x: planterX, z: planterZ, radius: PLAZA_PROP_LAYOUT.planterRadius, top: COLLIDER_TOPS.planter });
+        markColliderAt('planter', planterX, planterZ);
 
         // Market parasol: weighted base, wooden pole, octagonal canopy with
         // ribs and a valance
-        const parasolX = plazaX + Math.sign(offset.x) * PLAZA_PROP_LAYOUT.parasolOffset;
-        const parasolZ = plazaZ + Math.sign(offset.z) * PLAZA_PROP_LAYOUT.parasolOffset;
+        const { x: parasolX, z: parasolZ } = layout.parasols[index];
         const at = (g: THREE.BufferGeometry) => g.translate(parasolX, y, parasolZ);
         B.props.add(at(lathe([[0.36, 0], [0.36, 0.05], [0.3, 0.1], [0.12, 0.14], [0.06, 0.2]], 12)), FINISH.castIron);
         B.props.add(at(new THREE.CylinderGeometry(0.04, 0.045, 3.1, 8).translate(0, 1.6, 0)), FINISH.wood);
@@ -694,11 +672,8 @@ function createPlaza(B: CityBatches, extras: CityExtras) {
         const color = rgb(PARASOL_COLORS[index]);
         B.fabric.add(at(lathe([[2.08, 2.66], [1.6, 2.86], [0.9, 3.04], [0.3, 3.14], [0.02, 3.17]], 8)), null, color);
         B.fabric.add(at(new THREE.CylinderGeometry(2.08, 2.08, 0.2, 8, 1, true).translate(0, 2.57, 0)), null, scaleRgb(color, 0.92));
-        state.obstacles.push({ x: parasolX, z: parasolZ, radius: PLAZA_PROP_LAYOUT.parasolRadius, top: COLLIDER_TOPS.parasol });
+        markColliderAt('parasol', parasolX, parasolZ);
     });
-
-    // Fountain as obstacle
-    state.obstacles.push({ x: plazaX, z: plazaZ, radius: 5, top: COLLIDER_TOPS.fountain });
 }
 
 // --- Street lights, signals and palms --------------------------------------------------
@@ -707,17 +682,12 @@ function createStreetDetails(extras: CityExtras) {
     // Street lights on two corners of every block; at the crossings with a
     // post on each corner they are traffic signal mast arms (streetLayout.ts)
     const posts = streetPosts();
-    for (const post of posts) state.obstacles.push({ x: post.x, z: post.z, radius: LAMP_COLLIDER_RADIUS, top: COLLIDER_TOPS.lamp });
+    for (const post of posts) markColliderAt('lamp', post.x, post.z);
     extras.furniture.push(...streetFurniture(posts).map(toSpot));
 
     // A palm-lined central boulevard anchors the California identity and is
     // visible from most blocks, making orientation much easier at speed.
-    const boulevardX = roadLineCenter(Math.floor(gridSize / 2), 'x');
-    for (let bz = 0; bz < gridSize; bz++) {
-        const z = blockCenter(0, bz).z;
-        addPalm(extras, boulevardX - roadWidth / 2 - 2.2, z, 200 + bz);
-        addPalm(extras, boulevardX + roadWidth / 2 + 2.2, z, 220 + bz);
-    }
+    for (const palm of boulevardPalms()) addPalm(extras, palm.x, palm.z, palm.salt);
 }
 
 function addPalm(extras: CityExtras, x: number, z: number, salt: number) {
@@ -730,7 +700,7 @@ function addPalm(extras: CityExtras, x: number, z: number, salt: number) {
         scale: 0.85 + size * 0.3,
         yaw: positionHash(x, z, salt + 1) * Math.PI * 2
     });
-    state.obstacles.push({ x, z, radius: 1.0, top: COLLIDER_TOPS.palm });
+    markColliderAt('palm', x, z);
 }
 
 // --- District signs -------------------------------------------------------------------
@@ -776,7 +746,7 @@ function signMaterial(): THREE.Material {
 }
 
 function createDistrictSigns(B: CityBatches) {
-    function addSign(row: number, x: number, z: number, rotation: number) {
+    function addSign(row: number, x: number, z: number, rotation: number, postOffsets: number[], posts: PropPoint[]) {
         const ground = getTerrainHeight(x, z);
         const matrix = new THREE.Matrix4().makeRotationY(rotation).setPosition(x, ground, z);
         // UV rows: canvas row 0 is the top half (v 0.5..1)
@@ -787,19 +757,12 @@ function createDistrictSigns(B: CityBatches) {
         B.signs.add(quad([w / 2, y - h / 2, -0.03], [-w / 2, y - h / 2, -0.03], [-w / 2, y + h / 2, -0.03], [w / 2, y + h / 2, -0.03], uv), matrix);
         B.props.add(new THREE.BoxGeometry(w + 0.1, h + 0.1, 0.05).translate(0, y, 0), SIGN_FRAME, matrix);
 
-        for (const postX of [-2.6, 2.6]) {
+        postOffsets.forEach((postX, i) => {
             B.props.add(new THREE.CylinderGeometry(0.1, 0.13, 3.3, 8).translate(postX, 1.65, 0), SIGN_POST, matrix);
-            state.obstacles.push({
-                x: x + Math.cos(rotation) * postX,
-                z: z - Math.sin(rotation) * postX,
-                radius: 0.35,
-                top: COLLIDER_TOPS.signPost
-            });
-        }
+            markColliderAt('signPost', posts[i].x, posts[i].z);
+        });
     }
 
-    const plaza = blockCenter(PLAZA_BLOCK.x, PLAZA_BLOCK.z);
-    const park = blockCenter(PARK_BLOCK.x, PARK_BLOCK.z);
-    addSign(0, plaza.x, plaza.z - blockSize / 2 + 2.1, 0);
-    addSign(1, park.x, park.z - blockSize / 2 + 2.1, 0);
+    // Rows of the sign canvas in the order of districtSigns()
+    districtSigns().forEach((sign, row) => addSign(row, sign.x, sign.z, sign.rotation, sign.postOffsets, sign.posts));
 }
