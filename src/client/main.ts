@@ -28,7 +28,7 @@ import { startModelPreload } from './assets/gameModels.js';
 import { waitForGameAssets } from './ui/assetGate.js';
 import { updateCarModels } from './vehicle/CarModel.js';
 import { ChaseCamera, RACE_CAMERA, RACE_CAMERA_SLIP_BLEND, type ChaseTarget } from './camera/ChaseCamera.js';
-import { SANDBOX, TUNE_PANEL, TUNE_REQUESTED } from './flags.js';
+import { E2E_DRAW_INTERVAL_MS, SANDBOX, TUNE_PANEL, TUNE_REQUESTED } from './flags.js';
 import { gameHooks } from './game/hooks.js';
 import { assistProfileForDevice, type LocalVehicle } from './vehicle/LocalVehicle.js';
 import { updateRemoteCars } from './net/remotes.js';
@@ -190,6 +190,9 @@ function updateRaceCamera(dt: number, carPos: THREE.Vector3, vehicle: LocalVehic
     }
 }
 
+// Last frame drawn under ?e2e=1&drawfps (flags.ts)
+let lastDrawAt = -Infinity;
+
 function animate(frameTime: number) {
     requestAnimationFrame(animate);
     perfMonitor?.beginFrame();
@@ -284,7 +287,9 @@ function animate(frameTime: number) {
 
     // While the GL context is lost three.js skips rendering anyway; skip the
     // adaptive quality sampling too so the gap doesn't lower the resolution.
-    if (state.renderer && state.scene && state.camera && !isWebGLContextLost()) {
+    const drawNow = E2E_DRAW_INTERVAL_MS === 0 || frameTime - lastDrawAt >= E2E_DRAW_INTERVAL_MS;
+    if (drawNow && state.renderer && state.scene && state.camera && !isWebGLContextLost()) {
+        lastDrawAt = frameTime;
         updateWorldShaders(state.clock.elapsedTime);
         updateLighting();
         // Near geometry or impostor per palm, for the final camera

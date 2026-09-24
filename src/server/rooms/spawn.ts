@@ -3,7 +3,8 @@ import { CITY_LAYOUT, PLAZA_PROP_LAYOUT } from '../../shared/constants.js';
 import { blockCenter, PLAZA_BLOCK } from '../../shared/world/cityGen.js';
 
 // Where a car (re)spawns: a random spot on a road or the plaza that is clear
-// of buildings, the plaza props and the other players of the same room.
+// of buildings, the plaza props, the other players of the same room and the
+// room's pickups (a car must not earn a coin by spawning on it).
 
 export interface SpawnPoint {
     x: number;
@@ -13,6 +14,11 @@ export interface SpawnPoint {
 // Where a car spawns and which way it faces
 export interface SpawnPose extends SpawnPoint {
     yaw: number;
+}
+
+// A circle no car spawns in (a coin or powerup with its pickup radius)
+export interface SpawnKeepOut extends SpawnPoint {
+    radius: number;
 }
 
 const SPAWN_ATTEMPTS = 80;
@@ -108,6 +114,15 @@ function clearsPlayers(point: SpawnPoint, others: readonly SpawnPoint[]): boolea
     return true;
 }
 
+function clearsKeepOut(point: SpawnPoint, keepOut: readonly SpawnKeepOut[]): boolean {
+    for (const zone of keepOut) {
+        const dx = point.x - zone.x;
+        const dz = point.z - zone.z;
+        if (dx * dx + dz * dz < zone.radius * zone.radius) return false;
+    }
+    return true;
+}
+
 function distanceToClosestSq(point: SpawnPoint, others: readonly SpawnPoint[]): number {
     let closest = Number.POSITIVE_INFINITY;
     for (const other of others) {
@@ -118,7 +133,7 @@ function distanceToClosestSq(point: SpawnPoint, others: readonly SpawnPoint[]): 
     return closest;
 }
 
-function fallbackSpawn(city: CityData, others: readonly SpawnPoint[]): SpawnPoint {
+function fallbackSpawn(city: CityData, others: readonly SpawnPoint[], keepOut: readonly SpawnKeepOut[]): SpawnPoint {
     // Road intersections are guaranteed map surfaces and maximize the number
     // of escape directions. Plaza corners add four more crowd-safe options.
     const verticalRoads = city.roads.filter(road => Math.abs(Math.sin(road.rotation)) < 0.001);
@@ -142,7 +157,9 @@ function fallbackSpawn(city: CityData, others: readonly SpawnPoint[]): SpawnPoin
         }
     }
 
-    const safeCandidates = candidates.filter(point => clearsStaticObstacles(city, point));
+    const staticSafe = candidates.filter(point => clearsStaticObstacles(city, point));
+    const clearOfPickups = staticSafe.filter(point => clearsKeepOut(point, keepOut));
+    const safeCandidates = clearOfPickups.length > 0 ? clearOfPickups : staticSafe;
     if (safeCandidates.length === 0) {
         // Defensive: the generated central plaza is always building-free,
         // and this point is outside the fountain clearance.
@@ -163,21 +180,22 @@ function fallbackSpawn(city: CityData, others: readonly SpawnPoint[]): SpawnPoin
 
 /**
  * A random free spot for a car. others are the cars of the same room only:
- * players in another room drive in their own copy of the map.
+ * players in another room drive in their own copy of the map. keepOut are
+ * the room's pickups.
  */
-export function randomSpawn(city: CityData, others: readonly SpawnPoint[]): SpawnPoint {
+export function randomSpawn(city: CityData, others: readonly SpawnPoint[], keepOut: readonly SpawnKeepOut[] = []): SpawnPoint {
     for (let attempt = 0; attempt < SPAWN_ATTEMPTS; attempt++) {
         const point = Math.random() < SPAWN_PLAZA_CHANCE
             ? randomPlazaPoint()
             : randomRoadPoint(city);
-        if (point && clearsStaticObstacles(city, point) && clearsPlayers(point, others)) {
+        if (point && clearsStaticObstacles(city, point) && clearsPlayers(point, others) && clearsKeepOut(point, keepOut)) {
             return point;
         }
     }
 
     // In a crowded room, return the safe fixed candidate with the most room
     // rather than leaking a rejected random position into a building.
-    return fallbackSpawn(city, others);
+    return fallbackSpawn(city, others, keepOut);
 }
 
 /**
@@ -201,7 +219,7 @@ export function spawnYaw(city: CityData, point: SpawnPoint): number {
 }
 
 /** randomSpawn with a heading. */
-export function randomSpawnPose(city: CityData, others: readonly SpawnPoint[]): SpawnPose {
-    const point = randomSpawn(city, others);
+export function randomSpawnPose(city: CityData, others: readonly SpawnPoint[], keepOut: readonly SpawnKeepOut[] = []): SpawnPose {
+    const point = randomSpawn(city, others, keepOut);
     return { ...point, yaw: spawnYaw(city, point) };
 }

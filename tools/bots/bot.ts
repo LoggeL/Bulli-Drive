@@ -285,12 +285,12 @@ export class Bot {
             if (link) link.down.send(deliver, isBinary);
             else deliver();
         });
-        ws.on('close', (code: number) => {
+        ws.on('close', (code: number, reason: Buffer) => {
             if (!current()) return;
             // The close waits behind whatever the netsim still holds
             const closed = () => {
                 link?.close();
-                if (current()) this.onClosed(code, false);
+                if (current()) this.onClosed(code, false, reason.toString());
             };
             if (link) link.down.send(closed, false, true);
             else closed();
@@ -339,7 +339,7 @@ export class Bot {
         else send();
     }
 
-    private onClosed(code: number, own: boolean): void {
+    private onClosed(code: number, own: boolean, reason = ''): void {
         const now = performance.now();
         this.stats.closes.push({ at: now, code, own });
         this.ws = null;
@@ -347,7 +347,7 @@ export class Bot {
         this.inRoom = false;
         this.net.suspend(now);
         if (this.stopped) return;
-        const action = closeAction(code);
+        const action = closeAction(code, reason);
         if (action !== 'reconnect') {
             if (code === CLOSE_POLICY && this.mode === 'flood') {
                 this.stats.kicked = this.stats.kicked ?? 'policy';

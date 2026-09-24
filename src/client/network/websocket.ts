@@ -221,7 +221,7 @@ function onClosed(code: number, reason: string) {
     netDriver.suspend(now);
     console.warn(`Connection closed (${code}${reason ? ` ${reason}` : ''})`);
     if (disconnectedAt < 0) disconnectedAt = now;
-    switch (closeAction(code)) {
+    switch (closeAction(code, reason)) {
         case 'reload':
             // The reject handler reloads (or shows why it does not)
             return;

@@ -100,6 +100,10 @@ export const CLOCK_SAMPLES = 8;
 // Close codes (11.1)
 export const CLOSE_VERSION = 4000;
 export const CLOSE_HELLO = 4001;
+// Close reason of a 4001 after the hello timeout: the page never sent a
+// hello (a busy page, e.g. a slow phone building the world), unlike a
+// hello the server turned away (reason 'hello', after a 'reject')
+export const CLOSE_REASON_NO_HELLO = 'no hello';
 export const CLOSE_FULL = 4002;
 export const CLOSE_POLICY = 4003;
 export const CLOSE_IDLE = 4004;

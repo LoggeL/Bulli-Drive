@@ -8,7 +8,7 @@ import { roomOptions } from '../../src/server/rooms/Room.js';
 import { CAR_IDLE, CAR_LAGGY, CAR_MEGA, CAR_RESPAWN_SHIELD, CAR_SHIELD, INPUT_FROZEN, INPUT_HIDDEN } from '../../src/shared/net/codec.js';
 import { IDLE_AFTER_TICKS, IDLE_EXIT_GHOST_TICKS, LAGGY_RECOVER_TICKS, LAGGY_WINDOW_TICKS } from '../../src/shared/net/constants.js';
 import {
-    COIN_RESET_TICKS, POWERUP_TICKS, RAM_PAIR_COOLDOWN_TICKS, RESPAWN_SHIELD_DRIVE_TICKS, RESPAWN_SHIELD_MAX_TICKS,
+    COIN_PICKUP_RADIUS, COIN_RESET_TICKS, POWERUP_PICKUP_RADIUS, POWERUP_TICKS, RAM_PAIR_COOLDOWN_TICKS, RESPAWN_SHIELD_DRIVE_TICKS, RESPAWN_SHIELD_MAX_TICKS,
     RESPAWN_TICKS, SHOT_COOLDOWN_TICKS, ramDamage
 } from '../../src/shared/party/rules.js';
 import { placeVehicle } from '../../src/shared/sim/vehicle.js';
@@ -405,6 +405,35 @@ describe('Mega ram', () => {
             run(1, [ram]);
         }
         expect(partyOf(victim).health).toBe(100);
+    });
+});
+
+describe('spawn points', () => {
+    it('never puts a car where it would pick up a coin or a powerup', () => {
+        // Cars spawn at random spots on the roads, where the items lie too.
+        // 150 spawns in a row (fixed seed), each one a new player
+        const { coins, powerups } = room.map.world;
+        let nearest = Infinity;
+        for (let i = 0; i < 150; i++) {
+            const session = fakeSession(`Spawner ${i}`);
+            lobby.join(session, 'party');
+            ready(lobby, session);
+            steps(room, 1);
+            const { x, z } = session.member!.car!.state;
+            for (const c of coins) {
+                const d = Math.hypot(x - c.x, z - c.z);
+                nearest = Math.min(nearest, d - COIN_PICKUP_RADIUS);
+            }
+            for (const p of powerups) {
+                const d = Math.hypot(x - p.x, z - p.z);
+                nearest = Math.min(nearest, d - POWERUP_PICKUP_RADIUS);
+            }
+            expect(session.transport.events('pickup')).toEqual([]);
+            lobby.leave(session);
+            steps(room, 1);
+        }
+        // Outside every pickup radius, the closest one included
+        expect(nearest).toBeGreaterThan(0);
     });
 });
 

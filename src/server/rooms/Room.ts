@@ -31,7 +31,7 @@ import type { MapData } from '../../shared/world/mapData.js';
 import { CAR_CHANGE_INTERVAL_MS, HONK_INTERVAL_MS } from '../config.js';
 import type { Session } from '../session.js';
 import { InputBuffer } from './InputBuffer.js';
-import { randomSpawnPose, type SpawnPoint, type SpawnPose } from './spawn.js';
+import { randomSpawnPose, type SpawnKeepOut, type SpawnPoint, type SpawnPose } from './spawn.js';
 
 // A room instance (docs/phase-1b-design.md, 2 and 5): its members, their
 // cars and everything that changes while they play. The map (MapData) is
@@ -286,7 +286,7 @@ export abstract class Room {
         const members = this.sorted.map(m => this.memberInfo(m));
         const health: Record<string, number> = {};
         for (const m of this.sorted) health[m.id] = this.healthOf(m);
-        const preview = randomSpawnPose(this.map.world.city, this.carPositions());
+        const preview = randomSpawnPose(this.map.world.city, this.carPositions(), this.spawnKeepOut());
         return {
             type: 'roomState',
             room: this.info,
@@ -523,7 +523,7 @@ export abstract class Room {
             if (m.pendingSpawn && m.ready) {
                 m.pendingSpawn = false;
                 m.carDirty = false;
-                const pose = randomSpawnPose(this.map.world.city, this.carPositions(m));
+                const pose = randomSpawnPose(this.map.world.city, this.carPositions(m), this.spawnKeepOut());
                 m.car = createSimCar(m.id, carClass(m.session), m.session.profile);
                 spawnVehicle(m.car.state, this.map.simWorld, pose.x, pose.z, pose.yaw);
                 m.alive = true;
@@ -545,6 +545,11 @@ export abstract class Room {
                 m.car.state.flipAngle = 0;
             }
         }
+    }
+
+    /** Where no car spawns besides the static obstacles (the Party's pickups). */
+    protected spawnKeepOut(): readonly SpawnKeepOut[] {
+        return [];
     }
 
     /** Positions of the cars in the sim (spawn spacing), without one member. */

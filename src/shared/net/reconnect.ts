@@ -3,7 +3,7 @@
 // the browser and the bots decide the same way and the tests can check it.
 
 import {
-    CLOSE_FULL, CLOSE_HELLO, CLOSE_IDLE, CLOSE_POLICY, CLOSE_RESTART, CLOSE_TAKEN_OVER, CLOSE_VERSION
+    CLOSE_FULL, CLOSE_HELLO, CLOSE_IDLE, CLOSE_POLICY, CLOSE_REASON_NO_HELLO, CLOSE_RESTART, CLOSE_TAKEN_OVER, CLOSE_VERSION
 } from './constants.js';
 import type { RandomSource } from '../math/rng.js';
 
@@ -28,7 +28,8 @@ export function reconnectDelayMs(attempt: number, random: RandomSource): number 
 /**
  * What the client does after a close:
  * - 'reconnect': on its own, with backoff (lost connection, restart, the
- *   server full for now, anything unknown)
+ *   server full for now, a page too busy to send its hello in time,
+ *   anything unknown)
  * - 'reload': the version check handles it (4000)
  * - 'manual': only by a button (policy kick, session taken over by
  *   another page, a hello the server did not take)
@@ -36,12 +37,12 @@ export function reconnectDelayMs(attempt: number, random: RandomSource): number 
  */
 export type CloseAction = 'reconnect' | 'reload' | 'manual' | 'continue';
 
-export function closeAction(code: number): CloseAction {
+export function closeAction(code: number, reason = ''): CloseAction {
     switch (code) {
         case CLOSE_VERSION: return 'reload';
+        case CLOSE_HELLO: return reason === CLOSE_REASON_NO_HELLO ? 'reconnect' : 'manual';
         case CLOSE_POLICY:
-        case CLOSE_TAKEN_OVER:
-        case CLOSE_HELLO: return 'manual';
+        case CLOSE_TAKEN_OVER: return 'manual';
         case CLOSE_IDLE: return 'continue';
         case CLOSE_FULL:
         case CLOSE_RESTART:

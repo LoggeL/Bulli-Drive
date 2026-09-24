@@ -17,3 +17,14 @@ export const SANDBOX = queryFlag('sandbox') === '1';
 // a short hint instead.
 export const TUNE_REQUESTED = queryFlag('tune') === '1';
 export const TUNE_PANEL = TUNE_REQUESTED && SANDBOX;
+
+// ?e2e=1&drawfps=N (tests only): the page draws at most N frames a second,
+// while the game, the netcode and the HUD still run every frame. Two pages
+// with software WebGL on one CI runner otherwise fall to a few frames a
+// second, too few to drive (tests/e2e/net-contact.spec.ts). 0 = no limit.
+function e2eDrawIntervalMs(): number {
+    if (queryFlag('e2e') !== '1') return 0;
+    const fps = Number(queryFlag('drawfps'));
+    return Number.isFinite(fps) && fps > 0 ? 1000 / fps : 0;
+}
+export const E2E_DRAW_INTERVAL_MS = e2eDrawIntervalMs();

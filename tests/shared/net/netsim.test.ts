@@ -166,8 +166,17 @@ describe('reconnect policy', () => {
         expect(closeAction(4002)).toBe('reconnect');
         expect(closeAction(4000)).toBe('reload');
         expect(closeAction(4001)).toBe('manual');
+        expect(closeAction(4001, 'hello')).toBe('manual');
         expect(closeAction(4003)).toBe('manual');
         expect(closeAction(4005)).toBe('manual');
         expect(closeAction(4004)).toBe('continue');
+    });
+
+    it('reconnects when the server gave up waiting for the hello of a busy page', () => {
+        // A page whose world build held back the open event: its hello came
+        // too late, nothing was wrong with it (server index.ts, 'no hello')
+        expect(closeAction(4001, 'no hello')).toBe('reconnect');
+        // The reason only counts for 4001
+        expect(closeAction(4003, 'no hello')).toBe('manual');
     });
 });

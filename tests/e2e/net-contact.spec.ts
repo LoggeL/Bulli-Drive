@@ -83,7 +83,12 @@ async function waitUntilSolid(pages: Page[]) {
 
 for (const netsim of ['', '150,30,3']) {
     test(`a head-on ram shows on both screens${netsim ? ` with ?netsim=${netsim}` : ''}`, async ({ openPlayer }) => {
-        const query = netsim ? `&netsim=${netsim}` : '';
+        // Both pages draw only 2 frames a second (flags.ts), while the game,
+        // the netcode and the HUD run every frame: two pages drawing with
+        // software WebGL on one CI runner fell to 2 to 3 frames a second,
+        // their inputs came in bursts and the server made both cars lag
+        // ghosts in every attempt.
+        const query = `&drawfps=2${netsim ? `&netsim=${netsim}` : ''}`;
         const alice = await openPlayer('alice-ram');
         const bob = await openPlayer('bob-ram');
         // Free Roam: no powerup on the runway can make a car a ghost

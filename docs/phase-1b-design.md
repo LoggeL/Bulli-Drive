@@ -140,14 +140,14 @@ Client                                   Server
 
 | Nachricht | Felder | Regeln |
 |---|---|---|
-| `hello` (C→S) | `protocolVersion`, `build` (Meta-Stempel der Seite oder `null` im Dev-Server), `connId` (zufällig pro Seitenladung, nur im Speicher), `sessionToken?`, `resume?` (Ticket aus 11.3), `name`, `carType`, `profile` (`standard`/`touch`), `room` (`party`/`freeroam`) | Erste Nachricht. Kommt 5 s lang kein gültiges `hello`, schließt der Server mit 4001. |
+| `hello` (C→S) | `protocolVersion`, `build` (Meta-Stempel der Seite oder `null` im Dev-Server), `connId` (zufällig pro Seitenladung, nur im Speicher), `sessionToken?`, `resume?` (Ticket aus 11.3), `name`, `carType`, `profile` (`standard`/`touch`), `room` (`party`/`freeroam`) | Erste Nachricht. Kommt 15 s lang kein gültiges `hello`, schließt der Server mit 4001 (ursprünglich 5 s, siehe 20.7). |
 | `welcome` (S→C) | `playerId`, `sessionToken`, `resumed` (bool), `serverBuild`, `tickRate` (60), `snapshotRate` (20) | |
 | `reject` (S→C) | `reason` (`version`/`hello`/`full`), `reload` (bool) | Danach Close mit 4000/4001/4002. |
 | `roomState` (S→C) | `roomId`, `kind`, `tick`, `world {seed, mapVersion, worldHash}`, `members [{id, slot, name, color, carType, ready}]`, Party: `items {powerups: [{id, type, collected}], coins: [{id, collected}]}`, `scoreboard`, `health` je Mitglied | Nach `welcome` und nach jedem Room-Wechsel. |
 
 **Alte Clients:** Ein Client mit `protocolVersion ≠ 2` bekommt `reject {reason: 'version', reload: true}` und Close 4000. Der v2-Client zeigt „Neue Version – wird geladen“ und lädt neu, höchstens einmal pro `serverBuild` (Schutz über `sessionStorage` wie in `buildVersion.ts`; greift der Schutz, erscheint ein Button „Neu laden“). Kein v1/v2-Adapter.
 
-**Der heute live laufende v1-Client** schickt kein `hello`. Er bekommt nach 5 s Close 4001. Er hat keinen Handler dafür und keinen Reconnect, bleibt also stehen, bis der Nutzer neu lädt; danach greift `ensureCurrentBuild` und lädt den v2-Client. Eine Reload-Aufforderung kann man diesem einen alten Stand nicht mehr beibringen. Das betrifft nur Tabs, die über den Deploy von 1b hinweg offen sind (der Deploy trennt sie ohnehin), und wird einmalig hingenommen.
+**Der heute live laufende v1-Client** schickt kein `hello`. Er bekommt nach 15 s Close 4001. Er hat keinen Handler dafür und keinen Reconnect, bleibt also stehen, bis der Nutzer neu lädt; danach greift `ensureCurrentBuild` und lädt den v2-Client. Eine Reload-Aufforderung kann man diesem einen alten Stand nicht mehr beibringen. Das betrifft nur Tabs, die über den Deploy von 1b hinweg offen sind (der Deploy trennt sie ohnehin), und wird einmalig hingenommen.
 
 **Build-Abgleich:** Ist `welcome.serverBuild ≠ hello.build` bei gleicher Protokollversion (neuer Deploy ohne Protokolländerung), lädt der Client ebenfalls einmal neu. Das passiert nur direkt nach einem Reconnect, also wenn der Spieler ohnehin kurz getrennt war. Token und Resume-Ticket liegen in `sessionStorage` und überleben den Reload (Abschnitt 11).
 
@@ -1039,3 +1039,13 @@ Ein Review mit Messungen (Netcode, Server-Sicherheit, Party-Parität und Mobile,
 
 **Bewusst nicht geändert.** Der Mega-Ram rechnet mit dem Tempo zu Beginn des Ticks, nicht exakt im Kontakt-Substep (ausreichend genau, ohne Sim-Änderung). Die Grenzen pro Adresse vertrauen den Proxy-Headern, wenn der direkte Peer privat ist; wer den Cloudflare-Proxy umgeht, kann sie mit gefälschten Headern umgehen, die prozessweiten Grenzen bleiben. Nach einem Server-Hänger springt die Interpolation der fernen Autos einmal zurück in den gepufferten Bereich (statt 15–20 s zu extrapolieren).
 
+
+### 20.7 Erster CI-Lauf mit der Grafik G1
+
+Der erste CI-Lauf von 1b auf `main` mit G1 (realistische Welt, HDRI, Blender-Autos) war in fünf E2E-Tests rot. Lokal auf einem Mac liefen sie grün. Die Ursachen:
+
+- **4001 „no hello“ bei einer beschäftigten Seite.** Der Browser schickt `hello` aus dem `open`-Event des Sockets. Das Event wartet hinter dem Aufbau der Welt. Mit Software-WebGL und einer zweiten Seite auf demselben Runner kam `hello` erst nach mehr als 5 s. Der Server schloss dann mit 4001, und der Client zeigte „Could not join the game“ mit Button (`rooms.spec.ts`, Ram-Test mit Netsim). Auf einem langsamen Handy kann das genauso passieren. **Änderung:** `HELLO_TIMEOUT_MS` steigt von 5 s auf 15 s. Ein Close 4001 mit dem Grund `no hello` (`CLOSE_REASON_NO_HELLO`) verbindet automatisch neu (`closeAction(code, reason)`), die Bots eingeschlossen. Ein `hello`, das der Server abweist (`reject` mit Grund `hello`), braucht weiter den Button.
+- **Spawn auf einem Coin.** Autos spawnen zufällig auf Straßen, und dort liegen auch Coins und Powerups. Ein Auto, das auf einem Coin spawnt, bekommt ihn geschenkt und nach dem Reset von 15 s gleich noch einmal. Im Neustart-Test stand der Score deshalb auf 20 und dann auf 30 statt auf 10. `sessions.test.ts` umging das schon mit festem Zufall (20.6). **Änderung:** `Room.spawnKeepOut()` liefert Kreise, in die kein Auto spawnt. Der Party-Room gibt dafür jedes Item zurück, auch eingesammelte, jeweils mit Pickup-Radius plus 2 m. Das gilt für Spawn, Respawn und die Vorschau in `roomState`. Findet sich keine freie Stelle, nimmt der Fallback bevorzugt Kreuzungen außerhalb dieser Kreise.
+- **Zwei zeichnende Seiten auf einem Runner.** Im Ram-Test liefen beide Seiten mit 2 bis 3 Frames pro Sekunde (31 Frames in 14 s). Ihre Inputs kamen in Schüben, der Server machte in jedem Versuch beide Autos zu Lag-Ghosts, und der Test lief in den Timeout. **Änderung:** `?e2e=1&drawfps=N` (`flags.ts`, wirkt nur zusammen mit `e2e=1`) zeichnet höchstens N Bilder pro Sekunde. Spiel, Netcode und HUD laufen weiter in jedem Frame. Der Ram-Test setzt `drawfps=2` auf beiden Seiten, die Room-Tests auf der ersten Seite. Das Zeichnen selbst prüfen weiterhin die Tests mit einer Seite.
+
+**Mutationsproben:** `closeAction(4001, 'no hello')` wieder `manual` → `netsim.test.ts` rot. `PartyRoom.spawnKeepOut` gibt `[]` zurück → der neue Test in `partyRoom.test.ts` (150 Spawns hintereinander) ist rot, weil ein Spawn 3,6 m innerhalb eines Pickup-Radius liegt.

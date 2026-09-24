@@ -21,7 +21,7 @@ import {
 } from './config.js';
 import { InputPacketSchema } from '../shared/protocol.js';
 import { decodeInputPacket, FRAME_INPUT } from '../shared/net/codec.js';
-import { CLOSE_HELLO, CLOSE_POLICY, CLOSE_IDLE, CLOSE_RESTART } from '../shared/net/constants.js';
+import { CLOSE_HELLO, CLOSE_POLICY, CLOSE_IDLE, CLOSE_REASON_NO_HELLO, CLOSE_RESTART } from '../shared/net/constants.js';
 import { tuningIsDefault } from '../shared/sim/tuning.js';
 import * as v from 'valibot';
 import { mapFor } from './maps.js';
@@ -301,7 +301,7 @@ wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
     }));
 
     const helloTimer = setTimeout(() => {
-        if (!session) connection.close(CLOSE_HELLO, 'no hello');
+        if (!session) connection.close(CLOSE_HELLO, CLOSE_REASON_NO_HELLO);
     }, HELLO_TIMEOUT_MS);
 
     const handle = (data: Buffer, isBinary: boolean) => {

@@ -6,10 +6,14 @@ import { test, expect, joinGame, snapshot } from './fixtures.js';
 
 test.use({ viewport: { width: 1000, height: 640 } });
 
+// Two pages with software WebGL share the CI runner: the first one draws 2
+// frames a second, so the second one loads in time (flags.ts)
+const DRAW_LIMIT = '&drawfps=2';
+
 test('Free Roam from the splash, then back to the Party from the room menu', async ({ openPlayer }) => {
     const roamer = await openPlayer('roamer');
     const partier = await openPlayer('partier');
-    const roamerId = await joinGame(roamer, 'E2E Roamer', '', 'freeroam');
+    const roamerId = await joinGame(roamer, 'E2E Roamer', DRAW_LIMIT, 'freeroam');
     const partierId = await joinGame(partier, 'E2E Partier');
     const { page } = roamer;
 
@@ -71,7 +75,7 @@ test('Free Roam from the splash, then back to the Party from the room menu', asy
 test('a Free Roam player who leaves disappears for the others in the room', async ({ openPlayer }) => {
     const first = await openPlayer('roam-a');
     const second = await openPlayer('roam-b');
-    const firstId = await joinGame(first, 'E2E Roam A', '', 'freeroam');
+    const firstId = await joinGame(first, 'E2E Roam A', DRAW_LIMIT, 'freeroam');
     await joinGame(second, 'E2E Roam B', '', 'freeroam');
     const [a, b] = [await snapshot(first.page), await snapshot(second.page)];
     // Both land in the fullest Free Roam room

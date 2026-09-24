@@ -13,8 +13,11 @@ export const TERRAIN_CONFIG: TerrainConfig = DEFAULT_TERRAIN_CONFIG;
 // lag ghost; a socket without a pong for 20 s is terminated
 export const PING_EVERY_MS = 2_000;
 export const DEAD_SOCKET_MS = 20_000;
-// The first message must be a valid 'hello' within this time (3.2)
-export const HELLO_TIMEOUT_MS = 5_000;
+// The first message must be a valid 'hello' within this time (3.2). The
+// browser sends it from the socket's open event, which waits behind the
+// world build on a slow device, so the limit leaves room for that; a page
+// that still misses it reconnects on its own (reconnect.ts)
+export const HELLO_TIMEOUT_MS = 15_000;
 
 // Rooms (docs/phase-1b-design.md, 2.3): players per room instance, open
 // connections of the whole process, and how long an empty extra instance
