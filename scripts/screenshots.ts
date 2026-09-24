@@ -1,6 +1,9 @@
 // Screenshot set for visual before/after comparisons: starts the production
 // server, joins with headless Chromium (?e2e=1) and captures fixed views
-// (chase camera on a street, plaza, park, overview, city edge, mobile).
+// (chase camera on a street, the car up close, its rear with brake lights,
+// a showroom of all car types from the front and the rear, close-ups of
+// the Kaefer, Pritsche, 356 and 181, plaza, park, street furniture, palms,
+// fountain, overview, city edge, mobile).
 //
 //   npm run screenshots -- --out=shots/after                 # build + capture
 //   npm run screenshots -- --out=shots/after --gl=swiftshader
@@ -180,7 +183,7 @@ async function join(browser: Browser, contextOptions: BrowserContextOptions, bas
     return page;
 }
 
-interface ShotStats { view: string; calls: number; triangles: number; carWidth?: number; carHeight?: number }
+interface ShotStats { view: string; calls: number; triangles: number; shadowCalls?: number; carWidth?: number; carHeight?: number }
 
 // chase: the view comes from the chase camera, so the car's share of the
 // frame is worth recording
@@ -191,20 +194,41 @@ async function shoot(page: Page, out: string, view: string, stats: ShotStats[], 
         : null;
     await page.screenshot({ path: file });
     const { render } = await snapshot(page);
-    const entry: ShotStats = { view, calls: render.calls, triangles: render.triangles };
+    // calls/triangles: the whole frame including the shadow pass (shadowCalls)
+    const entry: ShotStats = { view, calls: render.calls, triangles: render.triangles, shadowCalls: render.shadowCalls };
     if (box) {
         entry.carWidth = Number(box.width.toFixed(3));
         entry.carHeight = Number(box.height.toFixed(3));
     }
     stats.push(entry);
     const car = box ? `, car ${(box.width * 100).toFixed(1)} % wide, ${(box.height * 100).toFixed(1)} % high` : '';
-    log(`${view}: ${render.calls} calls, ${render.triangles} triangles${car}`);
+    log(`${view}: ${render.calls} calls (${render.shadowCalls} shadow), ${render.triangles} triangles${car}`);
+}
+
+interface SpawnSpec { type: string; color: number; x: number; z: number; yaw: number; brake?: boolean; steer?: number; surfboard?: boolean }
+
+// Game cars placed like remote players (e2e hook spawnCar), for the showroom
+async function spawnCars(page: Page, cars: SpawnSpec[]): Promise<void> {
+    await page.evaluate(cars => {
+        const debug = (window as unknown as { __bulliDebug: { spawnCar(...args: unknown[]): unknown } }).__bulliDebug;
+        for (const car of cars) {
+            debug.spawnCar(car.type, car.color, car.x, car.z, car.yaw, { brake: car.brake, steer: car.steer, surfboard: car.surfboard });
+        }
+    }, cars);
+}
+
+async function clearSpawned(page: Page): Promise<void> {
+    await page.evaluate(() => (window as unknown as { __bulliDebug: { clearModels(): void } }).__bulliDebug.clearModels());
 }
 
 // Road center lines run at -98, -46, 6, 58, 110 on both axes.
 const MID_ROAD = roadLineCenter(2, 'x');
 const MID_CROSS = roadLineCenter(2, 'z');
 const EDGE_ROAD = roadLineCenter(4, 'x');
+// The showroom row stands across the boulevard on the crossing road one
+// block south of the city center: the whole row is on asphalt, and no palm
+// of the boulevard (at the block centers) stands among or right behind the cars
+const SHOWROOM_Z = roadLineCenter(1, 'z');
 const plaza = blockCenter(PLAZA_BLOCK.x, PLAZA_BLOCK.z);
 const park = blockCenter(PARK_BLOCK.x, PARK_BLOCK.z);
 
@@ -213,6 +237,11 @@ async function captureDesktop(browser: Browser, baseURL: string, options: Option
     const page = await join(browser, {
         ...devices['Desktop Chrome'], viewport: { width: 1600, height: 900 }, deviceScaleFactor: 1
     }, baseURL, 'Shots', options.physics);
+    // Collision obstacles as the client built them, to check that a visual
+    // change of the world left the gameplay alone (compare before/after)
+    const obstacles = await page.evaluate(() =>
+        (window as unknown as { __bulliDebug: { obstacles(): unknown[] } }).__bulliDebug.obstacles());
+    fs.writeFileSync(path.join(options.out, 'obstacles.json'), JSON.stringify(obstacles) + '\n');
 
     // Chase camera on the middle road looking north towards the plaza, HUD
     // visible (checks UI legibility too). The car is fresh, so the respawn
@@ -230,6 +259,70 @@ async function captureDesktop(browser: Browser, baseURL: string, options: Option
         await setCamera(page, { position: [MID_ROAD + 6, 3.2, -60 + 8.5], lookAt: [MID_ROAD, 1.2, -60], fov: 40 });
         await settle(page, 1200);
         await shoot(page, options.out, 'car', stats);
+        await setCamera(page, null);
+        await hideHud(page, false);
+    }
+
+    // Close-up of the car from the rear: brake lights, left blinker, the
+    // cabin through the rear window, wheel and tyre detail
+    if (want('car-rear')) {
+        await place(page, MID_ROAD, -120, 0);
+        await hideHud(page, true);
+        const x = MID_ROAD + 3, z = -72;
+        await spawnCars(page, [{ type: 'bulli', color: 0x2E6FA8, x, z, yaw: 0.35, brake: true, steer: 0.3 }]);
+        await setCamera(page, { position: [x - 4.2, 2.6, z - 7.4], lookAt: [x, 1.0, z], fov: 40 });
+        await settle(page, 1500);
+        await shoot(page, options.out, 'car-rear', stats);
+        await clearSpawned(page);
+        await setCamera(page, null);
+        await hideHud(page, false);
+    }
+
+    // Showroom: every car type side by side in fixed colours (and the Bulli
+    // with its optional surfboard), seen from the front
+    if (want('showroom')) {
+        await place(page, MID_ROAD, -120, 0);
+        await hideHud(page, true);
+        const z = SHOWROOM_Z;
+        const types = ['jeep', 'sport', 'bulli', 'beetle', 'pickup'];
+        const colors = [0x6B8E4E, 0xC0392B, 0xD9A441, 0x2E6FA8, 0x8E5B3A];
+        const cars: SpawnSpec[] = types.map((type, i) => ({ type, color: colors[i], x: MID_ROAD - 13 + i * 5.2, z, yaw: 0 }));
+        cars.push({ type: 'bulli', color: 0x3D8C7A, x: MID_ROAD + 13, z: z - 1, yaw: -0.5, surfboard: true });
+        await spawnCars(page, cars);
+        await setCamera(page, { position: [MID_ROAD + 2, 4.2, z + 17], lookAt: [MID_ROAD, 1.1, z], fov: 55 });
+        await settle(page, 1500);
+        await shoot(page, options.out, 'showroom', stats);
+        await clearSpawned(page);
+        await setCamera(page, null);
+        await hideHud(page, false);
+    }
+
+    // Close-ups of the other four Blender cars (front three-quarter, braking,
+    // steering left) and the showroom row from behind
+    for (const [type, color] of [['beetle', 0x2E6FA8], ['pickup', 0x6B8E4E], ['sport', 0xC0392B], ['jeep', 0xD9A441]] as const) {
+        if (!want(`car-${type}`)) continue;
+        await place(page, MID_ROAD, -120, 0);
+        await hideHud(page, true);
+        const x = MID_ROAD + 3, z = -72;
+        await spawnCars(page, [{ type, color, x, z, yaw: -0.35, brake: true, steer: 0.25 }]);
+        await setCamera(page, { position: [x + 5.2, 2.4, z + 6.4], lookAt: [x, 0.9, z], fov: 40 });
+        await settle(page, 1500);
+        await shoot(page, options.out, `car-${type}`, stats);
+        await clearSpawned(page);
+        await setCamera(page, null);
+        await hideHud(page, false);
+    }
+    if (want('showroom-rear')) {
+        await place(page, MID_ROAD, -120, 0);
+        await hideHud(page, true);
+        const z = SHOWROOM_Z;
+        const types = ['jeep', 'sport', 'bulli', 'beetle', 'pickup'];
+        const colors = [0x6B8E4E, 0xC0392B, 0xD9A441, 0x2E6FA8, 0x8E5B3A];
+        await spawnCars(page, types.map((type, i) => ({ type, color: colors[i], x: MID_ROAD - 13 + i * 5.2, z, yaw: 0, brake: true })));
+        await setCamera(page, { position: [MID_ROAD - 2, 4.2, z - 17], lookAt: [MID_ROAD, 1.1, z], fov: 55 });
+        await settle(page, 1500);
+        await shoot(page, options.out, 'showroom-rear', stats);
+        await clearSpawned(page);
         await setCamera(page, null);
         await hideHud(page, false);
     }
@@ -263,6 +356,55 @@ async function captureDesktop(browser: Browser, baseURL: string, options: Option
         await setCamera(page, { position: [park.x - 24, 10, park.z - 26], lookAt: [park.x, 1, park.z], fov: 55 });
         await settle(page, 1500);
         await shoot(page, options.out, 'park', stats);
+    }
+
+    // Street furniture at the signalized crossing next to the plaza: lamp
+    // and signal poles, hydrant, trash can (graphics G1 props)
+    if (want('props')) {
+        await place(page, MID_ROAD + 3, MID_CROSS - 30, 0);
+        await hideHud(page, true);
+        await setCamera(page, { position: [MID_ROAD - 3, 2.2, MID_CROSS - 20], lookAt: [MID_ROAD + 8.1, 2.4, MID_CROSS - 8.1], fov: 50 });
+        await settle(page, 1500);
+        await shoot(page, options.out, 'props', stats);
+    }
+
+    // A plain street light corner at the south edge: hydrant and trash can
+    // next to the posts (they stand inside the posts' colliders)
+    if (want('props-curb')) {
+        await place(page, MID_ROAD + 3, -60, Math.PI);
+        await hideHud(page, true);
+        await setCamera(page, { position: [MID_ROAD, 2.0, -81], lookAt: [MID_ROAD, 0.9, -92], fov: 70 });
+        await settle(page, 1500);
+        await shoot(page, options.out, 'props-curb', stats);
+    }
+
+    // Looking up at the boulevard palms (crowns against the sky)
+    if (want('palms')) {
+        await place(page, MID_ROAD, -96, 0);
+        await hideHud(page, true);
+        await setCamera(page, { position: [MID_ROAD - 4, 2.5, -40], lookAt: [MID_ROAD + 8.2, 10, -20], fov: 55 });
+        await settle(page, 1500);
+        await shoot(page, options.out, 'palms', stats);
+    }
+
+    // The same palms with every palm beyond 12 m drawn as impostor (far LOD)
+    if (want('palms-lod')) {
+        await place(page, MID_ROAD, -96, 0);
+        await hideHud(page, true);
+        await page.evaluate(() => (window as unknown as { __bulliDebug: { setPalmImpostorDistance(m: number | null): void } }).__bulliDebug.setPalmImpostorDistance(12));
+        await setCamera(page, { position: [MID_ROAD - 4, 2.5, -40], lookAt: [MID_ROAD + 8.2, 10, -20], fov: 55 });
+        await settle(page, 1500);
+        await shoot(page, options.out, 'palms-lod', stats);
+        await page.evaluate(() => (window as unknown as { __bulliDebug: { setPalmImpostorDistance(m: number | null): void } }).__bulliDebug.setPalmImpostorDistance(null));
+    }
+
+    // Close-up of the plaza fountain (water shader)
+    if (want('fountain')) {
+        await place(page, plaza.x + 2, plaza.z + 22, Math.PI);
+        await hideHud(page, true);
+        await setCamera(page, { position: [plaza.x + 1.5, 3.2, plaza.z + 10.5], lookAt: [plaza.x, 1.3, plaza.z], fov: 50 });
+        await settle(page, 1500);
+        await shoot(page, options.out, 'fountain', stats);
     }
 
     // High overview of the whole city and the terrain around it

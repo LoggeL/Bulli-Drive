@@ -1,10 +1,19 @@
 import * as THREE from 'three';
 import { state } from './state.js';
-import { focusLightingOn } from './render/lighting.js';
+import { focusLightingOn, lightingTier, whenSkyReady } from './render/lighting.js';
+import { textureStats, whenWorldTexturesLoaded } from './world/textures.js';
+import { frameStats } from './render/frameStats.js';
 import type { Obstacle } from './types.js';
 import { PHYSICS_V2 } from './flags.js';
 import type { LocalVehicle } from './vehicle/LocalVehicle.js';
 import type { VehicleInput } from '../shared/sim/types.js';
+import { models } from './assets/gameModels.js';
+import { getTerrainHeight } from './world/environment.js';
+import { palmStats, setPalmImpostorDistance, updatePalms, whenPalmImpostorsReady } from './world/palms.js';
+import { getKTX2Loader } from './assets/gltfLoader.js';
+import type { ModelCacheSnapshot } from './assets/ModelCache.js';
+import { CarModel, liveCarModels, refreshCarLods, type CarType } from './vehicle/CarModel.js';
+import { gameHooks } from './game/hooks.js';
 
 // Hook for the Playwright smoke tests (tests/e2e) and the screenshot script
 // (scripts/screenshots.ts). It is only installed when the page is opened with
@@ -68,9 +77,248 @@ export interface BulliDebugSnapshot {
     // (THREE.Clock.getDelta), in ms; the dt the physics really got
     frameTime: number;
     // three.js counters of the last rendered frame
-    render: { frame: number; calls: number; triangles: number };
+    // calls/triangles include the shadow pass, shadowCalls is its share
+    render: { frame: number; calls: number; triangles: number; shadowCalls: number; shadowTriangles: number };
     camera: { x: number; y: number; z: number; fov: number };
     v2: V2Snapshot | null;
+    // Car model cache (assets/ModelCache.ts)
+    models: ModelCacheSnapshot;
+}
+
+// One instantiated cached model, as the e2e tests check it
+export interface ModelInfo {
+    triangles: number;
+    meshes: number;
+    nodes: string[];
+    materials: string[];
+    // Textures that came in as KTX2 (CompressedTexture) / as anything else
+    compressedTextures: number;
+    otherTextures: number;
+    hiddenNodes: string[];
+    // Bounding box of the visible opaque meshes (m)
+    size: [number, number, number];
+}
+
+// State of the realistic world look (render/look.ts, world/textures.ts)
+export interface WorldInfo {
+    tier: string;
+    textures: { requested: number; loaded: number; failed: number };
+    // uuid of scene.environment (the PMREM of the sky), null without one
+    environment: string | null;
+    // Named top level scene objects of the world
+    groups: string[];
+    // Palms drawn as geometry and as impostors at the last frame, and
+    // whether the impostor atlas is baked (null before the city exists)
+    palms: { near: number; impostors: number; baked: boolean } | null;
+    // Instances per street furniture kind
+    furniture: Record<string, number>;
+}
+
+function worldInfo(): WorldInfo {
+    return {
+        tier: lightingTier(),
+        textures: { ...textureStats },
+        environment: state.scene?.environment?.uuid ?? null,
+        groups: (state.scene?.children ?? []).map(child => child.name).filter(Boolean),
+        palms: palmStats(),
+        furniture: Object.fromEntries((state.scene?.getObjectByName('furniture')?.children ?? [])
+            .map(mesh => [mesh.name.replace('furniture-', ''), (mesh as THREE.InstancedMesh).count]))
+    };
+}
+
+// A standalone texture from public/textures, loaded through the game's KTX2Loader
+export interface TextureProbe {
+    width: number;
+    height: number;
+    compressed: boolean;
+    mipmaps: number;
+    colorSpace: string;
+}
+
+function modelInfo(id: string, lod: number): ModelInfo | null {
+    const root = models.instantiate(id, lod);
+    if (!root) return null;
+    let triangles = 0;
+    let meshes = 0;
+    const nodes: string[] = [];
+    const hiddenNodes: string[] = [];
+    const materials = new Set<string>();
+    const textures = new Set<THREE.Texture>();
+    root.traverse(child => {
+        if (child.name) nodes.push(child.name);
+        if (!child.visible) hiddenNodes.push(child.name);
+        const mesh = child as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        meshes++;
+        const index = mesh.geometry.index;
+        triangles += (index ? index.count : mesh.geometry.attributes.position.count) / 3;
+        for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+            materials.add(material.name);
+            for (const value of Object.values(material)) {
+                if ((value as THREE.Texture)?.isTexture) textures.add(value as THREE.Texture);
+            }
+        }
+    });
+    // Size of the visible opaque parts (without the glass, which also carries the ground blob)
+    const box = new THREE.Box3();
+    root.updateMatrixWorld(true);
+    root.traverseVisible(child => {
+        const mesh = child as THREE.Mesh;
+        if (!mesh.isMesh || (mesh.material as THREE.Material).transparent) return;
+        box.union(new THREE.Box3().setFromObject(mesh));
+    });
+    const size = box.getSize(new THREE.Vector3());
+    const compressed = [...textures].filter(t => (t as THREE.CompressedTexture).isCompressedTexture).length;
+    return {
+        triangles,
+        meshes,
+        nodes: nodes.sort(),
+        materials: [...materials].sort(),
+        compressedTextures: compressed,
+        otherTextures: textures.size - compressed,
+        hiddenNodes,
+        size: [size.x, size.y, size.z]
+    };
+}
+
+// Test-only instances of cached models placed in the scene (spawnModel)
+const spawnedModels: THREE.Object3D[] = [];
+
+function spawnModel(id: string, lod: number, x: number, z: number, yaw = 0): boolean {
+    const root = models.instantiate(id, lod);
+    if (!root || !state.scene) return false;
+    root.position.set(x, getTerrainHeight(x, z), z);
+    root.rotation.y = yaw;
+    state.scene.add(root);
+    spawnedModels.push(root);
+    return true;
+}
+
+// Game car models (CarModel, like a remote player's car) placed for the
+// showroom screenshots; brake/steer hold their drive look every frame
+interface SpawnedCar {
+    model: CarModel;
+    brake: boolean;
+    steer: number;
+}
+const spawnedCars: SpawnedCar[] = [];
+let spawnedCarsHooked = false;
+
+export interface SpawnCarOptions {
+    brake?: boolean;
+    steer?: number;
+    surfboard?: boolean;
+}
+
+function spawnCar(carType: CarType, color: number, x: number, z: number, yaw = 0, options: SpawnCarOptions = {}): CarInfo | null {
+    if (!state.scene) return null;
+    const model = new CarModel(color, carType);
+    model.group.position.set(x, getTerrainHeight(x, z), z);
+    model.group.rotation.y = yaw;
+    model.gltf?.setSurfboard(options.surfboard ?? false);
+    state.scene.add(model.group);
+    spawnedCars.push({ model, brake: options.brake ?? false, steer: options.steer ?? 0 });
+    gameHooks.extraModels.push(model);
+    if (!spawnedCarsHooked) {
+        spawnedCarsHooked = true;
+        gameHooks.frame.push(() => {
+            for (const car of spawnedCars) car.model.setDriveState(0, car.steer, car.brake);
+        });
+    }
+    return carInfo(model);
+}
+
+function clearModels(): void {
+    for (const root of spawnedModels.splice(0)) root.removeFromParent();
+    for (const car of spawnedCars.splice(0)) {
+        car.model.group.removeFromParent();
+        const index = gameHooks.extraModels.indexOf(car.model);
+        if (index >= 0) gameHooks.extraModels.splice(index, 1);
+        car.model.dispose();
+    }
+}
+
+// How a car is drawn: GLB body (which LOD) or procedural
+export interface CarInfo {
+    carType: string;
+    gltf: boolean;
+    lod: number;
+    lods: number[];
+    scale: number;
+    // Scaled body size (m) and the contact shadow footprint
+    size: [number, number, number] | null;
+    footprint: [number, number];
+    nametagHeight: number;
+    // Material objects of this car, and how many of them are the model
+    // cache's shared template materials (must be 0)
+    materials: number;
+    sharedMaterials: number;
+    meshes: number;
+    // The player's own car (the others are drawn cheaper on the phone tier)
+    local: boolean;
+    shadowCasters: number;
+}
+
+function templateMaterials(): Set<THREE.Material> {
+    const shared = new Set<THREE.Material>();
+    for (const key of models.snapshot().loaded) {
+        const [id, lod] = key.split(':');
+        const root = models.instantiate(id, Number(lod));
+        root?.traverse(child => {
+            const mesh = child as THREE.Mesh;
+            if (!mesh.isMesh) return;
+            for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) shared.add(material);
+        });
+    }
+    return shared;
+}
+
+function carInfo(model: CarModel): CarInfo {
+    const shared = templateMaterials();
+    const materials = new Set<THREE.Material>();
+    let meshes = 0;
+    let shadowCasters = 0;
+    model.flipGroup.traverseVisible(child => {
+        const mesh = child as THREE.Mesh;
+        if (mesh.isMesh && mesh.castShadow) shadowCasters++;
+    });
+    model.flipGroup.traverse(child => {
+        const mesh = child as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        meshes++;
+        for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) materials.add(material);
+    });
+    const gltf = model.gltf;
+    return {
+        carType: model.carType,
+        gltf: !!gltf,
+        lod: gltf?.lod ?? -1,
+        lods: gltf?.lods ?? [],
+        scale: gltf?.scale ?? 1,
+        size: gltf ? [gltf.size.x, gltf.size.y, gltf.size.z] : null,
+        footprint: model.footprint,
+        nametagHeight: model.nametagHeight,
+        materials: materials.size,
+        sharedMaterials: [...materials].filter(material => shared.has(material)).length,
+        meshes,
+        local: model.local,
+        // Visible meshes that cast a shadow
+        shadowCasters
+    };
+}
+
+async function loadTextureProbe(url: string): Promise<TextureProbe> {
+    const loader = await getKTX2Loader(state.renderer);
+    const texture = await loader.loadAsync(url);
+    const probe = {
+        width: texture.image.width,
+        height: texture.image.height,
+        compressed: !!(texture as THREE.CompressedTexture).isCompressedTexture,
+        mipmaps: texture.mipmaps?.length ?? 0,
+        colorSpace: texture.colorSpace
+    };
+    texture.dispose();
+    return probe;
 }
 
 function v2Snapshot(vehicle: LocalVehicle | undefined): V2Snapshot | null {
@@ -127,9 +375,10 @@ function localCarScreenBox(): ScreenBox | null {
     car.group.updateMatrixWorld(true);
     camera.updateMatrixWorld();
     let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
-    car.flipGroup.traverse((child: THREE.Object3D) => {
+    car.flipGroup.traverseVisible((child: THREE.Object3D) => {
         const mesh = child as THREE.Mesh;
-        if (!mesh.isMesh || !mesh.visible || mesh === car.shieldMesh) return;
+        if (!mesh.isMesh || mesh === car.shieldMesh) return;
+        if (!Array.isArray(mesh.material) && mesh.material.name === 'glass') return;
         if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
         _meshBox.copy(mesh.geometry.boundingBox!);
         for (let i = 0; i < 8; i++) {
@@ -179,6 +428,10 @@ function patchRenderForCameraOverride(): void {
             // Sky dome and shadows followed the chase camera; move them to
             // the fixed view so the sky and shadows look like in the game
             focusLightingOn(state.camera, _overrideFocus.set(...pose.lookAt));
+            // Palm LOD (near geometry or impostor) for the fixed view as well
+            updatePalms(state.camera);
+            // Car LODs too
+            refreshCarLods(state.camera);
         }
         render(scene, camera);
     };
@@ -215,7 +468,9 @@ export function installE2EHook(): void {
                 render: {
                     frame: state.renderer?.info.render.frame ?? 0,
                     calls: state.renderer?.info.render.calls ?? 0,
-                    triangles: state.renderer?.info.render.triangles ?? 0
+                    triangles: state.renderer?.info.render.triangles ?? 0,
+                    shadowCalls: frameStats.shadowCalls,
+                    shadowTriangles: frameStats.shadowTriangles
                 },
                 camera: {
                     x: state.camera?.position.x ?? 0,
@@ -223,8 +478,63 @@ export function installE2EHook(): void {
                     z: state.camera?.position.z ?? 0,
                     fov: state.camera?.fov ?? 0
                 },
-                v2: v2Snapshot(state.bulli?.vehicle)
+                v2: v2Snapshot(state.bulli?.vehicle),
+                models: models.snapshot()
             };
+        },
+        // Resolves once the model preload (and shader warmup) has finished
+        async modelsSettled(): Promise<ModelCacheSnapshot> {
+            await models.whenLoaded();
+            if (state.renderer && state.camera && state.scene) {
+                await models.warmup(state.renderer, state.camera, state.scene);
+            }
+            return models.snapshot();
+        },
+        modelInfo,
+        loadTextureProbe,
+        worldInfo,
+        // Resolves once the world textures and the sky HDRIs are in and the
+        // environment map is final
+        async worldSettled(): Promise<WorldInfo> {
+            await whenWorldTexturesLoaded();
+            await whenSkyReady();
+            await whenPalmImpostorsReady();
+            return worldInfo();
+        },
+        // Palms farther than `meters` from the camera become impostors (null:
+        // the tier's distance), to look at the impostors up close
+        setPalmImpostorDistance(meters: number | null): void {
+            setPalmImpostorDistance(meters, lightingTier());
+        },
+        // Puts an instance of a cached model on the ground at (x, z) (screenshots
+        // of the models before the game uses them); false if it is not loaded
+        spawnModel,
+        clearModels,
+        // A game car (CarModel) at (x, z) like a remote player's, for the
+        // showroom screenshots; cleared with clearModels
+        spawnCar,
+        // How the local car / every live car is drawn (GLB LOD or procedural)
+        localCarInfo(): CarInfo | null {
+            return state.bulli ? carInfo(state.bulli.model) : null;
+        },
+        carModels(): CarInfo[] {
+            return [...liveCarModels()].map(carInfo);
+        },
+        // Visible meshes (draw call sources) per top level scene object,
+        // named by the object's name or type, for draw call budgets
+        sceneMeshes(): Record<string, number> {
+            const counts: Record<string, number> = {};
+            for (const child of state.scene?.children ?? []) {
+                if (!child.visible) continue;
+                let meshes = 0;
+                child.traverseVisible(object => {
+                    if ((object as THREE.Mesh).isMesh || (object as THREE.Points).isPoints || (object as THREE.Line).isLine) meshes++;
+                });
+                if (!meshes) continue;
+                const key = child.name || child.type;
+                counts[key] = (counts[key] ?? 0) + meshes;
+            }
+            return counts;
         },
         // Collision obstacles of the local car (buildings, trees, props)
         obstacles(): Obstacle[] {

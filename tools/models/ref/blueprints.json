@@ -1,0 +1,24 @@
+{
+  "_doc": "Pixel mapping of the orthographic views in ref/<id>_blueprint.jpg for lib/compare_blueprint.py: per view [bx0, sx, by0, sz, wx0, zc]: blueprint px of the world reference wx0 (side/top: front bumper tip at -length/2, front/rear: centre line), px per metre along the view, blueprint px of the ground (top view: centre line), px per metre vertical (top: lateral), world value at bx0, vertical centre of the render. Measured on the sheets with ruler crops; AI sheets are not exactly to scale, so the vertical and lateral scales are fitted to the real height and width (ref/dimensions.json).",
+  "bulli": {
+    "sheet": "t1_blueprint.jpg",
+    "side": [552.5, 216.0, 465.0, 209.3, -2.14, 0.97],
+    "front": [268.0, 211.0, 465.0, 211.0, 0.0, 0.97],
+    "rear": [268.0, 209.0, 935.0, 209.0, 0.0, 0.97],
+    "top": [563.0, 211.0, 719.0, 183.0, -2.14, 0.0]
+  },
+  "beetle": {
+    "sheet": "beetle_blueprint.jpg",
+    "side": [551.0, 231.4, 424.0, 248.0, -2.0395, 0.97],
+    "front": [278.0, 266.0, 424.0, 248.0, 0.0, 0.97],
+    "rear": [278.0, 266.0, 907.5, 252.0, 0.0, 0.97],
+    "top": [560.0, 229.2, 700.0, 226.8, -2.0395, 0.0]
+  },
+  "sport": {
+    "sheet": "sport_blueprint.jpg",
+    "side": [552.5, 232.5, 407.5, 248.0, -2.005, 0.97],
+    "front": [286.0, 248.0, 406.5, 247.0, 0.0, 0.97],
+    "rear": [286.0, 248.0, 877.5, 248.0, 0.0, 0.97],
+    "top": [575.0, 225.0, 692.5, 219.0, -2.005, 0.0]
+  }
+}

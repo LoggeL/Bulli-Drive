@@ -12,6 +12,7 @@ import { powerups, trees, coins, cityData, initWorld } from './world.js';
 import { players, getPublicPlayers, getScoreboard, randomSpawn } from './state.js';
 import { setWss, broadcast, broadcastScoreboard, safeSend } from './net.js';
 import { handleClientMessage, cleanupPlayerTimers, applySpawnState } from './handlers.js';
+import { hdriMiddleware, versionedAssetCache } from './staticAssets.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -53,6 +54,11 @@ if (fs.existsSync(clientIndexPath)) {
         immutable: true,
         maxAge: '1y'
     }));
+
+    // Hashed model and texture URLs cached for good, compressed HDRIs with a
+    // content ETag (staticAssets.ts)
+    app.use(['/models', '/textures'], versionedAssetCache());
+    app.use('/textures/hdri', hdriMiddleware(path.join(clientPath, 'textures', 'hdri')));
 
     app.use(express.static(clientPath, {
         index: false,

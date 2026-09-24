@@ -48,20 +48,22 @@ reachable from the LAN as well: `npm run build && npm start`, then
 | `npm run build` | Client with Vite to `dist/client` (hashed assets, `build-version.txt`), server with `tsc` to `dist/server` and `dist/shared` |
 | `npm start` | Runs the production build on port 8000 (`PORT` to override) |
 | `npm run typecheck` | Type-checks client, server, tests, scripts and build config |
-| `npm test` | Vitest unit tests in `tests/` (golden tests for world generation, terrain, RNG and the v2 sim scenarios, protocol validation, server handlers, speedometer scale) |
+| `npm test` | Vitest unit tests in `tests/` (golden tests for world generation, terrain, RNG and the v2 sim scenarios, protocol validation, server handlers, speedometer scale, model cache, budgets of the packed models and textures) |
 | `npm run test:e2e` | Builds, then runs the Playwright smoke tests in `tests/e2e` against the production server (port 8799, `E2E_PORT` to override) |
 | `npm run perf:baseline` | Builds, then drives two headless Chromium clients for 20 s and prints FPS, draw calls and WebSocket bandwidth as JSON (see [docs/baseline.md](docs/baseline.md)); with the v2 physics it also reports the sim time per frame; `-- --physics=legacy` measures the old physics, `-- --sandbox` the offline sandbox |
 | `npm run screenshots` | Builds, then captures a fixed set of views with headless Chromium for visual before/after comparisons (`-- --out=<dir>`, `--gl=swiftshader`, `--physics=legacy`, `--compare=<a>,<b>`; `stats.json` records how much of the frame the car takes; see `scripts/screenshots.ts`) |
 | `npx tsx scripts/sim-golden-drift.ts` | Shows how far the v2 golden scenarios drift when `Math.sin` & co. round differently in the last bit, and that the golden tolerance still catches tiny tuning changes |
 | `npm run ci` | typecheck, unit tests and build in one go |
+| `npm run assets:models` | Builds the car models in Blender and packs them (meshopt + KTX2) into `public/models` (needs Blender 5.2 and `npm --prefix tools ci` once; see [tools/models/README.md](tools/models/README.md)) |
+| `npm run assets:textures` | Downloads the CC0 textures and HDRIs (Poly Haven) and encodes them to KTX2 in `public/textures` ([tools/textures/README.md](tools/textures/README.md)) |
 
 The Playwright tests cover the v2 physics as the default (driving on desktop
 and phone, two players bumping into each other, the sandbox with its dummy
 cars, the tuning panel and the golden sim scenarios in the browser), the old
 physics behind `?physics=legacy` (desktop join and drive, two players seeing
 each other move, the touch controls on an emulated iPhone 13), which physics
-each URL starts, the stale-client reload, a lost WebGL context and the perf
-overlay.
+each URL starts, the stale-client reload, a lost WebGL context, the perf
+overlay and the car model loading (GLB + KTX2) with its procedural fallback.
 They need Chromium once:
 `npx playwright install chromium`.
 
@@ -137,14 +139,23 @@ src/client/           Browser game (three.js)
   vehicle/, input/,   v2 physics on the client: car model, local sim car,
   camera/, game/      input manager, chase camera, fixed-step loop, hooks
   sandbox/            Offline test pad of the v2 physics (?sandbox=1)
+  assets/             Model cache: GLB (meshopt) + KTX2 loading, preload and
+                      shader warmup during the splash screen, procedural fallback
 src/server/           Express + ws game server: world state, message handlers, broadcasting
 src/shared/           Code for both sides: protocol schemas (valibot), constants,
                       seeded RNG, city/world generation, terrain height, the v2
                       driving sim (sim/) and its collision world and sandbox
                       layout (world/)
 tests/                Vitest (shared/, server/, client/) and Playwright (e2e/)
-scripts/              perf-baseline.ts
-docs/                 Refactor plan, performance baseline, phase 1a spec and blind test guide
+scripts/              perf-baseline.ts, screenshots.ts
+public/models/        Packed car GLBs (3 LODs each) + manifest.json
+public/icons/         Rendered car-select icons (WebP)
+public/textures/      KTX2 world textures, HDRIs + manifest.json
+tools/                Offline asset pipeline (own package.json): Blender car builds,
+                      gltfpack/KTX2 packing, texture download and encoding
+docs/                 Refactor plan, performance baseline, phase 1a spec, blind test
+                      guide, asset provenance and licences (assets.md), world look (world-look.md),
+                      cars (cars.md)
 ```
 
 The server generates the world from a fixed seed and sends it to every client
@@ -159,7 +170,11 @@ Bulli Drive is being rebuilt into an open-world multiplayer racing game
 (party mode with the current combat, car contact, a curated map, full mobile
 support, 24/7 hosting). The plan, decisions and phases are in
 [docs/refactor-plan.md](docs/refactor-plan.md); the performance baseline the
-rebuild is measured against is in [docs/baseline.md](docs/baseline.md).
+rebuild is measured against is in [docs/baseline.md](docs/baseline.md). The
+realistic world look (HDRI sky, height fog, PBR materials, quality tiers, draw
+call budgets; `?tier=high|low|software` forces a tier) is described in
+[docs/world-look.md](docs/world-look.md), the cars (the Blender T1 in the
+game, LODs, lamps, scale against the sim hull) in [docs/cars.md](docs/cars.md).
 
 ## Controls
 - **WASD or arrows:** Drive, brake/reverse and steer

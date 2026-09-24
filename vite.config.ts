@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { defineConfig, type Plugin, type ResolvedConfig } from 'vite';
@@ -85,11 +85,66 @@ function legacyOutputGuard(): Plugin {
     };
 }
 
+const BASIS_VIRTUAL_ID = 'virtual:basis-transcoder';
+const BASIS_FILES = ['basis_transcoder.js', 'basis_transcoder.wasm'];
+
+/**
+ * Serves the Basis Universal transcoder of the installed three.js (KTX2Loader
+ * loads basis_transcoder.js + .wasm from one directory at runtime) under a
+ * content-hashed directory, assets/basis-<hash>/, so the server can cache it
+ * as immutable like the other hashed assets and it always matches the
+ * three.js version in use. The client imports the directory URL from
+ * 'virtual:basis-transcoder' (src/client/assets/virtual.d.ts).
+ */
+function basisTranscoderPlugin(): Plugin {
+    let config: ResolvedConfig;
+    let sourceDir = '';
+    let publicDir = '';
+    const files = new Map<string, Buffer>();
+
+    return {
+        name: 'bulli-basis-transcoder',
+        configResolved(resolvedConfig) {
+            config = resolvedConfig;
+            sourceDir = path.resolve(config.root, 'node_modules/three/examples/jsm/libs/basis');
+            const hash = createHash('sha256');
+            for (const name of BASIS_FILES) {
+                const data = readFileSync(path.join(sourceDir, name));
+                files.set(name, data);
+                hash.update(name).update(data);
+            }
+            publicDir = `${config.build.assetsDir}/basis-${hash.digest('hex').slice(0, 10)}/`;
+        },
+        resolveId(id) {
+            return id === BASIS_VIRTUAL_ID ? `\0${BASIS_VIRTUAL_ID}` : null;
+        },
+        load(id) {
+            if (id !== `\0${BASIS_VIRTUAL_ID}`) return null;
+            return `export default ${JSON.stringify(config.base + publicDir)};\n`;
+        },
+        configureServer(server) {
+            const prefix = config.base + publicDir;
+            server.middlewares.use((request, response, next) => {
+                const url = request.url?.split('?')[0] ?? '';
+                const data = url.startsWith(prefix) ? files.get(url.slice(prefix.length)) : undefined;
+                if (!data) return next();
+                response.setHeader('Content-Type', url.endsWith('.wasm') ? 'application/wasm' : 'text/javascript');
+                response.end(data);
+            });
+        },
+        generateBundle() {
+            for (const [name, data] of files) {
+                this.emitFile({ type: 'asset', fileName: publicDir + name, source: data });
+            }
+        }
+    };
+}
+
 export default defineConfig({
-    // index.html in the project root is the entry; public/ (audio, favicon)
-    // is copied verbatim into the build.
+    // index.html in the project root is the entry; public/ (audio, favicon,
+    // models, textures) is copied verbatim into the build.
     publicDir: 'public',
-    plugins: [legacyOutputGuard(), buildVersionPlugin()],
+    plugins: [legacyOutputGuard(), buildVersionPlugin(), basisTranscoderPlugin()],
     build: {
         outDir: 'dist/client',
         emptyOutDir: true,
@@ -100,12 +155,18 @@ export default defineConfig({
         // pairs into the prefixed form only, which drops the blur in Chrome and
         // Firefox. The stylesheet is small, so ship it unminified (gzip still applies).
         cssMinify: false,
+        // The three.js core is one deliberate long-lived chunk (~525 kB, ~132 kB
+        // gzip, including the parts the GLTF/KTX2 loaders need); warn above that.
+        chunkSizeWarningLimit: 600,
         rolldownOptions: {
             output: {
                 codeSplitting: {
                     // Three.js changes far less often than the game code, so it
                     // gets its own long-lived chunk.
-                    groups: [{ name: 'three', test: /[\\/]node_modules[\\/]three[\\/]/ }]
+                    // The GLTF/KTX2/meshopt loaders under three/examples are left out:
+                    // assets/gltfLoader.ts imports them lazily, so they get their own
+                    // chunk and stay off the startup path.
+                    groups: [{ name: 'three', test: /[\\/]node_modules[\\/]three[\\/](?!examples[\\/])/ }]
                 }
             }
         }

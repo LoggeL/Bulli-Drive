@@ -1,0 +1,226 @@
+{
+ "_doc": "Raw image generations and prepared sources of the AI textures (tools/textures/generated/sources.mjs). Not in git; the archive lies outside the repository (tools/textures/README.md).",
+ "archive": "generated-sources-v1.tar",
+ "files": {
+  "assets/decals/license_plate_bulli_1k.png": {
+   "bytes": 911129,
+   "sha256": "0650ac1f6b5eb5a37c121e477ac0d46ed65c316b5e1d6729c160c5defe0860ca"
+  },
+  "assets/decals/license_plate_bulli_512.png": {
+   "bytes": 233186,
+   "sha256": "252ddfca100700b09d69e9f89da96ac920c681d5ec7721f44402a3360191ec04"
+  },
+  "assets/decals/signs/sign_chevron_right.png": {
+   "bytes": 179814,
+   "sha256": "fcbefecfaa03d9b2eab01f04e8eaab3d2059b37802a37a89fc57b1135ae29059"
+  },
+  "assets/decals/signs/sign_curve_right.png": {
+   "bytes": 272599,
+   "sha256": "4bd5bf263b79a8a4e5fc95810795ff23741e1f0881c51bce97e45ee9106f5873"
+  },
+  "assets/decals/signs/sign_one_way_right.png": {
+   "bytes": 138253,
+   "sha256": "a66afab0320595ab8f774e810050542c774ec7ab98335a91b3493b5727565c0f"
+  },
+  "assets/decals/signs/sign_route_ca1.png": {
+   "bytes": 254123,
+   "sha256": "5e85cfb31ef0029dc7899c4a443eda6f8ae227d8bd3cf2c4922daece5c9896a8"
+  },
+  "assets/decals/signs/sign_speed_limit_35.png": {
+   "bytes": 216924,
+   "sha256": "9decb22bb6d6f1be57b2ff53882487485f372ddd85a8b4bbede7af8902dea4c8"
+  },
+  "assets/decals/signs/sign_stop.png": {
+   "bytes": 262504,
+   "sha256": "6408dcab71a871ab67d463b7bf7bd23e58042f6815f04c6ffef5655309afe2d6"
+  },
+  "assets/decals/signs/sign_street_ocean_ave.png": {
+   "bytes": 105460,
+   "sha256": "11af61ce70c51b2e02489f3b8971f3f8daa1f5de52615271a130d8d331d97afd"
+  },
+  "assets/decals/signs/sign_street_pacific_coast_hwy.png": {
+   "bytes": 118121,
+   "sha256": "20abc6bf8ea3c511586970f665675690d502b748e06b46dd803a433d1933db9b"
+  },
+  "assets/decals/storefront_diner_1k.jpg": {
+   "bytes": 158121,
+   "sha256": "f2bdfb4264f629bd7febbb7339de0b3393f5b5db511e16c1ab72d68a5d1bbbad"
+  },
+  "assets/decals/storefront_diner_emissive_1k.jpg": {
+   "bytes": 41885,
+   "sha256": "793621120cc44ea9ba0129960a844c77ed8c4b2ad30d37878e7aa3c47a8292b6"
+  },
+  "assets/decals/storefront_diner_full.png": {
+   "bytes": 2336893,
+   "sha256": "f6aec1eeef56f253ec930251d6228feb6398e2401ce5120089e7e07e1f538615"
+  },
+  "assets/decals/storefront_gas_station_1k.jpg": {
+   "bytes": 119283,
+   "sha256": "bef6db2470ae2e5476471f8631495d4e58dff917828621b1e49b4ba686c58bd8"
+  },
+  "assets/decals/storefront_gas_station_full.png": {
+   "bytes": 1898822,
+   "sha256": "9684b1c1e190be71fa70439eb6eb02fead4f060b7ff9ddb72b346bbe9d019565"
+  },
+  "assets/decals/storefront_surfshop_1k.jpg": {
+   "bytes": 189360,
+   "sha256": "1b1c6744c905047184591893e477b215e4d4b793087d6d0768a7b3bcdde1fcb8"
+  },
+  "assets/decals/storefront_surfshop_full.png": {
+   "bytes": 2694507,
+   "sha256": "09e6cb0fe826b1da6ebbab67fd6921cebc23ad45e01fe8741e5bf56d0f701f46"
+  },
+  "assets/decals/street_signs_atlas_1k.json": {
+   "bytes": 1228,
+   "sha256": "f2be673c66eba612615ca5385e3805d213b6364811aa349cfb5421d4e3b85adf"
+  },
+  "assets/decals/street_signs_atlas_1k.png": {
+   "bytes": 1746586,
+   "sha256": "3c0d84db988dcf1cc1678ebe35512727f2cca47fc26388704cde27c030b97257"
+  },
+  "assets/decals/street_signs_sheet.png": {
+   "bytes": 2241518,
+   "sha256": "0f5c2604ba2268380f5941887afc7fc3b792be3bb06f7d8d2acc64d0d8fc742e"
+  },
+  "assets/facade/facade_atlas_albedo_1k.jpg": {
+   "bytes": 302858,
+   "sha256": "e2411ea7a3d9e632b3bb269736919525fc01c4dde0a67e42139b4c6d75788333"
+  },
+  "assets/facade/facade_atlas_albedo_1k.png": {
+   "bytes": 1692688,
+   "sha256": "e4cbe6f5e504a0c153cc1ccbdac8ce0234f9c82b54f16efd17e526a90030f349"
+  },
+  "assets/facade/facade_atlas_normal_gl_1k.png": {
+   "bytes": 1296274,
+   "sha256": "cf168e83fb75284a481316e6d23db1a28b0c9af0a72a871f9498c71f71e7edde"
+  },
+  "assets/gen/raw/diner_front.png": {
+   "bytes": 2876640,
+   "sha256": "239bc586be0d11a3beacef46c007df3717d1131ed45b739257416369414c58ab"
+  },
+  "assets/gen/raw/facade_atlas.png": {
+   "bytes": 2620205,
+   "sha256": "1fe6859e60592aca8f722849423bb19b00a22b31365615993542fe4604cd10c5"
+  },
+  "assets/gen/raw/gas_station_front.png": {
+   "bytes": 2463850,
+   "sha256": "d469468adb47986241c5227ab614fd1c7844c09776004f4c403078888d259ecc"
+  },
+  "assets/gen/raw/gas_station_front_v2.png": {
+   "bytes": 2398512,
+   "sha256": "5c6de30eeeedf28201caa8a41ec41f044f30460c05a5398ab7063e1bbdddf486"
+  },
+  "assets/gen/raw/license_plate.png": {
+   "bytes": 2183564,
+   "sha256": "be7ed3ff14d3347874e77aa45aba8ec263caf5b03fe2d2374aba0cfc9202ae50"
+  },
+  "assets/gen/raw/street_signs.png": {
+   "bytes": 1533096,
+   "sha256": "b1b89ce3c1c1023d7d867ff7c4e0ddb20ce67b1ae41dea5ac383392f4d491996"
+  },
+  "assets/gen/raw/surfshop_front.png": {
+   "bytes": 3197844,
+   "sha256": "a3d66c5f37c34a334c4d28f9a823ed197ca55ac55b79995d9786fcb274c24860"
+  },
+  "assets/gen/raw/surfshop_front_v2.png": {
+   "bytes": 2720560,
+   "sha256": "f1af7308e3b89d9f3773336ac1adb35f58426692245285894eade2d807ca8467"
+  },
+  "world/gen/raw/diner_interior.png": {
+   "bytes": 2156795,
+   "sha256": "c8c06bd33d1a9f3398573754ccf49ab75dc0350a993442fe5077ce3779c9f3d3"
+  },
+  "world/gen/raw/fan_fronds.png": {
+   "bytes": 1717111,
+   "sha256": "536540d5217a85bc3bd21bbdbe7d7501e37804b377c1bead338aa4d55fd08214"
+  },
+  "world/gen/raw/palm_fronds.png": {
+   "bytes": 2672149,
+   "sha256": "bbae95643792e3cedf838ebf806de44979d5ef5b434e098c9cdfd96db5148e5e"
+  },
+  "world/gen/raw/palm_trunk.png": {
+   "bytes": 3495295,
+   "sha256": "6b2d105f9cafedb6a1d0b083363657195df931ce4dcd5e417cbda2415083aff3"
+  },
+  "world/gen/raw/palm_trunk_v2.png": {
+   "bytes": 3379107,
+   "sha256": "f1285175f4a07b15a50270ac8f54875ed1655432a81a12c9f5b0702cd5a7fce5"
+  },
+  "world/gen/raw/rock_cliff.png": {
+   "bytes": 3316327,
+   "sha256": "e1d420e7dd128154b88dd7ad1f5c9ca3934ac8fdbd6b838d643dd98807099f90"
+  },
+  "world/gen/raw/shrub_card.png": {
+   "bytes": 1967712,
+   "sha256": "f00a64fc800e3345cbfc0b19e637e2e3287297317412b47e0f51186bef5dd2cf"
+  },
+  "world/gen/raw/tree_cards.png": {
+   "bytes": 2351522,
+   "sha256": "727ff88d861d2b80921894f45e0fdb9031bf83386cb696162e336a2c72efecfe"
+  },
+  "world/tex/diner_interior.jpg": {
+   "bytes": 148299,
+   "sha256": "2100e7c834fb59163a6c102b34853f728eb27c8b8d487b1d1c6851147f9d775f"
+  },
+  "world/tex/facade_albedo_tint_1k.png": {
+   "bytes": 2170954,
+   "sha256": "71511190d2338acd5a0291decc8cb73f2f3f6659c0bcafd79e41e43c5b6cf751"
+  },
+  "world/tex/facade_arm_1k.jpg": {
+   "bytes": 151469,
+   "sha256": "5b0d55a8183d228032e2b9389cd18a57ccc4c3dfcfaba452a200deec2078b078"
+  },
+  "world/tex/facade_emissive_512.jpg": {
+   "bytes": 30681,
+   "sha256": "ee9106d39b474730213fb0060add2ae24860165406674551937f9681de38864a"
+  },
+  "world/tex/fan_fronds.png": {
+   "bytes": 2096865,
+   "sha256": "f51f693fd2588049dd1866e206a51f74bae18f501a9ad16bdb5ef12b8afca8ef"
+  },
+  "world/tex/palm_fronds.png": {
+   "bytes": 2303018,
+   "sha256": "b18adb87a4bc6e01848aea566169c78c4b4a8f72af5548d9b422961c044fcd3e"
+  },
+  "world/tex/palm_trunk.jpg": {
+   "bytes": 111455,
+   "sha256": "4ffeaeb45b8ba2b43b1aedebc30a7137399f1062a0087ef8983f76a12a757a64"
+  },
+  "world/tex/palm_trunk_normal.jpg": {
+   "bytes": 167938,
+   "sha256": "63c5deb790ee9ecd039cc3ffc4e4280f6cec9a80e1fe0ee5b231a235e4531004"
+  },
+  "world/tex/rock_albedo_1k.jpg": {
+   "bytes": 380446,
+   "sha256": "ee545528d45a5c93570763b97150ee93751b95609b1db4398f3994309483076c"
+  },
+  "world/tex/rock_normal_1k.jpg": {
+   "bytes": 624224,
+   "sha256": "636f2dea1ababec0f00a9d799719f4b67d4764309a1de8d7861ef307bcca84c3"
+  },
+  "world/tex/shrubs.png": {
+   "bytes": 1255017,
+   "sha256": "e9448eec76cf2290874ff742d1616ee5d931122a445f47c16e508190259ced6a"
+  },
+  "world/tex/storefront_atlas_2k.jpg": {
+   "bytes": 654489,
+   "sha256": "4a0c6793fcf2cbe0f681ec830f9c89c2bbcb1ac49b7e95f56155fe865c0700bc"
+  },
+  "world/tex/storefront_emissive_1k.jpg": {
+   "bytes": 20103,
+   "sha256": "a26d03c7b330e0b6b1444cd37ab1cb319542fac60ee98f0dbaa00e3efcf0f95a"
+  },
+  "world/tex/tree_cards.json": {
+   "bytes": 109,
+   "sha256": "7a97f8e73f14eeeea06fe9e61c43ad322f0fb83df368109deee4d49be5b51c8f"
+  },
+  "world/tex/tree_cards.png": {
+   "bytes": 2325699,
+   "sha256": "e35a43ed0644e5509fc82c37477ae780fbf5580356147fe5aef4a722492e834e"
+  },
+  "world/tex/world_noise_256.png": {
+   "bytes": 155127,
+   "sha256": "24a1ec756b18ccdc95b751c9762e5dbbc86e0fbee7162c2b41e97a2fefd3eb49"
+  }
+ }
+}

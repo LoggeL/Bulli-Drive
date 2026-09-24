@@ -31,14 +31,22 @@ export function initSplashScreen(onStart: (name: string, carType: string) => Pro
     });
 
     if (startBtn && splashInput) {
+        let starting = false;
         startBtn.addEventListener('click', async () => {
+            // One start at a time (the start waits for the assets)
+            if (starting) return;
+            starting = true;
             const name = splashInput.value.trim() || "Player";
             // The hidden splash input/button must not retain focus after the
             // game starts, otherwise gameplay keys (especially Space) are
             // correctly treated as form/button input and never reach the car.
             splashInput.blur();
             startBtn.blur();
-            await onStart(name, selectedCarType);
+            try {
+                await onStart(name, selectedCarType);
+            } finally {
+                starting = false;
+            }
         });
 
         // Allow Enter key to start

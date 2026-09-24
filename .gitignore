@@ -22,3 +22,10 @@ output/
 
 test-results/
 playwright-report/
+
+# Asset pipeline work dirs (tools/models, tools/textures): raw Blender output,
+# downloaded CC0 sources and HDRIs. The packed results live in public/.
+tools/models/.out/
+tools/models/.cache/
+tools/textures/.cache/
+__pycache__/

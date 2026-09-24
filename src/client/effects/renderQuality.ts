@@ -10,7 +10,22 @@ const SLOW_FRAME_MS = 20;
 const HEADROOM_FRAME_MS = 16.5;
 const MAX_SAMPLE_FRAME_MS = 250;
 
+// Quality tiers of the world look (docs/graphics.md): 'desktop' is the high
+// tier, 'mobile' the low tier (phones: 1024 shadow map, no normal maps,
+// pixel ratio at most 1.5), 'software' the cheapest one for CPU rasterizers
+// (SwiftShader in the e2e tests: Lambert materials, no environment map).
 export type RenderTier = 'desktop' | 'mobile' | 'software';
+
+// ?tier=high|low|software (or desktop|mobile) forces a tier, e.g. to look at
+// the phone tier on a desktop
+const TIER_OVERRIDE: Record<string, RenderTier> = {
+    high: 'desktop', desktop: 'desktop', low: 'mobile', mobile: 'mobile', software: 'software'
+};
+
+function tierOverride(): RenderTier | null {
+    if (typeof window === 'undefined' || !window.location) return null;
+    return TIER_OVERRIDE[new URLSearchParams(window.location.search).get('tier') ?? ''] ?? null;
+}
 
 // Renderer names of CPU rasterizers (Chrome without a usable GPU, Mesa,
 // Windows' fallback driver)
@@ -22,6 +37,8 @@ const SOFTWARE_RENDERER = /swiftshader|llvmpipe|softpipe|software|basic render/i
  * primary pointer) the mobile tier.
  */
 export function detectRenderTier(renderer?: WebGLRenderer): RenderTier {
+    const forced = tierOverride();
+    if (forced) return forced;
     if (renderer && SOFTWARE_RENDERER.test(rendererName(renderer))) return 'software';
     const coarse = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
     return coarse ? 'mobile' : 'desktop';
@@ -33,8 +50,13 @@ function rendererName(renderer: WebGLRenderer): string {
     return String(gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER) ?? '');
 }
 
+// The low (mobile) tier renders at most 1.5 device pixels per CSS pixel: the
+// textured world costs more per pixel than the flat colors did
+const MAX_PIXEL_RATIO_BY_TIER: Record<RenderTier, number> = { desktop: MAX_PIXEL_RATIO, mobile: 1.5, software: MAX_PIXEL_RATIO };
+let tierPixelRatioCap = MAX_PIXEL_RATIO;
+
 function maximumPixelRatio(): number {
-    return Math.max(MIN_PIXEL_RATIO, Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO));
+    return Math.max(MIN_PIXEL_RATIO, Math.min(window.devicePixelRatio || 1, tierPixelRatioCap));
 }
 
 /**
@@ -54,8 +76,10 @@ export class AdaptiveRenderQuality {
     constructor(
         private readonly renderer: WebGLRenderer,
         width: number,
-        height: number
+        height: number,
+        tier: RenderTier = 'desktop'
     ) {
+        tierPixelRatioCap = MAX_PIXEL_RATIO_BY_TIER[tier];
         this.width = width;
         this.height = height;
         this.pixelRatio = maximumPixelRatio();

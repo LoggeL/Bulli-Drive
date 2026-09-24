@@ -1,0 +1,26 @@
+{
+  "name": "bulli-drive-asset-tools",
+  "private": true,
+  "type": "module",
+  "description": "Offline asset pipeline (Blender car builds, meshopt/KTX2 packing, texture download and encoding). Not part of the game build; see tools/models/README.md and tools/textures/README.md.",
+  "scripts": {
+    "models": "node models/build-all.mjs",
+    "models:pack": "node models/build-all.mjs --skip-blender",
+    "textures:fetch": "node textures/fetch.mjs",
+    "textures:build": "node textures/build.mjs",
+    "textures": "node textures/fetch.mjs && node textures/build.mjs"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "dependencies": {
+    "@gltf-transform/core": "^4.5.0",
+    "@gltf-transform/extensions": "^4.5.0",
+    "@gltf-transform/functions": "^4.5.0",
+    "gltfpack": "^1.2.0",
+    "ktx-parse": "^1.1.0",
+    "ktx2-encoder": "^0.6.0",
+    "meshoptimizer": "^1.2.0",
+    "sharp": "^0.34.0"
+  }
+}
