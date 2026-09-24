@@ -70,7 +70,14 @@ async function stopRecording(page: Page): Promise<Frame[]> {
 
 async function waitUntilSolid(pages: Page[]) {
     for (const page of pages) {
-        await expect.poll(async () => (await netState(page)).selfFlags & (CAR_IDLE | CAR_LAGGY), { timeout: 30_000 }).toBe(0);
+        const solid = await expect.poll(async () => (await netState(page)).selfFlags & (CAR_IDLE | CAR_LAGGY), { timeout: 30_000 })
+            .toBe(0).then(() => true, () => false);
+        if (solid) continue;
+        // Why the car stays a ghost (a stalled page, lost inputs, a hidden tab)
+        const net = await netState(page);
+        const hidden = await page.evaluate(() => document.hidden);
+        const why = { selfFlags: net.selfFlags, lead: net.lead, leadTicks: net.leadTicks, rtt: net.rtt, suspended: net.suspended, overlay: net.overlay, hidden, stats: net.stats };
+        throw new Error(`the car stayed an idle or lag ghost for 30 s: ${JSON.stringify(why)}`);
     }
 }
 
