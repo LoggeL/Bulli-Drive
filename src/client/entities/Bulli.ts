@@ -46,7 +46,6 @@ export class Bulli {
     health: number = 100;
     // The sim car; only the local car gets one
     vehicle?: LocalVehicle;
-    shieldMesh?: THREE.Mesh;
     wheels: THREE.Group[];
     // Remote cars only. nametag/healthBarFill are the tag's elements, kept
     // for the code that restyles them (AFK badge, rename)
@@ -62,11 +61,31 @@ export class Bulli {
         this.carType = carType || randomCarType();
         this.pitchOffset = 0.8 + Math.random() * 0.7;
 
-        this.model = new CarModel(colorCode, this.carType);
+        this.model = new CarModel(colorCode, this.carType, { local: isLocal });
         this.group = this.model.group;
         this.flipGroup = this.model.flipGroup;
         this.wheels = this.model.wheels;
-        this.shieldMesh = this.model.shieldMesh;
+    }
+
+    // The model swaps its procedural body (and shield) for the GLB once the
+    // models are loaded, so this always asks the model
+    get shieldMesh(): THREE.Mesh | undefined {
+        return this.model.shieldMesh;
+    }
+
+    /** Drive look of this frame from the v2 sim (wheels, brake lights, blinkers). */
+    setDriveState(speed: number, steerAngle: number, braking: boolean): void {
+        this.model.setDriveState(speed, steerAngle, braking);
+    }
+
+    /** AFK players are shown greyed out. */
+    setAfkVisual(active: boolean): void {
+        this.model.setAfkVisual(active);
+    }
+
+    /** Contact shadow size (render/lighting.ts) */
+    get footprint(): [number, number] {
+        return this.model.footprint;
     }
 
     createNametag(name: string, isLocal: boolean) {
@@ -97,7 +116,7 @@ export class Bulli {
             this.tag.hide();
             return;
         }
-        this.tag.update(this.group.position, state.camera);
+        this.tag.update(this.group.position, state.camera, this.model.nametagHeight * this.group.scale.y);
     }
 
     honk(): number {

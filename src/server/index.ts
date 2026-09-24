@@ -32,6 +32,7 @@ import { healthReport, metricsReport, TrafficMeter, type HealthSources } from '.
 import { TicketSigner } from './resumeTicket.js';
 import { gracefulShutdown } from './shutdown.js';
 import { netsimFromEnv, SocketConnection } from './connection.js';
+import { hdriMiddleware, versionedAssetCache } from './staticAssets.js';
 
 // A crash leaves the process in an unknown state: log it and exit, the
 // restart policy starts a fresh one (docs/phase-1b-design.md, 11.2)
@@ -117,6 +118,11 @@ if (fs.existsSync(clientIndexPath)) {
         immutable: true,
         maxAge: '1y'
     }));
+
+    // Hashed model and texture URLs cached for good, compressed HDRIs with a
+    // content ETag (staticAssets.ts)
+    app.use(['/models', '/textures'], versionedAssetCache());
+    app.use('/textures/hdri', hdriMiddleware(path.join(clientPath, 'textures', 'hdri')));
 
     app.use(express.static(clientPath, {
         index: false,

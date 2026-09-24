@@ -1,0 +1,185 @@
+{
+  "version": 1,
+  "models": {
+    "beetle": {
+      "name": "VW 1200 Kaefer (1963)",
+      "wheelRadius": 0.3275,
+      "dimensions": {
+        "length": 4.079,
+        "width": 1.54,
+        "height": 1.5,
+        "wheelbase": 2.4
+      },
+      "lods": [
+        {
+          "lod": 0,
+          "file": "beetle_lod0.glb",
+          "hash": "0b7a0e3dbe9a",
+          "bytes": 168964,
+          "triangles": 18763,
+          "primitives": 8
+        },
+        {
+          "lod": 1,
+          "file": "beetle_lod1.glb",
+          "hash": "2bc12d41150c",
+          "bytes": 105012,
+          "triangles": 6976,
+          "primitives": 8
+        },
+        {
+          "lod": 2,
+          "file": "beetle_lod2.glb",
+          "hash": "8a1f31ffc836",
+          "bytes": 23408,
+          "triangles": 1838,
+          "primitives": 3
+        }
+      ]
+    },
+    "bulli": {
+      "name": "VW T1 Samba (1963, 23 windows)",
+      "wheelRadius": 0.333,
+      "dimensions": {
+        "length": 4.28,
+        "width": 1.8,
+        "height": 1.94,
+        "wheelbase": 2.4
+      },
+      "lods": [
+        {
+          "lod": 0,
+          "file": "bulli_lod0.glb",
+          "hash": "501ac1484c53",
+          "bytes": 206400,
+          "triangles": 24719,
+          "primitives": 9
+        },
+        {
+          "lod": 1,
+          "file": "bulli_lod1.glb",
+          "hash": "8a5da0334a0c",
+          "bytes": 111236,
+          "triangles": 7965,
+          "primitives": 9
+        },
+        {
+          "lod": 2,
+          "file": "bulli_lod2.glb",
+          "hash": "f9da2390ee74",
+          "bytes": 23504,
+          "triangles": 1960,
+          "primitives": 4
+        }
+      ]
+    },
+    "jeep": {
+      "name": "VW Typ 181 (1973)",
+      "wheelRadius": 0.3225,
+      "dimensions": {
+        "length": 3.78,
+        "width": 1.64,
+        "height": 1.5,
+        "wheelbase": 2.4
+      },
+      "lods": [
+        {
+          "lod": 0,
+          "file": "jeep_lod0.glb",
+          "hash": "ef8e6b5b8f41",
+          "bytes": 103108,
+          "triangles": 8151,
+          "primitives": 8
+        },
+        {
+          "lod": 1,
+          "file": "jeep_lod1.glb",
+          "hash": "8086f98771fc",
+          "bytes": 84688,
+          "triangles": 3457,
+          "primitives": 8
+        },
+        {
+          "lod": 2,
+          "file": "jeep_lod2.glb",
+          "hash": "7e8a5cf9beb3",
+          "bytes": 27520,
+          "triangles": 1593,
+          "primitives": 4
+        }
+      ]
+    },
+    "pickup": {
+      "name": "VW T1 Pritsche (1963)",
+      "wheelRadius": 0.333,
+      "dimensions": {
+        "length": 4.28,
+        "width": 1.75,
+        "height": 1.92,
+        "wheelbase": 2.4
+      },
+      "lods": [
+        {
+          "lod": 0,
+          "file": "pickup_lod0.glb",
+          "hash": "7afe13542ba3",
+          "bytes": 157516,
+          "triangles": 16261,
+          "primitives": 9
+        },
+        {
+          "lod": 1,
+          "file": "pickup_lod1.glb",
+          "hash": "28664652df82",
+          "bytes": 102996,
+          "triangles": 5991,
+          "primitives": 9
+        },
+        {
+          "lod": 2,
+          "file": "pickup_lod2.glb",
+          "hash": "350d2686ca5b",
+          "bytes": 23652,
+          "triangles": 1764,
+          "primitives": 4
+        }
+      ]
+    },
+    "sport": {
+      "name": "Porsche 356 B T6 Coupe (1963)",
+      "wheelRadius": 0.326,
+      "dimensions": {
+        "length": 4.01,
+        "width": 1.67,
+        "height": 1.31,
+        "wheelbase": 2.1
+      },
+      "lods": [
+        {
+          "lod": 0,
+          "file": "sport_lod0.glb",
+          "hash": "d369e06d5262",
+          "bytes": 140436,
+          "triangles": 14944,
+          "primitives": 8
+        },
+        {
+          "lod": 1,
+          "file": "sport_lod1.glb",
+          "hash": "5b443ebe3b47",
+          "bytes": 91736,
+          "triangles": 5151,
+          "primitives": 8
+        },
+        {
+          "lod": 2,
+          "file": "sport_lod2.glb",
+          "hash": "6b0341130e52",
+          "bytes": 20828,
+          "triangles": 1509,
+          "primitives": 3
+        }
+      ]
+    }
+  }
+}

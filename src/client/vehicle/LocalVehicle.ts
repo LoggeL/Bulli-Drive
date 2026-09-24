@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { DT, SIM_TUNING } from '../../shared/sim/constants.js';
+import { BTN_HANDBRAKE, DT, SIM_TUNING } from '../../shared/sim/constants.js';
 import { copyVehicleState, createVehicleState, type AssistProfile, type CarClassId, type SimCar, type VehicleState } from '../../shared/sim/types.js';
 import { createSimCar, placeVehicle } from '../../shared/sim/vehicle.js';
 import { isCarClassId } from '../../shared/sim/vehicleClasses.js';
@@ -38,7 +38,8 @@ const STUCK_TICKS = 60;
 export interface VehicleHost {
     group: THREE.Group;
     flipGroup: THREE.Group;
-    wheels: THREE.Group[];
+    // Wheels, brake lights and blinkers of the model (CarModel.setDriveState)
+    setDriveState?(speed: number, steerAngle: number, braking: boolean): void;
     carType: string;
     powerups: Record<(typeof POWERUP_KEYS)[number], { active: boolean; timer: number }>;
     speed: number;
@@ -380,16 +381,11 @@ export class LocalVehicle {
         group.rotation.x = this.tiltPitch + this.pitchSpring;
         group.rotation.z = this.tiltRoll + this.rollSpring;
 
-        // Wheels: spin with the road speed, the front pair steers
-        const wheels = host.wheels;
-        for (let i = 0; i < wheels.length; i++) {
-            const wheel = wheels[i];
-            wheel.rotation.x -= u * 0.5 * Math.min(dt, 0.1);
-            if (i < 2) {
-                wheel.rotation.order = 'YXZ';
-                wheel.rotation.y = curr.steerAngle;
-            }
-        }
+        // Wheels roll with the road speed, the front pair steers; the brake
+        // lights come on while braking forwards (or with the handbrake)
+        const input = this.car.input;
+        const braking = grounded && ((input.brake > 20 && u > 0.5) || ((input.buttons & BTN_HANDBRAKE) !== 0 && Math.abs(u) > 0.5));
+        host.setDriveState?.(u, curr.steerAngle, braking);
 
         // Adapter: speeds in units per 1/60 s tick (section 12.3)
         host.speed = u / 60;

@@ -128,7 +128,8 @@ export async function joinGame(player: Player, name: string, extraQuery = '', mo
     }
     await tap(page, '#start-btn');
 
-    await expect(splash).toHaveClass(/\bhidden\b/);
+    // The start waits for the world textures and car models (ui/assetGate.ts)
+    await expect(splash).toHaveClass(/\bhidden\b/, { timeout: 45_000 });
     await expect.poll(async () => {
         const state = await snapshot(page);
         return state.connected && !!state.local && state.myId;
@@ -156,7 +157,7 @@ export async function openSandbox(player: Player, extraQuery = ''): Promise<void
     const startButton = page.locator('#start-btn');
     if (await page.evaluate(() => navigator.maxTouchPoints > 0)) await startButton.tap();
     else await startButton.click();
-    await expect(splash).toHaveClass(/\bhidden\b/);
+    await expect(splash).toHaveClass(/\bhidden\b/, { timeout: 45_000 });
     await v2(page);
 }
 

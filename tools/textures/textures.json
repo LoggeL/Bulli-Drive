@@ -1,0 +1,34 @@
+{
+  "_doc": "Texture sources for tools/textures/fetch.mjs (download, md5-checked) and build.mjs (KTX2 encode into public/textures). maxSize = longest side in the game. publish=[]: only fetched for the offline tools (Blender look-dev). See tools/textures/README.md and docs/assets.md.",
+  "polyhaven": [
+    { "role": "asphalt", "id": "asphalt_02", "maps": { "albedo": 1024, "normal": 512, "arm": 1024 } },
+    { "role": "asphalt_clean", "id": "clean_asphalt", "maps": { "albedo": 512, "normal": 512, "arm": 512, "roughness": 0 }, "publish": [], "note": "Blender look-dev ground only (tools/models/lib/bd_lookdev.py)" },
+    { "role": "sidewalk", "id": "concrete_floor_03", "maps": { "albedo": 512, "normal": 512, "arm": 512 } },
+    { "role": "stucco", "id": "white_stucco", "maps": { "albedo": 512, "normal": 512, "arm": 512 } },
+    { "role": "roof_tiles", "id": "clay_roof_tiles_02", "maps": { "albedo": 512, "normal": 512, "arm": 512 } },
+    { "role": "roof_gravel", "id": "tarred_gravel", "maps": { "albedo": 256, "normal": 256, "arm": 256 } },
+    { "role": "grass", "id": "leafy_grass", "maps": { "albedo": 512, "normal": 512, "arm": 512 } },
+    { "role": "grass_dry", "id": "withered_grass", "maps": { "albedo": 512, "normal": 512, "arm": 512 } },
+    { "role": "sand", "id": "aerial_beach_01", "maps": { "albedo": 256, "normal": 256, "arm": 256 } }
+  ],
+  "hdri": [
+    { "id": "victoria_sunset", "resolutions": ["1k", "2k"], "publish": "1k" },
+    { "id": "qwantani_sunset_puresky", "resolutions": ["1k"], "publish": "1k" }
+  ],
+  "generated": [
+    { "name": "facade_albedo_tint", "source": "facade_albedo_tint_1k.png", "kind": "color", "maxSize": 1024, "note": "4 storey bands, alpha = stucco tint mask" },
+    { "name": "facade_arm", "source": "facade_arm_1k.jpg", "kind": "data", "maxSize": 512 },
+    { "name": "facade_emissive", "source": "facade_emissive_512.jpg", "kind": "color", "maxSize": 256 },
+    { "name": "storefront_atlas", "source": "storefront_atlas_2k.jpg", "kind": "color", "maxSize": 1024, "note": "diner, surf shop, gas station fronts" },
+    { "name": "storefront_emissive", "source": "storefront_emissive_1k.jpg", "kind": "color", "maxSize": 512 },
+    { "name": "rock_albedo", "source": "rock_albedo_1k.jpg", "kind": "color", "maxSize": 512 },
+    { "name": "rock_normal", "source": "rock_normal_1k.jpg", "kind": "normal", "maxSize": 512 },
+    { "name": "palm_trunk", "source": "palm_trunk.jpg", "kind": "color", "maxSize": 256 },
+    { "name": "palm_trunk_normal", "source": "palm_trunk_normal.jpg", "kind": "normal", "maxSize": 256 },
+    { "name": "palm_fronds", "source": "palm_fronds.png", "kind": "color", "maxSize": 1024, "note": "alpha cut-out" },
+    { "name": "fan_fronds", "source": "fan_fronds.png", "kind": "color", "maxSize": 1024, "note": "2x2 atlas, alpha cut-out" },
+    { "name": "tree_cards", "source": "tree_cards.png", "kind": "color", "maxSize": 1024, "sidecar": "tree_cards.json", "note": "oak + cypress cards, UV rects in the sidecar" },
+    { "name": "shrubs", "source": "shrubs.png", "kind": "color", "maxSize": 512 },
+    { "name": "world_noise", "source": "world_noise_256.png", "kind": "data", "maxSize": 256, "note": "tileable macro variation noise" }
+  ]
+}

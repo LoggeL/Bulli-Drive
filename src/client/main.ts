@@ -12,17 +12,21 @@ import { updatePowerupsUI, updateSpeedometer, updateHealthBar, updateDriveHud } 
 import { updateProjectiles } from './world/projectiles.js';
 import { initSplashScreen, initAboutModal } from './ui/screens.js';
 import { applySplashChoice, initModeSelector, initRoomMenu } from './ui/roomMenu.js';
-import { animateFountain } from './world/city.js';
+import { updatePalms } from './world/palms.js';
 import { updateMinimap } from './ui/minimap.js';
 import { Bulli, type CarType } from './entities/Bulli.js';
 import { sendToServer } from './network/socket.js';
-import { AdaptiveRenderQuality } from './effects/renderQuality.js';
+import { AdaptiveRenderQuality, detectRenderTier } from './effects/renderQuality.js';
 import { updateWorldShaders } from './effects/worldShaders.js';
 import { ensureCurrentBuild } from './buildVersion.js';
 import { installE2EHook } from './e2eHook.js';
 import { watchWebGLContext, isWebGLContextLost } from './ui/contextLoss.js';
 import { installPerfMonitor, type PerfMonitor } from './debug/perfMonitor.js';
 import { setupLighting, updateLighting } from './render/lighting.js';
+import { renderFrame } from './render/frameStats.js';
+import { startModelPreload } from './assets/gameModels.js';
+import { waitForGameAssets } from './ui/assetGate.js';
+import { updateCarModels } from './vehicle/CarModel.js';
 import { ChaseCamera, RACE_CAMERA, RACE_CAMERA_SLIP_BLEND, type ChaseTarget } from './camera/ChaseCamera.js';
 import { SANDBOX, TUNE_PANEL, TUNE_REQUESTED } from './flags.js';
 import { gameHooks } from './game/hooks.js';
@@ -47,18 +51,25 @@ function init() {
         chaseCamera.baseFov,
         window.innerWidth / window.innerHeight,
         0.1,
-        1000
+        // The rendered hills beyond the playable area reach 1.6 km out
+        2600
     );
     state.camera.position.set(0, RACE_CAMERA.height, RACE_CAMERA.distance);
 
     // Renderer
     state.renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderQuality = new AdaptiveRenderQuality(state.renderer, window.innerWidth, window.innerHeight);
+    renderQuality = new AdaptiveRenderQuality(
+        state.renderer, window.innerWidth, window.innerHeight, detectRenderTier(state.renderer)
+    );
     // Tone mapping, sky, fog, environment, lights and shadows
     setupLighting(state.scene, state.renderer);
     document.body.appendChild(state.renderer.domElement);
     // Show a notice and pause rendering if the browser drops the GL context
     watchWebGLContext(state.renderer.domElement);
+    // Car models (GLB + KTX2) load and compile while the splash screen is up;
+    // until they are there (or if they fail) the cars stay procedural
+    startModelPreload(state.renderer, state.camera, state.scene)
+        .catch(error => console.warn('Model preload failed', error));
 
     // Audio Context
     try {
@@ -74,8 +85,9 @@ function init() {
             await state.audioCtx.resume();
         }
 
-        // Init and start sounds
-        await initSounds();
+        // Init the sounds while the world textures and car models finish
+        // loading (the start button shows the progress)
+        await Promise.all([initSounds(), waitForGameAssets(document.getElementById('start-btn'))]);
         startEngineSound();
 
         // Save name and car type
@@ -246,7 +258,6 @@ function animate(frameTime: number) {
     // Animate world objects
     animateCoins(time);
     animatePowerups(time);
-    animateFountain(time);
 
     // Remote cars: interpolated snapshots, the contact set predicted
     // (net/remotes.ts), idle ones grey
@@ -276,8 +287,13 @@ function animate(frameTime: number) {
     if (state.renderer && state.scene && state.camera && !isWebGLContextLost()) {
         updateWorldShaders(state.clock.elapsedTime);
         updateLighting();
+        // Near geometry or impostor per palm, for the final camera
+        updatePalms(state.camera);
+        // Car LODs, wheels, brake lights and blinkers
+        updateCarModels(state.camera, dt);
         renderQuality.update(frameTime);
-        state.renderer.render(state.scene, state.camera);
+        // Counters include the shadow pass (perf overlay, e2e snapshot)
+        renderFrame(state.renderer, state.scene, state.camera);
     }
 
     perfMonitor?.endFrame(frameTime);

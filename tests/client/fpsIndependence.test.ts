@@ -51,12 +51,10 @@ interface Run {
 }
 
 function createHost(): VehicleHost {
-    const wheels = [new THREE.Group(), new THREE.Group(), new THREE.Group(), new THREE.Group()];
     const off = () => ({ active: false, timer: 0 });
     return {
         group: new THREE.Group(),
         flipGroup: new THREE.Group(),
-        wheels,
         carType: 'bulli',
         powerups: { speed: off(), size: off(), jump: off(), shield: off(), magnet: off(), ghost: off() },
         speed: 0,

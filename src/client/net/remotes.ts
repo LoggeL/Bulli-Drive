@@ -29,8 +29,12 @@ interface RemoteView {
     idleShown: boolean;
     dead: boolean;
     lastSeenTick: number;
-    wheelSpin: number;
+    // Forward speed of the last frame (m/s), for the brake lights
+    lastSpeed: number;
 }
+
+// Slowing down faster than this (m/s²) going forwards lights the brake lights
+const BRAKE_LIGHT_DECEL = 6;
 
 const views = new Map<string, RemoteView>();
 const pose: RemotePose = createRemotePose();
@@ -43,7 +47,7 @@ function wrapAngle(angle: number): number {
 function viewOf(id: string): RemoteView {
     let view = views.get(id);
     if (!view) {
-        view = { track: new RemoteTrack(), blend: 0, flags: 0, idleShown: false, dead: false, lastSeenTick: -1, wheelSpin: 0 };
+        view = { track: new RemoteTrack(), blend: 0, flags: 0, idleShown: false, dead: false, lastSeenTick: -1, lastSpeed: 0 };
         views.set(id, view);
     }
     return view;
@@ -86,20 +90,8 @@ function predictedById(id: string): PredictedRemote | null {
 }
 
 function setIdleLook(remote: Bulli, idle: boolean): void {
-    remote.flipGroup.traverse((child: THREE.Object3D) => {
-        const mesh = child as THREE.Mesh;
-        if (!mesh.isMesh || mesh === remote.shieldMesh) return;
-        const mat = mesh.material as THREE.MeshStandardMaterial;
-        if (!mat?.color) return;
-        mat.userData = mat.userData || {};
-        if (idle) {
-            if (mat.userData._origColor === undefined) mat.userData._origColor = mat.color.getHex();
-            mat.color.setHex(0x888888);
-        } else if (mat.userData._origColor !== undefined) {
-            mat.color.setHex(mat.userData._origColor);
-            delete mat.userData._origColor;
-        }
-    });
+    // Grey car: the model's own material copies, never shared ones
+    remote.setAfkVisual(idle);
     const tag = remote.nametag;
     if (!tag) return;
     tag.style.opacity = idle ? '0.4' : '';
@@ -173,14 +165,11 @@ export function updateRemoteCars(dt: number, now: number, alpha: number): void {
         remote.flipGroup.rotation.x = flip;
         remote.angle = yaw;
         remote.speed = speed / 60;
-        view.wheelSpin -= speed * 0.5 * Math.min(dt, 0.1);
-        for (let i = 0; i < remote.wheels.length; i++) {
-            remote.wheels[i].rotation.x = view.wheelSpin;
-            if (i < 2) {
-                remote.wheels[i].rotation.order = 'YXZ';
-                remote.wheels[i].rotation.y = steer;
-            }
-        }
+        // Wheels and brake lights (CarModel rolls them each frame): the
+        // brake lights come on while the car slows down hard going forwards
+        const slowing = dt > 0 ? (view.lastSpeed - speed) / dt : 0;
+        view.lastSpeed = speed;
+        remote.setDriveState(speed, steer, speed > 0.5 && slowing > BRAKE_LIGHT_DECEL);
 
         // Powerup looks and the idle grey from the flags
         const flags = view.flags;
