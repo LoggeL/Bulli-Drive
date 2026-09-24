@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { inStartGhost, raceFrozen, raceGhostFloor, raceInputFilter } from '../../../src/shared/race/inputFilter.js';
+import { inStartGhost, raceFrozen, racePhaseAt, raceGhostFloor, raceInputFilter } from '../../../src/shared/race/inputFilter.js';
 import { BTN_BOOST, BTN_HANDBRAKE, BTN_JUMP, BTN_RESET } from '../../../src/shared/sim/constants.js';
 import { createFlatWorld, spawnCar } from '../../../src/shared/sim/scenarios.js';
 import type { VehicleInput } from '../../../src/shared/sim/types.js';
@@ -10,6 +10,23 @@ import { stepVehicle } from '../../../src/shared/sim/world.js';
 const S = 500;
 const ALL = BTN_HANDBRAKE | BTN_BOOST | BTN_JUMP | BTN_RESET;
 const full = (): VehicleInput => ({ steer: -90, throttle: 255, brake: 255, buttons: ALL });
+
+describe('racePhaseAt', () => {
+    it('reads the countdown from startTick on the client, which runs ahead of the race state', () => {
+        // No state or the lobby: frozen
+        expect(racePhaseAt(null, null, 10)).toBe('lobby');
+        expect(racePhaseAt('lobby', S, S + 100)).toBe('lobby');
+        expect(racePhaseAt('lobby', S, S - 100)).toBe('lobby');
+        // The countdown turns into the race exactly at S
+        expect(racePhaseAt('countdown', S, S - 1)).toBe('countdown');
+        expect(racePhaseAt('countdown', S, S)).toBe('racing');
+        // A 'racing' state arriving early still freezes the ticks before S
+        expect(racePhaseAt('racing', S, S - 1)).toBe('countdown');
+        expect(racePhaseAt('racing', S, S)).toBe('racing');
+        expect(racePhaseAt('finished', S, S + 900)).toBe('finished');
+        expect(racePhaseAt('results', S, S + 9000)).toBe('results');
+    });
+});
 
 describe('raceInputFilter', () => {
     it('freezes pedals and steering in the lobby, the countdown and before S; the handbrake stays', () => {

@@ -36,7 +36,7 @@ import {
     PROTOCOL_VERSION, type ClientMessage, type GameEvent, type MemberInfo, type RaceStateBody, type RoomInfo, type RoomKind,
     type ServerMessage
 } from '../../src/shared/protocol.js';
-import { raceGhostFloor, raceInputFilter } from '../../src/shared/race/inputFilter.js';
+import { raceGhostFloor, raceInputFilter, racePhaseAt } from '../../src/shared/race/inputFilter.js';
 import { LineDriver, type TrafficCar } from '../../src/shared/race/lineDriver.js';
 import { createCourse, createRaceProgress, trackLine, type Course, type RaceProgress } from '../../src/shared/race/progress.js';
 import { createRaceWorld } from '../../src/shared/race/raceWorld.js';
@@ -599,9 +599,7 @@ export class Bot {
     // The phase the rules of tick t see: frozen before startTick
     private phaseAt(tick: number): RacePhase {
         const state = this.race.state;
-        if (!state || state.phase === 'lobby') return 'lobby';
-        if (state.startTick !== null && tick < state.startTick) return 'countdown';
-        return state.phase === 'countdown' ? 'racing' : state.phase;
+        return racePhaseAt(state?.phase ?? null, state?.startTick ?? null, tick);
     }
 
     /** Puts the race bot's own input packet with a tick offset on the wire (manipulation tests). */

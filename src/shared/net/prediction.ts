@@ -17,7 +17,7 @@ import { createSimCar, spawnVehicle } from '../sim/vehicle.js';
 import { stepWorld } from '../sim/world.js';
 import type { SimWorld } from '../world/colliders.js';
 import {
-    CAR_IDLE, CAR_LAGGY, decodeRemoteState, flagsToMods, INPUT_FROZEN, INPUT_HIDDEN,
+    CAR_IDLE, CAR_LAGGY, CAR_RACE_GHOST, decodeRemoteState, flagsToMods, INPUT_FROZEN, INPUT_HIDDEN,
     type CompactCar, type Snapshot
 } from './codec.js';
 import {
@@ -205,7 +205,7 @@ export class Prediction {
         copyInput(car.input, e.input);
         if (this.filterInput) this.filterInput(t, car.input);
         this.modsFor(t, car.mods);
-        const idle = (e.flags & (INPUT_FROZEN | INPUT_HIDDEN)) !== 0 || (this.selfFlags & (CAR_IDLE | CAR_LAGGY)) !== 0;
+        const idle = (e.flags & (INPUT_FROZEN | INPUT_HIDDEN)) !== 0 || (this.selfFlags & (CAR_IDLE | CAR_LAGGY | CAR_RACE_GHOST)) !== 0;
         if (idle) applyContactGhostFloor(car);
         else {
             // The server ends the idle ghost with a longer ghost (5.4)
@@ -246,7 +246,7 @@ export class Prediction {
         remote.car.contactScale = ahead <= SOFT_CONTACT_FROM ? 1
             : ahead >= SOFT_CONTACT_TO ? SOFT_CONTACT_SCALE
                 : 1 - (1 - SOFT_CONTACT_SCALE) * (ahead - SOFT_CONTACT_FROM) / (SOFT_CONTACT_TO - SOFT_CONTACT_FROM);
-        if ((remote.flags & (CAR_IDLE | CAR_LAGGY)) !== 0) applyContactGhostFloor(remote.car);
+        if ((remote.flags & (CAR_IDLE | CAR_LAGGY | CAR_RACE_GHOST)) !== 0) applyContactGhostFloor(remote.car);
     }
 
     /** The car appears at (x, z) at the end of tick t0 (spawn or respawn event). */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CAR_IDLE, INPUT_FROZEN, type CompactCar, type Snapshot } from '../../../src/shared/net/codec.js';
+import { CAR_IDLE, CAR_RACE_GHOST, INPUT_FROZEN, type CompactCar, type Snapshot } from '../../../src/shared/net/codec.js';
 import { Prediction, type SlotInfo } from '../../../src/shared/net/prediction.js';
 import { createFlatWorld } from '../../../src/shared/sim/scenarios.js';
 import { createVehicleInput, createVehicleState, type VehicleInput, type VehicleState } from '../../../src/shared/sim/types.js';
@@ -212,6 +212,15 @@ describe('prediction lifecycle', () => {
         plain.p.advance(gas, 0);
         expect(plain.p.car.state.ghostTicks).toBe(0);
     });
+
+    it('holds the contact ghost while the server flags the own car a race ghost (wrong way, finished; phase 2, 11)', () => {
+        const race = driving(3);
+        const server = predicted(race.p, 3);
+        server.ghostTicks = 0;
+        race.p.reconcile(snapshot(3, server, [], -1, CAR_RACE_GHOST));
+        race.p.advance(gas, 0);
+        expect(race.p.car.state.ghostTicks).toBeGreaterThanOrEqual(1);
+    });
 });
 
 describe('contact set', () => {
@@ -303,6 +312,13 @@ describe('contact set', () => {
     it('treats an idle remote as a contact ghost', () => {
         const { p } = atRest(12);
         p.reconcile(snapshot(2, predicted(p, 2), [record(1, 10, 0, { flags: 1 | CAR_IDLE }), record(2, -10, 0)]));
+        expect(p.remotes.get(1)!.car.state.ghostTicks).toBeGreaterThanOrEqual(1);
+        expect(p.remotes.get(2)!.car.state.ghostTicks).toBe(0);
+    });
+
+    it('treats a race ghost remote (wrong way, finished, DNF) as a contact ghost', () => {
+        const { p } = atRest(12);
+        p.reconcile(snapshot(2, predicted(p, 2), [record(1, 10, 0, { flags: 1 | CAR_RACE_GHOST }), record(2, -10, 0)]));
         expect(p.remotes.get(1)!.car.state.ghostTicks).toBeGreaterThanOrEqual(1);
         expect(p.remotes.get(2)!.car.state.ghostTicks).toBe(0);
     });

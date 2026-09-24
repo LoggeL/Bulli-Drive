@@ -8,6 +8,18 @@ import type { SimCar, VehicleInput } from '../sim/types.js';
 import { START_GHOST_TICKS } from './rules.js';
 import type { RacePhase } from './types.js';
 
+/**
+ * The phase the rules of tick t see on a client, from the last race state:
+ * a client runs ahead of the server, so a countdown turns into the race at
+ * startTick on its own, and a tick before startTick is still the countdown
+ * (a late 'racing' state must not unfreeze it). Prediction and bots.
+ */
+export function racePhaseAt(phase: RacePhase | null, startTick: number | null, tick: number): RacePhase {
+    if (phase === null || phase === 'lobby') return 'lobby';
+    if (startTick !== null && tick < startTick) return 'countdown';
+    return phase === 'countdown' ? 'racing' : phase;
+}
+
 /** True while the cars stand frozen on the grid: lobby, countdown, or any tick before startTick. */
 export function raceFrozen(phase: RacePhase, tick: number, startTick: number | null): boolean {
     return phase === 'lobby' || phase === 'countdown' || startTick === null || tick < startTick;
