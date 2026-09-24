@@ -33,7 +33,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 1,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         },
         "sport": {
           "x": -3.1008649030686346,
@@ -64,7 +65,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 1,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         }
       }
     },
@@ -100,7 +102,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 1,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         },
         "sport": {
           "x": -9.518324392421945,
@@ -131,7 +134,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 1,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         }
       }
     },
@@ -167,7 +171,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 1,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         },
         "sport": {
           "x": -16.52833823679623,
@@ -198,7 +203,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 1,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         }
       }
     },
@@ -234,7 +240,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 1,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         },
         "sport": {
           "x": -24.044398239807812,
@@ -265,7 +272,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 1,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         }
       }
     },
@@ -301,7 +309,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 1,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         },
         "sport": {
           "x": -31.992667453599953,
@@ -332,7 +341,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 1,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         }
       }
     },
@@ -368,7 +378,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 1,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         },
         "sport": {
           "x": -40.304885609744716,
@@ -399,7 +410,8 @@
           "ghostExit": 0,
           "wasGhost": false,
           "scale": 1,
-          "prevButtons": 0
+          "prevButtons": 0,
+          "draft": 0
         }
       }
     }

@@ -6,7 +6,9 @@ import * as v from 'valibot';
 // Bumped on every incompatible wire change. The client sends it in 'hello';
 // the server rejects any other version with reload: true
 // (docs/phase-1b-design.md, 3.2). There is no adapter for old versions.
-export const PROTOCOL_VERSION = 2;
+// v3 (docs/phase-2-design.md, 16): draft in the self block, launch/bogged
+// mod bits, race-ghost and drafting car flags.
+export const PROTOCOL_VERSION = 3;
 
 // ---------- DTOs ----------
 

@@ -1,4 +1,5 @@
-// Binary frames of protocol v2 (docs/phase-1b-design.md, 3.3 and 3.4):
+// Binary frames of protocol v3 (docs/phase-1b-design.md, 3.3 and 3.4, and
+// docs/phase-2-design.md, 16.1):
 // the input uplink and the snapshot downlink. Everything else is JSON.
 // DataView, little endian. The first byte is the frame kind.
 
@@ -104,6 +105,12 @@ export const CAR_LAGGY = 1 << 10;
 export const CAR_FLIPPING = 1 << 11;
 export const CAR_WAS_GHOST = 1 << 12;
 export const CAR_GHOST_EXIT = 1 << 13;
+// Race (protocol v3, docs/phase-2-design.md 16.1): contact ghost by a race
+// rule (wrong way, finished, DNF), and a car drafting (draft > 0.3, looks)
+export const CAR_RACE_GHOST = 1 << 14;
+export const CAR_DRAFTING = 1 << 15;
+// VehicleState.draft above which a car shows as drafting
+export const DRAFTING_FLAG_FROM = 0.3;
 
 // VehicleModifiers as bits (self block)
 export const MOD_TURBO = 1;
@@ -111,10 +118,13 @@ export const MOD_MEGA = 2;
 export const MOD_SUPER_JUMP = 4;
 export const MOD_GHOST = 8;
 export const MOD_SHIELD = 16;
+export const MOD_LAUNCH = 32;
+export const MOD_BOGGED = 64;
 
 export function modsToBits(mods: VehicleModifiers): number {
     return (mods.turbo ? MOD_TURBO : 0) | (mods.mega ? MOD_MEGA : 0) | (mods.superJump ? MOD_SUPER_JUMP : 0)
-        | (mods.ghost ? MOD_GHOST : 0) | (mods.shield ? MOD_SHIELD : 0);
+        | (mods.ghost ? MOD_GHOST : 0) | (mods.shield ? MOD_SHIELD : 0)
+        | (mods.launch ? MOD_LAUNCH : 0) | (mods.bogged ? MOD_BOGGED : 0);
 }
 
 export function bitsToMods(bits: number, out: VehicleModifiers): VehicleModifiers {
@@ -123,23 +133,29 @@ export function bitsToMods(bits: number, out: VehicleModifiers): VehicleModifier
     out.superJump = (bits & MOD_SUPER_JUMP) !== 0;
     out.ghost = (bits & MOD_GHOST) !== 0;
     out.shield = (bits & MOD_SHIELD) !== 0;
+    out.launch = (bits & MOD_LAUNCH) !== 0;
+    out.bogged = (bits & MOD_BOGGED) !== 0;
     return out;
 }
 
-// The sim modifiers a car with these flags drives with
+// The sim modifiers a car with these flags drives with (the launch windows
+// of other cars are not in the compact record)
 export function flagsToMods(flags: number, out: VehicleModifiers): VehicleModifiers {
     out.turbo = (flags & CAR_TURBO) !== 0;
     out.mega = (flags & CAR_MEGA) !== 0;
     out.superJump = (flags & CAR_SUPER_JUMP) !== 0;
     out.ghost = (flags & CAR_GHOST) !== 0;
     out.shield = (flags & (CAR_SHIELD | CAR_RESPAWN_SHIELD)) !== 0;
+    out.launch = false;
+    out.bogged = false;
     return out;
 }
 
 // The flags that follow from the car state itself (the room adds the rest)
 export function stateFlags(s: VehicleState): number {
     return (s.grounded ? CAR_GROUNDED : 0) | (s.boosting ? CAR_BOOSTING : 0) | (s.driftTicks > 0 ? CAR_DRIFTING : 0)
-        | (s.flipAngle > 0 ? CAR_FLIPPING : 0) | (s.wasGhost ? CAR_WAS_GHOST : 0) | (s.ghostExit > 0 ? CAR_GHOST_EXIT : 0);
+        | (s.flipAngle > 0 ? CAR_FLIPPING : 0) | (s.wasGhost ? CAR_WAS_GHOST : 0) | (s.ghostExit > 0 ? CAR_GHOST_EXIT : 0)
+        | (s.draft > DRAFTING_FLAG_FROM ? CAR_DRAFTING : 0);
 }
 
 export interface SnapshotHeader {
@@ -159,7 +175,7 @@ export interface SnapshotHeader {
 
 const SELF_F64 = [
     'x', 'y', 'z', 'yaw', 'vx', 'vy', 'vz', 'yawRate', 'steerAngle', 'loadX', 'rearGrip', 'betaPrev',
-    'boostMeter', 'flipAngle', 'flipRate', 'scale'
+    'boostMeter', 'flipAngle', 'flipRate', 'scale', 'draft'
 ] as const satisfies readonly (keyof VehicleState)[];
 const SELF_U8 = ['airTicks', 'driftLowTicks', 'wallTicks', 'jumpCooldown', 'resetHold', 'reverseHold', 'ghostExit', 'prevButtons'] as const satisfies readonly (keyof VehicleState)[];
 const SELF_U16 = ['driftTicks', 'ghostTicks'] as const satisfies readonly (keyof VehicleState)[];
@@ -425,5 +441,7 @@ export function decodeRemoteState(car: CompactCar, out: VehicleState): VehicleSt
     out.wasGhost = (car.flags & CAR_WAS_GHOST) !== 0;
     out.scale = car.scale;
     out.prevButtons = car.input.buttons;
+    // Not in the compact record: a remote car's slipstream starts from 0
+    out.draft = 0;
     return out;
 }

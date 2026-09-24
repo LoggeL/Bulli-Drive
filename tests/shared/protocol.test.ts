@@ -47,8 +47,8 @@ const REAL_CLIENT_MESSAGES: Record<string, ClientMessage> = {
 };
 
 describe('PROTOCOL_VERSION', () => {
-    it('is 2 since the server simulates', () => {
-        expect(PROTOCOL_VERSION).toBe(2);
+    it('is 3 since the race mode changed the snapshot (draft, race bits)', () => {
+        expect(PROTOCOL_VERSION).toBe(3);
     });
 });
 

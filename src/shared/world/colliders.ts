@@ -3,6 +3,7 @@
 // grid for the broad phase, sandbox ramps and the ground height.
 
 import type { TerrainConfig } from '../protocol.js';
+import type { VehicleState } from '../sim/types.js';
 import { getTerrainHeight } from './terrain.js';
 
 // top is the height of the upper edge above base. A car whose underside is
@@ -18,7 +19,9 @@ export type ColliderInput =
     | { kind: 'box'; x: number; z: number; hw: number; hd: number; top: number; ramp?: number };
 
 // Wedge rising along its heading (sin yaw, cos yaw) from 0 at the rear edge
-// to height at the front edge, where cars take off
+// to height at the front edge, where cars take off. Its base is the terrain
+// height at the middle of the rear edge, so on a slope the ramp starts
+// flush with the ground behind it (docs/phase-2-design.md, 5.5).
 export interface RampDef { x: number; z: number; yaw: number; width: number; length: number; height: number }
 
 // Straight roads a reset puts the car back onto (the city's road grid):
@@ -139,7 +142,12 @@ export interface SimWorld {
     colliders: Collider[];       // index = deterministic order
     grid: SpatialGrid;
     ramps: RampDef[];
+    rampBases: number[];         // height of each ramp's rear edge (terrain there)
     roads: RoadGrid | null;      // reset target, null = reset in place
+    // Race world only (docs/phase-2-design.md, 5.6): the reset target on the
+    // racing line (instead of roads) and the slipstream step in stepWorld
+    resetPose?: (s: VehicleState) => boolean;
+    slipstream?: boolean;
     bound: number;               // terrain.size/2 - 2 = 498 (the old client clamp)
     groundHeight(x: number, z: number): number;   // max(getTerrainHeight, ramps)
     terrainHeight(x: number, z: number): number;  // getTerrainHeight alone
@@ -169,8 +177,15 @@ export function rampSurfaceNear(world: SimWorld, index: number, x: number, z: nu
     const ramp = world.ramps[index];
     const along = (x - ramp.x) * Math.sin(ramp.yaw) + (z - ramp.z) * Math.cos(ramp.yaw);
     const t = Math.max(-0.5, Math.min(0.5, along / ramp.length));
-    return world.terrainHeight(ramp.x, ramp.z) + ramp.height * (t + 0.5);
+    return world.rampBases[index] + ramp.height * (t + 0.5);
 }
+
+/** Terrain height at the middle of a ramp's rear edge: the base of its surface. */
+export function rampRearBase(ramp: RampDef, terrainHeight: (x: number, z: number) => number): number {
+    return terrainHeight(ramp.x - Math.sin(ramp.yaw) * ramp.length / 2, ramp.z - Math.cos(ramp.yaw) * ramp.length / 2);
+}
+
+const FLAT_GROUND = (): number => 0;
 
 // Half thickness of a ramp's edge walls, the minimum of section 7.3
 export const RAMP_EDGE_THICKNESS = 0.25;
@@ -190,9 +205,14 @@ const RAMP_SIDE_PIECE = 4;
  * off or rolling off a side never snags a wall.
  * front = false leaves out the front wall, for two ramps put back to back
  * as a hill. Only for ramps facing along an axis (yaw a multiple of 90°),
- * since boxes are axis-aligned.
+ * since boxes are axis-aligned. terrainHeight is the ground of the world
+ * the ramp stands in (flat by default): a wall's top is the ramp surface
+ * above the terrain at the wall, since createSimWorld puts every collider
+ * on the ground at its centre.
  */
-export function rampEdgeColliders(ramp: RampDef, index: number, front = true): ColliderInput[] {
+export function rampEdgeColliders(
+    ramp: RampDef, index: number, front = true, terrainHeight: (x: number, z: number) => number = FLAT_GROUND
+): ColliderInput[] {
     const quarter = ramp.yaw / (Math.PI / 2);
     if (Math.abs(quarter - Math.round(quarter)) > 1e-6) {
         throw new Error('ramp edge colliders need a ramp facing along an axis');
@@ -202,8 +222,10 @@ export function rampEdgeColliders(ramp: RampDef, index: number, front = true): C
     const lx = fz, lz = -fx;
     const t = RAMP_EDGE_THICKNESS;
     const out: ColliderInput[] = [];
-    // A wall centred at along/across (ramp frame) with half extents
-    const wall = (along: number, across: number, halfAlong: number, halfAcross: number, top: number) => {
+    const base = rampRearBase(ramp, terrainHeight);
+    // A wall centred at along/across (ramp frame) with half extents; height
+    // is the ramp's height above its base at the wall's upper end
+    const wall = (along: number, across: number, halfAlong: number, halfAcross: number, height: number) => {
         const x = ramp.x + fx * along + lx * across;
         const z = ramp.z + fz * along + lz * across;
         const alongX = fx !== 0;
@@ -211,7 +233,7 @@ export function rampEdgeColliders(ramp: RampDef, index: number, front = true): C
             kind: 'box', x, z,
             hw: alongX ? halfAlong : halfAcross,
             hd: alongX ? halfAcross : halfAlong,
-            top,
+            top: base + height - terrainHeight(x, z),
             ramp: index
         });
     };
@@ -236,9 +258,9 @@ export function createSimWorld(
     roads: RoadGrid | null = null
 ): SimWorld {
     const rampList = ramps.map(ramp => ({ ...ramp }));
-    // Ramps sit on the terrain height under their centre
-    const rampBases = rampList.map(ramp => getTerrainHeight(terrain, ramp.x, ramp.z));
     const terrainHeight = (x: number, z: number): number => getTerrainHeight(terrain, x, z);
+    // Ramps start at the terrain height of their rear edge
+    const rampBases = rampList.map(ramp => rampRearBase(ramp, terrainHeight));
     const groundHeight = (x: number, z: number): number => {
         let height = getTerrainHeight(terrain, x, z);
         for (let i = 0; i < rampList.length; i++) {
@@ -261,6 +283,7 @@ export function createSimWorld(
         colliders: list,
         grid: new SpatialGrid(list),
         ramps: rampList,
+        rampBases,
         roads,
         bound: terrain.size / 2 - 2,
         groundHeight,

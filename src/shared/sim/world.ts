@@ -8,6 +8,7 @@ import { overlapsColliders, resolveWorld } from './collision.js';
 import { DT, GHOST_EXIT_TICKS, SUBSTEPS } from './constants.js';
 import { resolveContact } from './contact.js';
 import { applyModifiers } from './modifiers.js';
+import { updateDrafts } from './slipstream.js';
 import { resetStepEvents, type SimCar, type VehicleState } from './types.js';
 import { finishTick, integrateForces, resetVehicle } from './vehicle.js';
 
@@ -34,13 +35,15 @@ export function sortCarsById(cars: SimCar[]): void {
 export function stepWorld(cars: SimCar[], world: SimWorld): void {
     sortCarsById(cars);
     const count = cars.length;
+    // Slipstream targets from the positions at the start of the tick
+    if (world.slipstream) updateDrafts(cars);
 
     for (let i = 0; i < count; i++) {
         const car = cars[i];
         resetStepEvents(car.events);
         car.contactDv = 0;
         car.contactDw = 0;
-        applyModifiers(car.base, car.mods, car.state.scale, car.params);
+        applyModifiers(car.base, car.mods, car.state.scale, car.params, car.state.draft);
         if (car.kinematic) continue;
         // A Party ghost that ends inside a collider keeps the world
         // collision off until the car is free again (section 7.3, step 5)
@@ -81,7 +84,7 @@ function stateIsFinite(s: VehicleState): boolean {
         && Number.isFinite(s.vx) && Number.isFinite(s.vy) && Number.isFinite(s.vz) && Number.isFinite(s.yawRate)
         && Number.isFinite(s.steerAngle) && Number.isFinite(s.loadX) && Number.isFinite(s.rearGrip)
         && Number.isFinite(s.betaPrev) && Number.isFinite(s.boostMeter) && Number.isFinite(s.flipAngle)
-        && Number.isFinite(s.flipRate) && Number.isFinite(s.scale);
+        && Number.isFinite(s.flipRate) && Number.isFinite(s.scale) && Number.isFinite(s.draft);
 }
 
 // A car whose state went NaN or infinite (a degenerate case or a broken

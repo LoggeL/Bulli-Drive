@@ -45,6 +45,7 @@ export interface VehicleState {
     wasGhost: boolean;     // Party ghost in the previous tick
     scale: number;         // 1..MEGA_SCALE, eases
     prevButtons: number;   // edge detection
+    draft: number;         // 0..1 slipstream strength, rate limited (race world only)
 }
 
 export interface VehicleParams {
@@ -82,6 +83,8 @@ export interface VehicleModifiers {
     superJump: boolean;
     ghost: boolean;   // Party ghost: no car contact AND no world colliders (world border still applies)
     shield: boolean;  // shield powerup or respawn shield
+    launch: boolean;  // perfect race start: more acceleration (race rule)
+    bogged: boolean;  // early race start: less acceleration (race rule)
 }
 
 // Reset every tick and written in place (no allocation)
@@ -138,7 +141,8 @@ export function createVehicleState(): VehicleState {
         ghostExit: 0,
         wasGhost: false,
         scale: 1,
-        prevButtons: 0
+        prevButtons: 0,
+        draft: 0
     };
 }
 
@@ -170,6 +174,7 @@ export function copyVehicleState(dst: VehicleState, src: VehicleState): VehicleS
     dst.wasGhost = src.wasGhost;
     dst.scale = src.scale;
     dst.prevButtons = src.prevButtons;
+    dst.draft = src.draft;
     return dst;
 }
 
@@ -178,7 +183,7 @@ export function createVehicleInput(): VehicleInput {
 }
 
 export function createVehicleModifiers(): VehicleModifiers {
-    return { turbo: false, mega: false, superJump: false, ghost: false, shield: false };
+    return { turbo: false, mega: false, superJump: false, ghost: false, shield: false, launch: false, bogged: false };
 }
 
 export function createStepEvents(): StepEvents {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-    CAR_BOOSTING, CAR_DRIFTING, CAR_FLIPPING, CAR_GHOST, CAR_GHOST_EXIT, CAR_GROUNDED, CAR_IDLE, CAR_MEGA,
+    CAR_BOOSTING, CAR_DRAFTING, CAR_DRIFTING, CAR_RACE_GHOST, MOD_BOGGED, MOD_LAUNCH, CAR_FLIPPING, CAR_GHOST, CAR_GHOST_EXIT, CAR_GROUNDED, CAR_IDLE, CAR_MEGA,
     CAR_RESPAWN_SHIELD, CAR_SHIELD, CAR_SUPER_JUMP, CAR_TURBO, CAR_WAS_GHOST, COMPACT_BYTES, decodeInputPacket,
     decodeRemoteState, decodeSnapshot, encodeInputPacket, encodeSnapshot, flagsToMods, FRAME_INPUT, INPUT_FROZEN,
     inputPacketSize, MOD_MEGA, MOD_SUPER_JUMP, MOD_TURBO, SELF_BLOCK_BYTES, SELF_BLOCK_KEYS, SNAPSHOT_HEADER_BYTES,
@@ -96,8 +96,8 @@ describe('snapshots', () => {
         const keys = Object.keys(createVehicleState()).sort();
         expect([...SELF_BLOCK_KEYS].sort()).toEqual(keys);
         expect(new Set(SELF_BLOCK_KEYS).size).toBe(SELF_BLOCK_KEYS.length);
-        // About 150 bytes (3.4), 32 per other car
-        expect(SELF_BLOCK_BYTES).toBe(149);
+        // About 150 bytes (3.4) plus draft as f64 in v3 (phase-2-design 16.1), 32 per other car
+        expect(SELF_BLOCK_BYTES).toBe(149 + 8);
         expect(COMPACT_BYTES).toBe(32);
         expect(SNAPSHOT_HEADER_BYTES).toBe(16);
     });
@@ -274,7 +274,7 @@ describe('quantisation (3.4)', () => {
 
 describe('car flags', () => {
     it('turn each powerup flag into its modifier, both shields into shield', () => {
-        const none = { turbo: false, mega: false, superJump: false, ghost: false, shield: false };
+        const none = { turbo: false, mega: false, superJump: false, ghost: false, shield: false, launch: false, bogged: false };
         const mods = (flags: number) => flagsToMods(flags, createVehicleModifiers());
         expect(mods(0)).toEqual(none);
         expect(mods(CAR_TURBO)).toEqual({ ...none, turbo: true });
@@ -287,6 +287,30 @@ describe('car flags', () => {
         expect(mods(CAR_GROUNDED | CAR_BOOSTING | CAR_IDLE | CAR_FLIPPING)).toEqual(none);
         // Bits the same flags would have as modifier bits do not leak in
         expect(mods(MOD_TURBO | MOD_MEGA | MOD_SUPER_JUMP)).toEqual(none);
+        // The race flags are no modifiers either, and a launch window left
+        // in the target object is cleared (other cars' windows are not sent)
+        const stale = { ...createVehicleModifiers(), launch: true, bogged: true };
+        expect(flagsToMods(CAR_RACE_GHOST | CAR_DRAFTING, stale)).toEqual(none);
+    });
+
+    it('carry the race start windows as mod bits 32 and 64 (protocol v3)', () => {
+        const none = createVehicleModifiers();
+        expect(MOD_LAUNCH).toBe(32);
+        expect(MOD_BOGGED).toBe(64);
+        expect(modsToBits({ ...none, launch: true })).toBe(32);
+        expect(modsToBits({ ...none, bogged: true })).toBe(64);
+        expect(bitsToMods(32, createVehicleModifiers())).toEqual({ ...none, launch: true });
+        expect(bitsToMods(64, createVehicleModifiers())).toEqual({ ...none, bogged: true });
+        expect(bitsToMods(0, { ...none, launch: true, bogged: true })).toEqual(none);
+    });
+
+    it('use bits 14 and 15 of the u16 for the race ghost and drafting', () => {
+        expect(CAR_RACE_GHOST).toBe(1 << 14);
+        expect(CAR_DRAFTING).toBe(1 << 15);
+        // Both survive the compact record's u16
+        const random = mulberry32(3);
+        const car = { ...randomCar(1, random), flags: CAR_RACE_GHOST | CAR_DRAFTING | CAR_GROUNDED };
+        expect(decodeSnapshot(encodeSnapshot(snapshotWith([car], null)))!.cars[0].flags).toBe(CAR_RACE_GHOST | CAR_DRAFTING | CAR_GROUNDED);
     });
 
     it('derive each state flag from its own field', () => {
@@ -298,6 +322,9 @@ describe('car flags', () => {
         expect(flagsOf({ flipAngle: 0.1 })).toBe(CAR_FLIPPING);
         expect(flagsOf({ wasGhost: true })).toBe(CAR_WAS_GHOST);
         expect(flagsOf({ ghostExit: 1 })).toBe(CAR_GHOST_EXIT);
+        // Drafting only above 0.3 (the look of wind lines, phase-2-design 13)
+        expect(flagsOf({ draft: 0.3 })).toBe(0);
+        expect(flagsOf({ draft: 0.31 })).toBe(CAR_DRAFTING);
         expect(flagsOf({ grounded: true, boosting: true, driftTicks: 30, flipAngle: 3, wasGhost: true, ghostExit: 9 }))
             .toBe(CAR_GROUNDED | CAR_BOOSTING | CAR_DRIFTING | CAR_FLIPPING | CAR_WAS_GHOST | CAR_GHOST_EXIT);
     });
@@ -334,7 +361,10 @@ describe('decodeRemoteState derives what the record does not carry', () => {
         // One turn in 1.1 s (the standard jump)
         expect(flying.flipRate).toBeCloseTo(2 * Math.PI / 1.1, 12);
         expect(flying.flipAngle).toBe(1);
-        const plain = decodeRemoteState(record(CAR_GROUNDED), createVehicleState());
+        // The slipstream is not in the record: a stale value is cleared, even
+        // with the drafting flag set (it is for the looks only)
+        const plain = decodeRemoteState(record(CAR_GROUNDED | CAR_DRAFTING), { ...createVehicleState(), draft: 0.8 });
+        expect(plain.draft).toBe(0);
         expect(plain.boosting).toBe(false);
         expect(plain.driftTicks).toBe(0);
         expect(plain.wasGhost).toBe(false);
