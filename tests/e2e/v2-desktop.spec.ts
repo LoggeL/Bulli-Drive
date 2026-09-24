@@ -65,13 +65,18 @@ test('the v2 physics drives, steers, jumps, drifts and resets', async ({ openPla
 
     // Brake to a stop with S. Held on, S reverses after 8 ticks at a
     // standstill, so the page watches every frame for the stop instead of
-    // polling (a poll can miss the short standstill and see the reverse)
+    // polling (a poll can miss the short standstill and see the reverse).
+    // Below 7.5 fps (software WebGL on a CI runner) one frame runs more than
+    // 8 ticks and can hold the stop and the start of the reverse, so a
+    // speed that turned against the one before braking counts as a stop too
     await page.keyboard.down('s');
     const stopped = await page.evaluate(async () => {
         const debug = (window as unknown as { __bulliDebug: { snapshot(): { v2: { u: number } } } }).__bulliDebug;
+        const before = Math.sign(debug.snapshot().v2.u);
         const until = performance.now() + 15_000;
         while (performance.now() < until) {
-            if (Math.abs(debug.snapshot().v2.u) < 1) return true;
+            const u = debug.snapshot().v2.u;
+            if (Math.abs(u) < 1 || Math.sign(u) === -before) return true;
             await new Promise(resolve => requestAnimationFrame(resolve));
         }
         return false;

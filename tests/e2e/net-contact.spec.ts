@@ -163,7 +163,9 @@ for (const netsim of ['', '150,30,3']) {
         expect(last.oz! - bobStart.z).toBeGreaterThan(1);
         const aliceTop = Math.max(...a.slice(0, hit + 1).map(f => f.u));
         expect(aliceTop).toBeGreaterThan(6);
-        const after = a.filter(f => f.t > a[hit].t && f.t < a[hit].t + 700);
+        // From the frame that first shows Bob moving on: with few frames a
+        // second (CI) that same frame already holds her slowdown
+        const after = a.filter(f => f.t >= a[hit].t && f.t < a[hit].t + 700);
         expect(Math.min(...after.map(f => f.u))).toBeLessThan(aliceTop * 0.75);
         // The cars touched but did not drive through each other on her
         // screen, and Bob was in her contact set while they were close
