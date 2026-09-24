@@ -4,7 +4,8 @@ import type { CarInfo } from '../../src/client/e2eHook.js';
 import { CAR_IDLE, CAR_LAGGY } from '../../src/shared/net/codec.js';
 import { LAGGY_WINDOW_TICKS } from '../../src/shared/net/constants.js';
 
-// Two players see each other, and a head-on ram shows on both screens
+// Two players see each other, a head-on ram shows on both screens, and a
+// player who closes the tab disappears for the other
 // (docs/phase-1b-design.md, 15.3): both choose Free Roam on the splash
 // screen, the test hook puts the cars 20 m apart facing each other, Alice
 // drives into Bob, who stands. The server simulates both cars (5); Alice
@@ -199,4 +200,12 @@ test('two players see each other, and a head-on ram shows on both screens', asyn
         const [aliceView, bobView] = await Promise.all([snapshot(alice.page), snapshot(bob.page)]);
         return distance(bobView.v2!, aliceView.remotes[bobId]);
     }, { timeout: 30_000 }).toBeLessThan(0.5);
+
+    // Bob closes his tab: once the server lets his session go (grace time
+    // of the e2e server, 3 s) his car and his nametag leave Alice's screen
+    // instead of standing there frozen
+    await expect(alice.page.locator('.nametag-name', { hasText: 'E2E Bob Ram' })).toHaveCount(1);
+    await bob.page.close();
+    await expect.poll(async () => (await snapshot(alice.page)).remotes[bobId], { timeout: 20_000 }).toBeUndefined();
+    await expect(alice.page.locator('.nametag-name', { hasText: 'E2E Bob Ram' })).toHaveCount(0);
 });
