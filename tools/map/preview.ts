@@ -2,6 +2,7 @@
 // point, north up, surface colours with hill shading, water by depth and
 // contour lines every 10 m.
 
+import type { Heightfield } from '../../src/shared/map/heightfield.js';
 import { SURFACE } from '../../src/shared/map/types.js';
 import type { BakeResult } from './bakeTerrain.js';
 import { encodePng } from './png.js';
@@ -20,7 +21,20 @@ const COLORS: Record<number, [number, number, number]> = {
 };
 
 export function renderPreview(result: BakeResult): Uint8Array {
-    const { heightfield: hf, heights, conflictMask } = result;
+    const { cols, rows } = result.heightfield.spec;
+    return encodePng(cols, rows, shadedRgb(result.heightfield, result.heights, result.conflictMask));
+}
+
+// Heights in metres of a decoded heightfield (for a preview of the
+// committed terrain.bhf without baking)
+export function heightsOf(hf: Heightfield): Float64Array {
+    const out = new Float64Array(hf.q.length);
+    for (let k = 0; k < out.length; k++) out[k] = hf.spec.heightOffset + hf.q[k] * hf.spec.heightScale;
+    return out;
+}
+
+// RGB pixels, one per grid point, row by row (north up)
+export function shadedRgb(hf: Heightfield, heights: ArrayLike<number>, conflictMask?: Uint8Array): Uint8Array {
     const { cols, rows, cellSize } = hf.spec;
     const rgb = new Uint8Array(cols * rows * 3);
     // Light from the north-west, 45° up (north = -z = up in the image)
@@ -48,11 +62,11 @@ export function renderPreview(result: BakeResult): Uint8Array {
                     r *= 0.75; g *= 0.75; b *= 0.75;
                 }
             }
-            if (conflictMask[k]) { r = 230; g = 30; b = 30; }
+            if (conflictMask?.[k]) { r = 230; g = 30; b = 30; }
             rgb[3 * k] = Math.max(0, Math.min(255, Math.round(r)));
             rgb[3 * k + 1] = Math.max(0, Math.min(255, Math.round(g)));
             rgb[3 * k + 2] = Math.max(0, Math.min(255, Math.round(b)));
         }
     }
-    return encodePng(cols, rows, rgb);
+    return rgb;
 }

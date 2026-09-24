@@ -1,0 +1,92 @@
+{
+  "format": "bulli-pois",
+  "version": 1,
+  "mapId": "bulli-bay",
+  "landmarks": [
+    {"id":"plaza","kind":"plaza","name":"Plaza","x":-350,"z":-76,"area":"plaza"},
+    {"id":"plaza-fountain","kind":"fountain","name":"Plaza Fountain","x":-350,"z":-70,"area":"plaza"},
+    {"id":"pier","kind":"pier","name":"Bulli Bay Pier","x":-640,"z":-20,"area":"pier"},
+    {"id":"pier-restaurant","kind":"restaurant","name":"Pier Restaurant","x":-792,"z":-20,"yaw":1.5708,"area":"pier"},
+    {"id":"lookout","kind":"lookout","name":"Bulli Ridge Lookout","x":640,"z":-785,"yaw":3.1416,"area":"lookout-parking"},
+    {"id":"diner","kind":"diner","name":"Bulli's Diner","x":645,"z":143,"yaw":3.1416,"area":"diner-parking"},
+    {"id":"gas-station","kind":"gasStation","name":"Seaside Service","x":640,"z":-5,"yaw":0,"area":"gas-station"},
+    {"id":"party-arena","kind":"partyArena","name":"Cannery Lot","x":-170,"z":590,"area":"cannery-lot"},
+    {"id":"cannery","kind":"cannery","name":"Cannery Hall","x":-395,"z":460,"yaw":1.5708},
+    {"id":"harbor-light","kind":"lighthouse","name":"Harbor Light","x":-628,"z":690},
+    {"id":"water-tower","kind":"waterTower","name":"Bulli Bay Water Tower","x":150,"z":-150},
+    {"id":"lifeguard-1","kind":"lifeguardTower","name":"Tower 1","x":-640,"z":-200,"yaw":-1.5708},
+    {"id":"lifeguard-2","kind":"lifeguardTower","name":"Tower 2","x":-640,"z":60,"yaw":-1.5708},
+    {"id":"lifeguard-3","kind":"lifeguardTower","name":"Tower 3","x":-640,"z":180,"yaw":-1.5708},
+    {"id":"old-barn","kind":"barn","name":"Old Barn","x":505,"z":738},
+    {"id":"marina","kind":"harbor","name":"Marina","x":-560,"z":500},
+    {"id":"crane-1","kind":"crane","name":"Quay Crane 1","x":-484,"z":470,"yaw":-1.5708},
+    {"id":"crane-2","kind":"crane","name":"Quay Crane 2","x":-484,"z":575,"yaw":-1.5708},
+    {"id":"light-mast-1","kind":"lightMast","name":"Light Mast","x":-252,"z":528,"area":"cannery-lot"},
+    {"id":"light-mast-2","kind":"lightMast","name":"Light Mast","x":-88,"z":652,"area":"cannery-lot"},
+    {"id":"bulli-beach","kind":"beach","name":"Bulli Beach","x":-640,"z":-130},
+    {"id":"surf-shop","kind":"surfShop","name":"Surf Shop","x":-586,"z":-185,"yaw":1.5708},
+    {"id":"palm-park","kind":"park","name":"Palm Park","x":-270,"z":35}
+  ],
+  "spawns": {
+    "freeRoam": [
+      {"group":"plaza","x":-372,"z":-17,"yaw":1.5708},
+      {"group":"plaza","x":-360,"z":-17,"yaw":1.5708},
+      {"group":"plaza","x":-348,"z":-17,"yaw":1.5708},
+      {"group":"plaza","x":-336,"z":-17,"yaw":1.5708},
+      {"group":"diner","x":614,"z":127,"yaw":3.1416},
+      {"group":"diner","x":630,"z":127,"yaw":3.1416},
+      {"group":"diner","x":646,"z":127,"yaw":3.1416},
+      {"group":"diner","x":662,"z":127,"yaw":3.1416},
+      {"group":"beach","x":-636,"z":-92,"yaw":1.5708},
+      {"group":"beach","x":-618,"z":-92,"yaw":1.5708},
+      {"group":"beach","x":-636,"z":-58,"yaw":1.5708},
+      {"group":"beach","x":-618,"z":-58,"yaw":1.5708},
+      {"group":"lookout","x":618,"z":-780,"yaw":0},
+      {"group":"lookout","x":632,"z":-780,"yaw":0},
+      {"group":"lookout","x":646,"z":-780,"yaw":0},
+      {"group":"lookout","x":660,"z":-780,"yaw":0}
+    ],
+    "party": [
+      {"x":-236,"z":530,"yaw":0.833},
+      {"x":-236,"z":650,"yaw":2.3086},
+      {"x":-203,"z":530,"yaw":0.5028},
+      {"x":-203,"z":650,"yaw":2.6387},
+      {"x":-170,"z":530,"yaw":0.0},
+      {"x":-170,"z":650,"yaw":3.1416},
+      {"x":-137,"z":530,"yaw":-0.5028},
+      {"x":-137,"z":650,"yaw":-2.6387},
+      {"x":-104,"z":530,"yaw":-0.833},
+      {"x":-104,"z":650,"yaw":-2.3086},
+      {"x":-250,"z":560,"yaw":1.212},
+      {"x":-90,"z":560,"yaw":-1.212},
+      {"x":-250,"z":590,"yaw":1.5708},
+      {"x":-90,"z":590,"yaw":-1.5708},
+      {"x":-250,"z":620,"yaw":1.9296},
+      {"x":-90,"z":620,"yaw":-1.9296}
+    ]
+  },
+  "arena": {
+    "area": "cannery-lot",
+    "gate": {"x":-170,"z":520,"yaw":0,"width":12},
+    "containers": [
+      {"x":-222,"z":566,"yaw":0},
+      {"x":-218.5,"z":566,"yaw":0},
+      {"x":-122,"z":566,"yaw":0},
+      {"x":-118.5,"z":566,"yaw":0},
+      {"x":-222,"z":616,"yaw":1.5708},
+      {"x":-118,"z":616,"yaw":1.5708},
+      {"x":-170,"z":553,"yaw":1.5708},
+      {"x":-170,"z":627,"yaw":1.5708},
+      {"x":-238,"z":596,"yaw":0.4},
+      {"x":-102,"z":596,"yaw":-0.4},
+      {"x":-194,"z":590,"yaw":0.8},
+      {"x":-146,"z":590,"yaw":-0.8}
+    ],
+    "ramps": [
+      {"x":-170,"z":574,"yaw":1.5708,"width":6,"length":10,"height":1.6},
+      {"x":-170,"z":606,"yaw":-1.5708,"width":6,"length":10,"height":1.6}
+    ],
+    "coins": [[-250.0,530],[-210.1,530],[-183.5,530],[-143.6,530],[-117.0,530],[-250.0,545],[-223.4,545],[-196.8,545],[-170.2,545],[-143.6,545],[-117.0,545],[-90.4,545],[-210.1,560],[-183.5,560],[-156.9,560],[-130.3,560],[-250.0,575],[-210.1,575],[-183.5,575],[-143.6,575],[-103.7,575],[-223.4,590],[-183.5,590],[-156.9,590],[-117.0,590],[-223.4,605],[-196.8,605],[-156.9,605],[-130.3,605],[-90.4,605]],
+    "powerups": [[-223.4,530],[-196.8,530],[-156.9,530],[-130.3,530],[-90.4,530],[-236.7,545],[-210.1,545],[-183.5,545],[-156.9,545],[-130.3,545],[-103.7,545],[-236.7,560],[-196.8,560],[-170.2,560],[-143.6,560],[-103.7,560],[-236.7,575],[-196.8,575],[-156.9,575],[-130.3,575],[-90.4,575],[-210.1,590],[-170.2,590],[-130.3,590],[-250.0,605]]
+  }
+}

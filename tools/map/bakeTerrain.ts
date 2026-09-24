@@ -7,7 +7,7 @@
 //     heights, junction plateaus and elevation pins,
 //  3. corridors and areas shape the terrain (flat zone, 1 : 1.5 slopes),
 //  4. surfaces: roads and areas over the natural classification,
-//  5. zones from map.json, then quantise.
+//  5. zones from zones.json, then quantise.
 
 import {
     DEFAULT_MAX_GRADE, FLAT_MARGIN, flatHalfWidths, longitudinalProfile, movingAverage,
@@ -20,7 +20,8 @@ import {
 import {
     buildRoadNetwork, junctionRadius, roadChains, type RoadChain, type RoadEdgeData, type RoadNetwork
 } from '../../src/shared/map/roadNetwork.js';
-import type { MapFile, RoadNetworkFile } from '../../src/shared/map/roadSchema.js';
+import type { MapFile, ZonesFile } from '../../src/shared/map/mapFiles.js';
+import type { RoadNetworkFile } from '../../src/shared/map/roadSchema.js';
 import { pointAt } from '../../src/shared/map/spline.js';
 import { SURFACE, ZONE } from '../../src/shared/map/types.js';
 import { baseSample, regionSurface, type BaseTerrain } from './baseTerrain.js';
@@ -42,6 +43,7 @@ export interface BakeInput {
     roads: RoadNetworkFile;
     base: BaseTerrain;
     map: MapFile;
+    zones: ZonesFile;
     spec: GridSpec;
     sourceHash: Uint8Array;
 }
@@ -319,7 +321,7 @@ export function areaMeanHeight(spec: GridSpec, natural: Float64Array, polygon: r
 }
 
 export function bakeTerrain(input: BakeInput): BakeResult {
-    const { spec, base, map } = input;
+    const { spec, base, map, zones: zoneFile } = input;
     const timings: Record<string, number> = {};
     let t0 = performance.now();
     const lap = (name: string) => { const t = performance.now(); timings[name] = Math.round(t - t0); t0 = t; };
@@ -393,7 +395,7 @@ export function bakeTerrain(input: BakeInput): BakeResult {
         const z = spec.originZ + (j + 0.5) * spec.zoneCell;
         for (let i = 0; i < zc; i++) {
             const x = spec.originX + (i + 0.5) * spec.zoneCell;
-            for (const zone of map.zones) if (pointInPolygon(zone.polygon, x, z)) zones[j * zc + i] = ZONE[zone.zone];
+            for (const zone of zoneFile.zones) if (pointInPolygon(zone.polygon, x, z)) zones[j * zc + i] = ZONE[zone.zone];
         }
     }
     lap('zones');

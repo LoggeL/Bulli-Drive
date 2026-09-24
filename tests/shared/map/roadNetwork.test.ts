@@ -3,7 +3,8 @@ import {
     buildRoadNetwork, DEFAULT_ROUNDABOUT_RADIUS, isOnRoad, junctionRadius, nearestRoad, roadChains,
     roadSurfaceAt
 } from '../../../src/shared/map/roadNetwork.js';
-import { parseMapFile, parseRoadNetwork, validateRoadNetwork } from '../../../src/shared/map/roadSchema.js';
+import { parseZonesFile } from '../../../src/shared/map/mapFiles.js';
+import { parseRoadNetwork, validateRoadNetwork } from '../../../src/shared/map/roadSchema.js';
 import { edge, network, node, PROFILE } from './fixtures.js';
 
 // roads.json schema and checks, and the corridor queries on hand-built
@@ -72,12 +73,12 @@ describe('roads.json schema', () => {
         ]);
     });
 
-    it('parses map.json zones and rejects duplicate ids', () => {
+    it('parses zones.json and rejects duplicate ids', () => {
         const zone = { id: 'z', zone: 'downtown', polygon: [[0, 0], [1, 0], [0, 1]] };
-        const map = { format: 'bulli-map', version: 1, mapId: 'test', mapVersion: 1, zones: [zone] };
-        expect(parseMapFile(map).ok).toBe(true);
-        expect(parseMapFile({ ...map, zones: [zone, zone] })).toEqual({ ok: false, errors: ['zone z: duplicate id'] });
-        expect(parseMapFile({ ...map, zones: [{ ...zone, zone: 'moon' }] }).ok).toBe(false);
+        const zones = { format: 'bulli-zones', version: 1, mapId: 'test', zones: [zone] };
+        expect(parseZonesFile(zones).ok).toBe(true);
+        expect(parseZonesFile({ ...zones, zones: [zone, zone] })).toEqual({ ok: false, errors: ['zone z: duplicate id'] });
+        expect(parseZonesFile({ ...zones, zones: [{ ...zone, zone: 'moon' }] }).ok).toBe(false);
     });
 
     it('refuses to build an invalid network', () => {

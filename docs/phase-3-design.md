@@ -1,6 +1,6 @@
 # Phase 3: Kuratierte Map „Bulli Bay“ – Konzept und technische Spezifikation
 
-**Stand:** 2026-09-24 · **Branch:** `map/phase-3` (auf `main` e1fccbd) · Bezug: [`refactor-plan.md`](refactor-plan.md) Abschnitt 0 (Entscheidung 3), 5 (Phase 3), 6 (Determinismus) · Grundlagen: [`phase-1a-design.md`](phase-1a-design.md) (Sim, Collider), [`phase-1b-design.md`](phase-1b-design.md) (`MapData`, `worldHash`), Phase 2 (`docs/phase-2-design.md` auf `game/phase-2-racing`: `TrackDef`, Gates, Ideallinie), [`world-look.md`](world-look.md) (Look, Tiers, Draw Calls), [`assets.md`](assets.md) (Pipeline, Budgets)
+**Stand:** 2026-09-25 · **Branch:** `map/phase-3` (auf `main` e1fccbd) · Bezug: [`refactor-plan.md`](refactor-plan.md) Abschnitt 0 (Entscheidung 3), 5 (Phase 3), 6 (Determinismus) · Grundlagen: [`phase-1a-design.md`](phase-1a-design.md) (Sim, Collider), [`phase-1b-design.md`](phase-1b-design.md) (`MapData`, `worldHash`), Phase 2 (`docs/phase-2-design.md` auf `game/phase-2-racing`: `TrackDef`, Gates, Ideallinie), [`world-look.md`](world-look.md) (Look, Tiers, Draw Calls), [`assets.md`](assets.md) (Pipeline, Budgets)
 
 Dieses Dokument beschreibt die Karte, die Datenformate und die Budgets für Phase 3. Das Datenformat, die Interpolation des Heightfields und die Modulgrenzen sind verbindlich. Zahlen, die als *Startwert* markiert sind, werden beim Bau der Karte, im Tuning-Panel und bei Messungen nachjustiert. Abweichungen kommen wie in 1a/1b in einen eigenen Abschnitt am Ende und werden nicht still umgesetzt.
 
@@ -118,6 +118,27 @@ Technisch besteht die Karte aus drei Quellen: `roads.json` (Knoten, Kanten mit C
 - **Landmarken** (handplatziert in `map.json`, nicht prozedural): Pier mit Pier-Restaurant am Kopf, Plaza-Brunnen, Leuchtturm am Wellenbrecher, Wasserturm „Bulli Bay“ über dem Wohnviertel, Cannery-Halle mit Schornstein, Diner und Tankstelle, Aussichtspunkt mit Parkplatz, Rettungsschwimmer-Türme.
 - **Minimap:** Namen der Zonen und Straßen kommen aus `map.json`/`roads.json`.
 
+### 3.6 Stand der Daten (Schritt „curated-map-data“)
+
+Die Karte liegt vollständig als Daten vor: `roads.json`, `map.json`, `zones.json`, `pois.json`, `tracks.json` (Aufteilung A13) und das daraus gebackene `terrain.bhf`. `npx tsx tools/map/validate.ts` meldet 0 Fehler, das Bake 0 Korridor-Konflikte und 0 unerfüllbare Höhen-Pins.
+
+![Vorschau von Bulli Bay aus terrain.bhf und den Quellen](img/phase-3-map-preview.png)
+
+*Vorschau (`npx tsx tools/map/mapPreview.ts`, A15): Schummerung und Oberflächen aus dem gebackenen `terrain.bhf`, darüber Straßen nach Belag, Leitplanken, Zonen, Strecken mit Gates und Startaufstellung, Landmarken, Spawns und der Inhalt der Party-Arena. PNG auf 256 Farben reduziert. Im Vergleich zur Konzeptskizze stimmen Anordnung und Charakter überein (Pier und Strand im Westen, Downtown-Raster dahinter, geschwungenes Wohnviertel östlich davon, Serpentinen zum Aussichtspunkt im Nordosten, Diner und Tankstelle an der Ausfallstraße, Hafen mit Industrie und Arena im Süden, Küstenstraße an beiden Klippen, Feldwege im Ranchland). Abweichungen zur Skizze: Das Hafenbecken ist eine offene Bucht ohne Wellenbrecher (so formt es `base.json`), die Arena liegt mitten im Industriegebiet, und das Offroad-Gebiet nördlich von Downtown aus der Skizze sind hier der Chaparral und der Coyote Trail, die Dünen bleiben der schmale Streifen aus 3.3.*
+
+| Bereich | Länge | Inhalt |
+|---|---|---|
+| PCH, Ocean Blvd, Bluff Road | 2,15 km | Nordklippen mit Aussichtsbucht, Promenade 2 + 2, Südklippen mit Stichstraße zur Aussichtsbucht (−480 \| +940) |
+| Downtown | 3,50 km | 4 Avenues, 5 Streets, Main Street mit Pier, Zufahrt zum Strandparkplatz |
+| Canyon Road mit Zufahrten | 1,32 km | Downtown → Seaview → Ridge-Abzweig → Diner/Tankstelle (Kreuzung mit beiden Parkplätzen) → Ostrand |
+| Seaview Heights | 3,13 km | Seaview Drive, Hillcrest Avenue, Tower Road über die Kuppe, Orchard Lane, 4 Sackgassen mit Wendeplatz |
+| Ridge Road | 2,20 km | 6 Kehren mit R ≈ 15–17 m (A18), Leitplanken talseitig und rund um die Kehren |
+| Hafen und Industrie | 2,33 km | Harbor Blvd, Dock Street mit Schikane, Cannery Street, Wharf Road (Erde), Foundry Road, Cannery Lane zur Arena |
+| Feldwege und Pisten | 4,97 km | Ranch Fire Road, East Ranch Trail, Oak Canyon Trail (Schotter), Ridge Fire Trail, Chaparral und Coyote Trail (Seaview ↔ Nordklippen), Beach Trail, Dune Track, Cliff Track, South Beach Track |
+| **Summe** | **19,6 km**, davon 14,5 km befestigt | 118 Kanten, 86 Knoten (58 Kreuzungen), 11 Areas, 28 Leitplanken-Abschnitte |
+
+`terrain.bhf` hat über die Leitung 198 KB (Brotli 11) bzw. 244 KB (Gzip 9), die sechs JSON-Quellen zusammen 8 KB (Gzip 9).
+
 ---
 
 ## 4. Rennstrecken
@@ -135,6 +156,19 @@ Alle Strecken liegen auf den Splines und entstehen mit `routeToTrack` (Abschnitt
 
 Die Strecken kreuzen sich untereinander, aber keine Strecke kreuzt sich selbst (keine Frontalbegegnungen im Rennen). Wo eine Route eine Kreuzung durchfährt, sperrt `routeToTrack` die anderen Äste mit Barrieren-Reihen (wie die Hints in Phase 2).
 
+**Stand in `tracks.json`** (gemessen mit `tools/map/validate.ts`; Zeiten sind die Schätzung aus `drivability.ts` mit 75 % des Griffs, schnellste bis langsamste Klasse, kein Sim-Lauf):
+
+| # | ID | Länge | Gates | Höhe | langsamste Kurve (schwächste Klasse) | Schätzung |
+|---|---|---|---|---|---|---|
+| T1 | `downtown-loop` | 1,30 km × 3 | 13 | ± 5 m | 32 km/h (90°-Ecken im Raster) | 2:08–2:26 |
+| T2 | `coast-sprint` | 1,98 km | 16 | +31 / −44 m | 37 km/h (Abzweig Bluff Road) | 0:45–0:53 |
+| T3 | `hill-sprint` „Ridge Climb“ | 2,95 km | 20 | +150 m | 50 km/h (Kehren) | 1:24–1:37 |
+| T4 | `harbor-circuit` | 1,19 km × 3 | 9 | ± 10 m | 31 km/h | 2:06–2:24 |
+| T5 | `dune-rally` (Bonus) | 0,70 km | 6 | +36 m | 39 km/h | 0:22–0:25 |
+| T6 | `grand-tour` (Bonus) | 4,90 km | 30 | +92 / −73 m | 30 km/h | 2:20–2:40 |
+
+Abweichungen der Routen von der Tabelle oben: A17.
+
 ---
 
 ## 5. Straßen-Spline-Format (`roads.json`)
@@ -145,6 +179,7 @@ Die Strecken kreuzen sich untereinander, aber keine Strecke kreuzt sich selbst (
 src/shared/maps/bulli-bay/
   roads.json        # Straßennetz (Quelle, vom Spline-Editor geschrieben, per Hand editierbar)
   map.json          # Zonen, Plätze, Landmarken, Spawns, Party-Arena, Grenze, Strecken-Routen
+                    # (aufgeteilt, A13: map.json = Kopf + Grenze, zones.json, pois.json, tracks.json)
   base.json         # Grundgelände: Formen (Küstenlinie, Hügel, Klippen) + Rausch-Parameter
 tools/map/
   bake.ts           # roads + map + base → public/maps/bulli-bay/terrain.bhf (+ Vorschau-PNG)
@@ -315,7 +350,7 @@ Little Endian, 64-Byte-Kopf, danach die Ebenen hintereinander.
 | 36 | u16 | surfaceCell | 2 (Raster wie die Höhen, `cols × rows`) |
 | 38 | u16 | zoneCell | 8 (250 × 250 Zellen) |
 | 40 | u32 | mapVersion | |
-| 44 | u8[16] | sourceHash | FNV-1a-128 über `roads.json`, `map.json`, `base.json` und die Bake-Version |
+| 44 | u8[16] | sourceHash | FNV-1a-128 über `roads.json`, `map.json`, `base.json` (seit A13 auch `zones.json`) und die Bake-Version |
 | 60 | u32 | reserved | 0 |
 | 64 | u16[cols·rows] | heights | Zeile für Zeile (z außen, x innen), mit Prädiktor (6.2) |
 | … | u8[cols·rows] | surface | Oberflächen-ID je Stützpunkt (Tabelle 8.1) |
@@ -329,7 +364,7 @@ Die f32-Felder sind nur beschreibend (0,01 ist in f32 nicht exakt darstellbar). 
 - **Transport:** Brotli (Fallback Gzip) über HTTP, vorberechnet beim Serverstart mit dem Mechanismus aus `server/staticAssets.ts` (wie die HDRIs), Content-Hash als `?v=`, Cache `immutable`.
 - **Messung beim Entwurf** (synthetisches Gelände 1001², Hügel bis 290 m, 20 % Meer, Python-Probe): roh 2,0 MB; mit Prädiktor und Gzip 0,26–0,30 MB; mit xz 0,23 MB. Die echte Karte hat mehr Ebenen (Straßen, Meer, Plätze) und dürfte kleiner sein.
 - **Messung am ersten Bake** (2026-09-24, `roads.json` erste Fassung mit 10,7 km, `tools/map/bake.ts`): `terrain.bhf` roh 3 068 567 Bytes (64 Kopf + 2 002 002 Höhen + 1 002 001 Oberflächen + 62 500 Zonen). Über die Leitung **Brotli (Qualität 11) 175 KB**, Gzip (Stufe 9) 217 KB, also weit unter dem Budget von 600 KB. Einzeln komprimiert: Höhen 169 KB, Oberflächen 5 KB, Zonen 0,1 KB. Die Größen stehen bei jedem Bake in `public/maps/bulli-bay/manifest.json`; der Datentest `tests/tools/map/bulliBay.test.ts` prüft das Budget mit Gzip (Standardstufe, 244 KB) als Obergrenze. Das Bake dauert auf einem M-Mac etwa 10 s.
-- **Budget:** `terrain.bhf` **≤ 600 KB über die Leitung** (erwartet ca. 300 KB), davon Oberflächen- und Zonen-Ebene ≤ 80 KB. `roads.json` + `map.json` + `base.json` zusammen ≤ 150 KB komprimiert. Neue Texturen der Karte (Fels-Klippe, Erde, nasser Sand, Leitplanke, Pier-Holz, Wasser-Normalen, Container) ≤ 2,5 MB KTX2. `public/models` + `public/textures` + `public/maps` bleiben unter den 30 MB aus `assets.md` (heute 9,6 MB).
+- **Budget:** `terrain.bhf` **≤ 600 KB über die Leitung** (erwartet ca. 300 KB), davon Oberflächen- und Zonen-Ebene ≤ 80 KB. `roads.json` + `map.json` + `base.json` (seit A13 dazu `zones.json`, `pois.json`, `tracks.json`) zusammen ≤ 150 KB komprimiert. Neue Texturen der Karte (Fels-Klippe, Erde, nasser Sand, Leitplanke, Pier-Holz, Wasser-Normalen, Container) ≤ 2,5 MB KTX2. `public/models` + `public/textures` + `public/maps` bleiben unter den 30 MB aus `assets.md` (heute 9,6 MB).
 
 ### 6.3 Abfrage: bilineare Interpolation (verbindlich)
 
@@ -507,7 +542,7 @@ Gemessen wie in `world-look.md` mit Schatten-Pass (`frameStats.ts`), an festen K
 
 ## 13. `routeToTrack` und Migration der Phase-2-Strecken
 
-### 13.1 Routen in `map.json`
+### 13.1 Routen in `map.json` (liegen in `tracks.json`, A13)
 
 ```json
 {
@@ -562,6 +597,11 @@ src/shared/map/
   corridor.ts         # Höhenprofil je Kante, Flatten, Böschung (vom Bake genutzt, rein und testbar)
   routeToTrack.ts     # Route → TrackDef
   trackTypes.ts       # strukturgleiche TrackDef-Typen bis zum Merge von Phase 2
+  mapFiles.ts         # valibot-Schemas für map.json, zones.json, pois.json, tracks.json (A13)
+  trackRoute.ts       # Route prüfen, Mittellinie, Gates, Startaufstellung (13.2, Schritte 1–4; A14)
+  drivability.ts      # Kurven- und Streckentempo aus den Klassenwerten der v2-Sim (A19)
+tools/map/validate.ts, validateMap.ts, mapBundle.ts   # Validierung der Karte (A14)
+tools/map/mapPreview.ts                              # Draufsicht-PNG für Reviews (A15)
 src/shared/maps/bulli-bay/{roads,map,base}.json
 tools/map/bake.ts, tools/map/preview.ts
 tests/shared/map/*.test.ts
@@ -596,6 +636,8 @@ Jeder Merge-Punkt ist ein vollständig spielbares Spiel (Rahmen). Weil neue Feat
 
 **Datentests auf der echten Karte** (Unit-Ebene, lesen die JSONs und `terrain.bhf`): jede Kante verbunden, keine unbeabsichtigten Überschneidungen von Korridoren, Leitplanken-Pflicht (5.5), Längsneigung je Kante, alle Strecken ohne Selbstkreuzung und mit Freiraum ≥ 1 m zu Collidern, alle Spawns auf befahrbarem Boden über dem Wasser, `terrain.bhf` passt zum `sourceHash` der Quellen (sonst: „bake vergessen“), Dateigrößen im Budget (6.2).
 
+**Stand (Schritt „curated-map-data“):** `tests/shared/map/trackRoute.test.ts` (Quadrat mit Querstraße: Fehler, Mittellinie, Gates, Äste, Startaufstellung), `drivability.test.ts` (Kurventempo, Antrieb, Geschwindigkeitsprofil von Hand), `mapFiles.test.ts` (Schemas), `tests/tools/map/validateMap.test.ts` (jede Prüfung an Mini-Netzen über künstlichen Heightfields) und `bulliBay.test.ts` (Validierung der echten Karte ohne Fehler, Strecken wie in Abschnitt 4: Längen ± 10 %, Umlaufsinn, Anstieg, Start und Ziel; Gates und Startplätze auf der Fahrbahn).
+
 **Integration:** Server lädt Bulli Bay, Bot-Rennen je Strecke mit Kontakt; ein Tick mit 32 Autos bleibt unter 2 ms (p99) trotz größerer Collider-Zahl.
 
 **E2E (wenige):** Karte laden und fahren (Desktop und Touch), Draw Calls und Dreiecke im Tier low an drei festen Punkten im Budget, Minimap-Achsen (Punkt links vom Auto erscheint links).
@@ -626,13 +668,13 @@ Jeder Merge-Punkt ist ein vollständig spielbares Spiel (Rahmen). Weil neue Feat
 
 ## 18. Abweichungen
 
-Stand nach dem Schritt „Straßennetz und Heightfield“ (M1, Module ohne Integration):
+Stand nach den Schritten „Straßennetz und Heightfield“ (A1–A12) und „curated-map-data“ (A13–A20), beide M1, Module ohne Integration:
 
 | # | Abschnitt | Abweichung bzw. Ergänzung | Grund |
 |---|---|---|---|
 | A1 | 5.2 | `RoadArea` hat das zusätzliche Feld `walls?: boolean`: senkrechte Seiten statt Böschung und keine ebene Randzone. Der Pier nutzt es. | Ohne das Feld würde der Pier (y = 5 über −8 m Meeresboden) einen Damm mit 1 : 1,5 ins Meer schütten. |
-| A2 | 5.2, 13.1 | `map.json` enthält vorerst nur `mapVersion` und die Zonen-Polygone. Spawns, Landmarken, Arena und Strecken-Routen ergänzt der Schritt `routeToTrack` bzw. die Integration. | Das Bake braucht nur die Zonen. Unbekannte Schlüssel lehnt das Schema ab; es wird erweitert, sobald die Felder genutzt werden. |
-| A3 | 3.4 | Die erste Fassung von `roads.json` hat 66 Kanten, 51 Knoten und 5 Areas mit **10,7 km**: PCH mit Nord- und Südklippen, Ocean Blvd, Downtown-Raster (4 Avenues, 5 Streets), Main Street mit Pier, Canyon Road, Ridge Road mit 6 Kehren zum Aussichtspunkt, Harbor Blvd mit Zufahrt zur Arena, ein Feldweg und eine Dünenpiste. Es fehlen noch die Straßen von Seaview Heights, weitere Fire Roads und Sandpisten sowie Kai- und Werksstraßen (zusammen die übrigen ca. 11 km). | M1 verlangt eine erste Fassung; der Rest folgt beim Bau der Zonen (M5/M6). |
+| A2 | 5.2, 13.1 | *Erledigt mit A13.* `map.json` enthielt in M1 nur `mapVersion` und die Zonen-Polygone. | Das Bake brauchte nur die Zonen. |
+| A3 | 3.4 | *Stand jetzt: 19,6 km, siehe 3.6 und A17.* Die erste Fassung von `roads.json` hatte 66 Kanten, 51 Knoten und 5 Areas mit **10,7 km**: PCH mit Nord- und Südklippen, Ocean Blvd, Downtown-Raster (4 Avenues, 5 Streets), Main Street mit Pier, Canyon Road, Ridge Road mit 6 Kehren zum Aussichtspunkt, Harbor Blvd mit Zufahrt zur Arena, ein Feldweg und eine Dünenpiste. Es fehlen noch die Straßen von Seaview Heights, weitere Fire Roads und Sandpisten sowie Kai- und Werksstraßen (zusammen die übrigen ca. 11 km). | M1 verlangt eine erste Fassung; der Rest folgt beim Bau der Zonen (M5/M6). |
 | A4 | 5.3 | Die Bogenlängen-Tabelle nimmt je Segment mindestens 64 Schritte, bei langen Segmenten einen Schritt je 0,25 m Kontrollpolygon. | Mit festen 64 Schritten verfehlten schon ein 21-m-Segment mit ungleichem Parameterlauf und ein Bézier-Viertelkreis mit R = 100 m die geforderten 1 m ± 1 mm (geprüft mit `tests/shared/map/spline.test.ts`). |
 | A5 | 6.4 Schritt 2–3 | Längsprofil je **Kette** von Kanten über `joint`-Knoten (nicht je Kante), damit ein Gelenk auch in der Höhe keinen Knick hat. Die Neigung wird symmetrisch begrenzt (Mittel aus größtem begrenzten Profil darunter und kleinstem darüber), dann zwischen die Hülle der Pins geklemmt. Die Ausrundung mit R ≥ 150 m arbeitet auf den Neigungen (Nachbarneigungen unterscheiden sich um höchstens Δs²/R) mit einer Bisektion, die die Höhen der Pins exakt trifft. Wo Pins und Neigungsgrenze unvereinbar sind, meldet das Bake den Fehlbetrag (`infeasibleChains`), wo nur der Radius nicht passt, bleibt der Knick (`unrounded`). | Ein reiner Vorwärts- und Rückwärtslauf verschiebt das Profil einseitig und rundet nicht aus. |
 | A6 | 6.4 Schritt 3 | An einer Kreuzung läuft jede Straße über max(Trimm-Radius, breiteste ebene Zone der anschließenden Straßen) eben auf Knotenhöhe; an einem Knoten, an den eine Area anschließt, eben bis hinter die Area samt Randzone. Die Knotenhöhe ist die Höhe der Area, sonst `y`, sonst der Mittelwert der geglätteten Enden. | Sonst schneiden sich die ebenen Zonen quer laufender Straßen mit verschiedenen Höhen (Konflikte in 6.4 Schritt 6). |
@@ -641,4 +683,12 @@ Stand nach dem Schritt „Straßennetz und Heightfield“ (M1, Module ohne Integ
 | A9 | 5.5, 8.2 | `SegmentCollider` in `src/shared/map/rails.ts` hat kein `base`, wie die bestehende `ColliderInput`; `createSimWorld` ergänzt `base` bei der Integration (M3). Gekrümmte Leitplanken werden kürzer als 8 m geteilt, damit die Kapsel höchstens 5 cm von der sichtbaren Leitplanke abweicht. Stützmauern formen bisher nur das Gelände (senkrechte Stufe); ihre Collider kommen mit M3. | Keine Änderung an `src/shared/sim` vor der Integration (E14). |
 | A10 | 5.1 | `manifest.json` enthält zusätzlich Gitter, Gzip- und Brotli-Größen (gesamt und je Ebene) und Kennzahlen des Bakes (Kanten, km, Höhen, Konflikte, steilste gebackene Neigung). Der Datei-Hash ist SHA-256 (16 Hex-Zeichen). Die Vorschau liegt in `output/maps/<map>/preview.png` (nicht im Repo). `bake.ts --check` prüft ohne zu schreiben, ob `terrain.bhf` aktuell ist; `--strict` scheitert zusätzlich an Konflikten und unerreichbaren Pins. | Review und CI ohne Handkontrolle (Risiko „Bau der Karte frisst die Zeit“). |
 | A11 | 6.4 | An den engsten Kehren der Ridge Road misst das gebackene Heightfield zwischen zwei Samples bis zu 0,5 % mehr Längsneigung als das Profil (`ridge-7`: 12,5 % bei `maxGrade` 0,12). | Die bilineare Fläche zwischen den Rasterpunkten folgt der gekrümmten Straße nicht exakt. Der Datentest erlaubt 1 % (Quantisierung + dies). |
-| A12 | 15 | Die Leitplanken-Pflicht (5.5) ist noch kein Datentest; die erste Fassung hat Leitplanken nur an der PCH und talseitig an der Ridge Road. | Folgt mit dem Ausbau der Klippenstraßen (M5). |
+| A12 | 15 | *Erledigt:* Die Leitplanken-Pflicht (5.5) ist jetzt Teil der Validierung (`checkRails`, A16). | – |
+| A13 | 5.1, 13.1 | `map.json` ist aufgeteilt: `map.json` (Kopf: `mapVersion`, Name, Grenzpolygon), `zones.json` (Zonen-Polygone mit Namen und optionalem Beschriftungspunkt `label` für die Minimap), `pois.json` (Landmarken, Spawns je Modus, Inhalt der Party-Arena) und `tracks.json` (Strecken-Routen). Schemas in `src/shared/map/mapFiles.ts`. Der `sourceHash` des Heightfields deckt `roads.json`, `map.json`, `zones.json` und `base.json` ab; POIs und Strecken formen das Gelände nicht und ändern ihn nicht. `mapVersion` ist 2. | Kleinere Dateien, die beim Bauen der Karte getrennt geändert werden, und ein Bake, das nicht bei jeder verschobenen Münze neu läuft. |
+| A14 | 15 | Die Datentests laufen über ein eigenes Validierungsmodul `tools/map/validateMap.ts` (rein, ohne Dateizugriff) mit CLI `npx tsx tools/map/validate.ts [--warnings]`. Es prüft: Netz zusammenhängend (Areas angeschlossen oder an einer Straße bzw. ihrem Gehweg; ein Fußgänger-Platz mit `plazaPavers` ist ausgenommen), keine Berührung oder Kreuzung zweier Fahrbahnen ohne Kreuzungsknoten (1 m Abstand) und keine Selbstüberlappung, `maxGrade` je Belag (befestigt 12 %, Erde/Schotter 18 %, Sand 20 %, Holz 8 %) und gebackene Längsneigung, Kurvenradius ≥ halbe Breite + 2 m und Kurventempo ≥ `designSpeed` des Profils für die schwächste Klasse, Leitplanken-Pflicht, Kartengrenze, Spawns (4 Gruppen × 4, auf Straße oder Area, trocken, ≥ 6 m Abstand), Party-Arena (16 Spawns mit Blick zur Mitte, 12 Container, 2 Rampen, 30 Coins, 25 Power-ups frei von Containern und Rampen, Tor am Zaun), Landmarken auf ihrer Area, Zonen; je Strecke `resolveRoute` (13.2, Schritte 1–4 in `src/shared/map/trackRoute.ts`), keine Annäherung an sich selbst, `minCornerSpeed`, Rampen außerhalb von Kreuzungen, Gates und Startplätze auf der Fahrbahn, Anstieg und Zeitschätzung. `routeToTrack` (Schritte 5–6: Barrieren, Pfeiltafeln, `TrackDef`) folgt mit `trackTypes.ts`. | Die Aufgabe dieses Schritts verlangt ein Validierungs-Skript; die Routenlogik ist dieselbe, die `routeToTrack` nutzen wird. |
+| A15 | 6.4 | Die Review-Vorschau der Karte ist ein eigenes Werkzeug `tools/map/mapPreview.ts` (Playwright-Chromium zeichnet über das Relief aus `preview.ts`) und schreibt `docs/img/phase-3-map-preview.png`. Die Relief-Vorschau des Bakes bleibt unter `output/`. | Straßen, Beschriftungen und Strecken lesbar zu zeichnen braucht ein Canvas mit Text; keine neue Abhängigkeit, Playwright ist schon da. |
+| A16 | 5.5 | Die Leitplanken-Pflicht misst den Abfall von der Kante der **ebenen Zone** aus (Fahrbahnrand + Gehweg/Bankett, mindestens 4 m) über 4 m, nicht vom Fahrbahnrand. Unbefestigte Pisten (Erde, Schotter, Sand) tragen das Tag `noRail`. | Das Bake hält 4 m neben der Fahrbahn eben, vom Fahrbahnrand gemessen wäre die Regel nie verletzt. So löst jeder Damm über ca. 2 m, jede Klippe und jede Kaikante die Pflicht aus. Offroad-Pisten sind zum Abkommen da. |
+| A17 | 4 | Strecken: Ridge Climb ohne Schotter-Abkürzung (jede Abkürzung zwischen zwei Serpentinen-Ästen hätte über 40 % Steigung; die drei Rampen stehen an Stadtausfahrt, erster Geraden und Kuppe vor dem Ziel) und 2,95 statt 2,6 km. Coast Sprint 1,98 statt 2,4 km, Ziel auf der Bluff Road. Dune Rally 0,70 statt 1,6 km (Strand, Dünen und Klippenpiste liegen dicht beieinander). Grand Tour 4,9 statt 6 km und nur am Fuß der Ridge Road (Ridge Fire Trail vom Abzweig an der ersten Geraden zur Canyon Road), weil ein Abstieg vom Gipfel nach Osten über 30 % Hang führen würde. Das Straßennetz hat 19,6 statt ca. 22 km (Seaview 3,1 statt 4,5 km). | Die Längen in Abschnitt 4 und 3.4 sind Startwerte; alle Strecken erfüllen die Validierung. Bonus-Strecken sind nur Daten. |
+| A18 | 3.3 | Die Kehren der Ridge Road sind Kreisbögen mit R = 22 m um feste Mittelpunkte, verbunden durch die gemeinsamen inneren Tangenten; der kleinste Radius der Spline liegt dann bei 14,7–17 m. | Catmull-Rom durch drei Punkte ergab Kehren mit R ≈ 7,5 m, unter den geforderten 14 m (Risiko „Serpentinen zu eng für die Renn-Kamera“). Beim Übergang Gerade → Bogen verengt die Spline den Radius, daher der größere Sollradius. |
+| A19 | 4, 15 | „Kurvenradien bei Streckentempo fahrbar“ wird mit einem quasi-statischen Punktmassen-Modell geprüft (`src/shared/map/drivability.ts`): Querbeschleunigung der schwächeren Achse `grip · (1 + aeroGrip · (v/vtop)²) · g`, Belag nach 8.1, offroad mit `offroadGrip`, davon 75 % (`CORNER_GRIP_MARGIN`). `RoadProfile` hat dazu das optionale Feld `designSpeed` (km/h, Standard 30), jede Strecke `minCornerSpeed`. Die Zeitschätzung integriert Antrieb (`accel·(1 − (v/vtop)^2,5)`), Rollwiderstand, Steigung und `brakeDecel`. | Die v2-Sim selbst ist kein Kartenwerkzeug; die Werte der Klassen kommen direkt aus `vehicleClasses.ts`, das Modell ist eine Abschätzung für den Kartenbau, kein Ersatz für Bot-Läufe (Integration M5). |
+| A20 | 5.4, 12 | Nicht umgesetzt in diesem Schritt: Kreisverkehre (das Format kennt `roundabout`, die Karte nutzt keinen), die Laderampe als Plateau in der Arena und die Wellenbrecher-Mole. Der Plaza-Platz ist ein Fußgänger-Platz im Block (`plazaPavers`, nicht angeschlossen); die Free-Roam-Spawns „Plaza“ stehen auf der Main Street vor dem Platz. | Das Bake formt Kreisverkehre und Plateaus in Areas noch nicht (Ringkante, Kanten-Collider kommen mit M3/M4); ein Platz, den vier Straßen mit verschiedenen Höhen umgeben, kann nicht eben an alle Gehwege anschließen. |

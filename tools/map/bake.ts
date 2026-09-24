@@ -2,7 +2,7 @@
 //
 //   npx tsx tools/map/bake.ts [--map bulli-bay] [--out <dir>] [--check]
 //
-// Reads src/shared/maps/<map>/{roads,map,base}.json, writes
+// Reads src/shared/maps/<map>/{roads,map,zones,base}.json, writes
 // public/maps/<map>/terrain.bhf and manifest.json, and a review preview to
 // output/maps/<map>/preview.png. --check writes nothing and fails when the
 // committed terrain.bhf differs from a fresh bake (a forgotten bake).
@@ -14,7 +14,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { brotliCompressSync, constants as zlibConstants, gzipSync } from 'node:zlib';
 import { BULLI_BAY_GRID, BHF_HEADER_BYTES, type GridSpec } from '../../src/shared/map/heightfield.js';
-import { parseMapFile, parseRoadNetwork } from '../../src/shared/map/roadSchema.js';
+import { parseMapFile, parseZonesFile } from '../../src/shared/map/mapFiles.js';
+import { parseRoadNetwork } from '../../src/shared/map/roadSchema.js';
 import { parseBaseTerrain } from './baseTerrain.js';
 import { BAKE_VERSION, bakeTerrain, type BakeResult } from './bakeTerrain.js';
 import { fnv1a128, toHex } from './hash.js';
@@ -23,22 +24,26 @@ import { renderPreview } from './preview.js';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const GRIDS: Record<string, GridSpec> = { 'bulli-bay': BULLI_BAY_GRID };
 
-export interface MapSources { roads: Uint8Array; map: Uint8Array; base: Uint8Array }
+// The sources the bake reads. pois.json and tracks.json do not shape the
+// terrain and are not part of the hash.
+export interface MapSources { roads: Uint8Array; map: Uint8Array; zones: Uint8Array; base: Uint8Array }
 
 export function readSources(mapId: string): MapSources {
     const dir = path.join(ROOT, 'src/shared/maps', mapId);
     return {
         roads: readFileSync(path.join(dir, 'roads.json')),
         map: readFileSync(path.join(dir, 'map.json')),
+        zones: readFileSync(path.join(dir, 'zones.json')),
         base: readFileSync(path.join(dir, 'base.json'))
     };
 }
 
-// FNV-1a-128 over the three sources and the bake version (6.1)
+// FNV-1a-128 over the sources and the bake version (6.1, A13)
 export function sourceHash(sources: MapSources): Uint8Array {
     const separator = new Uint8Array([0]);
     const version = new TextEncoder().encode(`bake-version:${BAKE_VERSION}`);
-    return fnv1a128(sources.roads, separator, sources.map, separator, sources.base, separator, version);
+    return fnv1a128(sources.roads, separator, sources.map, separator, sources.zones, separator,
+        sources.base, separator, version);
 }
 
 export function bakeSources(mapId: string, sources: MapSources): BakeResult {
@@ -49,8 +54,12 @@ export function bakeSources(mapId: string, sources: MapSources): BakeResult {
     if (!roads.ok) throw new Error(`roads.json:\n  ${roads.errors.join('\n  ')}`);
     const map = parseMapFile(decode(sources.map));
     if (!map.ok) throw new Error(`map.json:\n  ${map.errors.join('\n  ')}`);
+    const zones = parseZonesFile(decode(sources.zones));
+    if (!zones.ok) throw new Error(`zones.json:\n  ${zones.errors.join('\n  ')}`);
     const base = parseBaseTerrain(decode(sources.base));
-    return bakeTerrain({ roads: roads.value, map: map.value, base, spec, sourceHash: sourceHash(sources) });
+    return bakeTerrain({
+        roads: roads.value, map: map.value, zones: zones.value, base, spec, sourceHash: sourceHash(sources)
+    });
 }
 
 function compressedSizes(bytes: Uint8Array): { gzip: number; brotli: number } {

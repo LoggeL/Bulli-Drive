@@ -1,0 +1,19 @@
+{
+  "format": "bulli-zones",
+  "version": 1,
+  "mapId": "bulli-bay",
+  "zones": [
+    {"id":"bulli-ridge","zone":"hills","name":"Bulli Ridge","label":[830,-300],"polygon":[[380,-930],[930,-930],[930,-120],[700,-100],[420,-120],[380,-250]]},
+    {"id":"ranch","zone":"ranch","name":"Ranchland","label":[640,860],"polygon":[[160,360],[760,140],[930,140],[930,930],[160,930]]},
+    {"id":"seaview-heights","zone":"residential","name":"Seaview Heights","label":[40,170],"polygon":[[-200,-440],[120,-450],[380,-410],[380,-120],[300,40],[260,260],[-200,260]]},
+    {"id":"downtown","zone":"downtown","name":"Downtown","label":[-430,-185],"polygon":[[-575,-265],[-575,225],[-200,225],[-200,-265]]},
+    {"id":"harbor","zone":"industrial","name":"Harbor","label":[-230,400],"polygon":[[-480,285],[-480,760],[130,760],[130,285]]},
+    {"id":"beach","zone":"beach","name":"Beach","label":[-640,230],"polygon":[[-700,-320],[-700,275],[-575,275],[-575,-320]]},
+    {"id":"dunes","zone":"dunes","name":"Dunes","label":[-650,-420],"polygon":[[-700,-500],[-700,-320],[-575,-320],[-575,-500]]},
+    {"id":"north-cliffs","zone":"cliffs","name":"North Cliffs","label":[-640,-960],"polygon":[[-700,-990],[-700,-500],[-520,-500],[-520,-990]]},
+    {"id":"south-cliffs","zone":"cliffs","name":"South Cliffs","label":[-640,940],"polygon":[[-700,760],[-700,990],[-420,990],[-420,760]]},
+    {"id":"plaza","zone":"park","name":"Plaza","polygon":[[-385,-125],[-385,-28],[-315,-28],[-315,-125]]},
+    {"id":"palm-park","zone":"park","name":"Palm Park","polygon":[[-305,-14],[-305,85],[-235,85],[-235,-14]]},
+    {"id":"cannery-lot","zone":"arena","name":"Cannery Lot","polygon":[[-260,520],[-260,660],[-80,660],[-80,520]]}
+  ]
+}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { decodeHeightfield, heightAt, surfaceAt, zoneAt, type GridSpec } from '../../../src/shared/map/heightfield.js';
-import type { MapFile, RoadNetworkFile } from '../../../src/shared/map/roadSchema.js';
+import type { MapFile, ZonesFile } from '../../../src/shared/map/mapFiles.js';
+import type { RoadNetworkFile } from '../../../src/shared/map/roadSchema.js';
 import { SURFACE, SURFACE_PRIORITY, ZONE } from '../../../src/shared/map/types.js';
 import { bakeTerrain, type BakeInput } from '../../../tools/map/bakeTerrain.js';
 import { fnv1a128, toHex } from '../../../tools/map/hash.js';
@@ -41,13 +42,19 @@ const ROADS: RoadNetworkFile = network(
 );
 
 const MAP: MapFile = {
-    format: 'bulli-map', version: 1, mapId: 'test', mapVersion: 3,
+    format: 'bulli-map', version: 1, mapId: 'test', mapVersion: 3, name: 'Test',
+    boundary: [[-200, -200], [200, -200], [200, 200], [-200, 200]]
+};
+
+const ZONES: ZonesFile = {
+    format: 'bulli-zones', version: 1, mapId: 'test',
     zones: [{ id: 'centre', zone: 'downtown', polygon: [[-50, -50], [50, -50], [50, 50], [-50, 50]] }]
 };
 
 const INPUT: BakeInput = {
     roads: ROADS,
     map: MAP,
+    zones: ZONES,
     base: { ...FLAT_COAST, hills: [{ id: 'hill', x: 60, z: 110, radii: [70, 70], height: 25 }] },
     spec: SPEC,
     sourceHash: fnv1a128(new TextEncoder().encode('test sources'))
@@ -197,7 +204,7 @@ describe('bakeTerrain: height pins and steep ground', () => {
             [node('a', 0, -190), node('m', 0, -50, 'joint', { y: 12 }), node('b', 0, 190)],
             [edge('north', 'a', 'm'), edge('south', 'm', 'b', [], { elevation: [{ s: 100, y: 5 }] })]
         ),
-        map: { ...MAP, zones: [] },
+        zones: { ...ZONES, zones: [] },
         base: { ...FLAT_COAST, hills: [{ id: 'steep', x: 120, z: 0, radii: [40, 40], height: 60 }] }
     };
     // Built inside each test, not while collecting them: Stryker only

@@ -1,4 +1,4 @@
-// valibot schemas of the map sources roads.json and map.json
+// valibot schema of the road network roads.json
 // (docs/phase-3-design.md, 5.2) plus the checks a schema cannot express
 // (references between nodes and edges, node kinds, Bézier segment ends).
 // The files are edited by hand and by the spline editor, so unknown keys
@@ -7,11 +7,11 @@
 
 import * as v from 'valibot';
 
-const Finite = v.pipe(v.number(), v.finite());
-const NonNegative = v.pipe(v.number(), v.finite(), v.minValue(0));
-const Positive = v.pipe(v.number(), v.finite(), v.gtValue(0));
-const Point = v.tuple([Finite, Finite]);
-const Id = v.pipe(v.string(), v.regex(/^[a-z0-9][a-z0-9-]*$/, 'IDs are lower-case kebab-case'));
+export const Finite = v.pipe(v.number(), v.finite());
+export const NonNegative = v.pipe(v.number(), v.finite(), v.minValue(0));
+export const Positive = v.pipe(v.number(), v.finite(), v.gtValue(0));
+export const Point = v.tuple([Finite, Finite]);
+export const Id = v.pipe(v.string(), v.regex(/^[a-z0-9][a-z0-9-]*$/, 'IDs are lower-case kebab-case'));
 const LaneCount = v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(4));
 const Side = v.picklist(['left', 'right']);
 
@@ -35,7 +35,11 @@ export const RoadProfileSchema = v.strictObject({
     // Drivable verge outside the road edge (surface of the surroundings)
     shoulder: NonNegative,
     // 0..1, looks only (patches, cracks, tyre tracks)
-    wear: v.pipe(v.number(), v.minValue(0), v.maxValue(1))
+    wear: v.pipe(v.number(), v.minValue(0), v.maxValue(1)),
+    // Speed (km/h) every curve of the road must allow for the weakest car
+    // class in its lane (drivability check, tools/map/validate.ts); default
+    // DEFAULT_DESIGN_SPEED in drivability.ts
+    designSpeed: v.optional(v.pipe(v.number(), v.gtValue(0), v.maxValue(250)))
 });
 
 const JunctionSchema = v.strictObject({
@@ -133,27 +137,6 @@ export const RoadNetworkSchema = v.strictObject({
     areas: v.array(RoadAreaSchema)
 });
 
-export const ZONE_NAMES = [
-    'wild', 'downtown', 'residential', 'industrial', 'beach', 'dunes',
-    'hills', 'cliffs', 'arena', 'park', 'ranch'
-] as const;
-
-// map.json as far as the bake needs it: the zone polygons. Spawns,
-// landmarks, the party arena and the track routes follow with the
-// integration steps (section 14) and extend this schema.
-export const MapFileSchema = v.strictObject({
-    format: v.literal('bulli-map'),
-    version: v.literal(1),
-    mapId: Id,
-    mapVersion: v.pipe(v.number(), v.integer(), v.minValue(1)),
-    // Later entries win where polygons overlap
-    zones: v.array(v.strictObject({
-        id: Id,
-        zone: v.picklist(ZONE_NAMES),
-        polygon: v.pipe(v.array(Point), v.minLength(3))
-    }))
-});
-
 export type RoadNetworkFile = v.InferOutput<typeof RoadNetworkSchema>;
 export type RoadProfile = v.InferOutput<typeof RoadProfileSchema>;
 export type RoadNode = v.InferOutput<typeof RoadNodeSchema>;
@@ -165,12 +148,10 @@ export type RailKind = typeof RAIL_KINDS[number];
 export type WallRange = v.InferOutput<typeof WallRangeSchema>;
 export type RoadSurfaceName = typeof ROAD_SURFACES[number];
 export type AreaMarkings = NonNullable<RoadArea['markings']>;
-export type MapFile = v.InferOutput<typeof MapFileSchema>;
-export type MapZone = MapFile['zones'][number];
 
 export type ParseResult<T> = { ok: true; value: T } | { ok: false; errors: string[] };
 
-function schemaErrors(issues: readonly v.BaseIssue<unknown>[]): string[] {
+export function schemaErrors(issues: readonly v.BaseIssue<unknown>[]): string[] {
     return issues.map(issue => {
         const path = issue.path?.map(item => String(item.key)).join('.') ?? '';
         return path ? `${path}: ${issue.message}` : issue.message;
@@ -256,17 +237,5 @@ export function parseRoadNetwork(value: unknown): ParseResult<RoadNetworkFile> {
     const parsed = v.safeParse(RoadNetworkSchema, value);
     if (!parsed.success) return { ok: false, errors: schemaErrors(parsed.issues) };
     const errors = validateRoadNetwork(parsed.output);
-    return errors.length ? { ok: false, errors } : { ok: true, value: parsed.output };
-}
-
-export function parseMapFile(value: unknown): ParseResult<MapFile> {
-    const parsed = v.safeParse(MapFileSchema, value);
-    if (!parsed.success) return { ok: false, errors: schemaErrors(parsed.issues) };
-    const ids = new Set<string>();
-    const errors: string[] = [];
-    for (const zone of parsed.output.zones) {
-        if (ids.has(zone.id)) errors.push(`zone ${zone.id}: duplicate id`);
-        ids.add(zone.id);
-    }
     return errors.length ? { ok: false, errors } : { ok: true, value: parsed.output };
 }
