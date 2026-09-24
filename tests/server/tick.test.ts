@@ -27,6 +27,15 @@ class FakeClock implements SchedulerClock {
         this.timers = this.timers.filter(t => t.id !== handle);
     }
 
+    // Runs only the earliest pending timer (one scheduler wake-up)
+    fireNext(): void {
+        this.timers.sort((a, b) => a.at - b.at);
+        const next = this.timers.shift();
+        if (!next) throw new Error('no timer pending');
+        this.time = Math.max(this.time, next.at);
+        next.fn();
+    }
+
     runUntil(end: number): void {
         while (this.timers.length) {
             this.timers.sort((a, b) => a.at - b.at);
@@ -56,20 +65,25 @@ describe('TickScheduler', () => {
 
     it('catches up at most 4 ticks per wake-up', () => {
         const clock = new FakeClock();
-        const perWake: number[] = [];
         let count = 0;
         const scheduler = new TickScheduler(() => { count++; }, clock);
+        // The first timer comes 110 ms late: it wakes at 126.7 ms, when the
+        // ticks at 16.7, 33.3, ... 116.7 ms (7) are due
+        clock.lateBy = () => 110;
         scheduler.start();
-        perWake.push(count);
-        // The timer comes 100 ms late once: 6 ticks are due
-        clock.lateBy = () => 100;
-        clock.runUntil(1);
+        expect(count).toBe(1); // the tick at 0 ms, run by start()
         clock.lateBy = () => 0;
-        const afterLate = count;
-        expect(afterLate - perWake[0]).toBeLessThanOrEqual(4);
-        clock.runUntil(1000);
-        // Caught up in the following wake-ups: 60 per second in the end
-        expect(Math.abs(count - 60)).toBeLessThanOrEqual(1);
+        clock.fireNext();
+        expect(clock.time).toBeCloseTo(1000 / 60 + 110, 9);
+        expect(count).toBe(1 + 4);
+        // The next wake-up follows at once and runs the remaining 3
+        clock.fireNext();
+        expect(clock.time).toBeCloseTo(1000 / 60 + 110, 9);
+        expect(count).toBe(1 + 7);
+        // Then back on the grid: 60 per second (ticks at 0, 16.7, ... 983.3 ms)
+        clock.runUntil(999);
+        expect(count).toBe(60);
+        expect(scheduler.metrics.overruns).toBe(0);
         scheduler.stop();
     });
 

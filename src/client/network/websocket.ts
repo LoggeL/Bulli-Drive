@@ -7,7 +7,7 @@ import {
     type ServerMessage
 } from '../../shared/protocol.js';
 import { decodeSnapshot } from '../../shared/net/codec.js';
-import { CLOCK_BURST_INTERVAL_MS, CLOCK_BURST_PINGS, CLOCK_INTERVAL_MS, CLOSE_FULL } from '../../shared/net/constants.js';
+import { CLOCK_BURST_INTERVAL_MS, CLOCK_BURST_PINGS, CLOCK_INTERVAL_MS } from '../../shared/net/constants.js';
 import { closeAction, reconnectDelayMs } from '../../shared/net/reconnect.js';
 import { isPowerupType } from '../../shared/party/rules.js';
 import { resetTuning, tuningIsDefault } from '../../shared/sim/tuning.js';
@@ -29,12 +29,15 @@ import { releaseKeyboardInputs } from '../controls/keyboard.js';
 import { resetMobileControls } from '../controls/mobile.js';
 import { sendToServer, setSocketNetsim } from './socket.js';
 import { createSocketNetsim } from '../net/netsim.js';
-import { hideConnectionOverlay, showConnectionNotice, showReconnecting } from '../ui/connectionOverlay.js';
+import { hideConnectionOverlay, reconnectingText, showConnectionNotice, showReconnecting } from '../ui/connectionOverlay.js';
 import { setWorldColliders, simWorldFor } from '../vehicle/simWorldClient.js';
 import { assistProfileForDevice } from '../vehicle/LocalVehicle.js';
 import { startNetPump } from '../vehicle/v2Driver.js';
 import { preferredRoomKind, setCurrentRoom } from '../ui/roomMenu.js';
 import { netDriver, placeholderCar } from '../net/netDriver.js';
+import { reloadOnce } from './reloadOnce.js';
+import { applyResumeOutcome, resumeOutcome } from './resumeOutcome.js';
+import { hideRespawnOverlay, showRespawnOverlay } from '../ui/respawnOverlay.js';
 import { clearRemoteViews, forgetRemote, noteSnapshotCars, setRemoteDead } from '../net/remotes.js';
 
 // The connection to the game server on protocol v2 (docs/phase-1b-design.md,
@@ -84,18 +87,6 @@ export const connectionInfo = {
 
 function pageBuild(): string | null {
     return document.querySelector<HTMLMetaElement>('meta[name="bulli-build-version"]')?.content || null;
-}
-
-/** Reloads once per key value (sessionStorage guard); false when the guard holds. */
-function reloadOnce(key: string, value: string): boolean {
-    try {
-        if (sessionStorage.getItem(key) === value) return false;
-        sessionStorage.setItem(key, value);
-    } catch {
-        return false;
-    }
-    window.location.reload();
-    return true;
 }
 
 function storageGet(key: string): string | undefined {
@@ -233,10 +224,8 @@ function onClosed(code: number, reason: string) {
             showConnectionNotice('Disconnected after a long break', 'Continue', reconnectNow);
             return;
         case 'reconnect': {
-            // Never connected yet (a deploy restarting the server, a flaky
-            // mobile network): the loader stays and the banner says why
-            const text = code === CLOSE_FULL ? 'The server is full, retrying…'
-                : everOpened ? 'Reconnecting…' : 'Connecting to the server…';
+            // Never connected yet: the loader stays and the banner says why
+            const text = reconnectingText(code, everOpened);
             const delay = Math.max(restartDelayMs ?? reconnectDelayMs(reconnectAttempt, Math.random), holdReconnectUntil - now);
             restartDelayMs = null;
             reconnectAttempt++;
@@ -410,7 +399,8 @@ function enterRoom(data: Extract<ServerMessage, { type: 'roomState' }>) {
     netDriver.enterRoom(world, party, data.members, car, state.myId ?? '');
     // Back after a lost connection with the car still on the server: the
     // next snapshot brings it (11.1)
-    const resumedCar = !!data.resume?.alive;
+    const outcome = resumeOutcome(data, { playerReady, myId: state.myId });
+    const resumedCar = outcome === 'resumedCar';
     if (data.resume) netDriver.resumeOwn(data.resume);
 
     const firstJoin = !state.bulli;
@@ -435,25 +425,7 @@ function enterRoom(data: Extract<ServerMessage, { type: 'roomState' }>) {
     updateScoreboardUI();
     startClockSync();
     startNetPump();
-    if (resumedCar) {
-        // The car lives on the server. If it died and respawned while the
-        // connection was gone, the respawn event is lost: undo the death
-        // on screen here
-        if (state.bulli) {
-            state.bulli.flipGroup.visible = true;
-            state.bulli.health = state.health;
-        }
-        hideRespawnOverlay();
-    } else if (data.resume && playerReady && party && data.members.some(m => m.id === state.myId && m.ready)) {
-        // Dead in the Party (maybe killed while the connection was gone):
-        // the respawn event brings the car back
-        state.dead = true;
-        if (state.bulli) state.bulli.flipGroup.visible = false;
-        showRespawnOverlay();
-    }
-    // Past the splash screen but not driving in this room (a new session
-    // after the grace time or a restart, or 'ready' got lost): drive again
-    if (playerReady && !resumedCar && !state.dead) sendToServer({ type: 'ready' });
+    applyResumeOutcome(outcome, state, () => sendToServer({ type: 'ready' }));
 }
 
 // The own score and rank as far as the top 10 tell
@@ -651,59 +623,6 @@ function flashScreenRed() {
     }
     overlay.style.opacity = '1';
     setTimeout(() => { overlay!.style.opacity = '0'; }, 200);
-}
-
-let respawnInterval: number = 0;
-
-function showRespawnOverlay() {
-    let overlay = document.getElementById('respawn-overlay');
-    if (!overlay) {
-        overlay = document.createElement('div');
-        overlay.id = 'respawn-overlay';
-        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;flex-direction:column;justify-content:center;align-items:center;z-index:300;pointer-events:none;';
-
-        const title = document.createElement('div');
-        title.style.cssText = 'font-family:Righteous,cursive;font-size:2.5rem;color:#E84545;text-shadow:0 0 20px rgba(232,69,69,0.5);';
-        title.textContent = 'ELIMINATED';
-
-        const timer = document.createElement('div');
-        timer.id = 'respawn-timer';
-        timer.style.cssText = 'font-family:Quicksand,sans-serif;font-size:1.2rem;color:rgba(255,255,255,0.7);margin-top:0.5rem;';
-        timer.textContent = 'Respawning in 3...';
-
-        overlay.appendChild(title);
-        overlay.appendChild(timer);
-        document.body.appendChild(overlay);
-    }
-    overlay.style.display = 'flex';
-
-    // Countdown - clear any prior interval to avoid stacking on rapid re-deaths
-    if (respawnInterval) {
-        clearInterval(respawnInterval);
-        respawnInterval = 0;
-    }
-    let count = 3;
-    const timerEl = document.getElementById('respawn-timer');
-    if (timerEl) timerEl.textContent = 'Respawning in 3...';
-    respawnInterval = window.setInterval(() => {
-        count--;
-        if (count <= 0) {
-            clearInterval(respawnInterval);
-            respawnInterval = 0;
-            if (timerEl) timerEl.textContent = 'Respawning...';
-        } else if (timerEl) {
-            timerEl.textContent = `Respawning in ${count}...`;
-        }
-    }, 1000);
-}
-
-function hideRespawnOverlay() {
-    if (respawnInterval) {
-        clearInterval(respawnInterval);
-        respawnInterval = 0;
-    }
-    const overlay = document.getElementById('respawn-overlay');
-    if (overlay) overlay.style.display = 'none';
 }
 
 export function createLocalPlayer(color: number, name: string, spawn: { x: number; z: number; yaw?: number } = { x: 0, z: 0 }) {

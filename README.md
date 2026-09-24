@@ -49,8 +49,10 @@ reachable from the LAN as well: `npm run build && npm start`, then
 | `npm start` | Runs the production build on port 8000 (`PORT` to override) |
 | `npm run typecheck` | Type-checks client, server, tests, scripts and build config |
 | `npm test` | Vitest unit tests in `tests/` (golden tests for world generation, terrain, RNG and the v2 sim scenarios, the binary codec and protocol validation, the tick scheduler, rooms and Party rules, the prediction against the real rooms with simulated latency and loss, speedometer scale, model cache, budgets of the packed models and textures) |
-| `npm run test:e2e` | Builds, then runs the Playwright smoke tests in `tests/e2e` against the production server (port 8799, `E2E_PORT` to override) |
-| `npm run test:bots` | Bot integration tests in `tests/integration`: starts its own game server process (port 8560-8599, `BOTS_PORT` to override) and runs headless bots over real WebSockets: a head-on bump seen by both cars (also behind the netsim), reconnect within the grace time, a room switch, a flood kick, and 16 bots for 30 s behind netsim 150/30/3 with the bandwidth (≤ 30 kB/s per client) and tick budgets (p95 < 4 ms) |
+| `npm run test:e2e` | Builds, then runs the Playwright tests of the critical user paths in `tests/e2e` against the production server (port 8799, `E2E_PORT` to override; the restart test starts its own server on `E2E_PORT + 1`) |
+| `npm run test:e2e:render` | Builds, then runs the render checks in the browser: the phone tier's draw call and triangle budget, a world without its textures that is shaded, not black, and the touch HUD in eight phone and tablet viewports without overlaps (`tests/e2e-render`, Playwright project `render`) |
+| `npm run test:bots` | Bot integration tests in `tests/integration`: starts its own game server process (port 8560-8599, `BOTS_PORT` to override) and runs headless bots over real WebSockets: a head-on bump seen by both cars (also behind the netsim), reconnect within and after the grace time, the protocol version reject and `/healthz`, a room switch, a flood kick, and 16 bots for 30 s behind netsim 150/30/3 with the bandwidth (≤ 30 kB/s per client) and tick budgets (p95 < 4 ms) |
+| `npm run test:mutation` | Mutation tests (Stryker, `stryker.config.mjs`) of `src/shared` and `src/server/rooms` against the unit tests: incremental (`reports/stryker-incremental.json`), HTML report in `reports/mutation/`; `-- --mutate src/shared/sim/contact.ts` narrows a run, `npx tsx scripts/mutation-summary.ts --survivors` lists the survivors. Not part of CI: runs weekly and on demand in `.github/workflows/mutation.yml` |
 | `npm run bots -- --url ws://127.0.0.1:8000/ws --count 32 --mix drive:24,ram:6,reconnect:1,hop:1 --netsim 150,30,3 --duration 120` | Load and robustness run against any server (see `tools/bots/cli.ts`): prints snapshot rate, downlink per bot, corrections, contacts and the server's tick times from `/healthz`; `--json` for the whole report. Modes: `drive`, `ram`, `idle`, `reconnect`, `hop`, `flood` |
 | `npm run perf:baseline` | Builds, then drives two headless Chromium clients for 20 s and prints FPS, draw calls and WebSocket bandwidth as JSON (see [docs/baseline.md](docs/baseline.md)); it also reports the sim time per frame, `-- --sandbox` measures the offline sandbox |
 | `npm run screenshots` | Builds, then captures a fixed set of views with headless Chromium for visual before/after comparisons (`-- --out=<dir>`, `--gl=swiftshader`, `--compare=<a>,<b>`; `stats.json` records how much of the frame the car takes; see `scripts/screenshots.ts`) |
@@ -59,14 +61,15 @@ reachable from the LAN as well: `npm run build && npm start`, then
 | `npm run assets:models` | Builds the car models in Blender and packs them (meshopt + KTX2) into `public/models` (needs Blender 5.2 and `npm --prefix tools ci` once; see [tools/models/README.md](tools/models/README.md)) |
 | `npm run assets:textures` | Downloads the CC0 textures and HDRIs (Poly Haven) and encodes them to KTX2 in `public/textures` ([tools/textures/README.md](tools/textures/README.md)) |
 
-The Playwright tests cover driving on desktop and phone, two players bumping
-into each other (a head-on ram also behind `?netsim=150,30,3`), the sandbox with its dummy cars, the tuning panel and the
-golden sim scenarios in the browser, Party and Free Roam rooms, the collider
-parity between browser and server, the stale-client reload, a lost WebGL
-context, the perf overlay, the car model loading (GLB + KTX2) with its
-procedural fallback, the world look, a lost connection and a server restart
-(the page reconnects on its own), the protocol version check, `/healthz` and
-the dev netsim.
+The tests follow the test pyramid (see `CLAUDE.md`): the logic is unit-tested
+in `tests/shared`, `tests/server` and `tests/client` (the client's page glue
+in Node or happy-dom), the server with real WebSockets in the bot tests, and
+Playwright covers only the critical user paths: load, join and drive on the
+desktop (with the asset pipeline and a lost WebGL context), two players who
+see and ram each other, touch on a phone (splash, stick and buttons, room
+chip, HUD layout in eight viewports, a lost connection), a new deploy (stale
+page, old protocol, server restart) and missing assets. The suite runs in one
+CI job in under ~5 minutes; the render checks of the phone tier run beside it.
 They need Chromium once:
 `npx playwright install chromium`.
 
@@ -171,7 +174,8 @@ src/shared/           Code for both sides: protocol schemas (valibot), constants
                       offsets, interpolation) and the Party
                       rules in ticks (party/)
 tests/                Vitest (shared/, server/, client/, tools/), bot integration
-                      tests (integration/) and Playwright (e2e/)
+                      tests (integration/), Playwright (e2e/) and the render
+                      checks (e2e-render/)
 tools/bots/           Headless bot clients over real WebSockets (shared NetClient,
                       pure-pursuit driving on the road grid), npm run bots
 scripts/              perf-baseline.ts, screenshots.ts

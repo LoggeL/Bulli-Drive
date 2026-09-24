@@ -28,6 +28,9 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      # Sim cost (32 cars, target < 2 ms per tick): logged, warns above the
+      # target, never fails the job (a wall clock on a shared runner)
+      - run: npm run perf:sim
 
   build:
     name: Build
@@ -48,6 +51,20 @@ jobs:
           # The stale-client guard needs the version file and the stamp in index.html
           grep -Eq '^[a-f0-9]{16}$' dist/client/build-version.txt
           grep -q "name=\"bulli-build-version\" content=\"$(cat dist/client/build-version.txt)\"" dist/client/index.html
+          # lil-gui (the ?sandbox=1&tune=1 panel) stays in its lazy chunk:
+          # nothing the page loads up front contains it
+          for file in dist/client/index.html $(grep -oE '/assets/[^"]+\.js' dist/client/index.html | sed 's#^#dist/client#'); do
+            if grep -q "lil-gui" "$file"; then echo "lil-gui is loaded up front by $file"; exit 1; fi
+          done
+          # ...but it is there: the entry imports the tuning panel's chunk
+          # (with lil-gui) and the sandbox's chunk on demand. No browser
+          # starts the sandbox or the panel any more; their code runs in
+          # tests/client/sandbox.test.ts
+          entry=dist/client$(grep -oE '/assets/index-[^"]+\.js' dist/client/index.html | head -1)
+          panel=$(grep -oE 'import\(.\./tuningPanel-[A-Za-z0-9_-]+\.js.\)' "$entry" | grep -oE 'tuningPanel-[A-Za-z0-9_-]+\.js' | head -1)
+          if [ -z "$panel" ]; then echo "$entry does not import the tuning panel lazily"; exit 1; fi
+          if ! grep -q "lil-gui" "dist/client/assets/$panel"; then echo "lil-gui is not in $panel"; exit 1; fi
+          if ! grep -qE 'import\(.\./sandbox-[A-Za-z0-9_-]+\.js.\)' "$entry"; then echo "$entry does not import the sandbox lazily"; exit 1; fi
 
   bots:
     name: Bot integration
@@ -67,15 +84,9 @@ jobs:
       - run: npm run test:bots -- --reporter=verbose
 
   e2e:
-    name: End-to-end (Playwright) ${{ matrix.shard }}/2
+    name: End-to-end (Playwright)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-    # Software WebGL is CPU bound and the suite runs on one worker, so the
-    # tests are split over two runners (each starts its own game server)
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2]
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -83,15 +94,69 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      # Builds, then runs desktop, two-player and mobile smoke tests against
-      # the production server (see playwright.config.ts)
-      - run: npm run test:e2e -- --shard=${{ matrix.shard }}/2
+      # Chromium of this Playwright version from the cache; the system
+      # libraries it needs come from apt either way
+      - name: Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('./node_modules/@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      - if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+      # Builds, then runs the critical user paths against the production
+      # server (see playwright.config.ts): desktop, two players, touch on a
+      # phone, a new deploy, missing assets. Everything a unit or bot test
+      # can check lives there instead; the suite stays under ~5 minutes.
+      - run: npm run test:e2e
       - name: Upload Playwright report and traces
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report-${{ matrix.shard }}
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+
+  e2e-render:
+    name: Render checks (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Chromium of this Playwright version from the cache; the system
+      # libraries it needs come from apt either way
+      - name: Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('./node_modules/@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      - if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+      # The phone tier's draw call and triangle budget and its texture
+      # placeholders, measured by the renderer (SwiftShader), and the touch
+      # HUD's layout in eight viewports: measurements, not user paths
+      - run: npm run test:e2e:render
+      - name: Upload Playwright report and traces
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-render
           path: |
             playwright-report/
             test-results/

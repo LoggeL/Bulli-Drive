@@ -53,6 +53,61 @@ describe('ClockSync', () => {
     });
 });
 
+describe('ClockSync samples', () => {
+    // A server at tick = local ms / TICK_MS (offset 0); a pong with the
+    // given round trip, split evenly, so every sample says offset 0
+    function pong(clock: ClockSync, now: number, rtt: number): void {
+        const t = (now - rtt / 2) / TICK_MS;
+        clock.addSample(now - rtt, now, Math.floor(t), t - Math.floor(t));
+    }
+
+    it('keeps the last 8 samples for the round trip and counts every pong', () => {
+        const clock = new ClockSync();
+        expect(clock.rtt).toBe(0);
+        pong(clock, 1000, 10);
+        for (let i = 1; i < 8; i++) pong(clock, 1000 + i * 1000, 50);
+        // 8 samples: the 10 ms one is still in
+        expect(clock.rtt).toBe(10);
+        expect(clock.count).toBe(8);
+        pong(clock, 9000, 50);
+        expect(clock.rtt).toBe(50);
+        expect(clock.count).toBe(9);
+        clock.reset();
+        expect(clock.ready).toBe(false);
+        expect(clock.count).toBe(0);
+        expect(clock.rtt).toBe(0);
+    });
+
+    it('reports the jitter as p90 - p10 of the kept round trips', () => {
+        const clock = new ClockSync();
+        pong(clock, 1000, 70);
+        expect(clock.jitter).toBe(0);
+        pong(clock, 2000, 30);
+        // Two samples: the larger minus the smaller
+        expect(clock.jitter).toBe(40);
+        // 10 pongs of 100, 90, ... 10 ms: the last 8 are 80 ... 10 ms;
+        // sorted, p90 is rank round(0.9 · 7) = 6 (70 ms), p10 rank 1 (20 ms)
+        const many = new ClockSync();
+        for (let i = 0; i < 10; i++) pong(many, 1000 + i * 1000, 100 - i * 10);
+        expect(many.jitter).toBe(50);
+    });
+
+    it('eases a small offset change in and takes one past the margin at once', () => {
+        // Round trips of 0 ms: the tolerance is the margin of 1 tick alone
+        const clock = new ClockSync();
+        clock.addSample(1000, 1000, 100, 0);
+        expect(clock.serverTickAt(1000)).toBeCloseTo(100, 9);
+        // 0.5 ticks later than expected: eased in by a tenth
+        clock.addSample(2000, 2000, 100 + 1000 / TICK_MS + 0.5, 0);
+        expect(clock.jumps).toBe(0);
+        expect(clock.serverTickAt(2000)).toBeCloseTo(100 + 1000 / TICK_MS + 0.05, 9);
+        // 2 ticks off (1.95 from the eased offset): the server's clock moved, taken as it is
+        clock.addSample(3000, 3000, 100 + 2000 / TICK_MS + 2, 0);
+        expect(clock.jumps).toBe(1);
+        expect(clock.serverTickAt(3000)).toBeCloseTo(100 + 2000 / TICK_MS + 2, 9);
+    });
+});
+
 describe('ClockSync after a server hang', () => {
     // A server that skipped `skipMs` of ticks at local time hangAt; pongs
     // once a second with random asymmetric delays around rttMs
@@ -212,5 +267,102 @@ describe('LeadControl', () => {
         expect(lead.onSnapshot(null, 1, 900, 40)).toBe(false);
         expect(lead.onSnapshot(null, 1, 1100, 40)).toBe(true);
         expect(lead.lead).toBeCloseTo(20 / TICK_MS + 1, 9);
+    });
+
+    // 8.3 and 20.5: after a jump the reports are ignored for a round trip
+    // plus 250 ms (plus the ticks it moved the lead down); a stall of the
+    // page longer than 600 ms makes them ignored for 2 round trips + 250 ms
+    // + the stall
+    it('ignores the reports for a round trip plus 250 ms after a late jump', () => {
+        const lead = new LeadControl();
+        lead.start(40, 1);
+        lead.onSnapshot(-11, 1, 1000, 40);   // 12 short: a jump
+        const jumped = lead.lead;
+        lead.onSnapshot(-11, 1, 1000 + 40 + 249, 40);
+        expect(lead.lead).toBe(jumped);
+        lead.onSnapshot(-11, 1, 1000 + 40 + 250, 40);
+        expect(lead.lead).toBeCloseTo(jumped + 12, 9);
+    });
+
+    it('waits the ticks an early jump took back on top', () => {
+        const lead = new LeadControl();
+        lead.start(40, 1);
+        lead.lead = 40;
+        lead.onSnapshot(1 + 20, 1, 1000, 40);   // 20 early: a clock jump
+        expect(lead.lead).toBeCloseTo(20, 9);
+        lead.onSnapshot(1 + 20, 1, 1000 + 40 + 250 + 20 * TICK_MS - 1, 40);
+        expect(lead.lead).toBeCloseTo(20, 9);
+        lead.onSnapshot(1 + 20, 1, 1000 + 40 + 250 + 20 * TICK_MS, 40);
+        expect(lead.lead).toBeCloseTo(0, 9);
+    });
+
+    it('counts a jump of more than 8 ticks as a resync, smaller ones not', () => {
+        const lead = new LeadControl();
+        lead.start(40, 1);
+        expect(lead.onSnapshot(1 - 8, 1, 1000, 40)).toBe(false);
+        expect(lead.resyncs).toBe(0);
+        expect(lead.onSnapshot(1 - 9, 1, 5000, 40)).toBe(true);
+        expect(lead.resyncs).toBe(1);
+        // Exactly 16 early (no margin left after the start) is no jump yet
+        const fresh = new LeadControl();
+        fresh.start(40, 1);
+        const before = fresh.lead;
+        fresh.onSnapshot(1 + 16, 1, 1000, 40);
+        expect(fresh.lead).toBeCloseTo(before - 0.15, 9);
+    });
+
+    it('slows the ticks for an early report and speeds them up for a late one', () => {
+        const early = new LeadControl();
+        early.start(40, 1);
+        early.onSnapshot(1 + 1, 1, 1000, 40);
+        // Step -0.1 of the 3 ticks between snapshots
+        expect(early.rate).toBeCloseTo(1 - 0.1 / 3, 12);
+        const late = new LeadControl();
+        late.start(40, 1);
+        late.onSnapshot(1 - 1, 1, 1000, 40);
+        expect(late.rate).toBeCloseTo(1 + 0.1 / 3, 12);
+    });
+
+    it('takes back only the late margin with the slow steps down', () => {
+        const lead = new LeadControl();
+        lead.start(40, 1);
+        lead.onSnapshot(1 - 10, 1, 1000, 40);       // 10 short: margin 10
+        expect(lead.margin).toBe(10);
+        lead.onSnapshot(1 - 1, 1, 5000, 40);        // a little late: step up, margin stays
+        expect(lead.margin).toBe(10);
+        lead.onSnapshot(1 + 3, 1, 6000, 40);        // early: steps down eat the margin
+        expect(lead.margin).toBeLessThan(10);
+    });
+
+    it('holds the reports after a stall of its own of more than 600 ms', () => {
+        const short = new LeadControl();
+        short.start(40, 1);
+        short.holdAfterStall(1000, 40, 600);
+        const before = short.lead;
+        short.onSnapshot(1 - 12, 1, 1001, 40);
+        expect(short.lead).toBeCloseTo(before + 12, 9);
+
+        const long = new LeadControl();
+        long.start(40, 1);
+        long.holdAfterStall(1000, 40, 700);
+        const held = long.lead;
+        // Until 1000 + 2 · 40 + 250 + 700
+        long.onSnapshot(1 - 12, 1, 2029, 40);
+        expect(long.lead).toBe(held);
+        long.onSnapshot(1 - 12, 1, 2030, 40);
+        expect(long.lead).toBeCloseTo(held + 12, 9);
+    });
+
+    it('waits a round trip plus 250 ms after restarting a silent client', () => {
+        const lead = new LeadControl();
+        lead.start(40, 1);
+        lead.onSnapshot(null, 1, 0, 40);
+        expect(lead.onSnapshot(null, 1, 1001, 40)).toBe(true);
+        expect(lead.resyncs).toBe(1);
+        const restarted = lead.lead;
+        lead.onSnapshot(1 - 12, 1, 1001 + 289, 40);
+        expect(lead.lead).toBe(restarted);
+        lead.onSnapshot(1 - 12, 1, 1001 + 290, 40);
+        expect(lead.lead).toBeCloseTo(restarted + 12, 9);
     });
 });

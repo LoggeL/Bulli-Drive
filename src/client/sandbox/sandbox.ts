@@ -8,6 +8,7 @@ import { copyVehicleState, createVehicleState, type SimCar, type VehicleState } 
 import { refreshCarParams } from '../../shared/sim/tuning.js';
 import { CAR_CLASS_IDS } from '../../shared/sim/vehicleClasses.js';
 import { Bulli, type CarType } from '../entities/Bulli.js';
+import { isE2EEnabled } from '../flags.js';
 import { gameHooks } from '../game/hooks.js';
 import { createLocalPlayer, removeLoader } from '../network/websocket.js';
 import { state } from '../state.js';
@@ -318,7 +319,7 @@ export interface SandboxDummySnapshot {
 }
 
 function installE2EHook(): void {
-    if (new URLSearchParams(window.location.search).get('e2e') !== '1') return;
+    if (!isE2EEnabled(window.location.search)) return;
     (window as unknown as { __bulliSim: unknown }).__bulliSim = {
         dummies(): SandboxDummySnapshot[] {
             return dummies.map(({ car, spec }) => ({

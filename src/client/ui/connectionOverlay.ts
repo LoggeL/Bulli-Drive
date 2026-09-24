@@ -1,3 +1,4 @@
+import { CLOSE_FULL } from '../../shared/net/constants.js';
 import { OVERLAY_AFTER_MS, RELOAD_OFFER_MS } from '../../shared/net/reconnect.js';
 
 // The connection banner (docs/phase-1b-design.md, 11.1): "Reconnecting…"
@@ -54,6 +55,16 @@ function show(text: string, busy: boolean): void {
     label!.textContent = text;
     el.classList.toggle('busy', busy);
     el.hidden = false;
+}
+
+/**
+ * What the banner says while the client tries again after a close with
+ * `code`: a page that never had a socket open (a deploy restarting the
+ * server, a flaky mobile network) is still connecting, the loader stays.
+ */
+export function reconnectingText(code: number, everOpened: boolean): string {
+    return code === CLOSE_FULL ? 'The server is full, retrying…'
+        : everOpened ? 'Reconnecting…' : 'Connecting to the server…';
 }
 
 /**

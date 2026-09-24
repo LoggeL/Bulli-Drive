@@ -84,6 +84,21 @@ describe('instances', () => {
         expect(d.room?.id).toBe('party-1');
     });
 
+    it('prefers the fuller room over the lower number, and only rooms of the kind asked for', () => {
+        lobby = makeLobby(3);
+        const [a, b, c, d, e, f, g] = Array.from({ length: 7 }, () => fakeSession());
+        for (const s of [a, b, c, d, e]) lobby.join(s, 'party');   // party-1: 3, party-2: 2
+        expect(e.room?.id).toBe('party-2');
+        lobby.leave(a);
+        lobby.leave(b);                                              // party-1: 1, party-2: 2
+        lobby.join(f, 'party');
+        expect(f.room?.id).toBe('party-2');
+        // A fuller room of the other kind does not count
+        lobby.join(g, 'freeroam');
+        expect(g.room?.id).toBe('freeroam-1');
+        expect(() => lobby.join(g, 'party')).toThrow();
+    });
+
     it('opens freeroam-1 on demand and closes it 60 s after the last player left', () => {
         const session = fakeSession();
         lobby.join(session, 'freeroam');
@@ -133,6 +148,22 @@ describe('instances', () => {
         lobby.stepAll(0);
         expect(lobby.get('freeroam-1')!.tick).toBe(2);
         expect(lobby.get('party-1')!.tick).toBe(0);
+        // A room opened later is ticked too, and the order is by id:
+        // freeroam-1, party-1, party-2
+        for (const room of lobby.list()) room.dispose();
+        lobby = makeLobby(1);
+        const [p1, p2, f1] = [fakeSession(), fakeSession(), fakeSession()];
+        lobby.join(p1, 'party');
+        lobby.stepAll(0);
+        lobby.join(p2, 'party');
+        lobby.join(f1, 'freeroam');
+        const order: string[] = [];
+        for (const room of lobby.list()) {
+            const step = room.step.bind(room);
+            room.step = (nowMs?: number) => { order.push(room.id); step(nowMs); };
+        }
+        lobby.stepAll(0);
+        expect(order).toEqual(['freeroam-1', 'party-1', 'party-2']);
     });
 });
 
@@ -197,6 +228,39 @@ describe('leaving', () => {
         bob.transport.clear();
         lobby.leave(alice);
         expect(bob.transport.sent).toEqual([]);
+    });
+});
+
+describe('a new page of the same session (rejoin)', () => {
+    it('keeps the Party score from Party to Party only', () => {
+        const alice = fakeSession('Alice'), bob = fakeSession('Bob');
+        lobby.join(alice, 'party');
+        lobby.join(bob, 'party');
+        ready(lobby, alice);
+        ready(lobby, bob);
+        (lobby.get('party-1') as PartyRoom).partyState(alice.id)!.score = 70;
+        bob.transport.clear();
+        lobby.rejoin(alice, 'party');
+        // The old membership left as a disconnect, the new one waits behind the splash screen
+        expect(bob.transport.of('playerLeft')).toEqual([{ type: 'playerLeft', id: alice.id, reason: 'disconnect' }]);
+        expect(alice.member!.ready).toBe(false);
+        expect((lobby.get('party-1') as PartyRoom).partyState(alice.id)!.score).toBe(70);
+
+        (lobby.get('party-1') as PartyRoom).partyState(alice.id)!.score = 50;
+        lobby.rejoin(alice, 'freeroam');
+        expect(alice.room!.id).toBe('freeroam-1');
+        expect(alice.carryScore).toBe(0);
+        lobby.rejoin(alice, 'party');
+        expect((lobby.get('party-1') as PartyRoom).partyState(alice.id)!.score).toBe(0);
+    });
+
+    it('joins a room when the session had none', () => {
+        const alice = fakeSession();
+        lobby.rejoin(alice, 'freeroam');
+        expect(alice.room!.id).toBe('freeroam-1');
+        const bob = fakeSession();
+        expect(lobby.switch(bob, 'freeroam')).toBe(bob.member);
+        expect(bob.room!.id).toBe('freeroam-1');
     });
 });
 

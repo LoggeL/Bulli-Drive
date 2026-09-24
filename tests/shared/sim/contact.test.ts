@@ -443,3 +443,153 @@ describe('v2 tunneling between cars', () => {
         }
     }, SWEEP_TIMEOUT_MS);
 });
+
+describe('v2 contact budgets and bookkeeping', () => {
+    // Head-on on one line (x = 0): the normal is z, the contact point lies
+    // on both cars' axes, so there is no spin and no friction
+    function headOn(first: 'pickup' | 'beetle', second: 'pickup' | 'beetle', speed = 10) {
+        const world = createFlatWorld();
+        const a = spawnCar(world, 'a', first, 0, 0, 0, speed);
+        const gap = a.params.colliderOffset + a.params.colliderRadius;
+        const b = spawnCar(world, 'b', second, 0, gap + 1.2, Math.PI);
+        b.state.vx = 0;
+        b.state.vz = 0;
+        return { a, b };
+    }
+
+    it('caps the heavier contact mass at 1.8 times the lighter one', () => {
+        // Pickup 2000 kg against beetle 900 kg: counted as 1620 kg, so the
+        // beetle's change of speed is 1.8 times the pickup's (not 2.22)
+        for (const order of [['pickup', 'beetle'], ['beetle', 'pickup']] as const) {
+            const { a, b } = headOn(order[0], order[1]);
+            const va = a.state.vz, vb = b.state.vz;
+            resolveContact(a, b);
+            const dA = Math.abs(a.state.vz - va), dB = Math.abs(b.state.vz - vb);
+            const [pickup, beetle] = order[0] === 'pickup' ? [dA, dB] : [dB, dA];
+            expect(beetle / pickup, order.join(' vs ')).toBeCloseTo(1.8, 9);
+            expect(a.state.yawRate).toBeCloseTo(0, 12);
+            expect(a.state.vx).toBeCloseTo(0, 12);
+        }
+    });
+
+    it('books the change of speed and reports it as the impact', () => {
+        const { a, b } = headOn('beetle', 'beetle');
+        resolveContact(a, b);
+        const dA = Math.abs(a.state.vz - 10);
+        expect(dA).toBeGreaterThan(1);
+        expect(a.contactDv).toBeCloseTo(dA, 12);
+        expect(a.events.carImpact).toBeCloseTo(dA, 12);
+        expect(a.events.carImpactId).toBe('b');
+        expect(b.events.carImpactId).toBe('a');
+    });
+
+    it('gives only what is left of the 30 m/s budget, nothing once it is used up', () => {
+        const full = headOn('beetle', 'beetle');
+        resolveContact(full.a, full.b);
+        const whole = 10 - full.a.state.vz;
+        expect(whole).toBeGreaterThan(1);
+        const partial = headOn('beetle', 'beetle');
+        partial.a.contactDv = 29;
+        resolveContact(partial.a, partial.b);
+        expect(10 - partial.a.state.vz).toBeCloseTo(1, 12);
+        expect(partial.a.contactDv).toBe(30);
+        for (const used of [30, 31]) {
+            const spent = headOn('beetle', 'beetle');
+            spent.a.contactDv = used;
+            resolveContact(spent.a, spent.b);
+            expect(spent.a.state.vz, `after ${used}`).toBe(10);
+        }
+    });
+
+    // An off-centre hit on the nose: spins the car (side of the nose 1 m off
+    // the axis of a car coming along x)
+    function offCentre() {
+        const world = createFlatWorld();
+        const a = spawnCar(world, 'a', 'bulli', 0, 0, 0);
+        const b = spawnCar(world, 'b', 'bulli', -2.4, 1.2, Math.PI / 2, 15);
+        return { a, b };
+    }
+
+    it('caps the spin change at 2.5 rad/s per tick and the spin at 6 rad/s, both ways', () => {
+        const free = offCentre();
+        resolveContact(free.a, free.b);
+        const dw = free.a.state.yawRate;
+        expect(Math.abs(dw)).toBeGreaterThan(0.2);
+        // Budget left: 0.1 rad/s
+        const capped = offCentre();
+        capped.a.contactDw = 2.4;
+        resolveContact(capped.a, capped.b);
+        expect(capped.a.state.yawRate).toBeCloseTo(Math.sign(dw) * 0.1, 12);
+        // Already at the top speed of spin in that direction
+        const top = offCentre();
+        top.a.state.yawRate = Math.sign(dw) * 5.95;
+        resolveContact(top.a, top.b);
+        expect(top.a.state.yawRate).toBe(Math.sign(dw) * 6);
+        // The mirrored hit spins the other way, with the same caps
+        const world = createFlatWorld();
+        const a = spawnCar(world, 'a', 'bulli', 0, 0, 0);
+        const b = spawnCar(world, 'b', 'bulli', 2.4, 1.2, -Math.PI / 2, 15);
+        a.contactDw = 2.4;
+        resolveContact(a, b);
+        expect(a.state.yawRate).toBeCloseTo(-Math.sign(dw) * 0.1, 12);
+        const c = spawnCar(world, 'a', 'bulli', 0, 0, 0);
+        c.state.yawRate = -Math.sign(dw) * 5.95;
+        resolveContact(c, spawnCar(world, 'b', 'bulli', 2.4, 1.2, -Math.PI / 2, 15));
+        expect(c.state.yawRate).toBe(-Math.sign(dw) * 6);
+    });
+
+    it('keeps the strongest impact of a tick, not the last', () => {
+        const world = createFlatWorld();
+        const a = spawnCar(world, 'a', 'beetle', 0, 0, 0);
+        const hard = spawnCar(world, 'b', 'beetle', 0, -3.3, 0, 20);
+        const soft = spawnCar(world, 'c', 'beetle', 0, 3.3, Math.PI, 2);
+        resolveContact(a, hard);
+        const strongest = a.events.carImpact;
+        resolveContact(a, soft);
+        expect(a.events.carImpact).toBe(strongest);
+        expect(a.events.carImpactId).toBe('b');
+    });
+
+    it('lets the bigger car set the height window (Mega)', () => {
+        const world = createFlatWorld();
+        const a = spawnCar(world, 'a', 'bulli', 0, 0, 0, 10);
+        const b = spawnCar(world, 'b', 'bulli', 0, 3, 0);
+        // 3 m apart in height: beyond 1.4 m, within 1.4 m · 2.5
+        b.state.y = 3;
+        resolveContact(a, b);
+        expect(a.state.vz).toBe(10);
+        b.state.scale = MEGA_SCALE;
+        resolveContact(a, b);
+        expect(a.state.vz).toBeLessThan(10);
+    });
+
+    it('separates cars along the line between them when two circles coincide', () => {
+        const world = createFlatWorld();
+        // a's front circle (z = -1.4 + 0.7) sits exactly on b's rear circle (0 - 0.7)
+        const a = spawnCar(world, 'a', 'bulli', 0, -1.4, 0);
+        const b = spawnCar(world, 'b', 'bulli', 0, 0, 0);
+        resolveContact(a, b);
+        expect(a.state.z).toBeLessThan(-1.4);
+        expect(b.state.z).toBeGreaterThan(0);
+        expect(a.state.x).toBe(0);
+        // Two cars on the same spot: pushed apart along x
+        const c = spawnCar(world, 'c', 'bulli', 5, 5, 0);
+        const d = spawnCar(world, 'd', 'bulli', 5, 5, 0);
+        resolveContact(c, d);
+        expect(c.state.x).toBeGreaterThan(5);
+        expect(d.state.x).toBeLessThan(5);
+        expect(c.state.z).toBe(5);
+    });
+
+    it('moves neither a kinematic first car nor pushes it out', () => {
+        const world = createFlatWorld();
+        const proxy = spawnCar(world, 'a', 'bulli', 0, 0, 0);
+        proxy.kinematic = true;
+        const local = spawnCar(world, 'b', 'bulli', 0, 3, Math.PI, 10);
+        const before = copyVehicleState(createVehicleState(), proxy.state);
+        resolveContact(proxy, local);
+        expect(proxy.state).toStrictEqual(before);
+        expect(local.state.vz).toBeGreaterThan(-10);
+        expect(local.state.z).toBeGreaterThan(3);
+    });
+});

@@ -5,25 +5,21 @@ import { blockCenter, isInCityArea, isOnRoad, PLAZA_BLOCK } from '../../src/shar
 import { canonicalStringify, createMapData, fnv1a, worldHash } from '../../src/shared/world/mapData.js';
 import { insideCitySceneryExclusion, PROP_RADII, rockPlacements } from '../../src/shared/world/props.js';
 import { generateWorld } from '../../src/shared/world/worldGen.js';
-import { sha256, stableStringify } from '../helpers.js';
+import {
+    collidersSha, GOLDEN_COLLIDER_COUNT, GOLDEN_COLLIDERS_SHA, GOLDEN_ROCK_COUNT, GOLDEN_ROCKS_SHA, GOLDEN_WORLD_HASH
+} from './worldGolden.js';
 
 // The static colliders both sides build (docs/phase-1b-design.md, 6). The
-// golden hash pins the ordered list: count, order and every dimension. It
-// only changes on purpose, together with MAP_VERSION.
-const GOLDEN_COLLIDERS_SHA = 'a046f62cb53b4cea26a05c9ad7d21c2704ae504c26f42124a1655a7b1a4ce0d4';
-const GOLDEN_WORLD_HASH = 'cd1d366c';
-
-// JSON has no Infinity; spell the tops out so they are part of the hash
-function hashable(colliders: readonly ColliderInput[]) {
-    return colliders.map(c => ({ ...c, top: String(c.top) }));
-}
+// golden hash (worldGolden.ts) pins the ordered list: count, order and
+// every dimension. It only changes on purpose, together with MAP_VERSION.
 
 describe('buildWorldColliders', () => {
     const world = generateWorld();
     const colliders = buildWorldColliders(world);
 
     it('matches the golden ordered collider list', () => {
-        expect(sha256(stableStringify(hashable(colliders)))).toBe(GOLDEN_COLLIDERS_SHA);
+        expect(colliders).toHaveLength(GOLDEN_COLLIDER_COUNT);
+        expect(collidersSha(colliders)).toBe(GOLDEN_COLLIDERS_SHA);
     });
 
     it('orders trees, rocks, then the city', () => {
@@ -80,7 +76,10 @@ describe('buildWorldColliders', () => {
     });
 
     it('builds only the rocks without a city (offline)', () => {
-        expect(buildWorldColliders({ trees: [], city: null })).toEqual(rockColliders());
+        const offline = buildWorldColliders({ trees: [], city: null });
+        expect(offline).toHaveLength(GOLDEN_ROCK_COUNT);
+        expect(offline.every(c => c.kind === 'circle')).toBe(true);
+        expect(collidersSha(offline)).toBe(GOLDEN_ROCKS_SHA);
     });
 });
 
@@ -88,7 +87,8 @@ describe('createMapData', () => {
     const map = createMapData();
 
     it('holds the shared collider list and a sim world built from it', () => {
-        expect(map.colliders).toEqual(buildWorldColliders(map.world));
+        expect(map.colliders).toHaveLength(GOLDEN_COLLIDER_COUNT);
+        expect(collidersSha(map.colliders)).toBe(GOLDEN_COLLIDERS_SHA);
         expect(map.simWorld.colliders).toHaveLength(map.colliders.length);
         expect(map.simWorld.roads).not.toBeNull();
     });

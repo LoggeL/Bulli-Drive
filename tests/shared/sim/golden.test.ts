@@ -22,7 +22,6 @@ import { restoreTuningAfterEach } from './helpers.js';
 
 const GOLDEN_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'golden');
 // Outside GOLDEN_DIR, which holds exactly one file per scenario
-// (tests/e2e/sim-golden.spec.ts)
 const TUNING_GOLDEN = path.join(path.dirname(fileURLToPath(import.meta.url)), 'golden-tuning.json');
 const update = process.env.UPDATE_GOLDEN === '1';
 

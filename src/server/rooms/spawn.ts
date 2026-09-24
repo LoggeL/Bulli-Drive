@@ -1,10 +1,12 @@
 import type { CityData } from '../../shared/protocol.js';
 import { CITY_LAYOUT, PLAZA_PROP_LAYOUT } from '../../shared/constants.js';
+import type { RandomSource } from '../../shared/math/rng.js';
 import { blockCenter, PLAZA_BLOCK } from '../../shared/world/cityGen.js';
 
 // Where a car (re)spawns: a random spot on a road or the plaza that is clear
 // of buildings, the plaza props, the other players of the same room and the
-// room's pickups (a car must not earn a coin by spawning on it).
+// room's pickups (a car must not earn a coin by spawning on it). The random
+// source defaults to Math.random; tests pass a scripted one.
 
 export interface SpawnPoint {
     x: number;
@@ -40,14 +42,14 @@ function plazaLayout(): { x: number; z: number; halfSize: number } {
     };
 }
 
-function randomRoadPoint(city: CityData): SpawnPoint | null {
+function randomRoadPoint(city: CityData, random: RandomSource): SpawnPoint | null {
     if (city.roads.length === 0) return null;
 
-    const road = city.roads[Math.floor(Math.random() * city.roads.length)];
+    const road = city.roads[Math.floor(random() * city.roads.length)];
     const halfAcross = Math.max(0, road.width / 2 - SPAWN_ROAD_EDGE_MARGIN);
     const halfAlong = Math.max(0, road.length / 2 - SPAWN_ROAD_END_MARGIN);
-    const acrossOffset = (Math.random() * 2 - 1) * halfAcross;
-    const alongOffset = (Math.random() * 2 - 1) * halfAlong;
+    const acrossOffset = (random() * 2 - 1) * halfAcross;
+    const alongOffset = (random() * 2 - 1) * halfAlong;
 
     // These axes match client/world/city.ts: width is across the road and
     // length is along it after applying rotation.
@@ -61,11 +63,11 @@ function randomRoadPoint(city: CityData): SpawnPoint | null {
     };
 }
 
-function randomPlazaPoint(): SpawnPoint {
+function randomPlazaPoint(random: RandomSource): SpawnPoint {
     const plaza = plazaLayout();
     return {
-        x: plaza.x + (Math.random() * 2 - 1) * plaza.halfSize,
-        z: plaza.z + (Math.random() * 2 - 1) * plaza.halfSize
+        x: plaza.x + (random() * 2 - 1) * plaza.halfSize,
+        z: plaza.z + (random() * 2 - 1) * plaza.halfSize
     };
 }
 
@@ -183,11 +185,13 @@ function fallbackSpawn(city: CityData, others: readonly SpawnPoint[], keepOut: r
  * players in another room drive in their own copy of the map. keepOut are
  * the room's pickups.
  */
-export function randomSpawn(city: CityData, others: readonly SpawnPoint[], keepOut: readonly SpawnKeepOut[] = []): SpawnPoint {
+export function randomSpawn(
+    city: CityData, others: readonly SpawnPoint[], keepOut: readonly SpawnKeepOut[] = [], random: RandomSource = Math.random
+): SpawnPoint {
     for (let attempt = 0; attempt < SPAWN_ATTEMPTS; attempt++) {
-        const point = Math.random() < SPAWN_PLAZA_CHANCE
-            ? randomPlazaPoint()
-            : randomRoadPoint(city);
+        const point = random() < SPAWN_PLAZA_CHANCE
+            ? randomPlazaPoint(random)
+            : randomRoadPoint(city, random);
         if (point && clearsStaticObstacles(city, point) && clearsPlayers(point, others) && clearsKeepOut(point, keepOut)) {
             return point;
         }
@@ -202,8 +206,8 @@ export function randomSpawn(city: CityData, others: readonly SpawnPoint[], keepO
  * A heading along the road under the point (either way), or one of the
  * four axes on the plaza and on crossings. Forward is (sin yaw, cos yaw).
  */
-export function spawnYaw(city: CityData, point: SpawnPoint): number {
-    const flip = Math.random() < 0.5 ? 0 : Math.PI;
+export function spawnYaw(city: CityData, point: SpawnPoint, random: RandomSource = Math.random): number {
+    const flip = random() < 0.5 ? 0 : Math.PI;
     let inRoads = 0, along = 0;
     for (const road of city.roads) {
         const dx = point.x - road.x, dz = point.z - road.z;
@@ -215,11 +219,13 @@ export function spawnYaw(city: CityData, point: SpawnPoint): number {
         }
     }
     if (inRoads === 1) return along + flip;
-    return Math.floor(Math.random() * 4) * (Math.PI / 2);
+    return Math.floor(random() * 4) * (Math.PI / 2);
 }
 
 /** randomSpawn with a heading. */
-export function randomSpawnPose(city: CityData, others: readonly SpawnPoint[], keepOut: readonly SpawnKeepOut[] = []): SpawnPose {
-    const point = randomSpawn(city, others, keepOut);
-    return { ...point, yaw: spawnYaw(city, point) };
+export function randomSpawnPose(
+    city: CityData, others: readonly SpawnPoint[], keepOut: readonly SpawnKeepOut[] = [], random: RandomSource = Math.random
+): SpawnPose {
+    const point = randomSpawn(city, others, keepOut, random);
+    return { ...point, yaw: spawnYaw(city, point, random) };
 }

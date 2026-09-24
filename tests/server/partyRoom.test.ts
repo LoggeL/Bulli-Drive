@@ -487,12 +487,14 @@ describe('idle and lag ghost', () => {
         feed(room, alice, {});
         steps(room, 1);
         expect(alice.member!.idle).toBe(false);
-        expect(alice.member!.car!.state.ghostTicks).toBe(IDLE_EXIT_GHOST_TICKS - 1);
+        // ghostTicks = 60 after idle (docs/phase-1b-design.md, 5.4), one stepped
+        expect(alice.member!.car!.state.ghostTicks).toBe(60 - 1);
     });
 
     it('goes idle after 60 ticks without input and in a background tab', () => {
         const alice = player('Alice');
-        steps(room, IDLE_AFTER_TICKS - 1);
+        // 60 ticks (1 s) without input (docs/phase-1b-design.md, 5.4)
+        steps(room, 60 - 1);
         expect(alice.member!.idle).toBe(false);
         steps(room, 1);
         expect(alice.member!.idle).toBe(true);
@@ -615,5 +617,131 @@ describe('contact events', () => {
         expect(contacts[0]).toEqual(expect.objectContaining({ a: alice.id, b: bob.id }));
         expect(contacts[0].dv).toBeGreaterThanOrEqual(3);
         expect(bob.member!.car!.state.vz).toBeGreaterThan(3);
+    });
+});
+
+describe('what the room tells about the Party', () => {
+    it('lists the collected items and every health in the room state of a new player', () => {
+        const alice = player('Alice');
+        const bob = player('Bob');
+        const coin = room.coins[2];
+        put(alice, coin.x, coin.z);
+        put(bob, coin.x + 20, coin.z);
+        steps(room, 1);
+        handleClientMessage(lobby, bob, { type: 'shoot', targetId: alice.id }, 0);
+        const powerup = room.powerups[4];
+        put(bob, powerup.x, powerup.z);
+        steps(room, 1);
+        expect(powerup.collected).toBe(true);
+        const carol = fakeSession('Carol');
+        lobby.join(carol, 'party');
+        const state = carol.transport.of('roomState').at(-1)!;
+        expect(state.items!.coins).toHaveLength(30);
+        expect(state.items!.coins.find(c => c.id === coin.id)).toEqual({ id: coin.id, collected: true });
+        expect(state.items!.coins).toEqual(room.coins.map(c => ({ id: c.id, collected: c.collected })));
+        expect(state.items!.powerups.find(p => p.id === powerup.id)).toEqual({ id: powerup.id, collected: true });
+        expect(state.items!.powerups).toEqual(room.powerups.map(p => ({ id: p.id, collected: p.collected })));
+        expect(state.health).toEqual({ [alice.id]: 75, [bob.id]: 100, [carol.id]: 100 });
+    });
+
+    it('ranks only players past the splash screen, highest score first', () => {
+        const alice = player('Alice');
+        const bob = player('Bob');
+        const waiting = fakeSession('Waiting');
+        lobby.join(waiting, 'party');
+        partyOf(alice).score = 10;
+        partyOf(bob).score = 30;
+        partyOf(waiting).score = 99;
+        expect(room.scoreboard().map(e => [e.name, e.score])).toEqual([['Bob', 30], ['Alice', 10]]);
+    });
+
+    it('flags the shield powerup and the respawn shield in the snapshots', () => {
+        const alice = player('Alice');
+        const bob = player('Bob');
+        const aliceIn = () => bob.transport.lastSnapshot!.cars.find(c => c.slot === alice.member!.slot)!.flags;
+        run(3);
+        expect(aliceIn() & (CAR_SHIELD | CAR_RESPAWN_SHIELD)).toBe(0);
+        partyOf(alice).powerups.shield = { start: 0, end: room.tick + 100 };
+        run(3);
+        expect(aliceIn() & (CAR_SHIELD | CAR_RESPAWN_SHIELD)).toBe(CAR_SHIELD);
+        partyOf(alice).powerups.shield = { start: 0, end: 0 };
+        partyOf(alice).respawnShield = true;
+        run(3);
+        expect(aliceIn() & (CAR_SHIELD | CAR_RESPAWN_SHIELD)).toBe(CAR_RESPAWN_SHIELD);
+    });
+
+    it('hands a resumed page its running powerup windows only', () => {
+        const alice = player('Alice');
+        const T = room.tick;
+        partyOf(alice).powerups.speed = { start: T - 10, end: T + 50 };
+        partyOf(alice).powerups.jump = { start: T - 100, end: T };
+        expect(room.resumeState(alice.member!).powerups).toEqual([{ type: 'speed', startTick: T - 10, endTick: T + 50 }]);
+    });
+
+    it('takes a score carried over a restart on join, once', () => {
+        const alice = fakeSession('Alice');
+        alice.carryScore = 40;
+        lobby.join(alice, 'party');
+        expect(partyOf(alice).score).toBe(40);
+        expect(alice.carryScore).toBe(0);
+    });
+});
+
+describe('powerup items and kills', () => {
+    it('brings a powerup back after 1200 ticks and says so', () => {
+        const alice = player('Alice');
+        const item = room.powerups[0];
+        put(alice, item.x, item.z);
+        steps(room, 1);
+        expect(item.collected).toBe(true);
+        const pickedAt = room.tick;
+        put(alice, 58, -80);
+        steps(room, 1199);
+        expect(room.tick).toBe(pickedAt + 1199);
+        expect(item.collected).toBe(true);
+        steps(room, 1);
+        expect(item.collected).toBe(false);
+        steps(room, 3);
+        expect(alice.transport.events('itemReset')).toEqual([{ type: 'itemReset', kind: 'powerup', itemId: item.id }]);
+    });
+
+    it('collects nothing with a car that is out of the sim', () => {
+        const alice = player('Alice');
+        alice.member!.alive = false;
+        const coin = room.coins[3];
+        put(alice, coin.x, coin.z);
+        steps(room, 1);
+        expect(coin.collected).toBe(false);
+    });
+
+    it('measures the shot range between the two cars wherever they are', () => {
+        const shooter = player('Shooter');
+        const target = player('Target');
+        // 10 m apart, far from the origin
+        put(shooter, 110, 100);
+        put(target, 110, 110);
+        handleClientMessage(lobby, shooter, { type: 'shoot', targetId: target.id }, 0);
+        expect(partyOf(target).health).toBe(75);
+        // Nobody shoots themselves, nor a player behind the splash screen
+        run(SHOT_COOLDOWN_TICKS);
+        handleClientMessage(lobby, shooter, { type: 'shoot', targetId: shooter.id }, 0);
+        expect(partyOf(shooter).health).toBe(100);
+        const waiting = fakeSession('Waiting');
+        lobby.join(waiting, 'party');
+        handleClientMessage(lobby, shooter, { type: 'shoot', targetId: waiting.id }, 0);
+        expect(partyOf(waiting).health).toBe(100);
+    });
+
+    it('takes the powerups of a killed car', () => {
+        const shooter = player('Shooter');
+        const target = player('Target');
+        put(shooter, 58, -80);
+        put(target, 58, -70);
+        partyOf(target).health = 25;
+        partyOf(target).powerups.speed = { start: 0, end: room.tick + 1000 };
+        handleClientMessage(lobby, shooter, { type: 'shoot', targetId: target.id }, 0);
+        expect(target.member!.alive).toBe(false);
+        expect(room.resumeState(target.member!).powerups).toEqual([]);
+        expect(room.resumeState(target.member!).alive).toBe(false);
     });
 });

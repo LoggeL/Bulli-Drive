@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mapFor } from '../../src/server/maps.js';
 import { InputBuffer } from '../../src/server/rooms/InputBuffer.js';
 import { RoomManager } from '../../src/server/rooms/lobby.js';
-import { INPUT_MAX_AHEAD, INPUT_REPEAT_TICKS } from '../../src/shared/net/constants.js';
+import { INPUT_MAX_AHEAD } from '../../src/shared/net/constants.js';
 import { stopInput } from '../../src/shared/sim/inputs.js';
 import { createFlatWorld, forwardSpeed, spawnCar } from '../../src/shared/sim/scenarios.js';
 import { createVehicleInput } from '../../src/shared/sim/types.js';
@@ -106,6 +106,74 @@ describe('stopInput', () => {
     });
 });
 
+describe('InputBuffer rules in detail', () => {
+    const one = (tick: number, seq = tick) => ({ flags: 0, seq, tick, inputs: [gas] });
+
+    it('counts an input as late once its tick was stepped or the room is past it', () => {
+        // Stepped further than the room tick says (a take ran ahead)
+        const stepped = new InputBuffer();
+        stepped.lastStepped = 105;
+        stepped.accept(one(103), 100, 0);
+        expect([stepped.late, stepped.accepted]).toEqual([1, 0]);
+        // Never stepped, but the room already ran tick 100
+        const behind = new InputBuffer();
+        behind.accept(one(100), 100, 0);
+        behind.accept(one(101), 100, 0);
+        expect([behind.late, behind.accepted]).toEqual([1, 1]);
+    });
+
+    it('takes inputs up to 60 ticks ahead (docs/phase-1b-design.md, 4 and 20.5)', () => {
+        const buffer = new InputBuffer();
+        buffer.accept(one(160), 100, 0);
+        buffer.accept(one(161), 100, 0);
+        expect([buffer.accepted, buffer.early]).toEqual([1, 1]);
+        expect(buffer.take(160)?.seq).toBe(160);
+    });
+
+    it('forgets every stored input on clear()', () => {
+        const buffer = new InputBuffer();
+        buffer.accept({ flags: 0, seq: 3, tick: 3, inputs: [gas, gas, gas] }, 0, 0);
+        buffer.clear();
+        expect([buffer.take(1), buffer.take(2), buffer.take(3)]).toEqual([null, null, null]);
+    });
+
+    // 10 or more arrival gaps (ms) -> bufferTarget from p90 - p10:
+    // < 8 ms -> 1, < 25 ms -> 2, else 3 (5.2)
+    function targetFor(gaps: number[]): number {
+        const buffer = new InputBuffer();
+        let t = 0;
+        buffer.accept(one(1), 0, t);
+        gaps.forEach((gap, i) => {
+            t += gap;
+            buffer.accept(one(i + 2), i + 1, t);
+        });
+        return buffer.updateBufferTarget();
+    }
+
+    it('turns the arrival jitter into the lead target at 8 and 25 ms', () => {
+        // 10 gaps: p90 is rank 8, p10 rank 0 of the sorted gaps
+        const spread = (jitter: number) => [...Array(8).fill(10), 10 + jitter, 10 + jitter];
+        expect(targetFor(spread(7.9))).toBe(1);
+        expect(targetFor(spread(8))).toBe(2);
+        expect(targetFor(spread(24.9))).toBe(2);
+        expect(targetFor(spread(25))).toBe(3);
+        expect(targetFor(spread(500))).toBe(3);
+    });
+
+    it('needs 10 gaps, the first one counted from an arrival at 0 ms', () => {
+        const bursty = [...Array(8).fill(10), 60, 60];
+        expect(targetFor(bursty)).toBe(3);
+        // 9 gaps: too few, the target stays at 1
+        expect(targetFor(bursty.slice(1))).toBe(1);
+    });
+
+    it('takes p10 and p90 by rank, so one outlier on each side does not count', () => {
+        // 20 gaps: p10 is rank floor(0.1 · 19) = 1, p90 rank floor(0.9 · 19) = 17
+        const gaps = [0, ...Array(17).fill(10), 60, 60];
+        expect(targetFor(gaps)).toBe(1);
+    });
+});
+
 describe('Room: missing inputs', () => {
     let lobby: RoomManager;
     beforeEach(() => {
@@ -127,7 +195,8 @@ describe('Room: missing inputs', () => {
             steps(room, 1);
         }
         expect(car.input.throttle).toBe(255);
-        for (let i = 1; i <= INPUT_REPEAT_TICKS; i++) {
+        // 15 ticks (250 ms, docs/phase-1b-design.md, 4 and 15.1) with the last input
+        for (let i = 1; i <= 15; i++) {
             steps(room, 1);
             expect(car.input.throttle, `repeat ${i}`).toBe(255);
         }

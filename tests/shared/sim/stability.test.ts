@@ -164,21 +164,7 @@ describe('v2 determinism', () => {
     });
 });
 
-describe('v2 performance', () => {
-    it('steps 32 cars for 60 ticks well within budget', () => {
-        const world = createSimWorld(DEFAULT_TERRAIN_CONFIG, [], []);
-        const cars = Array.from({ length: 32 }, (_, i) =>
-            spawnCar(world, `car${String(i).padStart(2, '0')}`, CAR_CLASS_IDS[i % 5], (i % 8) * 6 - 21, Math.floor(i / 8) * 8 - 12, 0, 20));
-        for (const car of cars) {
-            car.input.throttle = 255;
-            car.input.steer = 40;
-        }
-        // Warm up the JIT, then measure
-        for (let tick = 0; tick < 60; tick++) stepWorld(cars, world);
-        const start = performance.now();
-        for (let tick = 0; tick < 60; tick++) stepWorld(cars, world);
-        const elapsed = performance.now() - start;
-        console.log(`stepWorld, 32 cars: ${(elapsed / 60).toFixed(3)} ms per tick`);
-        expect(elapsed).toBeLessThan(120);
-    });
-});
+// The wall-clock cost of stepWorld (32 cars, target < 2 ms per tick) is
+// measured by `npm run perf:sim` (scripts/sim-bench.ts), not here: a time
+// bound in parallel test workers is flaky and was too loose to catch a
+// sim several times slower.

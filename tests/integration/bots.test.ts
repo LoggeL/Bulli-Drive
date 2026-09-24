@@ -1,15 +1,18 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import WebSocket from 'ws';
 import { Bot } from '../../tools/bots/bot.js';
 import { longestRunway } from '../../tools/bots/runway.js';
 import { BotSwarm, formatReport, type MixEntry, type SwarmOptions } from '../../tools/bots/swarm.js';
 import { CAR_IDLE, CAR_LAGGY } from '../../src/shared/net/codec.js';
 import { parseNetsimFlag } from '../../src/shared/net/netsim.js';
 import { createMapData } from '../../src/shared/world/mapData.js';
+import { PROTOCOL_VERSION } from '../../src/shared/protocol.js';
 import { startServer, type ServerProcess } from './serverProcess.js';
 
 // Headless bots against a real server process over real WebSockets
 // (docs/phase-1b-design.md, 15.2): a scripted bump seen by both cars,
-// reconnect within the grace time, a room switch, a flood kick, and 16 bots
+// reconnect within and after the grace time, the version check and
+// /healthz, a room switch, a flood kick, and 16 bots
 // for 30 s behind the netsim of the exit criterion (150 ms RTT, 30 ms
 // jitter, 3 % loss, TCP) with the bandwidth and tick budgets.
 
@@ -147,13 +150,48 @@ describe('reconnect', () => {
         clearInterval(watch);
         expect(left).toEqual([]);
 
-        // Gone for good: the car waits the grace time, then leaves
+        // Away longer than the grace time: the car waits the grace time,
+        // then leaves; the bot comes back as a new player and drives again
         const droppedAt = performance.now();
-        r.dropConnection(Infinity);
+        r.dropConnection(GRACE_MS + 2500);
         await s.waitFor(() => !o.net.members.has(id) && !o.seen.has(id), GRACE_MS + 5000, 'the car to leave');
         const waited = performance.now() - droppedAt;
         expect(waited).toBeGreaterThan(GRACE_MS - 500);
+        await s.waitFor(() => r.stats.welcomes.length === 3 && r.driving, 15_000, 'the return as a new player');
+        const fresh = r.stats.welcomes[2];
+        expect(fresh.resumed).toBe(false);
+        expect(fresh.playerId).not.toBe(id);
+        expect(r.stats.rooms.at(-1)!.resumed).toBe(false);
+        const before = r.driver.distance;
+        await s.waitFor(() => r.driver.distance > before + 10 && o.seen.has(fresh.playerId), 10_000, 'the new car driving');
         expect(errorsOf(s)).toEqual([]);
+    });
+});
+
+describe('handshake and health', () => {
+    it('turns an old protocol away with a reject and close 4000', async () => {
+        const result = await new Promise<{ messages: unknown[]; code: number }>((resolve, reject) => {
+            const ws = new WebSocket(server.url);
+            const messages: unknown[] = [];
+            ws.on('open', () => ws.send(JSON.stringify({
+                type: 'hello', protocolVersion: 1, build: null, connId: 'old', name: 'Old', carType: 'bulli', profile: 'standard', room: 'party'
+            })));
+            ws.on('message', data => messages.push(JSON.parse(data.toString())));
+            ws.on('close', code => resolve({ messages, code }));
+            ws.on('error', reject);
+        });
+        expect(result.code).toBe(4000);
+        expect(result.messages).toEqual([{ type: 'reject', reason: 'version', reload: true, serverProtocol: PROTOCOL_VERSION }]);
+    });
+
+    it('/healthz reports a running tick, uncached', async () => {
+        const response = await fetch(`${server.origin}/healthz`);
+        expect(response.status).toBe(200);
+        expect(response.headers.get('cache-control')).toContain('no-store');
+        const body = await response.json() as Record<string, unknown>;
+        expect(body).toEqual(expect.objectContaining({ ok: true, shuttingDown: false }));
+        expect(body.lastTickAgeMs).toBeLessThan(1000);
+        for (const key of ['rooms', 'players', 'tickP95Ms', 'tickP99Ms', 'uptimeS']) expect(typeof body[key], key).toBe('number');
     });
 });
 
@@ -239,6 +277,8 @@ describe('16 bots for 30 s behind netsim 150/30/3', () => {
         // Exit criterion: mean correction without contact under 10 cm (16)
         expect(report.correctionMeanCm).toBeLessThan(10);
         // The server tick stays well inside the budget (5.7)
+        // (and was measured at all: a report of 0 means the metric is not wired)
+        expect(report.server!.tickP95Ms).toBeGreaterThan(0);
         expect(report.server!.tickP95Ms).toBeLessThan(4);
         // Bumps that both cars felt: at least one (how many depends on when
         // the ram bots meet, 3-19 in 25 runs; the scripted head-on tests

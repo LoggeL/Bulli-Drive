@@ -3,6 +3,7 @@ import { BTN_HANDBRAKE, DT } from '../../../src/shared/sim/constants.js';
 import { resolveContact } from '../../../src/shared/sim/contact.js';
 import { tireCurve } from '../../../src/shared/sim/tire.js';
 import { createFlatWorld } from '../../../src/shared/sim/scenarios.js';
+import { stepVehicle } from '../../../src/shared/sim/world.js';
 import { DEG, drive, slipAngle, spawnCar } from './helpers.js';
 
 // Section 3 of docs/phase-1a-design.md: these conventions carry every
@@ -61,11 +62,32 @@ describe('sim conventions', () => {
     });
 
     it('integrates one tick of DT = 1/60 s in three substeps', () => {
-        const world = createFlatWorld();
-        const car = spawnCar(world, 'a', 'bulli', 0, 0, 0, 30);
-        drive(car, world, 1, { throttle: 255 });
+        // A bulli's circles reach 1.3 m, a 0.35 m post 1.65 m in all. Passing
+        // it 1.62 m to the side, the circles overlap it along a chord of
+        // 2·√(1.65² − 1.62²) ≈ 0.63 m. One tick at 85 m/s is 85/60 ≈ 1.42 m:
+        // in one step (1.42 m) or in halves (0.71 m) the car can jump over
+        // the chord, in thirds (0.47 m) never. So from every start phase
+        // over a tick it must touch the post.
+        const world = createFlatWorld([{ kind: 'circle', x: 0, z: 0, r: 0.35, top: 3.3 }]);
+        for (let phase = 0; phase < 85 * DT; phase += 0.02) {
+            const car = spawnCar(world, 'a', 'bulli', 1.62, -10 - phase, 0);
+            expect(car.base.colliderRadius).toBe(1.3);
+            let touched = false;
+            for (let tick = 0; tick < 12 && !touched; tick++) {
+                car.state.vx = 0;
+                car.state.vz = 85;
+                car.state.yawRate = 0;
+                stepVehicle(car, world);
+                touched = car.events.wallImpact > 0 || car.state.wallTicks === 1;
+            }
+            expect(touched, `start phase ${phase.toFixed(2)} m`).toBe(true);
+        }
+        // DT itself: 30 m/s coasting covers 0.5 m in a tick (less the
+        // rolling resistance of a few mm/s)
+        const coast = spawnCar(createFlatWorld(), 'b', 'bulli', 0, 0, 0, 30);
+        drive(coast, createFlatWorld(), 1, {});
         expect(DT).toBe(1 / 60);
-        expect(car.state.z).toBeCloseTo(30 * DT, 2);
+        expect(coast.state.z).toBeCloseTo(0.5, 2);
     });
 });
 

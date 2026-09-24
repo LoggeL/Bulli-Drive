@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { mulberry32 } from '../../../src/shared/math/rng.js';
 import {
-    NETSIM_RETRANSMIT_MS, NetsimLink, describeNetsim, parseNetsimEnv, parseNetsimFlag, type NetsimOptions
+    NETSIM_RETRANSMIT_MS, NetsimConnection, NetsimLink, describeNetsim, parseNetsimEnv, parseNetsimFlag, type NetsimOptions
 } from '../../../src/shared/net/netsim.js';
-import { closeAction, reconnectDelayMs, RECONNECT_STEPS_MS } from '../../../src/shared/net/reconnect.js';
+import { closeAction, reconnectDelayMs } from '../../../src/shared/net/reconnect.js';
 
 // Dev netsim (docs/phase-1b-design.md, 11.5) and the reconnect policy (11.1).
 
@@ -53,6 +53,26 @@ describe('netsim options', () => {
             expect(parseNetsimEnv(bad), String(bad)).toBeNull();
         }
         expect(describeNetsim({ rttMs: 150, jitterMs: 30, loss: 0.03, mode: 'tcp' })).toBe('150/30/3% tcp');
+    });
+
+    it('takes spaces, upper case, decimals and the range limits 5000/2000/50', () => {
+        expect(parseNetsimFlag(' 150 , 30 , 3 , DROP ')).toEqual({ rttMs: 150, jitterMs: 30, loss: 0.03, mode: 'drop' });
+        expect(parseNetsimFlag('150.5,0.5,2.5')).toEqual({ rttMs: 150.5, jitterMs: 0.5, loss: 0.025, mode: 'tcp' });
+        expect(parseNetsimFlag('5000,2000,50')).toEqual({ rttMs: 5000, jitterMs: 2000, loss: 0.5, mode: 'tcp' });
+        // Any one of the three on its own is enough
+        expect(parseNetsimFlag('0,0,1')).toEqual({ rttMs: 0, jitterMs: 0, loss: 0.01, mode: 'tcp' });
+        expect(parseNetsimFlag('0,10')).toEqual({ rttMs: 0, jitterMs: 10, loss: 0, mode: 'tcp' });
+        for (const bad of ['5001,0,0', '0,2001,0', '0,0,51', '150,,3', '150.,0,0', '.5,0,0', '1.5e2', '150x', 'x150', '150,3x,0', '150,3,x1']) {
+            expect(parseNetsimFlag(bad), bad).toBeNull();
+        }
+        expect(parseNetsimEnv(' rtt = 150 , mode = DROP ')).toEqual({ rttMs: 150, jitterMs: 0, loss: 0, mode: 'drop' });
+        expect(parseNetsimEnv('jitter=10,mode=drop')).toEqual({ rttMs: 0, jitterMs: 10, loss: 0, mode: 'drop' });
+        expect(parseNetsimEnv('loss=2.5')).toEqual({ rttMs: 0, jitterMs: 0, loss: 0.025, mode: 'tcp' });
+        expect(parseNetsimEnv('rtt=5000,jitter=2000,loss=50')).toEqual({ rttMs: 5000, jitterMs: 2000, loss: 0.5, mode: 'tcp' });
+        for (const bad of ['rtt=5001', 'jitter=2001', 'loss=51', 'rtt=150x', 'rtt=x150', 'jitter=1x', 'jitter=1e1', 'loss=x1', 'loss=0x1', 'rtt=.5', 'rtt=',
+            '=5', 'rtt=150,', 'mode=drop', 'rtt=-5', 'RTT=150']) {
+            expect(parseNetsimEnv(bad), bad).toBeNull();
+        }
     });
 });
 
@@ -131,6 +151,58 @@ describe('NetsimLink', () => {
         expect(order).toEqual(['a', 'close']);
     });
 
+    it('draws one random number per message for its jitter when nothing is lost', () => {
+        // Messages 1 s apart, so none waits behind another: each takes
+        // 50 ms ± 20 ms with the next value of the seeded stream
+        const { clock, link: l } = link({ rttMs: 100, jitterMs: 40, loss: 0 }, 7);
+        const stream = mulberry32(7);
+        for (let i = 0; i < 20; i++) {
+            const sentAt = clock.time;
+            let delay = -1;
+            l.send(() => { delay = clock.time - sentAt; }, true);
+            clock.advance(1000);
+            expect(delay, `message ${i}`).toBeCloseTo(50 + (stream() - 0.5) * 40, 9);
+        }
+        expect(l.sent).toBe(20);
+    });
+
+    it('drop: a lost JSON message is neither dropped nor late', () => {
+        const { clock, link: l } = link({ rttMs: 60, loss: 0.5, mode: 'drop' }, 11);
+        const delays: number[] = [];
+        for (let i = 0; i < 40; i++) {
+            const sentAt = clock.time;
+            l.send(() => delays.push(clock.time - sentAt), false);
+            clock.advance(100);
+        }
+        expect(delays).toEqual(Array(40).fill(30));
+        expect(l.delayed).toBe(0);
+        expect(l.dropped).toBe(0);
+    });
+
+    it('counts the messages still waiting', () => {
+        const { clock, link: l } = link({ rttMs: 100 });
+        l.send(() => {}, true);
+        clock.advance(10);
+        l.send(() => {}, true);
+        l.send(() => {}, true);
+        expect(l.pending).toBe(3);
+        clock.advance(40);
+        expect(l.pending).toBe(2);
+        clock.advance(10);
+        expect(l.pending).toBe(0);
+    });
+
+    it('a connection closes both directions', () => {
+        const clock = new FakeClock();
+        const connection = new NetsimConnection({ rttMs: 100, jitterMs: 0, loss: 0, mode: 'tcp' }, mulberry32(1), clock);
+        let n = 0;
+        connection.up.send(() => n++, false);
+        connection.down.send(() => n++, false);
+        connection.close();
+        clock.advance(1000);
+        expect(n).toBe(0);
+    });
+
     it('delivers nothing after close', () => {
         const { clock, link: l } = link({ rttMs: 100 });
         let n = 0;
@@ -145,17 +217,28 @@ describe('NetsimLink', () => {
 
 describe('reconnect policy', () => {
     it('backs off 0.5, 1, 2, 4, then every 8 s, each ±20 %', () => {
+        // The steps from docs/phase-1b-design.md, 11.1, written out here
+        const expected = [500, 1000, 2000, 4000, 8000, 8000, 8000, 8000, 8000, 8000, 8000, 8000];
+        for (let attempt = 0; attempt < expected.length; attempt++) {
+            const base = expected[attempt];
+            // Middle of the jitter range: the step itself
+            expect(reconnectDelayMs(attempt, () => 0.5), `attempt ${attempt}`).toBe(base);
+            // The ends of the range: -20 % and (almost) +20 %
+            expect(reconnectDelayMs(attempt, () => 0), `attempt ${attempt}`).toBe(base * 0.8);
+            expect(reconnectDelayMs(attempt, () => 0.999), `attempt ${attempt}`).toBe(Math.round(base * (1 + 0.998 * 0.2)));
+        }
+        expect(reconnectDelayMs(100, () => 0.5)).toBe(8000);
+        // A negative attempt counts as the first
+        expect(reconnectDelayMs(-3, () => 0.5)).toBe(500);
+        // A seeded random stays inside the range for every attempt
         const random = mulberry32(9);
-        for (let attempt = 0; attempt < 12; attempt++) {
-            const base = RECONNECT_STEPS_MS[Math.min(attempt, RECONNECT_STEPS_MS.length - 1)];
+        for (let attempt = 0; attempt < expected.length; attempt++) {
             for (let i = 0; i < 50; i++) {
                 const delay = reconnectDelayMs(attempt, random);
-                expect(delay).toBeGreaterThanOrEqual(base * 0.8 - 1);
-                expect(delay).toBeLessThanOrEqual(base * 1.2 + 1);
+                expect(delay).toBeGreaterThanOrEqual(expected[attempt] * 0.8);
+                expect(delay).toBeLessThanOrEqual(expected[attempt] * 1.2);
             }
         }
-        expect(reconnectDelayMs(0, () => 0.5)).toBe(500);
-        expect(reconnectDelayMs(100, () => 0.5)).toBe(8000);
     });
 
     it('reconnects on its own after losses and restarts, not after kicks', () => {
