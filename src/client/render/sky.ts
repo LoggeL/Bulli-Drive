@@ -248,12 +248,6 @@ export interface Sky {
     ready: Promise<void>;
 }
 
-/**
- * Creates the sky dome and, unless `environment` is false (software tier),
- * sets scene.environment. `hdri` false keeps the constant fallback textures.
- * `beforeEnvironment` resolves when the other inputs of the environment (the
- * world noise texture) are loaded.
- */
 // What rebuildEnvironment needs of THREE.PMREMGenerator (tests hand in a fake)
 export interface PmremFactory {
     (renderer: THREE.WebGLRenderer): Pick<THREE.PMREMGenerator, 'fromScene' | 'dispose'>;
@@ -261,6 +255,12 @@ export interface PmremFactory {
 
 const createPmrem: PmremFactory = renderer => new THREE.PMREMGenerator(renderer);
 
+/**
+ * Creates the sky dome and, unless `environment` is false (software tier),
+ * sets scene.environment. `hdri` false keeps the constant fallback textures.
+ * `beforeEnvironment` resolves when the other inputs of the environment (the
+ * world noise texture) are loaded.
+ */
 export function createSky(
     renderer: THREE.WebGLRenderer,
     scene: THREE.Scene,
