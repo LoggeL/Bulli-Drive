@@ -4,13 +4,14 @@ import { LOT_RULES, placeBuildings } from '../../../src/shared/map/buildings.js'
 import { pointInPolygon, type Vec2 } from '../../../src/shared/map/geometry.js';
 import { heightAt, zoneAt } from '../../../src/shared/map/heightfield.js';
 import {
-    arenaFence, boundaryFence, createMapData, FENCE_PIECE, heightfieldHash, LANDMARK_PIECES, roadResetPose, zoneFence
+    arenaFence, boundaryFence, CONTAINER_TOP, createMapData, FENCE_PIECE, FOUNTAIN_RADIUS, FOUNTAIN_TOP, heightfieldHash,
+    JUMP_LANDING, JUMP_SIDE, LANDMARK_PIECES, roadResetPose, zoneFence
 } from '../../../src/shared/map/mapData.js';
 import { PLANT_COLLIDERS, plantFits } from '../../../src/shared/map/plants.js';
 import { networkRailColliders } from '../../../src/shared/map/rails.js';
 import { buildRoadNetwork, insideCorridor, roadSurfaceIdAt } from '../../../src/shared/map/roadNetwork.js';
 import type { RoadArea } from '../../../src/shared/map/roadSchema.js';
-import { BoxIndex, boxesOverlap, boxSamples, KIT_FOOTPRINTS, placementBox } from '../../../src/shared/map/structures.js';
+import { BoxIndex, boxContains, boxesOverlap, boxSamples, KIT_FOOTPRINTS, placementBox } from '../../../src/shared/map/structures.js';
 import { SURFACE, ZONE } from '../../../src/shared/map/types.js';
 import { createVehicleState } from '../../../src/shared/sim/types.js';
 import { createSimCar, spawnVehicle } from '../../../src/shared/sim/vehicle.js';
@@ -147,6 +148,11 @@ describe('arenaFence', () => {
         expect(east.gate).toMatchObject({ ax: -80.5, az: 605, bx: -80.5, bz: 595 });
         expect(east.lines[0][0]).toEqual([-80.5, 595]);
         expect(east.lines[0].at(-1)).toEqual([-80.5, 605]);
+        // A gate on the west side (the first side of the ring): from the
+        // gap's south end round the east of the lot back to its north end
+        const west = arenaFence(area, { x: -260, z: 600, yaw: -Math.PI / 2, width: 10 });
+        expect(west.lines).toEqual([[[-259.5, 605], [-259.5, 659.5], [-80.5, 659.5], [-80.5, 520.5], [-259.5, 520.5], [-259.5, 595]]]);
+        expect(west.gate).toMatchObject({ ax: -259.5, az: 595, bx: -259.5, bz: 605 });
     });
 });
 
@@ -190,6 +196,22 @@ describe('boundaryFence', () => {
         // parts of the north and south sides over land (x > -50: 140 m of 180)
         expect(pieces.filter(p => p.ax === 90 && p.bx === 90)).toHaveLength(12);
         expect(pieces.some(p => p.ax === -90 && p.bx === -90)).toBe(false);
+    });
+
+    it('cuts each side into the fewest equal pieces and keeps a piece by the ground under its middle', () => {
+        // The sea west of x = -50 and south of z = -60
+        const hf = makeHeightfield((x, z) => (x < -50 || z < -60 ? -5 : 2));
+        // Sides of 160 m: exactly ten pieces of 16 m each; on the east side
+        // (x = 80) the last one, its middle at z = -72, lies over the sea
+        const pieces = boundaryFence([[-80, -80], [-80, 80], [80, 80], [80, -80]], hf);
+        const east = pieces.filter(p => p.ax === 80 && p.bx === 80);
+        expect(east).toHaveLength(9);
+        for (const p of east) expect(Math.abs(p.bz - p.az)).toBeCloseTo(16, 9);
+        // North side (z = 80) from x = -80: middles at -72, -56, -40, ...,
+        // 72; the first two lie over the sea
+        expect(pieces.filter(p => p.az === 80 && p.bz === 80)).toHaveLength(8);
+        // The south side (z = -80) is all sea
+        expect(pieces.some(p => p.az === -80 && p.bz === -80)).toBe(false);
     });
 });
 
@@ -235,6 +257,40 @@ describe('roadResetPose', () => {
         const car = pose(50, 40, 1);
         expect(reset(car)).toBe(false);
         expect([car.x, car.z, car.yaw]).toEqual([50, 40, 1]);
+    });
+
+    it('resets a car beside an area that is not a rectangle, and one far from every road', () => {
+        // A triangular lot: (60, 50) lies in its bounding box, not in it
+        const triangle = buildRoadNetwork(network([node('w', -90, 0), node('e', 90, 0)], [edge('main', 'w', 'e')], {
+            areas: [{ id: 'lot', polygon: [[30, 20], [30, 60], [70, 20]], surface: 'asphalt', curb: false, connects: [] }]
+        }));
+        const beside = pose(60, 50, Math.PI / 2);
+        expect(roadResetPose(triangle)(beside)).toBe(true);
+        expect([beside.x, beside.z]).toEqual([expect.closeTo(60, 6), expect.closeTo(2.5, 6)]);
+        const inside = pose(40, 30, 1);
+        expect(roadResetPose(triangle)(inside)).toBe(false);
+        // 150 m south of the east-west road, beyond the first search radius
+        // of 60 m: still onto that road, facing east
+        const far = pose(20, -150, Math.PI / 2);
+        expect(reset(far)).toBe(true);
+        expect([far.x, far.z]).toEqual([expect.closeTo(20, 6), expect.closeTo(2.5, 6)]);
+    });
+
+    it('turns round on a diagonal road when the car faces more against it than along it', () => {
+        // Two-way from (0, 0) to (100, 100): along it is (1, 1) / √2
+        const diagonal = buildRoadNetwork(network([node('a', 0, 0), node('b', 100, 100)], [edge('d', 'a', 'b')]));
+        // Heading (sin, cos) = (0.1, -0.995): 40 % along the road's x, but
+        // its dot product with the road, (0.1 - 0.995) / √2, is negative
+        const car = pose(50, 48, Math.atan2(0.1, -0.995));
+        expect(roadResetPose(diagonal)(car)).toBe(true);
+        expect(car.yaw).toBeCloseTo(-3 * Math.PI / 4, 9);
+        // The nearest centre point (49 | 49), then 2.5 m to the right of
+        // the heading (-1, -1) / √2, which is (1, -1) / √2
+        expect([car.x, car.z]).toEqual([expect.closeTo(49 + 2.5 / Math.SQRT2, 6), expect.closeTo(49 - 2.5 / Math.SQRT2, 6)]);
+        // Heading (-0.995, 0.1): against the road as well, mostly along its z
+        const other = pose(50, 48, Math.atan2(-0.995, 0.1));
+        expect(roadResetPose(diagonal)(other)).toBe(true);
+        expect(other.yaw).toBeCloseTo(-3 * Math.PI / 4, 9);
     });
 });
 
@@ -371,6 +427,129 @@ describe('Bulli Bay', () => {
             stepWorld([ghost], map.partyWorld);
             expect(ghost.state.z).toBeGreaterThan(zone.minZ);
         }
+    });
+
+    it('gives every landmark, container, the fountain and every plant its collider', () => {
+        const circles = new Map<string, { r: number; top: number }>();
+        const oboxes = new Map<string, number>();
+        for (const c of map.colliders) {
+            if (c.kind === 'circle') circles.set(`${c.x.toFixed(3)} ${c.z.toFixed(3)}`, { r: c.r, top: c.top });
+            if (c.kind === 'obox') oboxes.set(`${c.x.toFixed(3)} ${c.z.toFixed(3)} ${c.hw} ${c.hd}`, c.top);
+        }
+        // Landmarks up to the sky, containers only 2.6 m high (a car can
+        // land on one)
+        for (const structure of map.structures) {
+            const box = placementBox(structure);
+            const top = oboxes.get(`${box.x.toFixed(3)} ${box.z.toFixed(3)} ${box.hw} ${box.hd}`);
+            expect(top, structure.id).toBe(structure.kind === 'container' ? CONTAINER_TOP : Infinity);
+        }
+        const fountain = map.sources.pois.landmarks.find(l => l.kind === 'fountain')!;
+        expect(circles.get(`${fountain.x.toFixed(3)} ${fountain.z.toFixed(3)}`)).toEqual({ r: FOUNTAIN_RADIUS, top: FOUNTAIN_TOP });
+        // A plant's circle grows with its size, up to the sky or its height
+        for (const plant of map.plants) {
+            const shape = PLANT_COLLIDERS[plant.kind];
+            const circle = circles.get(`${plant.x.toFixed(3)} ${plant.z.toFixed(3)}`);
+            // (rounded to the millimetre)
+            expect(circle?.r, `${plant.kind} at ${plant.x}, ${plant.z}`).toBeCloseTo(shape.r * plant.size, 2);
+            if (shape.top === Infinity) expect(circle?.top).toBe(Infinity);
+            else expect(circle?.top).toBeCloseTo(shape.top * plant.size, 2);
+        }
+    });
+
+    it('lays each container along its pose, and every ramp of pois.json with a front wall', () => {
+        for (const [i, pose] of map.sources.pois.arena.containers.entries()) {
+            const box = placementBox(map.structures.find(s => s.id === `container-${i + 1}`)!);
+            const fx = Math.sin(pose.yaw), fz = Math.cos(pose.yaw);
+            // 40 ft: 12.2 m long, 2.4 m wide
+            expect(boxContains(box, pose.x + 5.8 * fx, pose.z + 5.8 * fz), `container ${i + 1} ahead`).toBe(true);
+            expect(boxContains(box, pose.x - 5.8 * fx, pose.z - 5.8 * fz), `container ${i + 1} behind`).toBe(true);
+            expect(boxContains(box, pose.x + 2 * fz, pose.z - 2 * fx), `container ${i + 1} beside`).toBe(false);
+        }
+        const jumps = map.sources.pois.jumps ?? [];
+        expect(map.ramps.slice(0, jumps.length).map(r => [r.id, r.x, r.z])).toEqual(jumps.map(j => [j.id, j.x, j.z]));
+        for (const [i, ramp] of map.ramps.entries()) {
+            // The front wall runs across the whole width; the side walls are thin
+            const walls = map.colliders.filter(c => c.kind === 'box' && c.ramp === i);
+            expect(walls.some(c => c.kind === 'box' && Math.max(c.hw, c.hd) > ramp.width / 2), ramp.id).toBe(true);
+        }
+    });
+
+    it('keeps the landing zone beyond every jump free of buildings and plants', () => {
+        for (const ramp of map.ramps) {
+            // From the ramp's rear edge to 45 m beyond its front edge, 4 m to each side
+            const fx = Math.sin(ramp.yaw), fz = Math.cos(ramp.yaw);
+            const zone = {
+                x: ramp.x + fx * JUMP_LANDING / 2, z: ramp.z + fz * JUMP_LANDING / 2,
+                hw: ramp.width / 2 + JUMP_SIDE, hd: ramp.length / 2 + JUMP_LANDING / 2, ux: fx, uz: fz
+            };
+            expect(JUMP_LANDING).toBe(45);
+            expect(JUMP_SIDE).toBe(4);
+            for (const plant of map.plants) expect(boxContains(zone, plant.x, plant.z), `${plant.kind} at ${plant.x}, ${plant.z} on ${ramp.id}`).toBe(false);
+            for (const lot of map.buildings) expect(boxesOverlap(zone, placementBox(lot)), `${lot.edge} on ${ramp.id}`).toBe(false);
+        }
+    });
+
+    it('puts the arena\'s items first, then the yards\', none collected, the power-ups taking turns', () => {
+        const { arena, party } = map.sources.pois;
+        expect(map.items.coins.map(c => [c.id, c.x, c.z])).toEqual([...arena.coins, ...party!.coins].map(([x, z], id) => [id, x, z]));
+        expect(map.items.powerups.map(p => [p.id, p.x, p.z])).toEqual([...arena.powerups, ...party!.powerups].map(([x, z], id) => [id, x, z]));
+        expect([...map.items.coins, ...map.items.powerups].every(item => item.collected === false)).toBe(true);
+        const types = [...new Set(map.items.powerups.map(p => p.type))];
+        expect(map.items.powerups.map(p => p.type)).toEqual(map.items.powerups.map((_, i) => types[i % types.length]));
+    });
+
+    it('keeps the cars in its 2 km square: the world border 2 m inside it, a collider grid of 16 m cells', () => {
+        // 1001 heights 2 m apart: 2000 m
+        expect(map.simWorld.bound).toBe(998);
+        expect(map.ground.grid).toEqual({ origin: -1000, cellSize: 16, cells: 125 });
+    });
+
+    it('without a Party zone closes the arena\'s gate and plays the Party inside the arena', () => {
+        const { party: _party, ...pois } = map.sources.pois;
+        const arenaOnly = createMapData({ ...map.sources, pois }, map.hf);
+        expect(arenaOnly.partyZone).toEqual(arenaOnly.arenaBounds);
+        expect(arenaOnly.fences.some(f => f.party)).toBe(false);
+        expect(arenaOnly.partyWorld.colliders).toHaveLength(arenaOnly.colliders.length + 1);
+        expect(arenaOnly.partyWorld.colliders.at(-1)).toEqual(expect.objectContaining({ kind: 'segment', ax: arenaOnly.arenaGate.ax, bz: arenaOnly.arenaGate.bz }));
+        expect(arenaOnly.items.coins).toHaveLength(pois.arena.coins.length);
+        expect(arenaOnly.items.powerups).toHaveLength(pois.arena.powerups.length);
+        expect(arenaOnly.worldHash).not.toBe(map.worldHash);
+        // A moved Party zone changes the hash too
+        const moved = structuredClone(map.sources.pois);
+        moved.party!.zone.minX -= 8;
+        expect(createMapData({ ...map.sources, pois: moved }, map.hf).worldHash).not.toBe(map.worldHash);
+    });
+
+    it('fences the Party zone through a container but not through a landmark', () => {
+        // The zone's west side through the middle of container 1 (-222 | 566,
+        // lengthwise along z), its east side through light mast 2 (-88 | 652)
+        const pois = structuredClone(map.sources.pois);
+        pois.party!.zone = { minX: -222, maxX: -88, minZ: 500, maxZ: 728 };
+        const fenced = createMapData({ ...map.sources, pois }, map.hf);
+        const covers = (x: number, z: number) => fenced.fences.some(f => f.party
+            && f.line[0][0] === x && f.line[1][0] === x && Math.min(f.line[0][1], f.line[1][1]) < z && Math.max(f.line[0][1], f.line[1][1]) > z);
+        // A container is low: the fence runs past it
+        expect(covers(-222, 566)).toBe(true);
+        // A landmark is a wall: the fence stops at it
+        expect(covers(-88, 652)).toBe(false);
+        expect(covers(-88, 640)).toBe(true);
+    });
+
+    it('builds a map without jumps or a fountain', () => {
+        const { jumps: _jumps, ...noJumps } = map.sources.pois;
+        expect(createMapData({ ...map.sources, pois: noJumps }, map.hf).ramps.map(r => r.id)).toEqual(['arena-ramp-1', 'arena-ramp-2']);
+        const noFountain = { ...map.sources.pois, landmarks: map.sources.pois.landmarks.filter(l => l.kind !== 'fountain') };
+        const plain = createMapData({ ...map.sources, pois: noFountain }, map.hf);
+        const fountain = map.sources.pois.landmarks.find(l => l.kind === 'fountain')!;
+        expect(plain.colliders.some(c => c.kind === 'circle' && c.x === fountain.x && c.z === fountain.z && c.r === FOUNTAIN_RADIUS)).toBe(false);
+    });
+
+    it('refuses a heightfield baked for another map version and an arena without its area', () => {
+        expect(() => createMapData(map.sources, { ...map.hf, mapVersion: map.hf.mapVersion + 1 }))
+            .toThrow(`terrain.bhf is baked for map version ${map.hf.mapVersion + 1}, map.json has ${map.mapVersion}`);
+        const pois = structuredClone(map.sources.pois);
+        pois.arena.area = 'no-such-lot';
+        expect(() => createMapData({ ...map.sources, pois }, map.hf)).toThrow('pois.json: the arena\'s area no-such-lot is not in roads.json');
     });
 
     it('reads the surface and the water level of its heightfield', () => {
