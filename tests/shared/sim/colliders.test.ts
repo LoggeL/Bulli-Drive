@@ -21,6 +21,7 @@ function randomColliders(count: number, seed: number): Collider[] {
 }
 
 function overlapsBox(c: Collider, minX: number, minZ: number, maxX: number, maxZ: number): boolean {
+    if (c.kind !== 'circle' && c.kind !== 'box') throw new Error('circles and boxes only');
     const hx = c.kind === 'circle' ? c.r : c.hw;
     const hz = c.kind === 'circle' ? c.r : c.hd;
     return c.x + hx >= minX && c.x - hx <= maxX && c.z + hz >= minZ && c.z - hz <= maxZ;

@@ -7,6 +7,7 @@
 // steer > 0 and yawRate > 0 mean left. u = v·f, w = v·l, β = atan2(w, u).
 
 import { MEGA_SCALE } from '../constants.js';
+import { isPaved, SURFACE_GRIP, SURFACE_ROLL } from '../map/types.js';
 import type { RoadGrid, SimWorld } from '../world/colliders.js';
 import { pushOutOfColliders, supportHeight } from './collision.js';
 import { DRAFT_FILL } from '../race/rules.js';
@@ -36,6 +37,31 @@ const DRIFT_TICKS_MAX = 65535;
 // vertical speed ahead plus this (m/s), so a kink in the heightfield (the
 // edge of the city's blend ring) does not launch it; ramps keep their speed
 const TERRAIN_LAUNCH_MARGIN = 2;
+// Water (docs/phase-3-design.md, 7): a car whose underside is this far
+// below the water level is in the water: no drive, no boost, no jump and a
+// strong drag (1/s); after WATER_RESET_TICKS there it is reset onto the
+// road (the racing line in a race). Shallower water drives like sand.
+export const WATER_DEPTH = 0.6;
+export const WATER_DRAG = 2.5;
+export const WATER_RESET_TICKS = 60;
+
+// Grip factor and rolling resistance (m/s²) of a surface for a car
+// (docs/phase-3-design.md, 8.1, as drivability.ts estimates them): paved
+// surfaces with their grip factor and no rolling resistance, unpaved ones
+// with the class's offroad grip and drag on top
+export function surfaceGrip(surface: number, p: VehicleParams): number {
+    const g = SURFACE_GRIP[surface] ?? 1;
+    return isPaved(surface) ? g : g * p.offroadGrip;
+}
+
+export function surfaceRoll(surface: number, p: VehicleParams): number {
+    return isPaved(surface) ? 0 : (SURFACE_ROLL[surface] ?? 0) * p.offroadDrag;
+}
+
+/** True while the car is in the water (section 7). */
+export function inWater(s: VehicleState, world: SimWorld): boolean {
+    return world.waterLevel - s.y >= WATER_DEPTH;
+}
 
 function clamp(value: number, min: number, max: number): number {
     return value < min ? min : value > max ? max : value;
@@ -151,6 +177,7 @@ export function moveToRoad(s: VehicleState, roads: RoadGrid): boolean {
 // Reset (section 6.7): stop, stand on the ground, get out of any building
 // and ghost other cars for two seconds. The yaw stays.
 export function resetVehicle(s: VehicleState, p: VehicleParams, world: SimWorld): void {
+    s.waterTicks = 0;
     s.vx = s.vy = s.vz = s.yawRate = 0;
     s.steerAngle = 0;
     s.loadX = 0;
@@ -183,7 +210,11 @@ export function integrateForces(car: SimCar, world: SimWorld): void {
     s.prevButtons = buttons;
     const handbrake = (buttons & BTN_HANDBRAKE) !== 0;
     s.resetHold = (buttons & BTN_RESET) !== 0 ? Math.min(s.resetHold + 1, T.RESET_HOLD_TICKS + 1) : 0;
-    if (s.resetHold === T.RESET_HOLD_TICKS) {
+    // In the water for a second, or fallen out of the map: the same reset
+    // as the player's (docs/phase-3-design.md, 7 and 8.3)
+    const wet = inWater(s, world);
+    s.waterTicks = wet ? Math.min(s.waterTicks + 1, TICK_COUNTER_MAX) : 0;
+    if (s.resetHold === T.RESET_HOLD_TICKS || s.waterTicks >= WATER_RESET_TICKS || s.y < world.fallLimit) {
         // The player's reset goes back onto the road (in a race world onto
         // the racing line); teleports and respawns call resetVehicle directly
         if (world.resetPose) world.resetPose(s);
@@ -205,8 +236,9 @@ export function integrateForces(car: SimCar, world: SimWorld): void {
         ? Math.max(P.handbrakeGrip, s.rearGrip - DT / T.HB_DROP_TIME)
         : Math.min(1, s.rearGrip + DT / T.HB_RECOVER_TIME);
 
-    // 1 Jump (edge-triggered, with coyote time after leaving the ground)
-    if ((pressed & BTN_JUMP) !== 0 && s.jumpCooldown === 0 && (s.grounded || s.airTicks <= T.COYOTE_TICKS)) {
+    // 1 Jump (edge-triggered, with coyote time after leaving the ground;
+    // not out of the water)
+    if ((pressed & BTN_JUMP) !== 0 && s.jumpCooldown === 0 && (s.grounded || s.airTicks <= T.COYOTE_TICKS) && !wet) {
         s.vy = Math.max(s.vy, 0) + P.jumpSpeed;
         s.grounded = false;
         s.jumpCooldown = T.JUMP_COOLDOWN;
@@ -261,7 +293,8 @@ export function integrateForces(car: SimCar, world: SimWorld): void {
     const vtop = P.topSpeed;
     const xs = absU / vtop;
     const dragAcc = T.ROLL + T.C_AIR * u * u;
-    let aDrive = th > 0 && u > -0.5
+    // In the water the engine does nothing
+    let aDrive = th > 0 && u > -0.5 && !wet
         ? th * (P.accel * Math.max(0, 1 - Math.pow(Math.min(xs, 1), T.DRIVE_EXP)) + (xs < 1 ? dragAcc : 0))
         : 0;
     let aBrake = 0;
@@ -288,7 +321,13 @@ export function integrateForces(car: SimCar, world: SimWorld): void {
     if (s.boosting && u > 0) {
         aDrive += T.BOOST_ACCEL * clamp((vRef - u) / 10, 0, 1) + (xs >= 1 && u < vRef ? dragAcc : 0);
     }
-    const aResist = dragAcc + (th === 0 && br === 0 ? T.ENGINE_BRAKE : 0) + Math.max(0, absU - vRef) * T.OVERSPEED;
+    // Surface under the axles (docs/phase-3-design.md, 8.1): grip factor
+    // per axle, rolling resistance of both
+    const cOff = P.colliderOffset;
+    const surfaceF = world.surfaceAt(s.x + cOff * fx, s.z + cOff * fz);
+    const surfaceR = world.surfaceAt(s.x - cOff * fx, s.z - cOff * fz);
+    const roll = (surfaceRoll(surfaceF, P) + surfaceRoll(surfaceR, P)) * 0.5;
+    const aResist = dragAcc + (th === 0 && br === 0 ? T.ENGINE_BRAKE : 0) + Math.max(0, absU - vRef) * T.OVERSPEED + roll;
     if (handbrake && th < 0.1) aBrake += T.HB_DECEL;
     const Fx = m * aDrive;
     const FxR = P.drive === 'rear' ? Fx : Fx / 2;
@@ -300,8 +339,8 @@ export function integrateForces(car: SimCar, world: SimWorld): void {
     const speed = Math.sqrt(u * u + w * w);
     const vtopBase = car.base.topSpeed;
     const aero = 1 + P.aeroGrip * Math.min(1, (speed / vtopBase) * (speed / vtopBase));
-    const capF = T.gripScale * P.gripFront * aero * FzF;
-    const capR = T.gripScale * P.gripRear * aero * s.rearGrip * FzR;
+    const capF = T.gripScale * P.gripFront * aero * FzF * surfaceGrip(surfaceF, P);
+    const capR = T.gripScale * P.gripRear * aero * s.rearGrip * FzR * surfaceGrip(surfaceR, P);
     const circF = Math.sqrt(Math.max(0.1, 1 - (T.GRIP_CIRCLE * FxF / capF) ** 2));
     const circR = Math.sqrt(Math.max(0.1, 1 - (T.GRIP_CIRCLE * FxR / capR) ** 2));
     const uu = Math.max(absU, T.V_LOW);
@@ -347,6 +386,12 @@ export function integrateForces(car: SimCar, world: SimWorld): void {
     if (Math.abs(nu) < 0.05 && th === 0 && br === 0) {
         nu = 0;
         if (Math.abs(nw) < 0.05) nw = 0;
+    }
+    if (wet) {
+        const keep = Math.exp(-WATER_DRAG * DT);
+        nu *= keep;
+        nw *= keep;
+        nr *= keep;
     }
     s.yawRate = clamp(nr, -T.R_MAX, T.R_MAX);
     s.vx = fx * nu + lx * nw;
@@ -455,7 +500,7 @@ export function finishTick(car: SimCar, world: SimWorld): void {
     fill += DRAFT_FILL * s.draft;
     s.boostMeter = Math.min(1, s.boostMeter + fill * DT);
     const wasBoosting = s.boosting;
-    s.boosting = (car.input.buttons & BTN_BOOST) !== 0 && u > 0
+    s.boosting = (car.input.buttons & BTN_BOOST) !== 0 && u > 0 && s.waterTicks === 0
         && (wasBoosting ? s.boostMeter > 0 : s.boostMeter >= T.BOOST_MIN);
     ev.boostStarted = s.boosting && !wasBoosting;
     if (s.boosting) s.boostMeter = Math.max(0, s.boostMeter - T.BOOST_DRAIN * DT);

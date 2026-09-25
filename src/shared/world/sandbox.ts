@@ -6,7 +6,7 @@
 
 import type { TerrainConfig } from '../protocol.js';
 import type { CarClassId } from '../sim/types.js';
-import { createSimWorld, rampEdgeColliders, type ColliderInput, type RampDef, type SimWorld } from './colliders.js';
+import { createSimWorld, rampEdgeColliders, type BoxOrCircleInput as ColliderInput, type RampDef, type SimWorld } from './colliders.js';
 
 // A ramp of the sandbox. hill marks the two halves of a hill, which get no
 // wall along their high edge where they meet.

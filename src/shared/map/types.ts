@@ -55,11 +55,13 @@ export type SurfaceName = keyof typeof SURFACE;
 export const SURFACE_PRIORITY: readonly number[] = [9, 8, 10, 6, 5, 2, 3, 4, 1, 0];
 
 // Grip factor g and rolling resistance d (m/s²) per surface ID (table 8.1,
-// start values). The sim applies them with the integration (M3); the map
-// validation estimates corner speeds with them already (drivability.ts).
-// Water has no grip: a car there is reset (section 7).
-export const SURFACE_GRIP: readonly number[] = [1.0, 0.97, 0.9, 0.8, 0.75, 0.7, 0.6, 0.72, 0.85, 0];
-export const SURFACE_ROLL: readonly number[] = [0, 0, 0.1, 0.4, 0.5, 0.8, 1.6, 0.9, 0.3, 0];
+// start values). The sim applies them per axle (vehicle.ts, unpaved ones
+// scaled by the class's offroad values); the map validation estimates
+// corner speeds with them (drivability.ts). Water is the sea floor under
+// shallow water, driven through like soft sand with a wading drag; deeper
+// than WATER_DEPTH the car stops and is reset (section 7).
+export const SURFACE_GRIP: readonly number[] = [1.0, 0.97, 0.9, 0.8, 0.75, 0.7, 0.6, 0.72, 0.85, 0.55];
+export const SURFACE_ROLL: readonly number[] = [0, 0, 0.1, 0.4, 0.5, 0.8, 1.6, 0.9, 0.3, 3.0];
 
 // Paved surfaces: the car's class-specific offroad factors do not apply
 export function isPaved(surface: number): boolean {

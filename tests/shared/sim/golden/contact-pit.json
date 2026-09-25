@@ -34,7 +34,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         },
         "sport": {
           "x": -0.6673331698221323,
@@ -66,7 +67,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         }
       }
     },
@@ -103,7 +105,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         },
         "sport": {
           "x": -3.1267646270587353,
@@ -135,7 +138,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         }
       }
     },
@@ -172,7 +176,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         },
         "sport": {
           "x": -5.82281994270427,
@@ -204,7 +209,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         }
       }
     },
@@ -241,7 +247,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         },
         "sport": {
           "x": -8.717838681952607,
@@ -273,7 +280,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         }
       }
     },
@@ -310,7 +318,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         },
         "sport": {
           "x": -11.783095051270136,
@@ -342,7 +351,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         }
       }
     },
@@ -379,7 +389,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         },
         "sport": {
           "x": -14.991886608839481,
@@ -411,7 +422,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         }
       }
     }

@@ -177,7 +177,7 @@ const SELF_F64 = [
     'x', 'y', 'z', 'yaw', 'vx', 'vy', 'vz', 'yawRate', 'steerAngle', 'loadX', 'rearGrip', 'betaPrev',
     'boostMeter', 'flipAngle', 'flipRate', 'scale', 'draft'
 ] as const satisfies readonly (keyof VehicleState)[];
-const SELF_U8 = ['airTicks', 'driftLowTicks', 'wallTicks', 'jumpCooldown', 'resetHold', 'reverseHold', 'ghostExit', 'prevButtons'] as const satisfies readonly (keyof VehicleState)[];
+const SELF_U8 = ['airTicks', 'driftLowTicks', 'wallTicks', 'jumpCooldown', 'resetHold', 'reverseHold', 'ghostExit', 'prevButtons', 'waterTicks'] as const satisfies readonly (keyof VehicleState)[];
 const SELF_U16 = ['driftTicks', 'ghostTicks'] as const satisfies readonly (keyof VehicleState)[];
 const SELF_BOOL = ['grounded', 'boosting', 'wasGhost'] as const satisfies readonly (keyof VehicleState)[];
 
@@ -441,7 +441,9 @@ export function decodeRemoteState(car: CompactCar, out: VehicleState): VehicleSt
     out.wasGhost = (car.flags & CAR_WAS_GHOST) !== 0;
     out.scale = car.scale;
     out.prevButtons = car.input.buttons;
-    // Not in the compact record: a remote car's slipstream starts from 0
+    // Not in the compact record: a remote car's slipstream starts from 0,
+    // its time in the water too
     out.draft = 0;
+    out.waterTicks = 0;
     return out;
 }

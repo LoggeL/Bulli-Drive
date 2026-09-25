@@ -61,7 +61,7 @@ function busyState(random: () => number): VehicleState {
     }
     // Counters are integers in their ranges
     s.airTicks = 200; s.driftTicks = 4000; s.driftLowTicks = 7; s.wallTicks = 255; s.jumpCooldown = 19;
-    s.resetHold = 31; s.reverseHold = 8; s.ghostTicks = 180; s.ghostExit = 179; s.prevButtons = 13;
+    s.resetHold = 31; s.reverseHold = 8; s.ghostTicks = 180; s.ghostExit = 179; s.prevButtons = 13; s.waterTicks = 42;
     s.x = -1234.56789; s.z = 987.654321; s.yaw = 17.5;
     return s;
 }
@@ -96,8 +96,9 @@ describe('snapshots', () => {
         const keys = Object.keys(createVehicleState()).sort();
         expect([...SELF_BLOCK_KEYS].sort()).toEqual(keys);
         expect(new Set(SELF_BLOCK_KEYS).size).toBe(SELF_BLOCK_KEYS.length);
-        // About 150 bytes (3.4) plus draft as f64 in v3 (phase-2-design 16.1), 32 per other car
-        expect(SELF_BLOCK_BYTES).toBe(149 + 8);
+        // About 150 bytes (3.4) plus draft as f64 in v3 (phase-2-design 16.1)
+        // and the water counter as u8 in v4 (phase-3-design 7), 32 per other car
+        expect(SELF_BLOCK_BYTES).toBe(149 + 8 + 1);
         expect(COMPACT_BYTES).toBe(32);
         expect(SNAPSHOT_HEADER_BYTES).toBe(16);
     });

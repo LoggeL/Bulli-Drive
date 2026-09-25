@@ -15,7 +15,7 @@
 import { SIM_TUNING_DEFAULTS as T } from '../sim/constants.js';
 import type { CarClassId } from '../sim/types.js';
 import { CAR_CLASS_IDS, VEHICLE_CLASSES, type ClassParams } from '../sim/vehicleClasses.js';
-import { isPaved, SURFACE_GRIP, SURFACE_ROLL } from './types.js';
+import { isPaved, SURFACE, SURFACE_GRIP, SURFACE_ROLL } from './types.js';
 
 export type CarModel = Pick<ClassParams,
     'gripFront' | 'gripRear' | 'aeroGrip' | 'topSpeed' | 'accel' | 'brakeDecel' | 'offroadGrip' | 'offroadDrag'>;
@@ -29,8 +29,11 @@ export const CORNER_GRIP_MARGIN = 0.75;
 export const DEFAULT_DESIGN_SPEED = 30;
 export const KMH_PER_MS = 3.6;
 
-// Lateral friction coefficient (in g) of the car's weaker axle on a surface
+// Lateral friction coefficient (in g) of the car's weaker axle on a
+// surface. Water counts as undrivable here: the sim lets a car wade
+// through shallow water, but no road or track may lead through it.
 export function surfaceGrip(car: CarModel, surface: number): number {
+    if (surface === SURFACE.water) return 0;
     const grip = Math.min(car.gripFront, car.gripRear) * (SURFACE_GRIP[surface] ?? 0);
     return isPaved(surface) ? grip : grip * car.offroadGrip;
 }

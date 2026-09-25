@@ -55,6 +55,8 @@ describe('sandbox layout', () => {
     it('keeps every collider on the pad and thick enough against tunneling', () => {
         const half = SANDBOX_PAD_SIZE / 2;
         for (const collider of world.colliders) {
+            // The pad has circles and axis-aligned boxes only
+            if (collider.kind !== 'circle' && collider.kind !== 'box') throw new Error(`a ${collider.kind} on the pad`);
             const hx = collider.kind === 'circle' ? collider.r : collider.hw;
             const hz = collider.kind === 'circle' ? collider.r : collider.hd;
             expect(Math.abs(collider.x) + hx).toBeLessThanOrEqual(half);

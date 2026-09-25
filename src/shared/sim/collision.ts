@@ -1,6 +1,7 @@
 // Car against the static world (docs/phase-1a-design.md, section 7.3): the
-// car is two circles at ±c along its heading, colliders are circles and
-// axis-aligned boxes, the world border is four planes. Contacts are pushed
+// car is two circles at ±c along its heading, colliders are circles,
+// axis-aligned and turned boxes and capsules (phase 3, E8), the world
+// border is four planes. Contacts are pushed
 // out and answered with an impulse against an infinitely heavy wall, so a
 // grazing hit slides along instead of bouncing back.
 
@@ -49,6 +50,33 @@ let hitPen = 0;
 let hitNx = 0;
 let hitNz = 0;
 
+// Circle against a box of half extents (hw, hd) around the origin, the
+// circle's centre at (px, pz) in the box's frame (the turned box; the
+// axis-aligned one below keeps its world-frame arithmetic)
+function circleVsBox(px: number, pz: number, r: number, hw: number, hd: number): boolean {
+    const qx = px < -hw ? -hw : px > hw ? hw : px;
+    const qz = pz < -hd ? -hd : pz > hd ? hd : pz;
+    const dx = px - qx, dz = pz - qz;
+    const d2 = dx * dx + dz * dz;
+    if (d2 > 0) {
+        if (d2 >= r * r) return false;
+        const d = Math.sqrt(d2);
+        hitNx = dx / d;
+        hitNz = dz / d;
+        hitPen = r - d;
+        return true;
+    }
+    // Centre inside the box (spawn, growing Mega): leave along the axis of
+    // least penetration, x before z on a tie
+    let best = px + hw;
+    hitNx = -1; hitNz = 0;
+    if (hw - px < best) { best = hw - px; hitNx = 1; hitNz = 0; }
+    if (pz + hd < best) { best = pz + hd; hitNx = 0; hitNz = -1; }
+    if (hd - pz < best) { best = hd - pz; hitNx = 0; hitNz = 1; }
+    hitPen = r + best;
+    return true;
+}
+
 function circleVsCollider(px: number, pz: number, r: number, collider: Collider): boolean {
     if (collider.kind === 'circle') {
         const dx = px - collider.x, dz = pz - collider.z;
@@ -64,6 +92,42 @@ function circleVsCollider(px: number, pz: number, r: number, collider: Collider)
             hitNz = 0;
         }
         hitPen = reach - d;
+        return true;
+    }
+    if (collider.kind === 'segment') {
+        // Nearest point of the segment, then as circle against circle; a
+        // centre exactly on the segment leaves along its left normal
+        const ex = collider.bx - collider.ax, ez = collider.bz - collider.az;
+        const len2 = ex * ex + ez * ez;
+        let t = len2 > 0 ? ((px - collider.ax) * ex + (pz - collider.az) * ez) / len2 : 0;
+        if (t < 0) t = 0; else if (t > 1) t = 1;
+        const dx = px - (collider.ax + t * ex), dz = pz - (collider.az + t * ez);
+        const reach = r + collider.r;
+        const d2 = dx * dx + dz * dz;
+        if (d2 >= reach * reach) return false;
+        const d = Math.sqrt(d2);
+        if (d > 1e-9) {
+            hitNx = dx / d;
+            hitNz = dz / d;
+        } else if (len2 > 0) {
+            const len = Math.sqrt(len2);
+            hitNx = ez / len;
+            hitNz = -ex / len;
+        } else {
+            hitNx = 1;
+            hitNz = 0;
+        }
+        hitPen = reach - d;
+        return true;
+    }
+    if (collider.kind === 'obox') {
+        // Into the box frame: local x along (uz, -ux), local z along (ux, uz)
+        const ux = collider.ux, uz = collider.uz;
+        const dx = px - collider.x, dz = pz - collider.z;
+        if (!circleVsBox(dx * uz - dz * ux, dx * ux + dz * uz, r, collider.hw, collider.hd)) return false;
+        const nx = hitNx, nz = hitNz;
+        hitNx = nx * uz + nz * ux;
+        hitNz = -nx * ux + nz * uz;
         return true;
     }
     const minX = collider.x - collider.hw, maxX = collider.x + collider.hw;
@@ -174,20 +238,21 @@ function resolveColliders(s: VehicleState, p: VehicleParams, world: SimWorld, ca
     }
 }
 
-// The world border: four planes at ±bound the circles stay inside of
+// The world border: four planes (world.border, ±bound by default) the
+// circles stay inside of
 function resolveBorder(car: SimCar, world: SimWorld): void {
     const s = car.state, p = car.params;
     const fx = Math.sin(s.yaw), fz = Math.cos(s.yaw);
-    const r = p.colliderRadius, bound = world.bound;
+    const r = p.colliderRadius, border = world.border;
     for (let side = 1; side >= -1; side -= 2) {
         for (let plane = 0; plane < 4; plane++) {
             const lever = side * p.colliderOffset;
             const cx = s.x + lever * fx, cz = s.z + lever * fz;
             let pen = 0, nx = 0, nz = 0;
-            if (plane === 0) { pen = cx + r - bound; nx = -1; }
-            else if (plane === 1) { pen = -bound - (cx - r); nx = 1; }
-            else if (plane === 2) { pen = cz + r - bound; nz = -1; }
-            else { pen = -bound - (cz - r); nz = 1; }
+            if (plane === 0) { pen = cx + r - border.maxX; nx = -1; }
+            else if (plane === 1) { pen = border.minX - (cx - r); nx = 1; }
+            else if (plane === 2) { pen = cz + r - border.maxZ; nz = -1; }
+            else { pen = border.minZ - (cz - r); nz = 1; }
             if (pen <= 0) continue;
             s.x += nx * pen;
             s.z += nz * pen;
@@ -197,7 +262,7 @@ function resolveBorder(car: SimCar, world: SimWorld): void {
     }
 }
 
-// Top of the highest low collider (finite top, not a ramp wall) the car
+// Top of the highest low collider (finite top, not a ramp wall, not a rail) the car
 // stands on or comes down onto: one its circles overlap and whose top the
 // underside was at or above when the tick started (section 7.3). The car
 // lands on it instead of being pushed out sideways by the full depth.
@@ -210,7 +275,8 @@ export function supportHeight(car: SimCar, world: SimWorld): number {
     let best = -Infinity;
     for (let k = 0; k < count; k++) {
         const collider = world.colliders[world.queryBuffer[k]];
-        if (collider.ramp !== undefined || collider.top === Infinity) continue;
+        // Rails and fences (segments) are too thin to stand on
+        if (collider.ramp !== undefined || collider.top === Infinity || collider.kind === 'segment') continue;
         const top = collider.base + collider.top;
         if (top > s.y || top <= best) continue;
         if (carVsCollider(s, p, fx, fz, collider) > 0) best = top;

@@ -9,7 +9,7 @@
 // posts), in the order the client used to push its obstacles.
 
 import type { CityData, TreeData } from '../protocol.js';
-import { COLLIDER_TOPS, type ColliderInput } from './colliders.js';
+import { COLLIDER_TOPS, type BoxOrCircleInput as ColliderInput } from './colliders.js';
 import {
     boulevardPalms,
     districtSigns,
