@@ -143,7 +143,8 @@ async function worker() {
 }
 await Promise.all([worker(), worker(), worker(), worker()]);
 
-// HDRIs are shipped as Radiance .hdr (three.js RGBELoader); r160's KTX2Loader has no UASTC HDR
+// HDRIs are shipped as Radiance .hdr (three.js HDRLoader); r160's KTX2Loader had no UASTC HDR,
+// and for two 1k files the switch is not worth it now that r186 has
 for (const entry of SPEC.hdri) {
     const file = `hdri/${entry.id}_${entry.publish}.hdr`;
     const from = path.join(CACHE, 'hdri', `${entry.id}_${entry.publish}.hdr`);

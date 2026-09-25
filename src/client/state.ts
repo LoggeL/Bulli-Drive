@@ -31,7 +31,11 @@ export const state = {
     coins: [] as any[],
     serverCoins: null as CoinData[] | null,
     particles: [] as any[],
-    clock: new THREE.Clock(),
+    // Frame timer of the game loop (main.ts animate); THREE.Clock is
+    // deprecated since r183
+    clock: new THREE.Timer(),
+    // performance.now() of the last clock update (ms)
+    frameAt: 0,
     // Set whenever the local car is spawned or teleported so the chase camera
     // can snap into place instead of flying across the map.
     cameraSnapPending: true,

@@ -214,6 +214,14 @@ export function patchWorldMaterial<T extends THREE.Material>(material: T, option
     }
     material.onBeforeCompile = shader => {
         Object.assign(shader.uniforms, WORLD_UNIFORMS, options.uniforms ?? {});
+        // Each world material scales the image based light with its own
+        // envMapIntensity (0.3 to 1.1). Since three r163 the renderer
+        // overwrites that uniform with scene.environmentIntensity for every
+        // material lit by scene.environment, so the shader reads a copy that
+        // follows the material's value.
+        shader.uniforms.bulliEnvMapIntensity = {
+            get value() { return (material as unknown as { envMapIntensity?: number }).envMapIntensity ?? 1; }
+        };
         shader.vertexShader = shader.vertexShader
             .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nuniform float uTime;\n' + vertexDecl.join('\n') + (options.cardMask
                 ? '\nattribute vec2 cardUv;\nvarying vec3 vCardUv;'
@@ -237,6 +245,11 @@ varying vec3 vWPos;
 ${options.cardMask ? 'varying vec3 vCardUv;\nfloat cardFar = 0.0;' : ''}
 ${options.surface ? SURFACE_FRAGMENT_DECL : ''}
 ${options.decl ?? ''}`);
+        f = f.replace('#include <envmap_common_pars_fragment>', /* glsl */`#include <envmap_common_pars_fragment>
+#ifdef USE_ENVMAP
+uniform float bulliEnvMapIntensity;
+#define envMapIntensity bulliEnvMapIntensity
+#endif`);
         const colorBlocks: string[] = [];
         if (options.macro) colorBlocks.push(MACRO(options.macro, options.macroScale ?? 60));
         if (options.baseAO) colorBlocks.push(`diffuseColor.rgb *= mix( ${options.baseAO.toFixed(2)}, 1.0, smoothstep( 0.1, 1.4, vWPos.y ) );`);

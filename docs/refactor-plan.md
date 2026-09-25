@@ -200,7 +200,7 @@ Verbindliche Spezifikation, Entscheidungen und Testplan: [`phase-2-design.md`](p
 
 **Phase 3 – Kuratierte Map (4–5 Wochen) → Release**
 - **Deliverables:**
-  - Eigener PR für das Three-Upgrade
+  - [x] Eigener PR für das Three-Upgrade: r160 → r186, WebGLRenderer bleibt; Screenshot-Vergleich aller Ansichten ohne sichtbare Änderung (Umstellungen und Begründungen im PR `chore/three-upgrade`)
   - Eine Map von 1,5–2 km mit **handgebauten Straßen-Splines als JSON**, prozedural geschmückt (Gebäude, Bäume, Props entlang der Korridore)
   - `tools/worldviewer` mit einfachem Spline-Editor (Punkte setzen, Breite, Oberfläche, Export als JSON)
   - Straßen als Ribbons mit Markierungs-Shader
