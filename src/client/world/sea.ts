@@ -90,8 +90,10 @@ export function createSea(hf: Heightfield, tier: RenderTier): THREE.Mesh {
 		seaFoam = smoothstep( 1.1, 0.1, seaDepth ) * smoothstep( 0.8, 1.0, wave * 0.75 + n2 * 0.4 ) * 0.8;
 		seaFoam = max( seaFoam, smoothstep( 0.22, 0.0, seaDepth ) * smoothstep( 0.35, 0.75, n2 + 0.2 ) * 0.85 );
 		diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.78, 0.82, 0.8 ), seaFoam );
-		// See-through in the shallows
-		diffuseColor.a = clamp( 0.35 + seaDepth * 0.45 + seaFoam, 0.0, 1.0 );
+		// See-through in the shallows, fading in over the first 12 cm: the
+		// wet sand flats lie within centimetres of the water level, where
+		// a hard water line would follow the 2 m cells of the heights
+		diffuseColor.a = clamp( 0.35 + seaDepth * 0.45 + seaFoam, 0.0, 1.0 ) * smoothstep( 0.0, 0.12, seaDepth );
 	}`,
             rough: 'roughnessFactor = mix( roughnessFactor, 0.55, seaFoam );',
             normal: /* glsl */`

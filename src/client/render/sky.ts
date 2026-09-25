@@ -70,7 +70,10 @@ float cloudDensity( vec3 d, out float edge ) {
 		+ texture2D( uNoise, p * vec2( 0.9, 1.6 ) ).r * 0.06;
 	float big = cloudNoise( p * vec2( 0.018, 0.05 ) + vec2( 0.31, 0.47 ) ).g;
 	n += ( big - 0.5 ) * 0.55;
-	float band = smoothstep( 0.012, 0.05, d.y ) * ( 1.0 - smoothstep( 0.32, 0.62, d.y ) );
+	// The plane's projection is clamped below d.y = 0.035, where the pattern
+	// would hang down in streaks: the layer thins out above that into the
+	// haze (the open sea shows the horizon)
+	float band = smoothstep( 0.035, 0.08, d.y ) * ( 1.0 - smoothstep( 0.32, 0.62, d.y ) );
 	edge = smoothstep( 0.5 - uCloudCov, 0.56 - uCloudCov, n ) - smoothstep( 0.56 - uCloudCov, 0.7 - uCloudCov, n );
 	return smoothstep( 0.5 - uCloudCov, 0.64 - uCloudCov, n ) * band;
 }

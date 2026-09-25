@@ -86,7 +86,9 @@ const TERRAIN_COLOR = /* glsl */`
 		vec3 sand = sandTex * mix( 0.92, 1.06, texture2D( uNoise, vWPos.xz / 31.0 ).b );
 		diffuseColor.rgb = mix( diffuseColor.rgb, sand, sa.r );
 		// Wet sand at the water line and the sea floor: darker, a little cooler
-		terrainWet = sa.g * smoothstep( -0.6, 1.2, vWPos.y + ( texture2D( uNoise, vWPos.xz / 13.0 ).r - 0.5 ) * 0.8 ) + sa.g * step( vWPos.y, 0.0 );
+		// (soft at the water level: the flats lie within centimetres of it,
+		// a hard step there would follow the triangles in blocks)
+		terrainWet = sa.g * smoothstep( -0.6, 1.2, vWPos.y + ( texture2D( uNoise, vWPos.xz / 13.0 ).r - 0.5 ) * 0.8 ) + sa.g * smoothstep( 0.15, -0.15, vWPos.y );
 		terrainWet = clamp( terrainWet, 0.0, 1.0 );
 		diffuseColor.rgb *= mix( vec3( 1.0 ), vec3( 0.6, 0.62, 0.64 ), terrainWet );
 		float under = smoothstep( 0.0, -7.0, vWPos.y );
