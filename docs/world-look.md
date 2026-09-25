@@ -120,7 +120,7 @@ Tier low bleibt unter 150 Draw Calls und weit unter 500 k Dreiecken. Der E2E-Tes
 | Materialien | PBR: Albedo, Normal, ARM | PBR ohne Normal-Maps | Lambert, große Flächen ohne Textur (mittlere Albedo), nur Atlas- und Laubtexturen |
 | Himmel | HDRIs (2,7 MB) | prozedurale Wolken, keine HDRIs | Verlauf und Sonne ohne Wolken |
 | Environment-Map | PMREM | PMREM | keine (Hemisphere-Licht) |
-| Schatten | 2048, PCF soft, ±60 m | 1024, PCF soft, ±45 m | 1024, PCF |
+| Schatten | 2048, PCF 3 × 3, ±60 m | 1024, PCF 3 × 3, ±45 m | keine Schattenkarte, nur Kontaktschatten unter den Autos (seit Phase 3, A71) |
 | Pixel-Ratio | ≤ 2 | ≤ 1,5 | ≤ 2 (adaptiv); seit Phase 3 M4 fest 0,5 |
 | Post-Processing | keins | keins | keins |
 | Gelände-Raster | 8 m | 10 m | 16 m |

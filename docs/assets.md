@@ -1,8 +1,8 @@
 # Assets: Herkunft, Lizenzen, Pipeline und Budgets
 
-**Stand:** 2026-09-23 · Grafik-Schritt G1 „Asset-Pipeline“ (realistischer Stil, ruhig-naturgetreue Farbstimmung).
+**Stand:** 2026-09-25 · Grafik-Schritt G1 „Asset-Pipeline“ (realistischer Stil, ruhig-naturgetreue Farbstimmung), ergänzt um Phase 3: die Karte Bulli Bay und das Gebäude-Kit im Spiel (Abschnitte 7 und 8).
 
-Dieses Dokument listet jede Binärdatei unter `public/models` und `public/textures` mit Herkunft und Lizenz, dazu die Entscheidungen zur Pipeline. Die Werkzeuge selbst sind in [`tools/models/README.md`](../tools/models/README.md) und [`tools/textures/README.md`](../tools/textures/README.md) beschrieben.
+Dieses Dokument listet jede Binärdatei unter `public/models`, `public/textures` und `public/maps` mit Herkunft und Lizenz, dazu die Entscheidungen zur Pipeline. Die Werkzeuge selbst sind in [`tools/models/README.md`](../tools/models/README.md) und [`tools/textures/README.md`](../tools/textures/README.md) beschrieben.
 
 ## 1. Überblick
 
@@ -10,15 +10,16 @@ Dieses Dokument listet jede Binärdatei unter `public/models` und `public/textur
 |---|---|---|---|---|
 | Automodelle (`public/models`) | eigene prozedurale Blender-Skripte (`tools/models`) | eigenes Werk des Projekts | GLB (meshopt + KTX2), 3 LODs je Auto, 5 Autos | 1,4 MB (Bulli 0,34 MB, die anderen 0,22–0,30 MB) |
 | Car-Select-Icons (`public/icons`) | Eevee-Render der eigenen Modelle (`build-all.mjs --icons`) | eigenes Werk des Projekts | WebP mit Alpha, 156×96 | 7 KB (Bulli) |
-| PBR-Texturen (`public/textures/pbr`) | Poly Haven | CC0 1.0 | KTX2 | 3,3 MB |
-| Generierte Texturen (`public/textures/generated`) | KI-generiert (Codex CLI, imagegen-Skill, OpenAI `image_gen`), eigene Nachbearbeitung | Nutzungsrechte beim Projekt, **kein** CC0 | KTX2 + JSON | 2,3 MB |
+| PBR-Texturen (`public/textures/pbr`) | Poly Haven | CC0 1.0 | KTX2 | 2,35 MB (seit Phase 3 M4 ohne die Texturen der alten Stadt) |
+| Generierte Texturen (`public/textures/generated`) | KI-generiert (Codex CLI, imagegen-Skill, OpenAI `image_gen`), eigene Nachbearbeitung | Nutzungsrechte beim Projekt, **kein** CC0 | KTX2 + JSON | 1,22 MB (seit Phase 3 M4 ohne Fassaden- und Ladenfront-Atlas) |
 | HDRIs (`public/textures/hdri`) | Poly Haven | CC0 1.0 | Radiance `.hdr`, 1k | 2,7 MB |
 | Referenzen (`tools/models/ref`) | KI-generierte Blaupausen, Maße aus Sekundärquellen | nur Arbeitsmaterial, nicht im Spiel | JPG + JSON | 1,5 MB |
 | Nummernschild-Decals (`tools/models/src`) | KI-generiert, eigene Nachbearbeitung | wie oben | PNG 512×256, 5 Stück | 1,2 MB |
-| Gebäude-Kit (`public/models/kit`, Phase 3, noch nicht im Spiel) | eigene prozedurale Blender-Skripte (`tools/models/buildings`), Atlas aus Poly-Haven-Texturen, KI-Bögen und der G1-Felstextur | Geometrie eigenes Werk; Atlas gemischt (siehe Abschnitt 7) | 11 GLBs (meshopt, 3 LODs je Teil, 52 Teile) + 4 KTX2 | 3,1 MB (GLBs 2,06 MB, Atlas 1,03 MB) |
+| Gebäude-Kit (`public/models/kit`, Phase 3, seit M4 im Spiel) | eigene prozedurale Blender-Skripte (`tools/models/buildings`), Atlas aus Poly-Haven-Texturen, KI-Bögen und der G1-Felstextur | Geometrie eigenes Werk; Atlas gemischt (siehe Abschnitt 7) | 11 GLBs (meshopt, 3 LODs je Teil, mit Hafenkran) + 4 KTX2 | 3,1 MB (GLBs 2,09 MB, Atlas 1,03 MB) |
+| Karte Bulli Bay (`public/maps/bulli-bay`, Phase 3) | eigene Daten: handgebaute Straßen-Splines und Zonen (`src/shared/maps/bulli-bay/*.json`), gebacken von `tools/map/bake.ts` | eigenes Werk des Projekts | `terrain.bhf` (Heightfield, Oberflächen, Zonen) + `manifest.json` | 3,07 MB roh, 307 KB über die Leitung (Brotli) |
 | Quellbögen des Kits (`tools/models/buildings/src`) | KI-generiert (Codex-imagegen) | Nutzungsrechte beim Projekt, **kein** CC0 | JPG, 4 Stück | 2,0 MB |
 
-Summe der neuen Binär-Assets: rund 16,2 MB, davon 12,1 MB ausgeliefert (Stand Schritt „building-kit“: das Kit liegt schon in `public/models/kit` und damit im Build, wird aber erst mit Phase 3 M4 geladen); vorher rund 12,4 MB, davon 9,6 MB ausgeliefert (Stand Schritt „vier Autos“; vorher 10,3 / 8,6 MB) (Obergrenze laut Plan ~30 MB). Ein Unit-Test (`tests/client/modelBudgets.test.ts`) hält `public/models` + `public/textures` unter 30 MB.
+Summe der Binär-Assets: rund 18,6 MB, davon 13,9 MB ausgeliefert (Stand Phase 3: `public/models` 4,55 MB, `public/textures` 6,32 MB, `public/maps` 3,07 MB roh); davor rund 16,2 MB, davon 12,1 MB ausgeliefert (Stand Schritt „building-kit“); vorher rund 12,4 MB, davon 9,6 MB ausgeliefert (Stand Schritt „vier Autos“; vorher 10,3 / 8,6 MB) (Obergrenze laut Plan ~30 MB). Ein Unit-Test (`tests/client/modelBudgets.test.ts`) hält `public/models` + `public/textures` unter 30 MB.
 
 Quelltexturen in voller Auflösung liegen nicht im Repo. `npm --prefix tools run textures:fetch` lädt sie reproduzierbar (MD5-geprüft) nach `tools/textures/.cache`.
 
@@ -94,7 +95,8 @@ Die KTX2-Dateien sind die kanonischen Kopien. Die Rohbilder und aufbereiteten Qu
 | LOD1 | 8 000 Dreiecke, 10 Primitives, 160 KB | 7 965, 9, 111 KB |
 | LOD2 | 2 000 Dreiecke, 4 Primitives, 48 KB | 1 960, 4, 24 KB |
 | alle LODs eines Autos | 560 KB | 341 KB |
-| `public/models` + `public/textures` | 30 MB | 10,4 MB (mit dem Gebäude-Kit, ohne die Texturen der alten Stadt) |
+| `public/models` + `public/textures` | 30 MB | 10,9 MB (mit dem Gebäude-Kit, ohne die Texturen der alten Stadt) |
+| `terrain.bhf` über die Leitung ([`phase-3-design.md`](phase-3-design.md) 6.2) | 600 KB | 307 KB Brotli, 361 KB Gzip |
 | Mobile Tier low (iPhone 12/13), ganzes Bild | ≤ 150 Draw Calls inkl. Schatten, ≤ 500k Dreiecke, KTX2 Pflicht, kein Post | Straßenansicht quer mit T1: 119 Calls, 237k Dreiecke |
 
 Grenzwerte pro LOD stehen maschinenlesbar in `tools/models/budgets.json` und werden beim Packen und im Unit-Test geprüft.
@@ -137,3 +139,11 @@ Die Poly-Haven-Quellen holt `npm --prefix tools run textures:fetch` (Rollen `kit
 
 **Review-Renderings:** Seit der zweiten Runde unter einem physikalischen Himmel (Blender Sky Texture, Meereshöhe, leichter Küstendunst, ohne Landschaft), vorher mit dem Victoria-Sunset-HDRI, das den Lion's Head (Kapstadt) hinter jedes Bild stellte. Eevee-Stills je Familie in mehreren Runden (Downtown v1–v3, Spanish/Strand/Halle v1, v3, v4, Props v1–v3) und three.js-Stills der gepackten Dateien (`preview.mjs`), außerhalb des Repos abgelegt. Geändert wurde dabei unter anderem: Schilder vor die Pilaster, keine gleichen Nachbarläden, Eingangstür zu den Obergeschossen, Fensterfaschen, Bodenverschmutzung, Pier-Verstrebungen in der Jochebene und hellere Dielen, Leitplanken-Distanzstücke am abgesenkten Ende, kräftigere Felsschichten, echte Surfbrett-Umrisse, Aluminium-Flutlichtköpfe, Bogen-Faschen am Spanish-Revival-Haus, Regenrinnen am Strandhaus, Lichtbänder und Blechbahnen-Variation an den Hallen, breitere Ränder der kleinen Kacheln gegen Mip-Bluten und eine AO je Vertex statt je Ecke (vorher zeichnete sie das Schnittraster auf den Dächern nach). Zweite Runde nach dem Review (Befund 11): Main Street in Putz, Mission Revival und Art déco statt überwiegend Backstein (2 von 14 Häusern), 14 statt 6 Schilder, 1- bis 3-geschossig, gleiche Texeldichte in allen LODs, Landmarken; Fehler aus den Renderings: Rückseiten der Deco-Lisenen in der Fassadenebene, Schildwiederholung an Nachbarläden.
 
+## 8. Karte Bulli Bay (Phase 3)
+
+Format, Bake und Budgets: [`phase-3-design.md`](phase-3-design.md) Abschnitte 5 und 6.
+
+- **Quellen** (`src/shared/maps/bulli-bay`): `roads.json` (Straßen-Splines, Kreuzungen, Plätze; von Hand gesetzt, seit dem worldviewer auch mit dessen Spline-Editor), `map.json`, `zones.json` (Zonen-Polygone), `base.json` (Parameter des Grundgeländes), `pois.json` (Landmarken, Spawns, Party-Zone, Items), `tracks.json` (sechs Strecken). Alles eigenes Werk des Projekts; zusammen 64 KB, als Quelltext im Build (`scripts/copy-map-sources.mjs`).
+- **Gebacken** (`public/maps/bulli-bay`): `terrain.bhf` (1001 × 1001 Höhen im 2-m-Raster, Oberflächen, Zonen) und `manifest.json` (Hashes, Größen, Statistik) aus `npx tsx tools/map/bake.ts`, deterministisch (gleiche Quellen, gleiche Bytes; `--check` und der Datentest `tests/tools/map/bulliBay.test.ts` erkennen ein vergessenes Bake). Das Grundgelände ist prozedurales Rauschen aus `base.json`, kein Geländemodell einer echten Küste. Die Karte bildet keinen echten Ort nach: „Bulli Bay“ und die Viertel sind erfunden, die Straßennamen erfunden oder allgemein kalifornisch (Main Street, Harbor Boulevard, Pacific Coast Highway als Name der Küstenstraße).
+- **Vorschaubilder** (`docs/img/phase-3-map-concept.png`, `phase-3-map-preview.png`): die Konzeptskizze und eine Draufsicht aus `tools/map/preview.ts`, beide eigenes Werk.
+- **Straßenmöbel** (Laternen, Ampelmasten, Hydranten, Bänke, Mülleimer), Zäune, Streuung und Requisiten der Zonen haben keine eigenen Dateien: Ihre Geometrie entsteht zur Laufzeit im Client (`src/client/world/streetFurniture.ts`, `scatter.ts`) aus den Modellen von G1 und dem Kit, texturiert mit den Texturen der Abschnitte 3, 4 und 7.

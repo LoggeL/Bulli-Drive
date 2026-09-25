@@ -7,12 +7,13 @@ with other drivers.
 ![Screenshot: Main Street in Bulli Bay](docs/screenshot.jpg)
 
 ## Features
-- **Multiplayer:** The server simulates every car at 60 Hz; each client predicts its own car, so driving and bumping into each other feel immediate. Party (combat) and Free Roam rooms of up to 32 players.
+- **Multiplayer:** The server simulates every car at 60 Hz; each client predicts its own car, so driving and bumping into each other feel immediate. Rooms of up to 32 players in three modes: **Party** (combat, coins and powerups in Cannery Lot and the harbour yards round it), **Free Roam** (the whole map) and **Race**.
 - **Racing:** Race rooms with a lobby, a countdown with start lights and a launch boost, six tracks on Bulli Bay (Downtown Loop, Coast Sprint, Ridge Climb, Harbor Circuit, Dune Rally, Grand Tour), real bumping with ghost rules against griefing, slipstream, server bots that fill the grid to six, results and a rematch vote. The time trial races your best run (or the track record) as a ghost car.
 - **Combat:** Shoot projectiles at other players, score kills, climb the scoreboard.
 - **Powerups & coins:** Turbo, Mega, Super Jump, Shield, Magnet and Ghost powerups plus collectible coins, shared across all players.
 - **3D Graphics:** Built with Three.js.
-- **Bulli Bay:** A curated 2 × 2 km map: beach, pier and promenade in the west, a downtown grid with Main Street and a fountain plaza, Seaview Heights on the slope, the harbour with the Party zone, a ridge road up to a lookout, ranch land, cliffs. Roads from hand-made splines on a baked heightfield, buildings from a Blender kit, street furniture, and a north-up radar.
+- **Bulli Bay:** A curated 2 × 2 km map with 19 km of roads: beach, pier and promenade in the west, a downtown grid with Main Street and a fountain plaza, Seaview Heights on the slope, the harbour with its cranes and the Party zone, a ridge road up to a lookout, ranch land, dunes, cliffs. Roads from hand-made splines on a baked heightfield, buildings and landmarks from a Blender kit, palms, trees and street furniture, off-road surfaces with their own grip, guard rails, the sea (drive in and the car is put back on the road), and a north-up radar. The same map data drives the server's sim, the client and the [worldviewer](#worldviewer-map-viewer-and-spline-editor).
+- **Phones:** The same game on touch screens, with its own quality tier (draw call and triangle budget checked in CI).
 
 ## Getting Started
 
@@ -50,18 +51,19 @@ reachable from the LAN as well: `npm run build && npm start`, then
 | `npm run build` | Client with Vite to `dist/client` (hashed assets, `build-version.txt`), server with `tsc` to `dist/server` and `dist/shared` |
 | `npm start` | Runs the production build on port 8000 (`PORT` to override) |
 | `npm run typecheck` | Type-checks client, server, tests, scripts, build config and the worldviewer |
-| `npm test` | Vitest unit tests in `tests/` (golden tests for world generation, terrain, RNG and the v2 sim scenarios, the binary codec and protocol validation, the tick scheduler, rooms and Party rules, the prediction against the real rooms with simulated latency and loss, speedometer scale, model cache, budgets of the packed models and textures) |
-| `npm run test:e2e` | Builds, then runs the Playwright tests of the critical user paths in `tests/e2e` against the production server (port 8799, `E2E_PORT` to override; the restart test starts its own server on `E2E_PORT + 1`), among them a race on the phone from the splash to the results |
-| `npm run test:e2e:render` | Builds, then runs the render checks in the browser: the phone tier's draw call and triangle budget, a world without its textures that is shaded, not black, and the touch HUD of the Party and of a race in eight phone and tablet viewports without overlaps (`tests/e2e-render`, Playwright project `render`) |
+| `npm test` | Vitest unit tests in `tests/` (the map: road network, splines, heightfield and its bake, surfaces, colliders, placement, tracks and the data of Bulli Bay itself; golden tests for the sandbox terrain, RNG and the v2 sim scenarios, the binary codec and protocol validation, the tick scheduler, rooms, Party and race rules, the prediction against the real rooms with simulated latency and loss, the client's terrain rings, road meshes, kit cells and detail levels, speedometer scale, model cache, budgets of the packed models, the building kit and the textures) |
+| `npm run test:e2e` | Builds, then runs the Playwright tests of the critical user paths in `tests/e2e` against the production server (port 8799, `E2E_PORT` to override; the restart test starts its own server on `E2E_PORT + 1`), among them a race on the phone from the splash to the results; the desktop path also checks the software tier's draw call budget |
+| `npm run test:e2e:render` | Builds, then runs the render checks in the browser: the phone tier's draw call and triangle budget on Main Street, in the harbour and on a hairpin of the Ridge Road, alone and with seven other cars, a world without its textures that is shaded, not black, and the touch HUD of the Party and of a race in eight phone and tablet viewports without overlaps (`tests/e2e-render`, Playwright project `render`) |
 | `npm run test:engines` | Computes the map's heights, road samples, rail colliders, track definitions and the whole terrain bake in WebKit and Chromium and compares them bit for bit with Node (`tests/engines`, `playwright.engines.config.ts`; no build, no server). Browsers: `npx playwright install webkit chromium` |
-| `npm run test:bots` | Bot integration tests in `tests/integration`: starts its own game server process (port 8560-8599, `BOTS_PORT` to override) and runs headless bots over real WebSockets: a head-on bump seen by both cars (also behind the netsim), reconnect within and after the grace time, the protocol version reject and `/healthz`, a room switch, a flood kick, and 16 bots for 30 s behind netsim 150/30/3 with the bandwidth (≤ 30 kB/s per client) and tick budgets (p95 < 4 ms); a Hill Sprint race of bots behind the netsim with a bump, a manipulating client and server bots, and a time trial whose ghost comes back after a reload |
-| `npm run test:mutation` | Mutation tests (Stryker, `stryker.config.mjs`) of `src/shared` and `src/server/rooms` against the unit tests: incremental (`reports/stryker-incremental.json`), HTML report in `reports/mutation/`; `-- --mutate src/shared/sim/contact.ts` narrows a run, `npx tsx scripts/mutation-summary.ts --survivors` lists the survivors. Not part of CI: runs weekly and on demand in `.github/workflows/mutation.yml` |
+| `npm run test:bots` | Bot integration tests in `tests/integration`: starts its own game server process (port 8560-8599, `BOTS_PORT` to override) and runs headless bots over real WebSockets: a head-on bump seen by both cars (also behind the netsim), reconnect within and after the grace time, the protocol version reject and `/healthz`, a room switch, a flood kick, and 16 bots for 30 s behind netsim 150/30/3 with the bandwidth (≤ 30 kB/s per client) and tick budgets (p95 < 4 ms); a Ridge Climb race of bots behind the netsim with a bump, a manipulating client and server bots, and a time trial whose ghost comes back after a reload; and every one of the six tracks raced by five server bots with contact, three seeds each, in the room without sockets |
+| `npm run test:mutation` | Mutation tests (Stryker, `stryker.config.mjs`) of `src/shared`, `src/server/rooms`, `src/server/race` and the pure parts of `tools/map` and the worldviewer against the unit tests: incremental (`reports/stryker-incremental.json`), HTML report in `reports/mutation/`; `-- --mutate src/shared/sim/contact.ts` narrows a run, `MUTATION_GROUP=sim\|contact\|net\|world\|rooms\|race\|map` runs one group, `npx tsx scripts/mutation-summary.ts --survivors` lists the survivors. Not part of CI: runs weekly and on demand in `.github/workflows/mutation.yml` |
 | `npm run bots -- --url ws://127.0.0.1:8000/ws --count 32 --mix drive:24,ram:6,reconnect:1,hop:1 --netsim 150,30,3 --duration 120` | Load and robustness run against any server (see `tools/bots/cli.ts`): prints snapshot rate, downlink per bot, corrections, contacts and the server's tick times from `/healthz`; `--json` for the whole report. Modes: `drive`, `ram`, `idle`, `reconnect`, `hop`, `flood`, `race`, `timetrial` |
 | `npm run perf:baseline` | Builds, then drives two headless Chromium clients for 20 s and prints FPS, draw calls and WebSocket bandwidth as JSON (see [docs/baseline.md](docs/baseline.md)); it also reports the sim time per frame, `-- --sandbox` measures the offline sandbox |
-| `npm run screenshots` | Builds, then captures a fixed set of views with headless Chromium for visual before/after comparisons, the race included (lobby, grid, checkpoint, ramps, the finish from 600 m, results, the phone HUD) (`-- --out=<dir>`, `--gl=swiftshader`, `--compare=<a>,<b>`, `--only=<views>`; `stats.json` records how much of the frame the car takes and the draw calls and triangles of the track dressing; see `scripts/screenshots.ts`) |
+| `npm run screenshots` | Builds, then captures a fixed set of views with headless Chromium for visual before/after comparisons, the race included (lobby, grid, checkpoint, ramps, the finish from 600 m, results, the phone HUD) (`-- --out=<dir>`, `--gl=swiftshader`, `--compare=<a>,<b>`, `--only=<views>`; `stats.json` records the tier, draw calls and triangles of every view, how much of the frame the car takes and the draw calls and triangles of the track dressing, and the script warns about every view above its tier's budget; see `scripts/screenshots.ts`) |
 | `npx tsx scripts/sim-golden-drift.ts` | Shows how far the v2 golden scenarios drift when `Math.sin` & co. round differently in the last bit, and that the golden tolerance still catches tiny tuning changes |
 | `npm run ci` | typecheck, unit tests and build in one go |
 | `npm run worldviewer` | Map viewer and spline editor for the curated map on port 5174 (`-- --port <n>` to change), a Vite app of its own outside the game bundle, see [Worldviewer](#worldviewer-map-viewer-and-spline-editor) |
+| `npx tsx tools/map/bake.ts` | Bakes `public/maps/bulli-bay/terrain.bhf` and its `manifest.json` from the map sources in `src/shared/maps/bulli-bay` (after editing `roads.json`) and draws a top view to `output/maps/bulli-bay/preview.png`; `--check` fails on a forgotten bake. `npx tsx tools/map/validate.ts` checks the map and prints every track's length, climb and estimated race time |
 | `npm run assets:models` | Builds the car models in Blender and packs them (meshopt + KTX2) into `public/models` (needs Blender 5.2 and `npm --prefix tools ci` once; see [tools/models/README.md](tools/models/README.md)) |
 | `npm run assets:textures` | Downloads the CC0 textures and HDRIs (Poly Haven) and encodes them to KTX2 in `public/textures` ([tools/textures/README.md](tools/textures/README.md)) |
 
@@ -71,14 +73,16 @@ in Node or happy-dom), the server with real WebSockets in the bot tests, and
 Playwright covers only the critical user paths: load, join and drive on the
 desktop (with the asset pipeline and a lost WebGL context), two players who
 see and ram each other, touch on a phone (splash, stick and buttons, room
-chip, HUD layout in eight viewports, a lost connection), a new deploy (stale
-page, old protocol, server restart) and missing assets. The suite runs in one
-CI job in under ~5 minutes; the render checks of the phone tier run beside it.
+chip, a lost connection), a race on the phone, a new deploy (stale page, old
+protocol, server restart) and missing assets. The suite runs in one CI job in
+under ~5 minutes; the render checks (the phone tier's budget, the touch HUD
+in eight viewports) run beside it in their own job.
 They need Chromium once:
 `npx playwright install chromium`.
 
 GitHub Actions (`.github/workflows/ci.yml`) runs typecheck and unit tests, the
-build, the Playwright tests, the bot integration tests and a Docker build with
+build, the Playwright tests, the render checks, the map's determinism in WebKit
+and Chromium, the bot integration tests and a Docker build with
 a container smoke test (`/healthz`, the image's health check and a graceful
 `docker stop`) on every pull request and push to `main`.
 
@@ -208,8 +212,9 @@ index.html            Vite entry (HUD markup, loading and splash screens)
 src/client/           Browser game (three.js)
   main.ts             Bootstrap, render loop, chase camera
   entities/Bulli.ts   Cars: model, powerup looks, shooting, nametags
-  world/              The map's world (terrain, roads, sea, building kit,
-                      plants, street furniture), coins, powerups, projectiles
+  world/              The map's world (terrain clipmap, road meshes, sea,
+                      building kit cells, plants, scatter, street furniture,
+                      detail levels), coins, powerups, projectiles
   network/            WebSocket, handshake, room state and events
   net/                The own car's prediction (NetDriver) and the remote cars
   controls/           Keyboard and touch (joystick, action buttons)
@@ -235,20 +240,29 @@ tests/                Vitest (shared/, server/, client/, tools/), bot integratio
                       tests (integration/), Playwright (e2e/) and the render
                       checks (e2e-render/)
 tools/bots/           Headless bot clients over real WebSockets (shared NetClient,
-                      pure-pursuit driving on the road grid), npm run bots
+                      pure-pursuit driving on the road network), npm run bots
+tools/map/            Heightfield bake, map validation and top-view preview
+tools/worldviewer/    Map viewer and spline editor (npm run worldviewer)
 scripts/              perf-baseline.ts, screenshots.ts
-public/models/        Packed car GLBs (3 LODs each) + manifest.json
+src/shared/maps/      The curated map's sources: roads (splines), zones, POIs
+                      and spawns, tracks
+public/maps/          The baked heightfield (terrain.bhf) + manifest.json
+public/models/        Packed car GLBs (3 LODs each), the building kit (kit/:
+                      GLBs + atlas) + manifest.json
 public/icons/         Rendered car-select icons (WebP)
 public/textures/      KTX2 world textures, HDRIs + manifest.json
-tools/                Offline asset pipeline (own package.json): Blender car builds,
-                      gltfpack/KTX2 packing, texture download and encoding
-docs/                 Refactor plan, performance baseline, phase 1a/1b specs, blind
-                      test guide, operations (ops.md), asset provenance and
+tools/                Offline asset pipeline (own package.json): Blender car and
+                      building kit builds, gltfpack/KTX2 packing, texture download
+                      and encoding
+docs/                 Refactor plan, performance baseline, phase 1a/1b/2/3 specs,
+                      blind test guide, operations (ops.md), asset provenance and
                       licences (assets.md), world look (world-look.md), cars (cars.md)
 ```
 
-Server and clients build the same world from a fixed seed (the server sends
-only the seed and a hash). The server is authoritative
+Server and clients build the same world from the curated map (the sources in
+`src/shared/maps/bulli-bay` and the baked `terrain.bhf`): the server sends only
+the map's id and a hash of its collision world, and a page whose world differs
+reloads once. The server is authoritative
 ([docs/phase-1b-design.md](docs/phase-1b-design.md)): clients send only their
 inputs (binary, 60 Hz), every room steps all its cars with the shared v2 sim
 and sends each player a binary snapshot 20 times a second. The client runs its
@@ -264,11 +278,16 @@ import three, the DOM or Node modules (a test enforces this).
 ### Roadmap
 Bulli Drive is being rebuilt into an open-world multiplayer racing game
 (party mode with the current combat, car contact, a curated map, full mobile
-support, 24/7 hosting). The plan, decisions and phases are in
+support, 24/7 hosting). Done: the v2 driving physics (phase 1a), the
+server-authoritative netcode (1b), races (2) and the curated map Bulli Bay
+(3, [docs/phase-3-design.md](docs/phase-3-design.md) with its data formats,
+budgets per tier and every deviation from the plan). Next: open-world
+multiplayer and persistence (4). The plan, decisions and phases are in
 [docs/refactor-plan.md](docs/refactor-plan.md); the performance baseline the
 rebuild is measured against is in [docs/baseline.md](docs/baseline.md). The
 realistic world look (HDRI sky, height fog, PBR materials, quality tiers, draw
-call budgets; `?tier=high|low|software` forces a tier) is described in
+call budgets; `?tier=high|low|software` forces a tier, `?detail=high|mid|low|software`
+the map's detail level) is described in
 [docs/world-look.md](docs/world-look.md), the cars (the Blender T1 in the
 game, LODs, lamps, scale against the sim hull) in [docs/cars.md](docs/cars.md).
 
