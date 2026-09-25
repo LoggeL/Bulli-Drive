@@ -1,9 +1,12 @@
 // Base terrain of a map before the roads are cut in (docs/phase-3-design.md,
 // 6.4 step 1): the coastline with sea floor and beach, hills as elliptic
-// masses, flats that pull an area to a height (harbour, town), cliffs along
-// the coast, a gentle tilt and fBm value noise from an integer hash (no
-// Math.sin, design E12). Deterministic: the same base.json gives the same
-// heights on every machine.
+// masses, ridges along spine lines with a sharp crest, canyons cut along
+// lines, flats that pull an area to a height (harbour, town), cliffs along
+// the coast, a gentle tilt and value noise from an integer hash (no
+// Math.sin, design E12): fBm blended with ridged noise, its domain warped,
+// its amplitude set per region. Deterministic: the same base.json gives the
+// same heights on every machine and in every engine (only exactly rounded
+// operations, tests/shared/map/determinism.test.ts).
 
 import * as v from 'valibot';
 import { pointInPolygon, polylineDistance, signedPolygonDistance, type Vec2 } from '../../src/shared/map/geometry.js';
@@ -54,11 +57,36 @@ export const BaseTerrainSchema = v.strictObject({
         plateau: NonNegative,
         fade: Positive
     })),
+    // Ridges: a crest along `line` ([x, z, height] per vertex, the height
+    // interpolated along the line), falling to 0 at `width` metres from it
+    // with the profile (1 - d/width)²: a sharp crest and a soft foot. Like
+    // hills, the highest wins.
+    ridges: v.optional(v.array(v.strictObject({
+        id: v.string(),
+        line: v.pipe(v.array(v.tuple([Finite, Finite, Finite])), v.minLength(2)),
+        width: Positive
+    }))),
+    // Canyons and gullies: cut `depth` metres deep along `line`, with the
+    // same profile over `width` metres (a V-shaped floor, a soft rim)
+    canyons: v.optional(v.array(v.strictObject({
+        id: v.string(),
+        line: v.pipe(v.array(Point), v.minLength(2)),
+        depth: Positive,
+        width: Positive
+    }))),
     noise: v.strictObject({
         amplitude: NonNegative,
         wavelength: Positive,
         octaves: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(8)),
-        gain: v.pipe(v.number(), v.gtValue(0), v.maxValue(1))
+        gain: v.pipe(v.number(), v.gtValue(0), v.maxValue(1)),
+        // Share of ridged noise (1 - |n|)² in the mix, 0 = plain fBm
+        ridged: v.optional(v.pipe(v.number(), v.minValue(0), v.maxValue(1))),
+        // Domain warp: the noise is read at a position moved by up to
+        // `amplitude` metres along a second noise of `wavelength`
+        warp: v.optional(v.strictObject({ amplitude: NonNegative, wavelength: Positive })),
+        // Amplitude per region: inside the polygon `amplitude`, blending over
+        // `blend` metres across its outline (later regions win)
+        regions: v.optional(v.array(v.strictObject({ id: v.string(), polygon: Polygon, amplitude: NonNegative, blend: Positive })))
     }),
     // Surface overrides of the natural ground (dunes, fields); later wins
     regions: v.array(v.strictObject({
@@ -119,6 +147,77 @@ export function fbm(x: number, z: number, seed: number, wavelength: number, octa
     return sum / norm;
 }
 
+// Ridged fBm: each octave is (1 - |n|)², sharp at the crests of the value
+// noise, mapped from [0, 1] to [-1, 1]
+export function ridgedFbm(x: number, z: number, seed: number, wavelength: number, octaves: number, gain: number): number {
+    let sum = 0, norm = 0, weight = 1, scale = 1 / wavelength;
+    for (let o = 0; o < octaves; o++) {
+        const r = 1 - Math.abs(valueNoise(x * scale, z * scale, seed + 101 + o * 7919));
+        sum += weight * r * r;
+        norm += weight;
+        weight *= gain;
+        scale *= 2;
+    }
+    return 2 * sum / norm - 1;
+}
+
+// Seed offsets of the two warp noises (x and z)
+export const WARP_SEED_X = 4099;
+export const WARP_SEED_Z = 8209;
+
+// The noise of base.json at (x, z): domain warp, then fBm and ridged fBm
+// mixed by `ridged`; in [-1, 1]
+export function terrainNoise(noise: BaseTerrain['noise'], seed: number, x: number, z: number): number {
+    if (noise.warp && noise.warp.amplitude > 0) {
+        const w = noise.warp;
+        const dx = w.amplitude * fbm(x, z, seed + WARP_SEED_X, w.wavelength, 2, 0.5);
+        const dz = w.amplitude * fbm(x, z, seed + WARP_SEED_Z, w.wavelength, 2, 0.5);
+        x += dx;
+        z += dz;
+    }
+    const plain = fbm(x, z, seed, noise.wavelength, noise.octaves, noise.gain);
+    const share = noise.ridged ?? 0;
+    if (share <= 0) return plain;
+    return plain + (ridgedFbm(x, z, seed, noise.wavelength, noise.octaves, noise.gain) - plain) * share;
+}
+
+// Noise amplitude at (x, z): the base amplitude, moved towards each
+// region's amplitude by smoothstep(1/2 + d / blend), d the signed distance
+// to the region's outline (positive inside): half-way on the outline, fully
+// `blend` / 2 inside
+export function noiseAmplitude(noise: BaseTerrain['noise'], x: number, z: number): number {
+    let amplitude = noise.amplitude;
+    for (const region of noise.regions ?? []) {
+        const w = smoothstep(0.5 + signedPolygonDistance(region.polygon, x, z) / region.blend);
+        amplitude += (region.amplitude - amplitude) * w;
+    }
+    return amplitude;
+}
+
+// Distance to a polyline and the interpolated third coordinate of the
+// nearest point (the ridge height), both at once
+export function polylineNearest(line: readonly (readonly [number, number, number])[], x: number, z: number): { distance: number; value: number } {
+    let best = Infinity, value = line[0][2];
+    for (let i = 1; i < line.length; i++) {
+        const [ax, az, ah] = line[i - 1], [bx, bz, bh] = line[i];
+        const ex = bx - ax, ez = bz - az;
+        const len2 = ex * ex + ez * ez;
+        let t = len2 > 0 ? ((x - ax) * ex + (z - az) * ez) / len2 : 0;
+        if (t < 0) t = 0; else if (t > 1) t = 1;
+        const dx = x - (ax + t * ex), dz = z - (az + t * ez);
+        const d2 = dx * dx + dz * dz;
+        if (d2 < best) { best = d2; value = ah + (bh - ah) * t; }
+    }
+    return { distance: Math.sqrt(best), value };
+}
+
+// Cross profile of ridges and canyons: 1 on the line, (1 - t)² at t = d/width, 0 beyond
+export function crestProfile(t: number): number {
+    if (t >= 1) return 0;
+    const u = 1 - (t < 0 ? 0 : t);
+    return u * u;
+}
+
 // Normalised elliptic radius: 0 in the centre, 1 on the outline
 export function ellipseRadius(e: { x: number; z: number; radii: readonly [number, number]; axis?: Vec2 }, x: number, z: number): number {
     let ux = 1, uz = 0;
@@ -154,14 +253,22 @@ export function baseSample(base: BaseTerrain, x: number, z: number): BaseSample 
         + base.land.tilt[1] * (z - base.land.tiltOrigin[1]);
     let hill = 0;
     for (const h of base.hills) hill = Math.max(hill, h.height * bell(ellipseRadius(h, x, z)));
+    for (const ridge of base.ridges ?? []) {
+        const near = polylineNearest(ridge.line, x, z);
+        if (near.distance < ridge.width) hill = Math.max(hill, near.value * crestProfile(near.distance / ridge.width));
+    }
     land += hill;
+    for (const canyon of base.canyons ?? []) {
+        const d = polylineDistance(canyon.line, x, z);
+        if (d < canyon.width) land -= canyon.depth * crestProfile(d / canyon.width);
+    }
     for (const flat of base.flats) {
         const w = flat.strength * bell(ellipseRadius(flat, x, z));
         land += (flat.height - land) * w;
     }
     const inland = smoothstep((coast - base.beach.width) / base.beach.blend);
-    land += base.noise.amplitude * inland
-        * fbm(x, z, base.seed, base.noise.wavelength, base.noise.octaves, base.noise.gain);
+    const amplitude = noiseAmplitude(base.noise, x, z);
+    if (amplitude > 0) land += amplitude * inland * terrainNoise(base.noise, base.seed, x, z);
 
     const beach = base.beach.top * smoothstep(coast / base.beach.width);
     let height = beach + (land - beach) * inland;

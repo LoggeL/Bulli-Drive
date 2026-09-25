@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-    baseHeight, baseSample, bell, ellipseRadius, fbm, latticeValue, parseBaseTerrain, regionSurface,
-    smoothstep, valueNoise, type BaseTerrain
+    baseHeight, baseSample, bell, crestProfile, ellipseRadius, fbm, latticeValue, noiseAmplitude, parseBaseTerrain,
+    polylineNearest, regionSurface, ridgedFbm, smoothstep, terrainNoise, valueNoise, WARP_SEED_X, WARP_SEED_Z, type BaseTerrain
 } from '../../../tools/map/baseTerrain.js';
 import { FLAT_COAST } from './fixtures.js';
 
@@ -107,6 +107,87 @@ describe('baseHeight', () => {
         expect(baseHeight(base, -135, 200)).toBe(baseHeight(FLAT_COAST, -135, 200));
         // Still sea in front of the cliff
         expect(baseHeight(base, -175, 0)).toBe(-5);
+    });
+});
+
+describe('ridges and canyons', () => {
+    const land = (x: number) => 4 + 0.02 * (x + 150);
+
+    it('has a sharp crest and a soft foot: (1 - d/width)²', () => {
+        expect(crestProfile(0)).toBe(1);
+        expect(crestProfile(0.5)).toBe(0.25);
+        expect(crestProfile(0.9)).toBeCloseTo(0.01, 12);
+        expect(crestProfile(1)).toBe(0);
+        expect(crestProfile(2)).toBe(0);
+    });
+
+    it('finds the nearest point of a line and interpolates its height', () => {
+        const line: [number, number, number][] = [[0, 0, 10], [100, 0, 30], [100, 100, 30]];
+        expect(polylineNearest(line, 50, 20)).toEqual({ distance: 20, value: 20 });
+        expect(polylineNearest(line, 130, 50)).toEqual({ distance: 30, value: 30 });
+        // Beyond the first vertex: its distance and height
+        expect(polylineNearest(line, -30, 40)).toEqual({ distance: 50, value: 10 });
+    });
+
+    it('raises a ridge along its line, the highest of ridges and hills winning', () => {
+        const base: BaseTerrain = {
+            ...FLAT_COAST,
+            ridges: [{ id: 'r', line: [[0, -100, 20], [0, 100, 60]], width: 40 }],
+            hills: [{ id: 'h', x: 0, z: 0, radii: [30, 30], height: 50 }]
+        };
+        // On the crest at z = -50: 20 + 40 · 0.25 = 30 (the hill is 0 there)
+        expect(baseHeight(base, 0, -50)).toBeCloseTo(land(0) + 30, 12);
+        // 20 m beside it: a quarter of that
+        expect(baseHeight(base, 20, -50)).toBeCloseTo(land(20) + 30 * 0.25, 12);
+        // At the hill's centre the hill (50) beats the ridge (40)
+        expect(baseHeight(base, 0, 0)).toBeCloseTo(land(0) + 50, 12);
+        // At z = 50 the ridge (50) beats the hill (0 beyond its radius)
+        expect(baseHeight(base, 0, 50)).toBeCloseTo(land(0) + 50, 12);
+        expect(baseHeight(base, 45, 50)).toBeCloseTo(land(45), 12);
+    });
+
+    it('cuts a canyon along its line, V-shaped with a soft rim', () => {
+        const base: BaseTerrain = { ...FLAT_COAST, canyons: [{ id: 'c', line: [[100, -100], [100, 100]], depth: 12, width: 30 }] };
+        expect(baseHeight(base, 100, 0)).toBeCloseTo(land(100) - 12, 12);
+        expect(baseHeight(base, 115, 0)).toBeCloseTo(land(115) - 3, 12);
+        expect(baseHeight(base, 131, 0)).toBeCloseTo(land(131), 12);
+    });
+});
+
+describe('noise mix, warp and regions', () => {
+    const noise = FLAT_COAST.noise;
+
+    it('keeps ridged noise in [-1, 1], sharp at the crests: 1 where the value noise is 0', () => {
+        for (let i = 0; i < 300; i++) {
+            const v = ridgedFbm(i * 13.7, i * -5.1, 9, 120, 3, 0.5);
+            expect(Math.abs(v)).toBeLessThanOrEqual(1);
+        }
+        // One octave at a lattice point: r = (1 - |lattice value|)², mapped to 2r - 1
+        const lattice = latticeValue(2, 3, 9 + 101);
+        expect(ridgedFbm(2 * 50, 3 * 50, 9, 50, 1, 0.5)).toBeCloseTo(2 * (1 - Math.abs(lattice)) ** 2 - 1, 12);
+    });
+
+    it('mixes plain and ridged noise by `ridged` and warps the position', () => {
+        const at = (x: number, z: number) => fbm(x, z, 4, 480, 4, 0.5);
+        expect(terrainNoise({ ...noise, amplitude: 1 }, 4, 123, 456)).toBe(at(123, 456));
+        const both = terrainNoise({ ...noise, amplitude: 1, ridged: 0.5 }, 4, 123, 456);
+        expect(both).toBeCloseTo((at(123, 456) + ridgedFbm(123, 456, 4, 480, 4, 0.5)) / 2, 12);
+        // A warp of 0 changes nothing; a real one moves the reading point
+        expect(terrainNoise({ ...noise, warp: { amplitude: 0, wavelength: 200 } }, 4, 123, 456)).toBe(at(123, 456));
+        // Moved by 80 m times two independent 2-octave noises, one per axis
+        const dx = 80 * fbm(123, 456, 4 + WARP_SEED_X, 200, 2, 0.5), dz = 80 * fbm(123, 456, 4 + WARP_SEED_Z, 200, 2, 0.5);
+        expect(Math.abs(dx - dz)).toBeGreaterThan(1);
+        expect(terrainNoise({ ...noise, warp: { amplitude: 80, wavelength: 200 } }, 4, 123, 456)).toBe(at(123 + dx, 456 + dz));
+    });
+
+    it('blends the amplitude across a region\'s outline: half on it, all of it blend / 2 inside', () => {
+        const regions = [{ id: 'hills', polygon: [[0, 0], [100, 0], [100, 100], [0, 100]] as [number, number][], amplitude: 12, blend: 40 }];
+        const n = { ...noise, amplitude: 2, regions };
+        expect(noiseAmplitude(n, 50, 50)).toBe(12);
+        expect(noiseAmplitude(n, 100, 50)).toBe(7);
+        expect(noiseAmplitude(n, 120, 50)).toBe(2);
+        // 10 m outside: smoothstep(0.25) = 0.15625 of the way
+        expect(noiseAmplitude(n, 110, 50)).toBeCloseTo(2 + 10 * 0.15625, 12);
     });
 });
 
