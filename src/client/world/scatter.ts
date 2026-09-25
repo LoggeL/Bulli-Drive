@@ -2,20 +2,24 @@ import { hashMix, hashUnit } from '../../shared/map/buildings.js';
 import { pointInPolygon } from '../../shared/map/geometry.js';
 import { heightAt, surfaceAt, zoneAt } from '../../shared/map/heightfield.js';
 import type { MapData } from '../../shared/map/mapData.js';
-import { insideCorridor } from '../../shared/map/roadNetwork.js';
+import { insideCorridor, junctionRadius } from '../../shared/map/roadNetwork.js';
+import { leftNormal, pointAt } from '../../shared/map/spline.js';
 import { BoxIndex, placementBox } from '../../shared/map/structures.js';
 import { SURFACE, ZONE } from '../../shared/map/types.js';
 
 // Plants and props without a collider (docs/phase-3-design.md 11.1 and
 // 11.2: "Reine Optik ... entsteht nur im Client"): chaparral and shrubs on
 // the hills, gardens in Seaview Heights and the park, dune grass, sunshades
-// on the beach. A jittered grid per zone with a candidate per cell from an
+// and volleyball nets on the beach, stacks of pallets in the harbour's
+// yards. A jittered grid per zone with a candidate per cell from an
 // integer hash of the cell (E12), kept off the roads and sidewalks, the
 // lots, the buildings and landmarks and the plants that have a collider.
 // Deterministic: the same map gives the same scatter on every device (the
 // density factor of the detail level thins it out, keeping a subset).
+// Besides the grid: a mailbox in front of every house in Seaview Heights,
+// and post and rail fences along the ranch's tracks.
 
-export type DecorKind = 'chaparral' | 'shrub' | 'flowers' | 'duneGrass' | 'sunshade';
+export type DecorKind = 'chaparral' | 'shrub' | 'flowers' | 'duneGrass' | 'sunshade' | 'volleyball' | 'pallets';
 
 export interface DecorSpot {
     kind: DecorKind;
@@ -49,8 +53,10 @@ export const DECOR_RULES: readonly DecorRule[] = [
     { zone: ZONE.park, kind: 'flowers', cell: 7, density: 0.35, corridor: 1, size: [1.0, 1.7] },
     { zone: ZONE.dunes, kind: 'duneGrass', cell: 4.5, density: 0.55, corridor: 0.5, size: [0.8, 1.5] },
     { zone: ZONE.beach, kind: 'duneGrass', cell: 9, density: 0.15, corridor: 0.5, size: [0.7, 1.2] },
-    { zone: ZONE.beach, kind: 'sunshade', cell: 22, density: 0.3, corridor: 7, size: [0.9, 1.1] },
-    { zone: ZONE.industrial, kind: 'shrub', cell: 26, density: 0.12, corridor: 1, size: [0.9, 1.5] }
+    { zone: ZONE.beach, kind: 'sunshade', cell: 14, density: 0.35, corridor: 5, size: [0.9, 1.1] },
+    { zone: ZONE.beach, kind: 'volleyball', cell: 40, density: 0.5, corridor: 8, size: [1, 1] },
+    { zone: ZONE.industrial, kind: 'shrub', cell: 26, density: 0.12, corridor: 1, size: [0.9, 1.5] },
+    { zone: ZONE.industrial, kind: 'pallets', cell: 22, density: 0.3, corridor: 1.5, size: [0.9, 1.3] }
 ];
 
 // Distance kept from plants with a collider and from buildings (m)
@@ -64,7 +70,9 @@ const SURFACE_OK: Record<DecorKind, (surface: number) => boolean> = {
     shrub: s => s === SURFACE.grass || s === SURFACE.rock,
     flowers: s => s === SURFACE.grass,
     duneGrass: s => s === SURFACE.sand || s === SURFACE.grass,
-    sunshade: s => s === SURFACE.sand
+    sunshade: s => s === SURFACE.sand,
+    volleyball: s => s === SURFACE.sand,
+    pallets: s => s === SURFACE.concrete || s === SURFACE.gravel || s === SURFACE.dirt || s === SURFACE.grass
 };
 
 /** The client's scatter of the map; `density` (0..1] keeps that share of it. */
@@ -115,7 +123,7 @@ export function scatterDecor(map: MapData, density = 1): DecorSpot[] {
                 if (zoneAt(hf, x, z) !== rule.zone) continue;
                 if (!SURFACE_OK[rule.kind](surfaceAt(hf, x, z))) continue;
                 const y = heightAt(hf, x, z);
-                if (y < spec.waterLevel + (rule.kind === 'sunshade' ? SUNSHADE_MIN_HEIGHT : 0.4)) continue;
+                if (y < spec.waterLevel + (rule.kind === 'sunshade' || rule.kind === 'volleyball' ? SUNSHADE_MIN_HEIGHT : 0.4)) continue;
                 const size = rule.size[0] + (rule.size[1] - rule.size[0]) * hashUnit(hashMix(h, 3));
                 if (walls.contains(x, z, BUILDING_CLEARANCE + size)) continue;
                 if (inArea(x, z, 1)) continue;
@@ -126,4 +134,79 @@ export function scatterDecor(map: MapData, density = 1): DecorSpot[] {
         }
     });
     return out;
+}
+
+// ---- Mailboxes ----
+
+// In front of a house in Seaview Heights: this far towards the street from
+// its front (its lot keeps 6 m to the sidewalk) and to its right
+export const MAILBOX_FRONT = 5.4;
+export const MAILBOX_SIDE = 2.2;
+
+export interface MailboxSpot {
+    x: number;
+    y: number;
+    z: number;
+    // rotation.y: facing the street
+    yaw: number;
+}
+
+/** A mailbox at the street end of every house's front yard in the residential zone. */
+export function mailboxSpots(map: MapData): MailboxSpot[] {
+    const out: MailboxSpot[] = [];
+    for (const lot of map.buildings) {
+        if (zoneAt(map.hf, lot.x, lot.z) !== ZONE.residential) continue;
+        // Local +z (the front) is (ux, uz), local +x is (uz, -ux)
+        const x = lot.x + lot.ux * MAILBOX_FRONT + lot.uz * MAILBOX_SIDE;
+        const z = lot.z + lot.uz * MAILBOX_FRONT - lot.ux * MAILBOX_SIDE;
+        if (insideCorridor(map.net, x, z, 0.2)) continue;
+        out.push({ x, y: heightAt(map.hf, x, z), z, yaw: Math.atan2(lot.ux, lot.uz) });
+    }
+    return out;
+}
+
+// ---- Ranch fences ----
+
+// Post and rail fences along both sides of the ranch's tracks: this far
+// beyond the track's edge and shoulder, a post every FENCE_SPACING m, the
+// junctions' trim + FENCE_JUNCTION_GAP m left open
+export const FENCE_OFFSET = 2.5;
+export const FENCE_SPACING = 3;
+export const FENCE_JUNCTION_GAP = 8;
+
+/**
+ * The posts of the ranch's fences, as runs along every road where it
+ * crosses the ranch: a run stops where a post would stand on another road
+ * or sidewalk, a lot, a building or landmark, outside the ranch or in the
+ * water, and starts again behind it.
+ */
+export function ranchFences(map: MapData): [number, number][][] {
+    const { hf, net } = map;
+    const walls = new BoxIndex();
+    for (const lot of map.buildings) walls.add(placementBox(lot));
+    for (const structure of map.structures) walls.add(placementBox(structure));
+    const runs: [number, number][][] = [];
+    for (const edge of net.edges) {
+        const start = junctionRadius(net, net.nodes[edge.from]) + FENCE_JUNCTION_GAP;
+        const end = edge.length - junctionRadius(net, net.nodes[edge.to]) - FENCE_JUNCTION_GAP;
+        const d = edge.halfWidth + edge.profile.shoulder + FENCE_OFFSET;
+        for (const sign of [1, -1]) {
+            let run: [number, number][] = [];
+            for (let s = start; s <= end; s += FENCE_SPACING) {
+                const p = pointAt(edge.samples, s);
+                const [nx, nz] = leftNormal(p.tx, p.tz);
+                const x = p.x + nx * sign * d, z = p.z + nz * sign * d;
+                const fits = zoneAt(hf, x, z) === ZONE.ranch && heightAt(hf, x, z) > hf.spec.waterLevel + 0.4
+                    && !insideCorridor(net, x, z, 0.5) && !walls.contains(x, z, 1)
+                    && !net.areas.some(area => pointInPolygon(area.polygon, x, z));
+                if (fits) run.push([x, z]);
+                else {
+                    if (run.length > 1) runs.push(run);
+                    run = [];
+                }
+            }
+            if (run.length > 1) runs.push(run);
+        }
+    }
+    return runs;
 }

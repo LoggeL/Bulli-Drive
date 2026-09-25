@@ -22,7 +22,7 @@ import { createPalms, type PalmSpot } from './palms.js';
 import { alongPolyline, polylineLength, postsAlong, railPieces } from './railings.js';
 import { crestSpots } from './viewpoint.js';
 import { createRoads } from './roads.js';
-import { scatterDecor, type DecorSpot } from './scatter.js';
+import { mailboxSpots, ranchFences, scatterDecor, type DecorSpot } from './scatter.js';
 import { createSea } from './sea.js';
 import { createTerrainMaterial, createTerrainTextures, TerrainField } from './terrain.js';
 import { shrubGeometry, treeCardGeometry, treeCardInstances, type TreeSpot } from './vegetation.js';
@@ -51,6 +51,8 @@ const RAIL_POST_SPACING = 2;
 const RAIL_HEIGHT = 1.05;
 // The lookout's coin telescopes: painted steel, dark lenses
 const TELESCOPE: Finish = { color: rgb(0x2f5d45), rough: 0.42, metal: 0.25 };
+// Painted sheet metal of the mailboxes
+const MAILBOX: Finish = { color: rgb(0x3b3f44), rough: 0.45, metal: 0.3 };
 const LENS: Finish = { color: rgb(0x141617), rough: 0.2 };
 
 interface CellMesh {
@@ -476,6 +478,84 @@ export class MapWorld {
             const mesh = batch.mesh(this.M.furniture, { cast: true, receive: true });
             if (mesh) group.add(mesh);
         }
+        this.addVolleyballNets(group, byKind('volleyball'));
+        // Stacks of pallets in the harbour's yards, turned and sized per spot
+        const pallets = byKind('pallets');
+        if (pallets.length) {
+            const specs = pallets.map(spot => ({
+                matrix: new THREE.Matrix4().makeRotationY(spot.seed * Math.PI * 2)
+                    .scale(new THREE.Vector3(1, spot.size, 1)).setPosition(spot.x, spot.y, spot.z)
+            }));
+            this.addInstanced(group, palletGeometry(), specs, sight, 'scatter-pallets', true);
+        }
+        // A mailbox in front of every house in Seaview Heights
+        const mailboxes = mailboxSpots(this.map).map(spot => ({
+            matrix: new THREE.Matrix4().makeRotationY(spot.yaw).setPosition(spot.x, spot.y, spot.z)
+        }));
+        if (mailboxes.length) this.addInstanced(group, mailboxGeometry(), mailboxes, sight, 'scatter-mailboxes', false);
+        this.addRanchFences(group);
+    }
+
+    private addInstanced(group: THREE.Group, geometry: THREE.BufferGeometry, specs: InstanceSpec[], sight: number, name: string, cast: boolean): void {
+        const instances = new ChunkedInstances(geometry, this.M.furniture, specs, sight, name);
+        instances.mesh.castShadow = cast && this.tier !== 'software';
+        instances.mesh.receiveShadow = true;
+        this.instanced.push(instances);
+        group.add(instances.mesh);
+    }
+
+    // Beach volleyball: two posts, a white band and the net between them
+    // (the chain-link shader of the fences in 10 cm squares)
+    private addVolleyballNets(group: THREE.Group, spots: DecorSpot[]): void {
+        if (!spots.length) return;
+        const frame = new PropBatch('volleyball-posts');
+        const nets = new Batch('volleyball-nets');
+        for (const spot of spots) {
+            const matrix = new THREE.Matrix4().makeRotationY(spot.seed * Math.PI).setPosition(spot.x, spot.y - 0.1, spot.z);
+            for (const x of [-4.75, 4.75]) frame.add(new THREE.CylinderGeometry(0.045, 0.05, 2.6, 8).translate(x, 1.3, 0).applyMatrix4(matrix), FINISH.galvanized);
+            frame.add(new THREE.BoxGeometry(9.5, 0.06, 0.02).translate(0, 2.43, 0).applyMatrix4(matrix), FINISH.canvasPole);
+            const net = new THREE.PlaneGeometry(9.5, 0.9).translate(0, 1.95, 0);
+            const uv = net.attributes.uv;
+            // In metres, halved: the fence's 5 cm diamonds become 10 cm
+            for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 4.75, uv.getY(i) * 0.45);
+            nets.add(net.applyMatrix4(matrix));
+        }
+        const frameMesh = frame.mesh(this.M.furniture, { cast: true, receive: true });
+        const netMesh = nets.mesh(fenceMaterial(this.tier), { cast: false, receive: true });
+        if (frameMesh) group.add(frameMesh);
+        if (netMesh) group.add(netMesh);
+    }
+
+    // Post and rail fences along the ranch's tracks (scatter.ts), posts and
+    // rails instanced, culled like the guard rails
+    private addRanchFences(group: THREE.Group): void {
+        const hf = this.map.hf;
+        const posts: InstanceSpec[] = [], rails: InstanceSpec[] = [];
+        const x = new THREE.Vector3(), z = new THREE.Vector3();
+        for (const run of ranchFences(this.map)) {
+            run.forEach(([px, pz], k) => {
+                const py = heightAt(hf, px, pz);
+                posts.push({ matrix: new THREE.Matrix4().makeTranslation(px, py, pz) });
+                if (k === 0) return;
+                const [qx, qz] = run[k - 1];
+                const qy = heightAt(hf, qx, qz);
+                // A unit rail from the previous post to this one
+                x.set(px - qx, py - qy, pz - qz);
+                z.set(-x.z, 0, x.x).normalize();
+                const up = new THREE.Vector3().crossVectors(z, x).normalize();
+                for (const h of [0.55, 1.05]) {
+                    rails.push({ matrix: new THREE.Matrix4().makeBasis(x, up, z).setPosition(qx, qy + h, qz) });
+                }
+            });
+        }
+        if (!posts.length) return;
+        const sight = this.quality.sight.rails;
+        const post = new PropBatch('ranch-fence-post');
+        post.box(0.12, 1.3, 0.12, 0, 0.6, 0, FINISH.wood);
+        this.addInstanced(group, post.build()!, posts, sight, 'ranch-fence-posts', true);
+        const rail = new PropBatch('ranch-fence-rail');
+        rail.box(1, 0.1, 0.05, 0.5, 0, 0, FINISH.wood);
+        this.addInstanced(group, rail.build()!, rails, sight, 'ranch-fence-rails', true);
     }
 
     // ---- Fences, railings, the fountain ----
@@ -687,6 +767,29 @@ export class MapWorld {
             terrainTriangles: this.terrain.triangles()
         };
     }
+}
+
+// Three pallets of 1.2 x 1.0 m on each other (each stack scaled in height)
+function palletGeometry(): THREE.BufferGeometry {
+    const batch = new PropBatch('pallets');
+    const pale = { color: rgb(0xa98a62), rough: 0.8 };
+    for (let k = 0; k < 3; k++) {
+        const y = k * 0.145;
+        // Deck boards on three runners
+        batch.box(1.2, 0.025, 1.0, 0, y + 0.13, 0, pale);
+        for (const zz of [-0.45, 0, 0.45]) batch.box(1.2, 0.1, 0.1, 0, y + 0.065, zz, pale);
+    }
+    return batch.build()!;
+}
+
+// A mailbox on its post, the door towards the street (+z), the flag up
+function mailboxGeometry(): THREE.BufferGeometry {
+    const batch = new PropBatch('mailbox');
+    batch.box(0.09, 1.05, 0.09, 0, 0.525, 0, FINISH.wood);
+    batch.add(new THREE.CylinderGeometry(0.12, 0.12, 0.46, 10, 1, false, 0, Math.PI).rotateX(Math.PI / 2).rotateZ(-Math.PI / 2).translate(0, 1.18, 0), MAILBOX);
+    batch.box(0.24, 0.14, 0.46, 0, 1.11, 0, MAILBOX);
+    batch.box(0.02, 0.2, 0.04, 0.13, 1.28, -0.12, { color: rgb(0xb33a2e), rough: 0.5 });
+    return batch.build()!;
 }
 
 // A coin telescope on its post, looking along +z (painted green, the
