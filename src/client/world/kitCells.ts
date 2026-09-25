@@ -12,10 +12,11 @@ export const CELL_ORIGIN = -1000;
 export const CELL_SIZES = [250, 125, 62.5] as const;
 export type CellLevel = 0 | 1 | 2;
 
-// The LOD a level's meshes are merged from; the finest cells may use a
-// coarser one (phones: LOD1 up close, design 10 "ohne Gesimse")
+// The LOD a level's meshes are merged from; the finer cells may use a
+// coarser one (phones: LOD1 up close, design 10 "ohne Gesimse"; software
+// WebGL: LOD2 everywhere, "Kisten mit Atlas")
 export function cellLod(level: CellLevel, nearLod = 0): number {
-    return Math.max(2 - level, level === 2 ? nearLod : 0);
+    return Math.max(2 - level, nearLod);
 }
 
 export interface CellRef {
@@ -52,7 +53,7 @@ export interface CellDistances {
     hysteresis: number;
     // Cells nearer than this cast shadows (m)
     shadowReach: number;
-    // LOD of the finest (62.5 m) cells
+    // The finest LOD any cell uses
     nearLod: number;
 }
 
@@ -104,7 +105,9 @@ export function selectCells(occupied: ReadonlySet<string>, x: number, z: number,
                 for (let dj = 0; dj < 2; dj++) {
                     const ci = 2 * i + di, cj = 2 * j + dj;
                     if (!occupied.has(cellKey(1, ci, cj))) continue;
-                    if (cellDistance(x, z, 1, ci, cj) > distances.lod0 + band(1, ci, cj)) {
+                    const d1 = cellDistance(x, z, 1, ci, cj);
+                    if (d1 > distances.sight) continue;
+                    if (d1 > distances.lod0 + band(1, ci, cj)) {
                         out.push({ level: 1, i: ci, j: cj });
                         continue;
                     }

@@ -28,6 +28,6 @@ describe('detail levels', () => {
         }
         // Phones: no LOD0 (design 10: without cornices); software: LOD2 only
         expect(WORLD_QUALITY.low.kit.nearLod).toBe(1);
-        expect(WORLD_QUALITY.software.kit.lod1).toBeLessThan(0);
+        expect(WORLD_QUALITY.software.kit.nearLod).toBe(2);
     });
 });

@@ -45,15 +45,35 @@ export function detectRenderTier(renderer?: WebGLRenderer): RenderTier {
     if (forced) return forced;
     // Lite graphics after a lost or refused WebGL context (render/safeMode.ts)
     if (isSafeMode()) return 'software';
-    if (renderer && SOFTWARE_RENDERER.test(rendererName(renderer))) return 'software';
+    if (renderer && isSoftwareRendererName(glRendererName(renderer.getContext()))) return 'software';
     const coarse = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
     return coarse ? 'mobile' : 'desktop';
 }
 
-function rendererName(renderer: WebGLRenderer): string {
-    const gl = renderer.getContext();
+/** Whether a WebGL renderer name (WEBGL_debug_renderer_info) is a CPU rasterizer. */
+export function isSoftwareRendererName(name: string): boolean {
+    return SOFTWARE_RENDERER.test(name);
+}
+
+function glRendererName(gl: WebGLRenderingContext | WebGL2RenderingContext): string {
     const info = gl.getExtension('WEBGL_debug_renderer_info');
     return String(gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER) ?? '');
+}
+
+/**
+ * Multisampling for the page's renderer, decided before it exists (its
+ * canvas fixes it): not on a CPU rasterizer, where it costs a third of every
+ * frame (SwiftShader, measured with the map world; docs/phase-3-design.md
+ * A64). A throwaway context tells the rasterizer.
+ */
+export function wantsAntialias(): boolean {
+    if (typeof document === 'undefined') return true;
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl2') ?? canvas.getContext('webgl');
+    if (!gl) return true;
+    const software = isSoftwareRendererName(glRendererName(gl));
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    return !software;
 }
 
 // The low (mobile) tier renders at most 1.5 device pixels per CSS pixel: the

@@ -50,9 +50,11 @@ export const WORLD_QUALITY: Record<WorldDetail, WorldQuality> = {
     software: {
         detail: 'software',
         terrain: TERRAIN_GRID.software,
-        // Software WebGL: boxes with the atlas everywhere (LOD2)
-        kit: { lod0: -1, lod1: -1, sight: 450, hysteresis: 6, shadowReach: 0, nearLod: 2 },
-        sight: { trees: 260, scatter: 60, rocks: 160, rails: 200 },
+        // Software WebGL: boxes with the atlas everywhere (LOD2), in 125 m
+        // cells up to the sight of 220 m (design 10), where a CPU
+        // rasterizer pays for every vertex
+        kit: { lod0: -1, lod1: 250, sight: 220, hysteresis: 6, shadowReach: 0, nearLod: 2 },
+        sight: { trees: 220, scatter: 60, rocks: 160, rails: 200 },
         scatter: 0.3
     }
 };

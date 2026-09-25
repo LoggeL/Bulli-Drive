@@ -15,9 +15,10 @@ import { applySplashChoice, initModeSelector, initRoomMenu } from './ui/roomMenu
 import { updatePalms } from './world/palms.js';
 import { lowerMapDetail, startKitPreload, updateMapScene } from './world/mapScene.js';
 import { updateMinimap } from './ui/minimap.js';
+import { loadingScreenCovers } from './ui/loadingScreen.js';
 import { Bulli, type CarType } from './entities/Bulli.js';
 import { sendToServer } from './network/socket.js';
-import { AdaptiveRenderQuality, detectRenderTier } from './effects/renderQuality.js';
+import { AdaptiveRenderQuality, detectRenderTier, wantsAntialias } from './effects/renderQuality.js';
 import { updateWorldShaders } from './effects/worldShaders.js';
 import { ensureCurrentBuild } from './buildVersion.js';
 import { installE2EHook } from './e2eHook.js';
@@ -88,8 +89,9 @@ function init() {
     // The browser can refuse WebGL (e.g. blocked for the site after a GPU
     // crash): show why instead of an endless loading screen
     try {
-        // Lite graphics (after trouble) skip MSAA: its buffers cost the most memory
-        state.renderer = new THREE.WebGLRenderer({ antialias: !isSafeMode() });
+        // Lite graphics (after trouble) and CPU rasterizers skip MSAA: its
+        // buffers cost the most memory, and a third of every software frame
+        state.renderer = new THREE.WebGLRenderer({ antialias: !isSafeMode() && wantsAntialias() });
     } catch (error) {
         console.error('WebGL is not available', error);
         showGraphicsUnavailable(error);
@@ -329,7 +331,8 @@ function animate(frameTime: number) {
 
     // While the GL context is lost three.js skips rendering anyway; skip the
     // adaptive quality sampling too so the gap doesn't lower the resolution.
-    const drawNow = E2E_DRAW_INTERVAL_MS === 0 || frameTime - lastDrawAt >= E2E_DRAW_INTERVAL_MS;
+    // Nothing is drawn under the opaque loading screen either.
+    const drawNow = (E2E_DRAW_INTERVAL_MS === 0 || frameTime - lastDrawAt >= E2E_DRAW_INTERVAL_MS) && !loadingScreenCovers();
     if (drawNow && state.renderer && state.scene && state.camera && !isWebGLContextLost()) {
         lastDrawAt = frameTime;
         updateWorldShaders(state.clock.getElapsed());

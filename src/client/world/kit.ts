@@ -135,8 +135,15 @@ export async function loadKit(renderer: THREE.WebGLRenderer, tier: RenderTier): 
     const sharedKtx2 = Object.create(ktx2) as typeof ktx2;
     // The atlas by its content hash (cached as immutable, like the GLBs)
     const atlasHash = new Map(Object.values(manifest.atlas).map(entry => [entry.file, entry.hash]));
+    // Software WebGL draws the kit with its albedo and emission only: the
+    // normal and ARM maps would cost it a transcode and an upload for nothing
+    const unused = tier === 'software' ? /kit_atlas_(normal|arm)\.ktx2$/ : null;
     sharedKtx2.load = ((url: string, onLoad: (texture: THREE.Texture) => void, _progress?: unknown, onError?: (error: unknown) => void) => {
         let texture = textures.get(url);
+        if (!texture && unused?.test(url)) {
+            texture = Promise.resolve(new THREE.DataTexture(new Uint8Array([128, 128, 255, 255]), 1, 1));
+            textures.set(url, texture);
+        }
         if (!texture) {
             const hash = atlasHash.get(url.slice(url.lastIndexOf('/') + 1));
             texture = ktx2.loadAsync(hash ? `${url}?v=${hash}` : url);

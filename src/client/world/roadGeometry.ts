@@ -465,3 +465,40 @@ export function buildRoadGeometry(net: RoadNetwork, height: HeightFn): Record<Ro
     for (const area of net.areas) addArea(layers, area, height);
     return layers;
 }
+
+// ---- Chunks ----
+
+/**
+ * Splits a layer's arrays into chunks (docs/phase-3-design.md 9): each
+ * triangle goes to the chunk of its centroid, with copies of its vertices
+ * (a vertex shared across a chunk border is in both).
+ */
+export function splitByChunk(arrays: MeshArrays, chunkOf: (x: number, z: number) => number): Map<number, MeshArrays> {
+    const out = new Map<number, { arrays: MeshArrays; remap: Map<number, number> }>();
+    const P = arrays.positions, I = arrays.index;
+    const copy = (target: MeshArrays, remap: Map<number, number>, v: number): number => {
+        let w = remap.get(v);
+        if (w !== undefined) return w;
+        w = target.vertexCount;
+        target.positions.push(P[v * 3], P[v * 3 + 1], P[v * 3 + 2]);
+        target.normals.push(arrays.normals[v * 3], arrays.normals[v * 3 + 1], arrays.normals[v * 3 + 2]);
+        target.uvs.push(arrays.uvs[v * 2], arrays.uvs[v * 2 + 1]);
+        for (let k = 0; k < 4; k++) {
+            target.roadA.push(arrays.roadA[v * 4 + k]);
+            target.roadB.push(arrays.roadB[v * 4 + k]);
+        }
+        remap.set(v, w);
+        return w;
+    };
+    for (let t = 0; t < I.length; t += 3) {
+        const a = I[t], b = I[t + 1], c = I[t + 2];
+        const chunk = chunkOf((P[a * 3] + P[b * 3] + P[c * 3]) / 3, (P[a * 3 + 2] + P[b * 3 + 2] + P[c * 3 + 2]) / 3);
+        let entry = out.get(chunk);
+        if (!entry) {
+            entry = { arrays: new MeshArrays(), remap: new Map() };
+            out.set(chunk, entry);
+        }
+        entry.arrays.index.push(copy(entry.arrays, entry.remap, a), copy(entry.arrays, entry.remap, b), copy(entry.arrays, entry.remap, c));
+    }
+    return new Map([...out].map(([chunk, entry]) => [chunk, entry.arrays]));
+}

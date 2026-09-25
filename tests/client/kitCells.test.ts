@@ -34,7 +34,7 @@ describe('cells', () => {
     it('merge LOD2 for chunks, LOD1 for quarters, LOD0 (or the near LOD) for the finest', () => {
         expect([cellLod(0), cellLod(1), cellLod(2)]).toEqual([2, 1, 0]);
         expect([cellLod(0, 1), cellLod(1, 1), cellLod(2, 1)]).toEqual([2, 1, 1]);
-        expect(cellLod(2, 2)).toBe(2);
+        expect([cellLod(0, 2), cellLod(1, 2), cellLod(2, 2)]).toEqual([2, 2, 2]);
     });
 });
 
@@ -66,6 +66,15 @@ describe('the cells to draw', () => {
         // A chunk 150 m away is drawn, one 400 m away is not
         expect(covering(cells, -510, -990)).toHaveLength(1);
         expect(covering(cells, -260, -990)).toHaveLength(0);
+    });
+
+    it('split near chunks into cells that stop at the sight too', () => {
+        // Chunks within 250 m split into 125 m cells, the sight is 200 m:
+        // the cell from -625 to -500 (275 m away) is left out, the one from
+        // -750 to -625 (150 m) drawn
+        const cells = selectCells(occupied, -900, -900, { ...DISTANCES, lod0: -1, lod1: 250, sight: 200 });
+        expect(covering(cells, -700, -990)).toEqual([{ level: 1, i: 2, j: 0 }]);
+        expect(covering(cells, -600, -990)).toHaveLength(0);
     });
 
     it('never split with negative distances (phones: no LOD0; software: chunks only)', () => {

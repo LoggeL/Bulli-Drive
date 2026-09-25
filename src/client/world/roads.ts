@@ -2,14 +2,15 @@ import * as THREE from 'three';
 import type { RoadNetwork } from '../../shared/map/roadNetwork.js';
 import type { RenderTier } from '../effects/renderQuality.js';
 import { patchWorldMaterial } from './materials.js';
-import { buildRoadGeometry, ROAD_LAYERS, type HeightFn, type MeshArrays, type RoadLayer } from './roadGeometry.js';
+import { buildRoadGeometry, ROAD_LAYERS, splitByChunk, type HeightFn, type MeshArrays, type RoadLayer } from './roadGeometry.js';
 import { worldTexture } from './textures.js';
 
 // The road meshes of a curated map (docs/phase-3-design.md 5.4, 5.5 and 9):
-// one mesh per surface for the whole map (ribbons, junctions and lots,
-// together a few ten thousand vertices, so culling them per chunk would
-// only cost draw calls), plus the sidewalks with their curbs and the plaza's
-// pavers. The markings come from the road shader (roadGeometry.ts lists the
+// one mesh per surface and 500 m block (ribbons, junctions and lots, the
+// sidewalks with their curbs, the plaza's pavers), so the blocks out of view
+// are culled: the whole map is some 45 k triangles, which a CPU rasterizer
+// (the software tier) would otherwise transform every frame. Blocks of
+// four chunks, since each surface of a block costs a draw call. The markings come from the road shader (roadGeometry.ts lists the
 // attributes): centre lines, lane lines, edge lines, parking, stop lines and
 // crosswalks at the junctions, stalls on the lots, worn where the wheels
 // run.
@@ -20,9 +21,10 @@ import { worldTexture } from './textures.js';
 const DISTANCE_LIFT = 0.0025;
 const LIFT_FROM = 40;
 
-// World-space texture coordinates of the tiling maps (metres per repeat)
-function worldUvVertex(period: number): string {
-    const s = (1 / period).toFixed(5);
+// World-space texture coordinates of the tiling maps (uRoadTexScale: repeats
+// per metre, a uniform so the layers can share their shader program)
+function worldUvVertex(): string {
+    const s = 'uRoadTexScale';
     return /* glsl */`
 	vRoad = uv;
 	vRoadA = roadA;
@@ -47,7 +49,7 @@ function worldUvVertex(period: number): string {
 	}`;
 }
 
-const VERTEX_DECL = 'attribute vec4 roadA;\nattribute vec4 roadB;\nvarying vec2 vRoad;\nvarying vec4 vRoadA;\nvarying vec4 vRoadB;';
+const VERTEX_DECL = 'attribute vec4 roadA;\nattribute vec4 roadB;\nuniform float uRoadTexScale;\nvarying vec2 vRoad;\nvarying vec4 vRoadA;\nvarying vec4 vRoadB;';
 
 const FRAGMENT_DECL = /* glsl */`
 varying vec2 vRoad;
@@ -300,15 +302,21 @@ export function createRoadMaterial(layer: RoadLayer, tier: RenderTier): THREE.Ma
         });
     }
     // Software WebGL keeps the markings and the ragged track edges (cheap
-    // arithmetic), not the texture fetches of the wear
+    // arithmetic), not the texture fetches of the wear; all its layers share
+    // one shader program (the markings behind a uniform), since a CPU
+    // rasterizer takes a good part of a second to compile each
     const colorCode = software
-        ? (look.paint ? '{ roadMarkings(); diffuseColor.rgb = mix( diffuseColor.rgb, mix( vec3( 0.74, 0.73, 0.7 ), vec3( 0.78, 0.52, 0.1 ), paintYellow ), paintMask * 0.9 ); }' : '')
+        ? '{ if ( uRoadPaint > 0.5 ) { roadMarkings(); diffuseColor.rgb = mix( diffuseColor.rgb, mix( vec3( 0.74, 0.73, 0.7 ), vec3( 0.78, 0.52, 0.1 ), paintYellow ), paintMask * 0.9 ); } }'
         : look.color + (look.paint ? PAINT_COLOR : '');
     return patchWorldMaterial(material, {
         ...(software ? {} : { macro: 0.14, macroScale: 45 }),
+        uniforms: {
+            uRoadTexScale: { value: 1 / look.period },
+            ...(software ? { uRoadPaint: { value: look.paint ? 1 : 0 } } : {})
+        },
         vertexDecl: VERTEX_DECL,
-        vertex: worldUvVertex(look.period),
-        decl: FRAGMENT_DECL,
+        vertex: worldUvVertex(),
+        decl: software ? FRAGMENT_DECL + '\nuniform float uRoadPaint;' : FRAGMENT_DECL,
         color: colorCode,
         rough: software ? undefined : look.rough
     });
@@ -327,21 +335,31 @@ function toGeometry(arrays: MeshArrays): THREE.BufferGeometry {
     return geometry;
 }
 
-/** The roads, lots and sidewalks of the map: one mesh per layer. */
+// The 4 × 4 blocks of 500 m over the map's data square (-1000 to 1000 m)
+const BLOCK_SIZE = 500;
+function roadBlock(x: number, z: number): number {
+    const i = Math.min(3, Math.max(0, Math.floor((x + 1000) / BLOCK_SIZE)));
+    const j = Math.min(3, Math.max(0, Math.floor((z + 1000) / BLOCK_SIZE)));
+    return j * 4 + i;
+}
+
+/** The roads, lots and sidewalks of the map: one mesh per layer and 500 m block. */
 export function createRoads(net: RoadNetwork, height: HeightFn, tier: RenderTier): THREE.Group {
     const group = new THREE.Group();
     group.name = 'roads';
     const layers = buildRoadGeometry(net, height);
     for (const layer of ROAD_LAYERS) {
-        const arrays = layers[layer];
-        if (!arrays.index.length) continue;
-        const mesh = new THREE.Mesh(toGeometry(arrays), createRoadMaterial(layer, tier));
-        mesh.name = `road-${layer}`;
-        mesh.receiveShadow = true;
-        // Only the curbs would cast, and only a sliver: not worth the pass
-        mesh.castShadow = false;
-        mesh.matrixAutoUpdate = false;
-        group.add(mesh);
+        if (!layers[layer].index.length) continue;
+        const material = createRoadMaterial(layer, tier);
+        for (const [block, arrays] of splitByChunk(layers[layer], roadBlock)) {
+            const mesh = new THREE.Mesh(toGeometry(arrays), material);
+            mesh.name = `road-${layer}-${block}`;
+            mesh.receiveShadow = true;
+            // Only the curbs would cast, and only a sliver: not worth the pass
+            mesh.castShadow = false;
+            mesh.matrixAutoUpdate = false;
+            group.add(mesh);
+        }
     }
     return group;
 }

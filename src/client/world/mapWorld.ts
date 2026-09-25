@@ -121,7 +121,7 @@ export class MapWorld {
         const hf = map.hf;
         const ground = (x: number, z: number) => heightAt(hf, x, z);
 
-        this.terrain = new TerrainField(hf, quality.terrain, createTerrainMaterial(tier, hf, createTerrainTextures(hf)));
+        this.terrain = new TerrainField(hf, quality.terrain, createTerrainMaterial(tier, hf, createTerrainTextures(hf, tier)));
         this.group.add(this.terrain.group);
         this.group.add(createSea(hf, tier));
         this.group.add(createRoads(map.net, ground, tier));
@@ -479,9 +479,12 @@ export class MapWorld {
             const frame = new PropBatch(`${name}-frame`);
             const panels = new Batch(`${name}-panels`);
             for (const line of lines) {
+                // Posts and the top rail are 7 and 5 cm thin: four sides, no
+                // caps (1.6 km of fence round the arena and the Party zone:
+                // 555 posts, 822 rail pieces)
                 for (const [px, pz] of postsAlong(line, FENCE_POST_SPACING)) {
                     const y = heightAt(hf, px, pz);
-                    frame.add(new THREE.CylinderGeometry(0.035, 0.035, FENCE_HEIGHT + 0.1, 6).translate(px, y + (FENCE_HEIGHT + 0.1) / 2, pz), FINISH.galvanized);
+                    frame.add(new THREE.CylinderGeometry(0.035, 0.035, FENCE_HEIGHT + 0.1, 4, 1, true).translate(px, y + (FENCE_HEIGHT + 0.1) / 2, pz), FINISH.galvanized);
                 }
                 const total = polylineLength(line);
                 const steps = Math.max(1, Math.ceil(total / 2));
@@ -624,11 +627,11 @@ export class MapWorld {
     }
 }
 
-// A thin round bar from a to b
+// A thin bar from a to b (four sides, open ends)
 function barBetween(a: THREE.Vector3, b: THREE.Vector3, radius: number): THREE.BufferGeometry {
     const direction = b.clone().sub(a);
     const length = direction.length();
-    const bar = new THREE.CylinderGeometry(radius, radius, length, 5, 1, true);
+    const bar = new THREE.CylinderGeometry(radius, radius, length, 4, 1, true);
     bar.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize()));
     return bar.translate((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
 }

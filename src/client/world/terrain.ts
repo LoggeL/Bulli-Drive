@@ -33,13 +33,15 @@ const UV_PERIOD = 6;
 // Linear RGB of the flat colours of the software tier (sRGB hex)
 const lin = (hex: number) => new THREE.Color(hex).toArray().map(v => v.toFixed(4)).join(', ');
 
-function splatTexture(data: Uint8Array, width: number, height: number, name: string): THREE.DataTexture {
+function splatTexture(data: Uint8Array, width: number, height: number, name: string, mipmaps: boolean): THREE.DataTexture {
     const texture = new THREE.DataTexture(data, width, height, THREE.RGBAFormat, THREE.UnsignedByteType);
     texture.name = name;
     texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
     texture.magFilter = THREE.LinearFilter;
-    texture.minFilter = THREE.LinearMipmapLinearFilter;
-    texture.generateMipmaps = true;
+    // Far rings sample a smooth average (no flicker); software WebGL would
+    // build the mip chain on the CPU at every page load
+    texture.minFilter = mipmaps ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter;
+    texture.generateMipmaps = mipmaps;
     texture.colorSpace = THREE.NoColorSpace;
     texture.needsUpdate = true;
     return texture;
@@ -133,11 +135,12 @@ export interface TerrainTextures {
     splatB: THREE.DataTexture;
 }
 
-export function createTerrainTextures(hf: Heightfield): TerrainTextures {
+export function createTerrainTextures(hf: Heightfield, tier: RenderTier): TerrainTextures {
     const splat = buildTerrainSplat(hf);
+    const mipmaps = tier !== 'software';
     return {
-        splatA: splatTexture(splat.a, splat.width, splat.height, 'terrain-splat-a'),
-        splatB: splatTexture(splat.b, splat.width, splat.height, 'terrain-splat-b')
+        splatA: splatTexture(splat.a, splat.width, splat.height, 'terrain-splat-a', mipmaps),
+        splatB: splatTexture(splat.b, splat.width, splat.height, 'terrain-splat-b', mipmaps)
     };
 }
 

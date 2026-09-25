@@ -3,7 +3,7 @@ import { buildRoadNetwork } from '../../src/shared/map/roadNetwork.js';
 import type { RoadArea } from '../../src/shared/map/roadSchema.js';
 import {
     areaFrame, buildRoadGeometry, CENTRE_CODE, cornerCurve, edgeRuns, edgeStations, END_CODE, MAX_STATION_STEP, ROAD_FLAG,
-    ROAD_LIFT, triangulatePolygon, type MeshArrays
+    ROAD_LIFT, splitByChunk, triangulatePolygon, MeshArrays
 } from '../../src/client/world/roadGeometry.js';
 import { edge, network, node, PROFILE } from '../shared/map/fixtures.js';
 
@@ -188,5 +188,47 @@ describe('lots', () => {
         expect(vertices(layers.walk).some(v => v.x >= 200 && v.y > 0.1)).toBe(true);
         // Nothing drawn over the pier (its deck is the kit's)
         for (const layer of Object.values(layers)) expect(vertices(layer).some(v => v.x > 290)).toBe(false);
+    });
+});
+
+describe('chunks', () => {
+    // Two triangles, one each side of x = 0, sharing the vertex at (0, 0):
+    // centroids at x = -2/3 and +2/3, chunk = side of x = 0
+    const mesh = () => {
+        const out = new MeshArrays();
+        const n = [0, 1, 0];
+        out.vertex(-1, 0, 0, n, -1, 0, [1, 2, 3, 4], [5, 6, 7, 8]);
+        out.vertex(0, 0, 0, n, 0, 0, [1, 2, 3, 4], [5, 6, 7, 9]);
+        out.vertex(-1, 0, 1, n, -1, 1, [1, 2, 3, 4], [5, 6, 7, 10]);
+        out.vertex(1, 0, 0, n, 1, 0, [1, 2, 3, 4], [5, 6, 7, 11]);
+        out.vertex(1, 0, 1, n, 1, 1, [1, 2, 3, 4], [5, 6, 7, 12]);
+        out.index.push(0, 2, 1, 1, 4, 3);
+        return out;
+    };
+    const side = (x: number) => (x < 0 ? 0 : 1);
+
+    it('put each triangle into the chunk of its centroid, with its own copies of the vertices', () => {
+        const chunks = splitByChunk(mesh(), side);
+        expect([...chunks.keys()].sort()).toEqual([0, 1]);
+        const west = chunks.get(0)!, east = chunks.get(1)!;
+        // The shared vertex (0, 0) is in both; each chunk has 3 vertices
+        expect(vertices(west).map(v => [v.x, v.z, v.b[3]])).toEqual([[-1, 0, 8], [-1, 1, 10], [0, 0, 9]]);
+        expect(vertices(east).map(v => [v.x, v.z, v.b[3]])).toEqual([[0, 0, 9], [1, 1, 12], [1, 0, 11]]);
+        // Winding kept: (a, c, b) of the source is (0, 1, 2) of the copy
+        expect(west.index).toEqual([0, 1, 2]);
+        expect(east.index).toEqual([0, 1, 2]);
+        expect(vertices(west)[1]).toMatchObject({ u: -1, s: 1, a: [1, 2, 3, 4] });
+    });
+
+    it('keep every triangle of a layer exactly once', () => {
+        // A 60 m road, 10 m wide, across the chunk border at x = 0: 30 × 10
+        // on each side
+        const net = network([node('a', -30, 0), node('b', 30, 0)], [edge('ab', 'a', 'b')]);
+        const asphalt = buildRoadGeometry(buildRoadNetwork(net), flat).asphalt;
+        const chunks = splitByChunk(asphalt, side);
+        const total = [...chunks.values()].reduce((sum, part) => sum + part.index.length, 0);
+        expect(total).toBe(asphalt.index.length);
+        expect(triangles(chunks.get(0)!).area).toBeCloseTo(300, 6);
+        expect(triangles(chunks.get(1)!).area).toBeCloseTo(300, 6);
     });
 });

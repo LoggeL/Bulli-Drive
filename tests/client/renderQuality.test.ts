@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AdaptiveRenderQuality } from '../../src/client/effects/renderQuality.js';
+import { AdaptiveRenderQuality, isSoftwareRendererName, wantsAntialias } from '../../src/client/effects/renderQuality.js';
 
 // The adaptive resolution (src/client/effects/renderQuality.ts) and its
 // signal that even the lowest resolution is too slow, on which the map
@@ -44,6 +44,50 @@ describe('the adaptive render quality', () => {
         t = run(quality, t, 18, 4.1);
         t = run(quality, t, 30, 4.1);
         expect(quality.struggling).toBe(false);
+        vi.unstubAllGlobals();
+    });
+});
+
+// Renderer names as browsers report them (WEBGL_debug_renderer_info)
+const SWIFTSHADER = 'ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)';
+const GPUS = [
+    'ANGLE (Apple, ANGLE Metal Renderer: Apple M2 Pro, Unspecified Version)',
+    'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002503) Direct3D11 vs_5_0 ps_5_0, D3D11)',
+    'Apple GPU',
+    'Adreno (TM) 640'
+];
+
+describe('the rasterizer', () => {
+    it('counts SwiftShader, llvmpipe and the Windows fallback as software, GPUs not', () => {
+        for (const name of [SWIFTSHADER, 'llvmpipe (LLVM 15.0.7, 256 bits)', 'ANGLE (Microsoft, Microsoft Basic Render Driver Direct3D11 vs_5_0 ps_5_0, D3D11)']) {
+            expect(isSoftwareRendererName(name), name).toBe(true);
+        }
+        for (const name of GPUS) expect(isSoftwareRendererName(name), name).toBe(false);
+    });
+
+    // A document whose canvases give a context of this renderer (null: no WebGL)
+    function stubDocument(renderer: string | null) {
+        const lost: string[] = [];
+        const gl = renderer === null ? null : {
+            RENDERER: 0x1f01,
+            getExtension: (name: string) => name === 'WEBGL_debug_renderer_info'
+                ? { UNMASKED_RENDERER_WEBGL: 0x9246 }
+                : name === 'WEBGL_lose_context' ? { loseContext: () => lost.push(renderer) } : null,
+            getParameter: (parameter: number) => (parameter === 0x9246 ? renderer : 'WebKit WebGL')
+        };
+        vi.stubGlobal('document', { createElement: () => ({ getContext: () => gl }) });
+        return lost;
+    }
+
+    it('multisamples on a GPU, not on a CPU rasterizer, and gives the probe context back', () => {
+        const lostSoftware = stubDocument(SWIFTSHADER);
+        expect(wantsAntialias()).toBe(false);
+        expect(lostSoftware).toEqual([SWIFTSHADER]);
+        stubDocument(GPUS[0]);
+        expect(wantsAntialias()).toBe(true);
+        // Without WebGL the renderer fails anyway; the default stays
+        stubDocument(null);
+        expect(wantsAntialias()).toBe(true);
         vi.unstubAllGlobals();
     });
 });
