@@ -71,9 +71,11 @@ export default {
     mutate: group
         ? GROUPS[group]
         : ['src/shared/**/*.ts', 'src/server/rooms/**/*.ts', 'src/server/race/**/*.ts', ...GROUPS.map.slice(1), '!src/**/*.d.ts'],
-    // public/maps stays: the map data tests read the baked terrain
+    // public/maps stays: the map data tests read the baked terrain; so does
+    // public/models (structures.test.ts checks KIT_FOOTPRINTS against the
+    // kit's manifest)
     ignorePatterns: [
-        'dist', 'public/*', '!public/maps', 'test-results', 'playwright-report', 'reports',
+        'dist', 'public/*', '!public/maps', '!public/models', 'test-results', 'playwright-report', 'reports',
         'screenshots', 'output', 'tools/models', 'tools/textures'
     ],
 
