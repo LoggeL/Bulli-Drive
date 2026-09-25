@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { forwardSpeed, RoadDriver, steerForAngle } from '../../tools/bots/driver.js';
-import { freeRunway, longestRunway, RUNWAY_CLEARANCE } from '../../tools/bots/runway.js';
+import { arenaRunway, freeRunway, longestRunway, RUNWAY_CLEARANCE } from '../../tools/bots/runway.js';
+import type { MapData } from '../../src/shared/map/mapData.js';
+import { COIN_PICKUP_RADIUS, POWERUP_PICKUP_RADIUS } from '../../src/shared/party/rules.js';
 import { mixTotal, parseMix, httpOrigin } from '../../tools/bots/swarm.js';
 import { mapFor } from '../../src/server/maps.js';
 import { slotSpawn } from '../../src/server/rooms/spawn.js';
@@ -219,6 +221,70 @@ describe('the runway of the scripted bumps', () => {
         // the car's grown circle would touch it
         const probe = { ...map, simWorld: { ...map.simWorld, colliders: [...map.simWorld.colliders, { kind: 'circle' as const, x: runway.x, z: runway.z + 50, r: 0.5, base: 0, top: Infinity }] } };
         expect(freeRunway(probe, runway.x, runway.z)).toBeCloseTo(50 - 0.5 - RUNWAY_CLEARANCE, 9);
+    });
+});
+
+describe('the runway across the Party arena', () => {
+    it('crosses the arena towards +x, clear of its walls and of every pickup', () => {
+        const runway = arenaRunway(map);
+        const { minX, maxX, minZ, maxZ } = map.arenaBounds;
+        expect(runway.yaw).toBe(Math.PI / 2);
+        expect(runway.free).toBeGreaterThanOrEqual(120);
+        expect(runway.x).toBeGreaterThan(minX);
+        expect(runway.x + runway.free).toBeLessThan(maxX);
+        expect(runway.z).toBeGreaterThan(minZ);
+        expect(runway.z).toBeLessThan(maxZ);
+        // No coin or power-up is picked up on the way: each lies further
+        // from the line than its pickup radius or beyond its end
+        const items = [
+            ...map.items.coins.map(c => ({ ...c, r: COIN_PICKUP_RADIUS })),
+            ...map.items.powerups.map(p => ({ ...p, r: POWERUP_PICKUP_RADIUS }))
+        ];
+        for (const item of items) {
+            const onLine = item.x >= runway.x - item.r && item.x <= runway.x + runway.free + item.r;
+            if (onLine) expect(Math.abs(item.z - runway.z), `item at ${item.x}, ${item.z}`).toBeGreaterThanOrEqual(item.r);
+        }
+        // A car there drives it in the Party's world without touching a wall
+        const car = createSimCar('p', 'pickup');
+        spawnVehicle(car.state, map.partyWorld, runway.x, runway.z, runway.yaw);
+        let wall = 0;
+        for (let t = 0; t < 60 * 6 && car.state.x < runway.x + runway.free - 10; t++) {
+            car.input.throttle = 255;
+            car.input.steer = 0;
+            stepWorld([car], map.partyWorld);
+            wall = Math.max(wall, car.events.wallImpact);
+        }
+        expect(car.state.x).toBeGreaterThan(runway.x + 100);
+        expect(wall).toBe(0);
+    });
+
+    // A hand-made arena 100 m long and 12.5 m wide: with the clearance of
+    // 4.75 m (1.5 * MEGA_SCALE 2.5 + 1) plus the fence's 1 m, the lines run at
+    // z = 5.75, 6.25 and 6.75 from x = 5.75 to 94.25
+    const arena = (coins: { x: number; z: number }[], colliders: unknown[] = []) => ({
+        arenaBounds: { minX: 0, maxX: 100, minZ: 0, maxZ: 12.5 },
+        partyWorld: { colliders },
+        items: { coins: coins.map((c, id) => ({ id, ...c })), powerups: [] }
+    }) as unknown as MapData;
+
+    it('runs the full length where nothing is in the way', () => {
+        expect(RUNWAY_CLEARANCE).toBe(4.75);
+        expect(arenaRunway(arena([]))).toEqual({ x: 5.75, z: 5.75, yaw: Math.PI / 2, free: 88.5 });
+    });
+
+    it('ends before the pickup radius of a coin on the line', () => {
+        // The coin at (50, 6.25) with its 4 m radius: the outer lines, 0.5 m
+        // off its centre, meet the circle sqrt(16 - 0.25) = 3.9686 m before
+        // x = 50; the first of them wins
+        const runway = arenaRunway(arena([{ x: 50, z: 6.25 }]));
+        expect(runway.z).toBe(5.75);
+        expect(runway.free).toBeCloseTo(50 - Math.sqrt(15.75) - 5.75, 9);
+    });
+
+    it('ends before a collider grown by the clearance', () => {
+        // A post of 1 m radius at x = 30: its box grown by 4.75 m starts at 24.25
+        const post = { kind: 'circle', x: 30, z: 6.25, r: 1, base: 0, top: Infinity };
+        expect(arenaRunway(arena([], [post])).free).toBeCloseTo(24.25 - 5.75, 9);
     });
 });
 
