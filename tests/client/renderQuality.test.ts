@@ -35,6 +35,34 @@ describe('the adaptive render quality', () => {
         vi.unstubAllGlobals();
     });
 
+    it('draws half a pixel per CSS pixel on a CPU rasterizer, however fast its frames', () => {
+        vi.stubGlobal('window', { devicePixelRatio: 2, matchMedia: () => ({ matches: false }) });
+        const target = renderer();
+        const quality = new AdaptiveRenderQuality(target as never, 800, 600, 'software');
+        expect(target.setPixelRatio).toHaveBeenLastCalledWith(0.5);
+        // Fast frames never step it up, slow ones never below 0.5
+        run(quality, run(quality, 0, 10, 3 + 4.1 * 3), 40, 4.1 * 3);
+        expect(target.setDrawingBufferSize).not.toHaveBeenCalled();
+        // The desktop starts at the device's ratio
+        const desktop = renderer();
+        new AdaptiveRenderQuality(desktop as never, 800, 600, 'desktop');
+        expect(desktop.setPixelRatio).toHaveBeenLastCalledWith(2);
+        vi.unstubAllGlobals();
+    });
+
+    it('draws one pixel per CSS pixel in lite graphics, not the CPU rasterizer\'s half', () => {
+        vi.stubGlobal('window', { devicePixelRatio: 3, matchMedia: () => ({ matches: true }) });
+        const target = renderer();
+        const quality = new AdaptiveRenderQuality(target as never, 400, 800, 'software', true);
+        expect(target.setPixelRatio).toHaveBeenLastCalledWith(1);
+        // Slow frames still step it down, but no lower than the common floor of 0.75
+        run(quality, 0, 40, 3 + 4.1 * 4 + 2.1 * 4);
+        const ratios = target.setDrawingBufferSize.mock.calls.map(call => call[2]);
+        expect(ratios[0]).toBe(0.75);
+        expect(Math.min(...ratios)).toBe(0.75);
+        vi.unstubAllGlobals();
+    });
+
     it('does not call a GPU struggling that is fast again at the floor', () => {
         vi.stubGlobal('window', { devicePixelRatio: 1, matchMedia: () => ({ matches: false }) });
         const quality = new AdaptiveRenderQuality(renderer() as never, 800, 600, 'desktop');

@@ -21,7 +21,7 @@ function browserEnv(): SafeModeEnv {
     try {
         storage = window.localStorage;
     } catch { /* private mode or blocked storage */ }
-    return { search: window.location.search, storage, now: Date.now() };
+    return { search: window.location?.search ?? '', storage, now: Date.now() };
 }
 
 /** Whether this load uses lite graphics. */

@@ -17,7 +17,7 @@ Seit M4 zeichnet der Client die kuratierte Karte (Details und Abweichungen: [`do
 | Sonne | aus `map.json`: West-Nordwest über dem Pazifik, 17° hoch |
 | Minimap | Karte genordet, Osten rechts (E2) |
 
-**Detailstufen** (`worldQuality.ts`): high (Desktop), mid (Desktop, dessen GPU selbst bei kleinster Auflösung zu langsam ist), low (Handys), software (CPU-Rasterizer, E2E). Sie regeln Gelände-Ringe, Kit-Zellen, Sichtweiten der Instanzen und die Dichte der Streuung. Auf einem CPU-Rasterizer zeichnet die Seite ohne Multisampling (ein Drittel jedes SwiftShader-Bildes).
+**Detailstufen** (`worldQuality.ts`): high (Desktop), mid (Desktop, dessen GPU selbst bei kleinster Auflösung zu langsam ist), low (Handys), software (CPU-Rasterizer, E2E). Sie regeln Gelände-Ringe, Kit-Zellen, Sichtweiten der Instanzen und die Dichte der Streuung. Auf einem CPU-Rasterizer zeichnet die Seite ohne Multisampling und mit einem halben Pixel je CSS-Pixel (zusammen gut die Hälfte jedes SwiftShader-Bildes).
 
 **Draw Calls und Dreiecke** (`npm run screenshots`, M5-GPU, einschließlich Schatten-Pass; Budget Desktop ≤ 300 Calls und 1,2 Mio. Dreiecke, Handy ≤ 150 und 500 k):
 
@@ -121,7 +121,7 @@ Tier low bleibt unter 150 Draw Calls und weit unter 500 k Dreiecken. Der E2E-Tes
 | Himmel | HDRIs (2,7 MB) | prozedurale Wolken, keine HDRIs | Verlauf und Sonne ohne Wolken |
 | Environment-Map | PMREM | PMREM | keine (Hemisphere-Licht) |
 | Schatten | 2048, PCF soft, ±60 m | 1024, PCF soft, ±45 m | 1024, PCF |
-| Pixel-Ratio | ≤ 2 | ≤ 1,5 | ≤ 2 (adaptiv) |
+| Pixel-Ratio | ≤ 2 | ≤ 1,5 | ≤ 2 (adaptiv); seit Phase 3 M4 fest 0,5 |
 | Post-Processing | keins | keins | keins |
 | Gelände-Raster | 8 m | 10 m | 16 m |
 | Bulli Bay (M4) | Ringe ab 0,5 m, Kit-LOD0 bis 60 m | Ringe ab 0,5 m, Kit ab LOD1 | Ringe ab 1 m, Kit-LOD2 bis 220 m, kein Multisampling |
