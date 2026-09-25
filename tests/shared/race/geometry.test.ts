@@ -232,6 +232,19 @@ describe('projection', () => {
         expect([out.x, out.z, out.s]).toEqual([40, 50, 190]);
         projectGlobal(loop, 22, 50, out, 70);
         expect([out.x, out.z, out.s]).toEqual([0, 50, 50]);
+        // Ahead (the next gate): the first leg forward from 250 m, across the
+        // seam at 280 m, is the left one (80 m on), not the right one 60 m
+        // back that the plain expectation takes
+        projectGlobal(loop, 22, 50, out, 250);
+        expect([out.x, out.z, out.s]).toEqual([40, 50, 190]);
+        projectGlobal(loop, 22, 50, out, 250, true);
+        expect([out.x, out.z, out.s]).toEqual([0, 50, 50]);
+        // From 170 m the right leg's point (190 m) is next; from 200 m on it
+        // lies behind, and the left one comes 130 m on
+        projectGlobal(loop, 22, 50, out, 170, true);
+        expect([out.x, out.z, out.s]).toEqual([40, 50, 190]);
+        projectGlobal(loop, 22, 50, out, 200, true);
+        expect([out.x, out.z, out.s]).toEqual([0, 50, 50]);
     });
 
     it('never wraps the window of an open line round to its other end', () => {

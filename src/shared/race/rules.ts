@@ -53,6 +53,10 @@ export const MISSED_GATE_DISTANCE = 30;
 export const OFF_LINE_DISTANCE = 25;
 // A reset that lands past the next gate goes back this far (m) before it (10.3)
 export const RESET_BEFORE_GATE = 5;
+// A reset that lands farther (m) behind the racer's own place on the line
+// (on a parallel leg it had long left: the slalom of the Dune Rally) goes to
+// that place instead
+export const RESET_BEHIND_MAX = 50;
 
 // ---- Racing line ----
 
@@ -104,5 +108,8 @@ export const DRAFT_FILL = 0.08;
 // Pose track of a ghost: one sample every GHOST_POSE_EVERY ticks (20 Hz)
 export const GHOST_POSE_HZ = 20;
 export const GHOST_POSE_EVERY = 3;
-// Personal bests per ghost key kept in memory (LRU)
-export const GHOST_PERSONAL_MAX = 64;
+// Personal bests per ghost key kept in memory (LRU). 64 with the two
+// tracks of phase 2; with the six of Bulli Bay 20, so every personal best of
+// 150 s runs on all of them stays within the 5 MB of the store
+// (docs/phase-2-design.md, 19; tests/server/memoryGhostStore.test.ts)
+export const GHOST_PERSONAL_MAX = 20;

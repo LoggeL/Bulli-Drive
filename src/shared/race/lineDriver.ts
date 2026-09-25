@@ -13,7 +13,7 @@ import { BTN_BOOST } from '../sim/constants.js';
 import type { VehicleInput, VehicleParams, VehicleState } from '../sim/types.js';
 import { createProjection, pointAt, projectGlobal, projectNear, type Projection } from './geometry.js';
 import type { Course } from './progress.js';
-import { forwardSpeed, pursuitSteer, StuckWatch } from './pursuit.js';
+import { forwardSpeed, pursuitSteer, StuckWatch, wrapAngle } from './pursuit.js';
 import { speedProfile } from './racingLine.js';
 import { DRAFT_MIN_SPEED, LAUNCH_WINDOW_TICKS } from './rules.js';
 import type { BotLevel } from './types.js';
@@ -70,6 +70,13 @@ const STRAIGHT_AHEAD = 60;
 const BOOST_METER = 0.5;
 // A jump farther than this between two ticks is a reset or a teleport (m)
 const TELEPORT_DISTANCE = 10;
+// Traction control: no throttle while the velocity points more than this
+// (rad, about 7°) away from the nose, above TRACTION_MIN_SPEED (m/s). On
+// Bulli Bay five medium bots per race spun about half as often with it
+// (192 against 92 resets in 120 races, tests/integration/trackRaces.test.ts)
+// and were 1-2 % slower.
+export const TRACTION_SLIP = 0.12;
+export const TRACTION_MIN_SPEED = 5;
 // Farther off the line than this (m) for OFF_LINE_RESET_TICKS: reset
 const OFF_LINE_RESET = 25;
 const OFF_LINE_RESET_TICKS = 120;
@@ -282,11 +289,15 @@ export class LineDriver {
             brake = 0;
         }
         this.delayed(steer, throttle, brake, out);
+        // Traction control: off the throttle while the car slides (the
+        // delayed pedal would otherwise spin a Beetle out of a corner exit)
+        if (u > TRACTION_MIN_SPEED && Math.abs(wrapAngle(Math.atan2(s.vx, s.vz) - s.yaw)) > TRACTION_SLIP) out.throttle = 0;
         if (this.skill.boost && s.boostMeter >= BOOST_METER && !blocked && out.brake === 0
             && this.profileMin(hit.s, hit.s + STRAIGHT_AHEAD) >= p.topSpeed * 0.98) {
             out.buttons |= BTN_BOOST;
         }
-        this.stuck.watch(s, u, out);
+        // Racing, the bot never means to stand: stuck is stuck, whatever it asks for
+        this.stuck.watch(s, u, out, true);
         return out;
     }
 

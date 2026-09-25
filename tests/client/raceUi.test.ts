@@ -7,6 +7,8 @@ import type { HudView, LobbyView, ResultsView } from '../../src/client/race/race
 import { initRaceUi, renderHud, renderLobby, renderResults, type RaceActions } from '../../src/client/race/raceUi.js';
 import { setGameMap } from '../../src/client/map/gameMap.js';
 import { mapFor } from '../../src/server/maps.js';
+import { TRACK_IDS, trackDef } from '../../src/shared/race/tracks/index.js';
+import type { TrackId } from '../../src/shared/race/types.js';
 
 // The race HUD and sheets in the page (src/client/race/raceUi.ts,
 // docs/phase-2-design.md 17.2) on the real markup of index.html: what the
@@ -70,6 +72,15 @@ describe('the race UI', () => {
         expect(byId('race-ready').getAttribute('aria-pressed')).toBe('true');
         byId('race-ready').click();
         expect(calls).toEqual([['ready', true], ['ready', false]]);
+    });
+
+    it('offers every track of the map by its name, in the order of the rotation', () => {
+        const buttons = [...document.querySelectorAll<HTMLElement>('#race-lobby [data-track]')];
+        expect(buttons.map(b => b.dataset.track)).toEqual([...TRACK_IDS]);
+        for (const button of buttons) {
+            const name = trackDef(mapFor(), button.dataset.track as TrackId).name.toUpperCase();
+            expect(button.firstChild!.textContent).toBe(name);
+        }
     });
 
     it('picks the track, the bots and the car, and switches to the time trial', () => {

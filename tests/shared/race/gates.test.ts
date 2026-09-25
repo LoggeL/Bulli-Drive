@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { crossGate, crossingTicks, gateSide } from '../../../src/shared/race/gates.js';
-import type { GateDef } from '../../../src/shared/race/types.js';
+import { crossGate, crossingTicks, gateArcLengths, gateSide } from '../../../src/shared/race/gates.js';
+import { buildRacingLine } from '../../../src/shared/race/racingLine.js';
+import type { GateDef, TrackDef } from '../../../src/shared/race/types.js';
 
 // Gate crossing with a sub-tick fraction (docs/phase-2-design.md, 8), by
 // hand: a gate through the origin facing +z (yaw 0), 10 m wide; its left
@@ -75,5 +76,33 @@ describe('crossingTicks', () => {
             expect(Object.is(crossingTicks(1651 + 30 + offset, t, 30 + offset), early)).toBe(true);
         }
         expect(early).toBe(1650 + t);
+    });
+});
+
+describe('gateArcLengths', () => {
+    // A slalom like the Dune Rally's: up x = 0, across, down x = 20, across,
+    // up x = 40 (legs 20 m apart, within OFF_LINE_DISTANCE of each other),
+    // corners rounded with 1 mm arcs, so arc lengths are sums of legs
+    const SLALOM: TrackDef = {
+        id: 'dune-rally', name: 'Slalom', kind: 'sprint', laps: 1, mapVersion: 4, trackVersion: 1,
+        centerline: [{ x: 0, z: 0 }, { x: 0, z: 100 }, { x: 20, z: 100 }, { x: 20, z: 0 }, { x: 40, z: 0 }, { x: 40, z: 100 }],
+        lineOptions: { radius: 0.001, apexShift: 0 },
+        gates: [
+            { x: 0, z: 90, yaw: 0, width: 12, visual: 'start' },
+            // On the way down, beside the first leg's start
+            { x: 20, z: 10, yaw: Math.PI, width: 12, visual: 'arch' },
+            { x: 40, z: 90, yaw: 0, width: 12, visual: 'finish' }
+        ],
+        grid: [], hints: [], minimap: { minX: 0, maxX: 40, minZ: 0, maxZ: 100 }, ramps: []
+    };
+
+    it('puts each gate on the first leg ahead of the gate before, not on a nearer one behind', () => {
+        // Up 90; then 10 up, 20 across, 90 down: 210; then 10 down, 20
+        // across, 90 up: 330. From 90, the first leg (s = 10) lies 80 m
+        // back and the right one 120 m ahead
+        const gateS = gateArcLengths(SLALOM, buildRacingLine(SLALOM));
+        expect(gateS[0]).toBeCloseTo(90, 2);
+        expect(gateS[1]).toBeCloseTo(210, 2);
+        expect(gateS[2]).toBeCloseTo(330, 2);
     });
 });

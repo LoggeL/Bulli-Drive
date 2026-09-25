@@ -92,6 +92,7 @@ function pos(player: Session): { x: number; z: number } {
 
 const DOWNTOWN_LOOP = trackDef(mapFor(), 'downtown-loop');
 const HILL_SPRINT = trackDef(mapFor(), 'hill-sprint');
+const HARBOR_CIRCUIT = trackDef(mapFor(), 'harbor-circuit');
 
 // A point of a track's racing line at station s (a circuit wraps), facing
 // along the line (against it with back = true)
@@ -486,12 +487,13 @@ describe('vote and the next race', () => {
         send(b, { type: 'raceVote', choice: 'next' });
         tick();
         expect(room.phase).toBe('lobby');
-        expect(room.trackId).toBe('downtown-loop');
+        // The track after the Ridge Climb in the rotation
+        expect(room.trackId).toBe('harbor-circuit');
         expect([...room.ready].sort()).toEqual([a.id, b.id].sort());
         expect(room.members.size).toBe(2);
         expect([...room.members.values()].some(m => m.bot)).toBe(false);
         // Both on the new grid
-        expect([pos(a), pos(b)].map(p => [p.x, p.z]).sort()).toEqual(DOWNTOWN_LOOP.grid.slice(0, 2).map(g => [g.x, g.z]).sort());
+        expect([pos(a), pos(b)].map(p => [p.x, p.z]).sort()).toEqual(HARBOR_CIRCUIT.grid.slice(0, 2).map(g => [g.x, g.z]).sort());
         const T = room.tick;
         tick(2);
         const spawns = a.transport.events('spawn').filter(e => e.tick === T);
@@ -520,7 +522,7 @@ describe('vote and the next race', () => {
         const T = room.tick;
         tickUntil(() => room.phase === 'lobby', RESULTS_TICKS + 1);
         expect(room.tick).toBe(T + RESULTS_TICKS);
-        expect(room.trackId).toBe('downtown-loop');
+        expect(room.trackId).toBe('harbor-circuit');
         expect(room.ready.size).toBe(0);
     });
 
@@ -588,9 +590,10 @@ describe('wrong way and the reset', () => {
         const a = human('A');
         const S = startRace([a]);
         tickUntil(() => room.tick === S + START_GHOST_TICKS, S + START_GHOST_TICKS);
-        // On the line 80 m past the start, facing back: against the line
+        // On the line 250 m past the start, facing back: against the line,
+        // and seconds ahead of the bots (it must not meet them head-on)
         const start = room.runtime.course.gateS[0];
-        send(a, { type: 'debugPlace', ...onLine(HILL_SPRINT, start + 80, true) });
+        send(a, { type: 'debugPlace', ...onLine(HILL_SPRINT, start + 250, true) });
         tickUntil(() => a.transport.events('wrongWay').some(e => e.id === a.id && e.on), 200, new Map([[a, { throttle: 200 }]]));
         tick(2, new Map([[a, { throttle: 200 }]]));
         expect(a.transport.lastSnapshot!.self!.flags & CAR_RACE_GHOST).toBe(CAR_RACE_GHOST);

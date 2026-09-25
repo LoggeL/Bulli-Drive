@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-    BACKOFF_TICKS, RESET_TICKS, STUCK_TICKS, StuckWatch, pursuitSteer, steerForAngle, wrapAngle
+    BACKOFF_TICKS, GOING_TICKS, RESET_TICKS, STUCK_TICKS, StuckWatch, pursuitSteer, steerForAngle, wrapAngle
 } from '../../../src/shared/race/pursuit.js';
 import { BTN_RESET } from '../../../src/shared/sim/constants.js';
 import { createVehicleInput, createVehicleState } from '../../../src/shared/sim/types.js';
@@ -91,6 +91,63 @@ describe('StuckWatch', () => {
             moving.watch(s, t % STUCK_TICKS === STUCK_TICKS - 1 ? 5 : 0, o);
         }
         expect(moving.backoffCount).toBe(0);
+    });
+
+    it('counts a standstill as stuck when the driver means to move, whatever its pedal', () => {
+        const s = createVehicleState();
+        // A light throttle (behind a car that stands): not stuck by the pedal ...
+        const byPedal = new StuckWatch();
+        for (let t = 0; t < 2 * STUCK_TICKS; t++) {
+            const o = input();
+            expect(byPedal.override(o)).toBe('drive');
+            o.throttle = 89;
+            byPedal.watch(s, 0, o);
+        }
+        // ... but stuck for a driver that means to move (a race bot)
+        const racing = new StuckWatch();
+        const said: string[] = [];
+        for (let t = 0; t < STUCK_TICKS + 1; t++) {
+            const o = input();
+            said.push(racing.override(o));
+            o.throttle = 89;
+            racing.watch(s, 0, o, true);
+        }
+        expect(said.indexOf('backoff')).toBe(STUCK_TICKS);
+        // Standing on purpose (wantsToMove false) never counts, at full throttle neither
+        const parked = new StuckWatch();
+        for (let t = 0; t < 2 * STUCK_TICKS; t++) {
+            const o = input();
+            expect(parked.override(o)).toBe('drive');
+            o.throttle = 255;
+            parked.watch(s, 0, o, false);
+        }
+    });
+
+    it('takes a bounce off the wall for no getting going: the back-offs count on to the reset', () => {
+        // Stuck, then 4.5 m/s for `going` ticks after every back-off
+        function run(going: number): StuckWatch {
+            const watch = new StuckWatch();
+            const s = createVehicleState();
+            let since = -1;
+            for (let t = 0; t < 4 * (STUCK_TICKS + BACKOFF_TICKS + GOING_TICKS) && watch.resets === 0; t++) {
+                const o = input();
+                const mode = watch.override(o);
+                if (mode === 'backoffDone') since = 0;
+                if (mode !== 'drive') continue;
+                o.throttle = 255;
+                const u = since >= 0 && since < going ? 4.5 : 0;
+                if (since >= 0) since++;
+                watch.watch(s, u, o);
+            }
+            return watch;
+        }
+        // A moment (1 tick under GOING_TICKS): back off twice, then the reset
+        const bounced = run(GOING_TICKS - 1);
+        expect([bounced.backoffCount, bounced.resets]).toEqual([2, 1]);
+        // Going for GOING_TICKS: the count starts over, no reset in this time
+        const going = run(GOING_TICKS);
+        expect(going.resets).toBe(0);
+        expect(going.backoffCount).toBeGreaterThan(2);
     });
 
     it('counts a forced reset once while it is held, and ends a back-off for it', () => {

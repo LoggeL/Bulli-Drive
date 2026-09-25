@@ -191,6 +191,20 @@ export function routeRamps(route: ResolvedRoute, track: TrackRoute): TrackRamp[]
     });
 }
 
+// A circuit's centre line begins at the last point at or before the
+// start/finish gate, as in phase 2 (the Downtown Loop's first vertex is its
+// start): the race code measures the gates along the line from its origin
+// and expects them in order, the start/finish first (progress.ts,
+// createCourse). A route begins at its first edge, wherever the start lies.
+// A sprint keeps its points (they run from the first edge to the finish).
+export function circuitFromStart(route: ResolvedRoute): readonly RoutePoint[] {
+    const pts = route.points;
+    if (!route.closed) return pts;
+    let first = 0;
+    while (first + 1 < pts.length && pts[first + 1].s <= route.startS) first++;
+    return [...pts.slice(first), ...pts.slice(0, first)];
+}
+
 // 13.2, step 6: the TrackDef. The centre line is dense (every 2 m) and
 // already rounded through the junctions (transitionCurve), so the racing
 // line takes it as it is: lineOptions { radius: 0, apexShift: 0 } (the
@@ -198,7 +212,7 @@ export function routeRamps(route: ResolvedRoute, track: TrackRoute): TrackRamp[]
 // half a leg long).
 export function routeToTrack(net: RoadNetwork, route: ResolvedRoute, mapVersion: number): MapTrackDef {
     const track = route.track;
-    const centerline: Vec2[] = route.points.map(p => ({ x: toMillimetres(p.x), z: toMillimetres(p.z) }));
+    const centerline: Vec2[] = circuitFromStart(route).map(p => ({ x: toMillimetres(p.x), z: toMillimetres(p.z) }));
     const gates: GateDef[] = route.gates.map(g => ({
         x: toMillimetres(g.x), z: toMillimetres(g.z), yaw: g.yaw, width: g.width, visual: g.visual
     }));

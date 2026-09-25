@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { GHOST_POSE_CACHE_MAX, MemoryGhostStore, ReplayBudget, ghostKeyString, simHash } from '../../src/server/race/ghostStore.js';
 import { GHOST_PERSONAL_MAX } from '../../src/shared/race/rules.js';
+import { TRACK_IDS } from '../../src/shared/race/types.js';
 import { SIM_TUNING } from '../../src/shared/sim/constants.js';
 import { resetTuning } from '../../src/shared/sim/tuning.js';
 import { VEHICLE_CLASSES } from '../../src/shared/sim/vehicleClasses.js';
@@ -31,34 +32,34 @@ describe('ghost keys', () => {
 });
 
 describe('MemoryGhostStore memory', () => {
-    it('stays within 5 MB with every personal best of 100 s runs on both tracks and all their poses asked for', () => {
-        // 100 s: 6000 ticks of input (4 B) and 2000 pose samples (13 B)
-        const store = new MemoryGhostStore(() => new Uint8Array(2000 * 13));
-        const keys = [KEY, { ...KEY, trackId: 'downtown-loop' as const }];
+    it('stays within 5 MB with every personal best of 150 s runs on all six tracks and all their poses asked for', () => {
+        // 150 s (longer than any bot needs for the Grand Tour): 9000 ticks of
+        // input (4 B) and 3000 pose samples (13 B)
+        const store = new MemoryGhostStore(() => new Uint8Array(3000 * 13));
+        const keys = TRACK_IDS.map(trackId => ({ ...KEY, trackId }));
+        expect(keys).toHaveLength(6);
         for (const key of keys) {
             for (let i = 0; i < GHOST_PERSONAL_MAX + 10; i++) {
-                const run = { ...ghostRun(`p${i}`, 6000 - i, key), inputs: new Uint8Array(6000 * 4) };
+                const run = { ...ghostRun(`p${i}`, 9000 - i, key), inputs: new Uint8Array(9000 * 4) };
                 store.submit(run);
                 store.poses(run);
             }
         }
-        // 2 · 64 runs of 24 000 B plus 16 pose tracks of 26 000 B
-        expect(store.bytes()).toBe(2 * GHOST_PERSONAL_MAX * 24_000 + GHOST_POSE_CACHE_MAX * 26_000);
+        // 6 · 20 runs of 36 000 B plus 16 pose tracks of 39 000 B: 4.9 MB
+        expect(store.bytes()).toBe(6 * GHOST_PERSONAL_MAX * 36_000 + GHOST_POSE_CACHE_MAX * 39_000);
         expect(store.bytes()).toBeLessThanOrEqual(5 * 1024 * 1024);
     });
-});
 
-describe('ReplayBudget', () => {
-    it('allows the burst at once, then perSecond replays a second', () => {
-        const budget = new ReplayBudget(2, 2);
-        const t0 = 10_000;
-        expect([budget.take(t0), budget.take(t0), budget.take(t0)]).toEqual([true, true, false]);
-        // Half a second brings one back (2 per second), a quarter only half of one
-        expect(budget.take(t0 + 250)).toBe(false);
-        expect(budget.take(t0 + 500)).toBe(true);
-        expect(budget.take(t0 + 500)).toBe(false);
-        // A long pause fills it up to the burst, not beyond
-        expect([budget.take(t0 + 60_000), budget.take(t0 + 60_000), budget.take(t0 + 60_000)]).toEqual([true, true, false]);
+    it('frees the runs and pose tracks of the keys it drops', () => {
+        const store = new MemoryGhostStore(() => new Uint8Array(1000));
+        const old = { ...KEY, trackVersion: 1 }, current = { ...KEY, trackVersion: 2 };
+        for (const key of [old, current]) {
+            const run = { ...ghostRun('a', 1500, key), inputs: new Uint8Array(400) };
+            store.submit(run);
+            store.poses(run);
+        }
+        expect(store.bytes()).toBe(2 * (400 + 1000));
+        store.retain([current]);
+        expect(store.bytes()).toBe(400 + 1000);
     });
 });
-

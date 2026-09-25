@@ -425,6 +425,39 @@ describe('resetBeforeNextGate (10.3)', () => {
         expect(resetBeforeNextGate(p, course, s, world)).toBe(false);
     });
 
+    it('puts a car reset far behind its own place on the line (a parallel leg) back at that place', () => {
+        const p = createRaceProgress();
+        // G0 and G1 passed; on the way down x = 100 at z = 70 (s = 230),
+        // the next gate G2 at (100, 50), s = 250
+        crossSquareGate(p, course, 0, START + 1);
+        crossSquareGate(p, course, 1, START + 2);
+        p.lineIndex = 1;
+        p.sLine = 230;
+        const s = createVehicleState();
+        // The sim's reset took it to the nearest leg, x = 0 at z = 60 (s = 60):
+        // 170 m behind (more than RESET_BEHIND_MAX)
+        s.x = 0; s.z = 60; s.yaw = 0; s.vx = 2;
+        expect(resetBeforeNextGate(p, course, s, world)).toBe(true);
+        expect(Math.abs(s.x - 100)).toBeLessThan(LINE_TOLERANCE);
+        expect(Math.abs(s.z - 70)).toBeLessThan(LINE_TOLERANCE);
+        expect(s.yaw).toBeCloseTo(Math.PI, 9);
+        expect([s.vx, s.vz]).toEqual([0, 0]);
+        // Within RESET_BEHIND_MAX behind (s = 185: 45 m) it stays
+        s.x = 85; s.z = 100;
+        expect(resetBeforeNextGate(p, course, s, world)).toBe(false);
+        expect([s.x, s.z]).toEqual([85, 100]);
+        // Its place 2 m before the gate: back to RESET_BEFORE_GATE before it
+        p.sLine = 248;
+        s.x = 0; s.z = 60;
+        expect(resetBeforeNextGate(p, course, s, world)).toBe(true);
+        expect(Math.abs(s.x - 100)).toBeLessThan(LINE_TOLERANCE);
+        expect(Math.abs(s.z - 55)).toBeLessThan(LINE_TOLERANCE);
+        // Not tracked yet (right after the start): nothing to go back to
+        p.lineIndex = -1;
+        s.x = 0; s.z = 60;
+        expect(resetBeforeNextGate(p, course, s, world)).toBe(false);
+    });
+
     it('checks an open line by the arc length', () => {
         const sprint = courseOf(SPRINT);
         const p = createRaceProgress();

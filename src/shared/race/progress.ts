@@ -11,7 +11,7 @@ import { createProjection, lineDelta, pointAt, projectGlobal, projectNear, type 
 import { crossGate, crossingTicks, gateArcLengths } from './gates.js';
 import { racingLine } from './racingLine.js';
 import {
-    MISSED_GATE_DISTANCE, OFF_LINE_DISTANCE, RESET_BEFORE_GATE, WRONG_WAY_BACKTRACK, WRONG_WAY_DOT, WRONG_WAY_ENTER_TICKS,
+    MISSED_GATE_DISTANCE, OFF_LINE_DISTANCE, RESET_BEFORE_GATE, RESET_BEHIND_MAX, WRONG_WAY_BACKTRACK, WRONG_WAY_DOT, WRONG_WAY_ENTER_TICKS,
     WRONG_WAY_EXIT_DOT, WRONG_WAY_EXIT_TICKS, WRONG_WAY_MIN_SPEED
 } from './rules.js';
 import type { RacerStatus, TrackDef } from './types.js';
@@ -236,9 +236,13 @@ const resetScratch: Projection = createProjection();
  * The server's check of a reset onto the racing line (10.3): the sim puts
  * a reset car on the nearest point of the line, which may lie past the
  * next gate (a shortcut over a parallel leg). Then the car goes back to
- * RESET_BEFORE_GATE before that gate, facing along the line, at rest.
- * Returns whether it moved the car. The room and the ghost replay run it
- * in the same place of the tick.
+ * RESET_BEFORE_GATE before that gate, facing along the line, at rest. The
+ * nearest point may also lie far behind the racer, on a leg it drove long
+ * ago (a car that spun off the slalom of the Dune Rally towards the leg
+ * before): more than RESET_BEHIND_MAX behind its own place on the line (the
+ * last tick's, p.sLine), it goes to that place instead. Returns whether it
+ * moved the car. The room and the ghost replay run it in the same place of
+ * the tick.
  */
 export function resetBeforeNextGate(p: RaceProgress, course: Course, s: VehicleState, world: SimWorld): boolean {
     if (p.status !== 'racing') return false;
@@ -247,9 +251,13 @@ export function resetBeforeNextGate(p: RaceProgress, course: Course, s: VehicleS
     const line = course.line;
     const at = projectGlobal(line, s.x, s.z, resetScratch).s;
     const gateS = course.gateS[k];
-    const past = line.closed ? lineDelta(line, gateS, at) > 0 : at > gateS;
-    if (!past) return false;
-    const back = pointAt(line, gateS - RESET_BEFORE_GATE, resetScratch);
+    const beforeGate = gateS - RESET_BEFORE_GATE;
+    const ahead = (from: number, to: number) => line.closed ? lineDelta(line, from, to) : to - from;
+    let target: number;
+    if (ahead(gateS, at) > 0) target = beforeGate;
+    else if (p.lineIndex >= 0 && ahead(at, p.sLine) > RESET_BEHIND_MAX) target = ahead(beforeGate, p.sLine) > 0 ? beforeGate : p.sLine;
+    else return false;
+    const back = pointAt(line, target, resetScratch);
     placeVehicle(s, world, back.x, back.z, Math.atan2(back.tx, back.tz));
     return true;
 }

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mulberry32 } from '../../../src/shared/math/rng.js';
 import { raceInputFilter } from '../../../src/shared/race/inputFilter.js';
 import { launchResult } from '../../../src/shared/race/launch.js';
-import { BOT_SKILLS, EVADE_OFFSET, LineDriver } from '../../../src/shared/race/lineDriver.js';
+import { BOT_SKILLS, EVADE_OFFSET, LineDriver, TRACTION_MIN_SPEED, TRACTION_SLIP } from '../../../src/shared/race/lineDriver.js';
 import { advanceProgress, createCourse, createRaceProgress, type Course } from '../../../src/shared/race/progress.js';
 import { BACKOFF_TICKS, BACKOFFS_BEFORE_RESET, RESET_TICKS, STUCK_TICKS } from '../../../src/shared/race/pursuit.js';
 import { createRaceWorld } from '../../../src/shared/race/raceWorld.js';
@@ -291,7 +291,34 @@ describe('LineDriver', () => {
         expect(buttons.slice(119).every(Boolean)).toBe(true);
     });
 
-    it('backs off twice and then holds reset when the car does not move with the throttle down (against a wall)', () => {
+    it('lifts off the throttle while the car slides (traction control), not while it grips', () => {
+        const course = createCourse(HILL_SPRINT, buildRacingLine(HILL_SPRINT));
+        const on = linePose(HILL_SPRINT, 60);
+        // The pedal after the reaction delay, the car held at speed v with
+        // its velocity turned by `slip` (rad) off the nose
+        function throttle(slip: number, v: number): number {
+            const car = createSimCar('bot', 'bulli');
+            spawnVehicle(car.state, worldFor(HILL_SPRINT), on.x, on.z, on.yaw);
+            const driver = new LineDriver(course, car.params, 'medium', mulberry32(1));
+            driver.startRace(0);
+            let last = 0;
+            for (let t = 1; t <= BOT_SKILLS.medium.delayTicks + 2; t++) {
+                car.state.vx = v * Math.sin(on.yaw + slip);
+                car.state.vz = v * Math.cos(on.yaw + slip);
+                last = driver.drive(car.state, car.params, t, 0, [], car.input).throttle;
+            }
+            return last;
+        }
+        // 12 m/s on the straight after the start: the bot wants more
+        expect(throttle(0, 12)).toBeGreaterThan(100);
+        expect(throttle(TRACTION_SLIP - 0.02, 12)).toBeGreaterThan(100);
+        expect(throttle(TRACTION_SLIP + 0.02, 12)).toBe(0);
+        expect(throttle(-(TRACTION_SLIP + 0.02), 12)).toBe(0);
+        // Pulling away (slower than TRACTION_MIN_SPEED) a slide is no matter
+        expect(throttle(0.5, TRACTION_MIN_SPEED - 1)).toBeGreaterThan(100);
+    });
+
+    it('backs off twice and then holds reset when the car does not move (against a wall)', () => {
         const course = createCourse(HILL_SPRINT, buildRacingLine(HILL_SPRINT));
         const car = createSimCar('bot', 'bulli');
         const on = linePose(HILL_SPRINT, 60);
@@ -300,14 +327,14 @@ describe('LineDriver', () => {
         driver.startRace(0);
         // The car never moves, whatever the input: a wall in front of it
         const outs = [];
-        const delay = BOT_SKILLS.medium.delayTicks;
-        const ticks = delay + STUCK_TICKS + BACKOFFS_BEFORE_RESET * (BACKOFF_TICKS + STUCK_TICKS) + RESET_TICKS;
+        const ticks = STUCK_TICKS + BACKOFFS_BEFORE_RESET * (BACKOFF_TICKS + STUCK_TICKS) + RESET_TICKS;
         for (let t = 1; t <= ticks; t++) outs.push({ ...driver.drive(car.state, car.params, t, 0, [], car.input) });
         expect(outs[20].throttle).toBeGreaterThan(100);
-        // STUCK_TICKS of throttle without speed (after the reaction delay of
-        // the level): the back-off, full brake and full lock
+        // STUCK_TICKS racing without speed, from the first tick on (a race
+        // bot always means to move, whatever its pedal after the reaction
+        // delay of the level): the back-off, full brake and full lock
         const backoff = outs.findIndex(o => o.brake === 255 && o.throttle === 0);
-        expect(backoff).toBe(delay + STUCK_TICKS);
+        expect(backoff).toBe(STUCK_TICKS);
         expect(Math.abs(outs[backoff].steer)).toBe(127);
         // Twice, each followed by STUCK_TICKS stuck again; then the reset
         const reset = outs.findIndex(o => (o.buttons & BTN_RESET) !== 0);

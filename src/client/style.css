@@ -3684,6 +3684,24 @@ body.room-race.race-results-open #mobile-controls {
     font-size: 0.8rem;
 }
 
+/* Six tracks: three columns, two on narrow phones */
+.race-tracks {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.race-tracks .race-segment {
+    padding: 0.25rem 0.2rem;
+    line-height: 1.15;
+    text-align: center;
+}
+
+@media (max-width: 420px) {
+    .race-tracks {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
 .race-segment small {
     font-family: var(--font-body);
     font-size: 0.62rem;

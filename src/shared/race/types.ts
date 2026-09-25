@@ -4,7 +4,7 @@ import type { RampDef } from '../world/colliders.js';
 // Conventions as in the sim: 1 u = 1 m, forward is (sin yaw, cos yaw), left
 // is (cos yaw, -sin yaw); yaw = 0 points to +z, π/2 to +x.
 
-export const TRACK_IDS = ['downtown-loop', 'hill-sprint'] as const;
+export const TRACK_IDS = ['downtown-loop', 'coast-sprint', 'hill-sprint', 'harbor-circuit', 'dune-rally', 'grand-tour'] as const;
 export type TrackId = typeof TRACK_IDS[number];
 
 export type RacePhase = 'lobby' | 'countdown' | 'racing' | 'finished' | 'results';

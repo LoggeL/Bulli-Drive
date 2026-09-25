@@ -316,9 +316,11 @@ export function projectNear(line: Polyline, x: number, z: number, hint: number, 
  * the nearest point of each stretch of line within OFF_LINE_DISTANCE is a
  * candidate (a local minimum of the distance), and the one closest to
  * expectedS along the line wins, so a car between two parallel legs lands
- * on the one it drives.
+ * on the one it drives. With ahead, the first candidate at or after
+ * expectedS wins instead (the next gate of a track lies ahead of the one
+ * before it, even when a parallel leg behind is nearer along the line).
  */
-export function projectGlobal(line: Polyline, x: number, z: number, out: Projection, expectedS?: number): Projection {
+export function projectGlobal(line: Polyline, x: number, z: number, out: Projection, expectedS?: number, ahead = false): Projection {
     const segments = segmentCount(line);
     if (distances.length < segments) distances = new Float64Array(segments * 2);
     const params = segmentParams.length < segments ? (segmentParams = new Float64Array(segments * 2)) : segmentParams;
@@ -343,7 +345,10 @@ export function projectGlobal(line: Polyline, x: number, z: number, out: Project
             const a = line.points[i];
             const b = line.points[(i + 1) % line.points.length];
             const s = a.s + Math.hypot(b.x - a.x, b.z - a.z) * params[i];
-            const gap = Math.abs(pathDelta(expectedS, s, line.length, line.closed));
+            const delta = pathDelta(expectedS, s, line.length, line.closed);
+            const gap = !ahead ? Math.abs(delta)
+                : line.closed ? ((s - expectedS) % line.length + line.length) % line.length
+                    : delta >= 0 ? delta : Infinity;
             if (gap < bestGap) { bestGap = gap; bestI = i; }
         }
     }

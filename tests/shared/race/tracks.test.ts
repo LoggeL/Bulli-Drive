@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { mapFor } from '../../../src/server/maps.js';
 import { heightAt } from '../../../src/shared/map/heightfield.js';
 import { roadSurfaceIdAt } from '../../../src/shared/map/roadNetwork.js';
-import { createProjection, projectGlobal } from '../../../src/shared/race/geometry.js';
+import { isPaved } from '../../../src/shared/map/types.js';
+import { createProjection, pointAt, projectGlobal } from '../../../src/shared/race/geometry.js';
+import { createCourse } from '../../../src/shared/race/progress.js';
 import { gateSide } from '../../../src/shared/race/gates.js';
 import { createRaceWorld } from '../../../src/shared/race/raceWorld.js';
 import { buildRacingLine } from '../../../src/shared/race/racingLine.js';
@@ -56,6 +58,20 @@ describe.each(TRACK_IDS.map(id => [id] as const))('%s on Bulli Bay', id => {
         expect(track.laps).toBe(track.kind === 'circuit' ? 3 : 1);
     });
 
+    it('has its gates in order along the racing line, a circuit\'s start/finish at its origin', () => {
+        // The race measures each leg from the gate before (createCourse):
+        // the gates must come in order, else a leg is negative and the bots
+        // reset for ever at a gate they "missed"
+        const course = createCourse(track, line);
+        if (track.kind === 'circuit') expect(course.gateS[0]).toBeLessThan(2);
+        for (let k = 1; k < course.gateS.length; k++) expect(course.gateS[k], `gate ${k}`).toBeGreaterThan(course.gateS[k - 1]);
+        // Each gate on the line at its own place, not on a parallel leg
+        for (const [k, gate] of track.gates.entries()) {
+            const at = pointAt(line, course.gateS[k], createProjection());
+            expect(Math.hypot(at.x - gate.x, at.z - gate.z), `gate ${k}`).toBeLessThan(1);
+        }
+    });
+
     it('keeps its racing line 2.5 m from every collider of its race world (ramp edges are driven over)', () => {
         let nearest = Infinity, at = '';
         const out = new Int32Array(world.colliders.length);
@@ -95,12 +111,15 @@ describe.each(TRACK_IDS.map(id => [id] as const))('%s on Bulli Bay', id => {
         }
     });
 
-    it('climbs at most 15 % along the line off the ramps', () => {
+    it('climbs at most 15 % along the line off the ramps, 21 % off the tarmac', () => {
+        // Phase 2 allowed a race 15 %; the map's trails may be steeper (dirt
+        // and gravel 18 %, sand 20 %, A14, plus the 1 % the bake may add)
         for (let i = 1; i < line.points.length; i++) {
             const a = line.points[i - 1], b = line.points[i];
             if (world.rampAt(a.x, a.z) >= 0 || world.rampAt(b.x, b.z) >= 0) continue;
             const slope = Math.abs(world.groundHeight(b.x, b.z) - world.groundHeight(a.x, a.z)) / (b.s - a.s);
-            expect(slope, `at (${b.x.toFixed(0)}, ${b.z.toFixed(0)})`).toBeLessThanOrEqual(0.15);
+            const paved = isPaved(world.surfaceAt(a.x, a.z)) && isPaved(world.surfaceAt(b.x, b.z));
+            expect(slope, `at (${b.x.toFixed(0)}, ${b.z.toFixed(0)})`).toBeLessThanOrEqual(paved ? 0.15 : 0.21);
         }
     });
 
@@ -132,11 +151,13 @@ describe('Ridge Climb (hill-sprint)', () => {
 });
 
 describe('track list', () => {
-    it('rotates through both tracks, knows their ids and builds them once per map', () => {
-        expect(TRACK_IDS.map(id => trackDef(map, id).id)).toEqual(['downtown-loop', 'hill-sprint']);
+    it('rotates through the six tracks, knows their ids and builds them once per map', () => {
+        const ids = ['downtown-loop', 'coast-sprint', 'hill-sprint', 'harbor-circuit', 'dune-rally', 'grand-tour'];
+        expect(TRACK_IDS.map(id => trackDef(map, id).id)).toEqual(ids);
         expect(mapTracks(map)).toBe(mapTracks(map));
-        expect(nextTrack('downtown-loop')).toBe('hill-sprint');
-        expect(nextTrack('hill-sprint')).toBe('downtown-loop');
+        expect(nextTrack('downtown-loop')).toBe('coast-sprint');
+        expect(nextTrack('harbor-circuit')).toBe('dune-rally');
+        expect(nextTrack('grand-tour')).toBe('downtown-loop');
         expect(isTrackId('hill-sprint')).toBe(true);
         expect(isTrackId('monaco')).toBe(false);
         expect(isTrackId(3)).toBe(false);

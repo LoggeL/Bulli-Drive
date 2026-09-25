@@ -53,6 +53,30 @@ export function ghostStoreContract(name: string, make: MakeStore): void {
             }
         });
 
+        it('drops the runs of every key it is not told to keep (a ported track, an older map, other tuning)', () => {
+            const store = plain();
+            const ported = { ...KEY, trackVersion: 2 };
+            const newMap = { ...KEY, trackVersion: 2, mapVersion: 4 };
+            // Two players on the old key (record and personal best are the same run for a)
+            store.submit(ghostRun('a', 1500));
+            store.submit(ghostRun('b', 1600));
+            store.submit(ghostRun('a', 1400, ported));
+            store.submit(ghostRun('c', 1300, newMap));
+            store.submit(ghostRun('a', 1200, { ...newMap, simHash: 'old-tuning' }));
+            // Runs, not entries: a and b on KEY, a on ported, a on the old tuning
+            expect(store.retain([newMap])).toBe(4);
+            for (const key of [KEY, ported, { ...newMap, simHash: 'old-tuning' }]) {
+                expect(store.best(key)).toBeNull();
+                expect(store.personalBest(key, 'a')).toBeNull();
+            }
+            expect(store.best(newMap)!.playerKey).toBe('c');
+            expect(store.personalBest(newMap, 'c')!.finishTicks).toBe(1300);
+            expect(store.retain([newMap])).toBe(0);
+            // Nothing to keep: everything goes
+            expect(store.retain([])).toBe(1);
+            expect(store.best(newMap)).toBeNull();
+        });
+
         it('keeps personal bests up to the limit, dropping the least recently used', () => {
             const store = make(() => new Uint8Array(13), 3);
             for (const player of ['a', 'b', 'c']) store.submit(ghostRun(player, 1500));

@@ -42,15 +42,16 @@ export function crossingTicks(tick: number, t: number, startTick: number): numbe
 
 /**
  * Arc length of every gate's centre on the racing line; from the second
- * gate on, the candidate nearest to the previous gate along the line wins
- * (so a gate never lands on a parallel leg).
+ * gate on, the first candidate ahead of the previous gate along the line
+ * wins (so a gate never lands on a parallel leg, not even on one that lies
+ * nearer behind: the slalom of the Dune Rally runs back 24 m beside itself).
  */
 export function gateArcLengths(track: TrackDef, line: Polyline): number[] {
     const projection = createProjection();
     const out: number[] = [];
     let expected: number | undefined;
     for (const gate of track.gates) {
-        projectGlobal(line, gate.x, gate.z, projection, expected);
+        projectGlobal(line, gate.x, gate.z, projection, expected, true);
         out.push(projection.s);
         expected = projection.s;
     }

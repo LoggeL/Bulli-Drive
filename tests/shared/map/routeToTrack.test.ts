@@ -64,6 +64,36 @@ describe('routeToTrack', () => {
         expect(track.minimap).toEqual({ minX: -40, maxX: 240, minZ: -40, maxZ: 240 });
     });
 
+    it('starts a circuit\'s centre line at its start/finish gate, so the gates lie in order along the line', () => {
+        const net = squareNetwork();
+        const route = resolved(net, LOOP);
+        // The route itself begins where ab1 leaves the junction at a (x = 12)
+        expect(route.points[0].x).toBe(12);
+        const track = routeToTrack(net, route, 4);
+        // The start is 60 m along ab1 from a (0 | 0): the gate at (60 | 0).
+        // The line's first point is the last one (every 2 m) not past it
+        expect(track.gates[0]).toMatchObject({ x: 60, z: 0 });
+        const [first, second] = track.centerline;
+        expect(first.z).toBe(0);
+        expect(first.x).toBeGreaterThan(58);
+        expect(first.x).toBeLessThanOrEqual(60);
+        expect(second.x).toBeGreaterThan(60);
+        // Phase 2 measures the gates from the line's origin: start/finish
+        // first, then ascending (else the legs come out negative)
+        const course = createCourse(asPhase2(track), buildRacingLine(asPhase2(track)));
+        expect(course.gateS[0]).toBeLessThan(2);
+        for (let k = 1; k < course.gateS.length; k++) expect(course.gateS[k]).toBeGreaterThan(course.gateS[k - 1]);
+        expect(course.legLength.every(leg => leg > 0)).toBe(true);
+    });
+
+    it('keeps a sprint\'s points from its first edge on', () => {
+        const net = squareNetwork();
+        const sprint: TrackRoute = { ...LOOP, id: 'sprint', kind: 'sprint', laps: 1, route: ['ab1', 'ab2', 'bc'], finish: { edge: 'bc', s: 150 } };
+        const route = resolved(net, sprint);
+        const track = routeToTrack(net, route, 4);
+        expect(track.centerline[0]).toEqual({ x: route.points[0].x, z: route.points[0].z });
+    });
+
     it('rounds positions to whole millimetres', () => {
         const net = squareNetwork();
         const track = routeToTrack(net, resolved(net, LOOP), 4);

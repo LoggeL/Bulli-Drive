@@ -281,8 +281,8 @@ describe('time trial', () => {
         send(player, { type: 'raceVote', choice: 'next' });
         room.step();
         expect(room.phase).toBe('lobby');
-        expect(player.transport.of('raceState').at(-1)!.trackId).toBe('downtown-loop');
-        // Back to the Hill Sprint before the voter's countdown starts
+        expect(player.transport.of('raceState').at(-1)!.trackId).toBe('harbor-circuit');
+        // Back to the Ridge Climb before the voter's countdown starts
         send(player, { type: 'raceConfig', track: 'hill-sprint' });
         expect(room.trackId).toBe('hill-sprint');
         room.step();
@@ -319,6 +319,41 @@ describe('time trial', () => {
         expect(replays).toBe(1);
         expect(player.transport.of('ghostData').at(-1)).toMatchObject({ kind: 'record', name: 'Name someone', finishTicks: 1800 });
         room.dispose();
+    });
+
+    it('drops the ghosts of the phase 2 tracks and of older track versions when the server starts', () => {
+        const map = mapFor();
+        const store = new MemoryGhostStore(() => new Uint8Array(13));
+        const hill = ghostKeyFor(map, 'hill-sprint');
+        const loop = ghostKeyFor(map, 'downtown-loop');
+        const coast = ghostKeyFor(map, 'coast-sprint');
+        // What a store that outlived the process would hold: the Hill Sprint
+        // of phase 2 (version 1 on the old city, map version 3), the Downtown
+        // Loop before its line began at the start (version 3), the Coast
+        // Sprint now, and a run under other tuning
+        const stale = [
+            { ...hill, trackVersion: 1, mapVersion: 3 },
+            { ...loop, trackVersion: loop.trackVersion - 1 },
+            { ...coast, simHash: 'tuned' }
+        ];
+        for (const key of stale) store.submit(ghostRun('old', 1500, key));
+        store.submit(ghostRun('now', 3000, coast));
+        expect(hill.mapVersion).toBe(map.mapVersion);
+        expect(map.mapVersion).toBeGreaterThan(3);
+        const manager = new RoomManager(map, { maxPlayersPerRoom: 32, emptyRoomTtlMs: 60_000, now: clock.now, ghosts: store });
+        for (const key of stale) expect(store.best(key)).toBeNull();
+        expect(store.best(coast)!.playerKey).toBe('now');
+        // A time trial on the Hill Sprint's port gets no ghost at its countdown
+        const player = fakeSession('Solo');
+        manager.join(player, 'timetrial', { track: 'hill-sprint' });
+        handleClientMessage(manager, player, { type: 'ready' }, clock.now());
+        const room = player.room as TimeTrialRoom;
+        room.step();
+        handleClientMessage(manager, player, { type: 'raceReady', ready: true }, clock.now());
+        for (let i = 0; i < 30; i++) room.step();
+        expect(room.phase).toBe('countdown');
+        expect(player.transport.of('ghostData')).toHaveLength(0);
+        for (const r of manager.list()) r.dispose();
     });
 
     it('sends the ghost again once it is a different run: a new record', () => {
