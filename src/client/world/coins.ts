@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { state } from '../state.js';
-import { groundHeight } from './environment.js';
+import { groundHeight } from './ground.js';
 import { playCollectSound } from '../effects/sounds.js';
 import { spawnParticles } from '../effects/particles.js';
 import { MAGNET_RANGE } from '../../shared/constants.js';

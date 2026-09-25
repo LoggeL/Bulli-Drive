@@ -13,6 +13,7 @@ import { updateProjectiles } from './world/projectiles.js';
 import { initSplashScreen, initAboutModal } from './ui/screens.js';
 import { applySplashChoice, initModeSelector, initRoomMenu } from './ui/roomMenu.js';
 import { updatePalms } from './world/palms.js';
+import { lowerMapDetail, startKitPreload, updateMapScene } from './world/mapScene.js';
 import { updateMinimap } from './ui/minimap.js';
 import { Bulli, type CarType } from './entities/Bulli.js';
 import { sendToServer } from './network/socket.js';
@@ -107,6 +108,8 @@ function init() {
     // until they are there (or if they fail) the cars stay procedural
     startModelPreload(state.renderer, state.camera, state.scene)
         .catch(error => console.warn('Model preload failed', error));
+    // The map's building kit (GLB + KTX2 atlas) loads alongside
+    if (!SANDBOX) startKitPreload(state.renderer);
 
     // Audio Context
     try {
@@ -331,11 +334,16 @@ function animate(frameTime: number) {
         lastDrawAt = frameTime;
         updateWorldShaders(state.clock.getElapsed());
         updateLighting();
+        // Terrain rings, kit cells and instanced plants for the final camera
+        updateMapScene(state.camera);
         // Near geometry or impostor per palm, for the final camera
         updatePalms(state.camera);
         // Car LODs, wheels, brake lights and blinkers
         updateCarModels(state.camera, dt);
         renderQuality.update(frameTime);
+        // A desktop GPU that is slow even at the lowest resolution: the
+        // map world drops to its mid detail level (once)
+        if (renderQuality.struggling) lowerMapDetail();
         // Counters include the shadow pass (perf overlay, e2e snapshot)
         renderFrame(state.renderer, state.scene, state.camera);
     }

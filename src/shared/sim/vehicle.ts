@@ -8,7 +8,7 @@
 
 import { MEGA_SCALE } from '../constants.js';
 import { isPaved, SURFACE_GRIP, SURFACE_ROLL } from '../map/types.js';
-import type { RoadGrid, SimWorld } from '../world/colliders.js';
+import type { SimWorld } from '../world/colliders.js';
 import { pushOutOfColliders, supportHeight } from './collision.js';
 import { DRAFT_FILL } from '../race/rules.js';
 import { BTN_BOOST, BTN_HANDBRAKE, BTN_JUMP, BTN_RESET, DEG, DT, SIM_TUNING as T, V_ABS, V_SAFE } from './constants.js';
@@ -149,31 +149,6 @@ export function spawnVehicle(s: VehicleState, world: SimWorld, x: number, z: num
     s.ghostTicks = T.RESET_GHOST_TICKS;
 }
 
-// Moves a car that is reset near the road grid onto the nearest road
-// centre line, facing along the road in the direction closest to its yaw
-export function moveToRoad(s: VehicleState, roads: RoadGrid): boolean {
-    let best = roads.snapRange * roads.snapRange;
-    let found = false, bx = 0, bz = 0, northSouth = true;
-    const alongZ = clamp(s.z, roads.minZ, roads.maxZ);
-    for (const lineX of roads.xLines) {
-        const d2 = (s.x - lineX) ** 2 + (s.z - alongZ) ** 2;
-        if (d2 < best) { best = d2; found = true; bx = lineX; bz = alongZ; northSouth = true; }
-    }
-    const alongX = clamp(s.x, roads.minX, roads.maxX);
-    for (const lineZ of roads.zLines) {
-        const d2 = (s.x - alongX) ** 2 + (s.z - lineZ) ** 2;
-        if (d2 < best) { best = d2; found = true; bx = alongX; bz = lineZ; northSouth = false; }
-    }
-    if (!found) return false;
-    s.x = bx;
-    s.z = bz;
-    // Forward is (sin yaw, cos yaw): 0/π run along z, ±π/2 along x
-    s.yaw = northSouth
-        ? (Math.cos(s.yaw) >= 0 ? 0 : Math.PI)
-        : (Math.sin(s.yaw) >= 0 ? Math.PI / 2 : -Math.PI / 2);
-    return true;
-}
-
 // Reset (section 6.7): stop, stand on the ground, get out of any building
 // and ghost other cars for two seconds. The yaw stays.
 export function resetVehicle(s: VehicleState, p: VehicleParams, world: SimWorld): void {
@@ -218,7 +193,6 @@ export function integrateForces(car: SimCar, world: SimWorld): void {
         // The player's reset goes back onto the road (in a race world onto
         // the racing line); teleports and respawns call resetVehicle directly
         if (world.resetPose) world.resetPose(s);
-        else if (world.roads) moveToRoad(s, world.roads);
         resetVehicle(s, P, world);
         ev.reset = true;
         return;

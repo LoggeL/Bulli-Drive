@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { BUILDING_COLORS } from '../../shared/world/cityGen.js';
 import type { RampDef, SimWorld } from '../../shared/world/colliders.js';
 import { createSandboxWorld, SANDBOX, SANDBOX_PAD_SIZE, SANDBOX_TERRAIN, type DummySpec, type SandboxBox } from '../../shared/world/sandbox.js';
 import { createDummy, driveDummy, resetDummy } from '../../shared/sim/dummies.js';
@@ -15,6 +14,10 @@ import { state } from '../state.js';
 import { CarModel } from '../vehicle/CarModel.js';
 import type { LocalVehicle } from '../vehicle/LocalVehicle.js';
 import { Nametag } from '../vehicle/Nametag.js';
+
+// Walls of the pad's blocks: terracotta, sand, cream, pale blue, sage,
+// warm white, coral, adobe tan, khaki sand, stucco beige
+const BUILDING_COLORS = [0xC17A56, 0xE8D5B7, 0xF5F0E1, 0xB8D4E3, 0xA8C6A0, 0xFAF6F0, 0xE8856A, 0xD4A574, 0xC9B99A, 0xE0C8A8];
 
 // The offline test pad of the v2 physics (?sandbox=1, docs/phase-1a-design.md,
 // 12.7). Loaded on demand instead of the server connection: it draws the

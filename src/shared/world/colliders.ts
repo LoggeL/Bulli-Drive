@@ -43,36 +43,6 @@ export type ColliderInput =
 // flush with the ground behind it (docs/phase-2-design.md, 5.5).
 export interface RampDef { x: number; z: number; yaw: number; width: number; length: number; height: number }
 
-// Straight roads a reset puts the car back onto (the city's road grid):
-// centre lines x = const running from minZ to maxZ and z = const running
-// from minX to maxX. A car farther than snapRange from every line is reset
-// where it is.
-export interface RoadGrid {
-    xLines: number[];
-    zLines: number[];
-    minX: number; maxX: number;
-    minZ: number; maxZ: number;
-    snapRange: number;
-}
-
-// Collider heights (top) of the obstacle sources in client/world/city.ts and
-// environment.ts (section 7.1). Infinity = cannot be jumped over.
-export const COLLIDER_TOPS = {
-    building: Infinity,
-    bench: 1.2,
-    pond: 0.8,
-    parkTree: Infinity,
-    palm: Infinity,
-    lamp: 5.5,
-    signPost: 3.3,
-    planter: 1.0,
-    parasol: 2.8,
-    fountain: 1.5,
-    tree: Infinity,
-    // Rocks: top = rockPerSize × rockSize
-    rockPerSize: 0.9
-} as const;
-
 // ---- Spatial grid ----
 
 // A square grid of `cells` × `cells` cells of `cellSize` m from `origin`
@@ -228,10 +198,10 @@ export interface SimWorld {
     grid: SpatialGrid;
     ramps: RampDef[];
     rampBases: number[];         // height of each ramp's rear edge (terrain there)
-    roads: RoadGrid | null;      // reset target, null = reset in place
-    // The reset target instead of roads: the racing line of a race world
+    // The reset target: the racing line of a race world
     // (docs/phase-2-design.md, 5.6), the nearest road of a map
-    // (docs/phase-3-design.md, 8.3). Returns false to reset in place.
+    // (docs/phase-3-design.md, 8.3). Returns false to reset in place; a
+    // world without it resets in place.
     resetPose?: (s: VehicleState) => boolean;
     // Race world only: the slipstream step in stepWorld
     slipstream?: boolean;
@@ -358,8 +328,7 @@ const ASPHALT = (): number => 0;
 export function createSimWorld(
     ground: TerrainConfig | GroundModel,
     colliders: readonly ColliderInput[],
-    ramps: readonly RampDef[] = [],
-    roads: RoadGrid | null = null
+    ramps: readonly RampDef[] = []
 ): SimWorld {
     const rampList = ramps.map(ramp => ({ ...ramp }));
     const terrain = isTerrainConfig(ground) ? ground : null;
@@ -409,7 +378,6 @@ export function createSimWorld(
         grid: new SpatialGrid(list, model ? model.grid : DEFAULT_GRID),
         ramps: rampList,
         rampBases,
-        roads,
         bound: terrain ? terrain.size / 2 - 2 : model!.bound,
         border: borderOf(terrain ? terrain.size / 2 - 2 : model!.bound),
         groundHeight,

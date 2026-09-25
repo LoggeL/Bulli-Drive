@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { state } from '../state.js';
 import type { PowerupData } from '../../shared/protocol.js';
-import { groundHeight } from './environment.js';
+import { groundHeight } from './ground.js';
 import { showInteractionPrompt } from '../ui/hud.js';
 import { POWERUP_DURATIONS_MS } from '../../shared/constants.js';
 

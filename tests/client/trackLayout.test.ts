@@ -107,23 +107,26 @@ describe('ribbonEdges', () => {
 });
 
 describe('the track map frame', () => {
-    it('fits the bounds with padding, north (+z) up and +x on the left as seen from above', () => {
+    it('fits the bounds with padding, north (-z) up and east (+x) on the right (phase 3, E2)', () => {
         const frame = fitFrame({ minX: 0, maxX: 100, minZ: 0, maxZ: 50 }, 120, 120, 10);
         // 100 px for 100 m (the wider side)
         expect(frame.scale).toBe(1);
         expect(toMap(frame, 50, 25)).toEqual({ px: 60, py: 60 });
-        expect(toMap(frame, 100, 50)).toEqual({ px: 10, py: 35 });
-        expect(toMap(frame, 0, 0)).toEqual({ px: 110, py: 85 });
+        // South-east corner bottom right, north-west corner top left
+        expect(toMap(frame, 100, 50)).toEqual({ px: 110, py: 85 });
+        expect(toMap(frame, 0, 0)).toEqual({ px: 10, py: 35 });
         // Taller than wide: the height decides
         expect(fitFrame({ minX: 0, maxX: 50, minZ: 0, maxZ: 100 }, 120, 120, 10).scale).toBe(1);
     });
 
-    it('turns the heading into a canvas rotation: +z up, +x to the left', () => {
+    it('turns the heading into a canvas rotation: north up, east to the right', () => {
         const up = (angle: number) => ({ x: Math.sin(angle), y: -Math.cos(angle) });
-        // Facing +z: straight up
-        expect(up(mapHeading(0)).x).toBeCloseTo(0, 12);
-        expect(up(mapHeading(0)).y).toBeCloseTo(-1, 12);
-        // Facing +x (yaw π/2): to the left on the map
-        expect(up(mapHeading(Math.PI / 2)).x).toBeCloseTo(-1, 12);
+        // Facing north (-z, yaw π): straight up
+        expect(up(mapHeading(Math.PI)).x).toBeCloseTo(0, 12);
+        expect(up(mapHeading(Math.PI)).y).toBeCloseTo(-1, 12);
+        // Facing south (+z, yaw 0): straight down
+        expect(up(mapHeading(0)).y).toBeCloseTo(1, 12);
+        // Facing east (+x, yaw π/2): to the right on the map
+        expect(up(mapHeading(Math.PI / 2)).x).toBeCloseTo(1, 12);
     });
 });

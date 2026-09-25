@@ -6,7 +6,7 @@ import { AdaptiveDelay, createRemotePose, RemoteTrack, type RemotePose } from '.
 import type { PredictedRemote } from '../../shared/net/prediction.js';
 import type { Bulli } from '../entities/Bulli.js';
 import { state } from '../state.js';
-import { groundHeight } from '../world/environment.js';
+import { groundHeight } from '../world/ground.js';
 import { netDriver } from './netDriver.js';
 
 // Remote cars on screen (docs/phase-1b-design.md, 8.6): far ones follow

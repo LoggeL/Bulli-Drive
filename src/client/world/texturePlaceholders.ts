@@ -7,7 +7,6 @@ export function placeholderTexel(name: string, fallback?: number): { rgba: [numb
     if (/_normal$/.test(name)) return { rgba: [128, 128, 255, 255], srgb: false };
     if (/_arm$/.test(name)) return { rgba: [255, 210, 0, 255], srgb: false };
     if (/world_noise$/.test(name)) return { rgba: [128, 128, 128, 128], srgb: false };
-    if (/_emissive$/.test(name)) return { rgba: [0, 0, 0, 255], srgb: true };
     // Foliage cut-outs stay invisible rather than becoming solid cards
     if (/(fronds|tree_cards|shrubs)$/.test(name)) return { rgba: [96, 100, 70, 0], srgb: true };
     const hex = fallback ?? 0xbdb3a4;

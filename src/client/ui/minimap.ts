@@ -1,14 +1,23 @@
 import { state } from '../state.js';
-import type { CityData } from '../../shared/protocol.js';
+import type { MapData } from '../../shared/map/mapData.js';
+import { SURFACE, ZONE } from '../../shared/map/types.js';
+import { boxCorners, placementBox } from '../../shared/map/structures.js';
+import type { RoadSurfaceName } from '../../shared/map/roadSchema.js';
 import type { TrackDef } from '../../shared/race/types.js';
 import { drawTrack, fitFrame, mapHeading, toMap, type MapFrame } from '../race/trackMap.js';
-import { CITY_LAYOUT } from '../../shared/constants.js';
-import { blockCenter, CITY_BOUNDS, PARK_BLOCK, PLAZA_BLOCK } from '../../shared/world/cityGen.js';
+import { radarNorth, radarOffset, radarRotation } from './radar.js';
+
+// The driving radar (docs/phase-3-design.md E2, M5): heading up, the map of
+// the whole curated map turning beneath the car. The map is drawn once into
+// a layer of one pixel per heightfield grid point (2 m): the ground from
+// the baked surfaces with hill shading, the sea by its depth, the lots, the
+// roads by surface and the buildings' footprints. In a race it shows the
+// whole track instead, north up (below).
 
 const MAP_SIZE = 180;
-const MAP_PADDING = 10;
 const RADAR_CENTER = MAP_SIZE / 2;
-const RADAR_ZOOM = 1.65;
+// Metres from the car to the rim of the radar
+const RADAR_RANGE = 230;
 const RADAR_EDGE_INSET = 10;
 const UPDATE_INTERVAL_MS = 50;
 
@@ -23,32 +32,9 @@ const colorCssCache = new Map<number, string>();
 let pixelRatio = 1;
 let lastUpdate = -Infinity;
 
-// Margin around the city footprint on the overview map
-const CITY_MAP_MARGIN = 7;
-
-function cityBounds() {
-    return {
-        minX: CITY_BOUNDS.minX - CITY_MAP_MARGIN,
-        maxX: CITY_BOUNDS.maxX + CITY_MAP_MARGIN,
-        minZ: CITY_BOUNDS.minZ - CITY_MAP_MARGIN,
-        maxZ: CITY_BOUNDS.maxZ + CITY_MAP_MARGIN
-    };
-}
-
-const bounds = cityBounds();
-const worldWidth = bounds.maxX - bounds.minX;
-const worldHeight = bounds.maxZ - bounds.minZ;
-const scale = Math.min(
-    (MAP_SIZE - MAP_PADDING * 2) / worldWidth,
-    (MAP_SIZE - MAP_PADDING * 2) / worldHeight
-);
-
-function worldToMap(x: number, z: number): { x: number; y: number } {
-    return {
-        x: MAP_PADDING + (x - bounds.minX) * scale,
-        y: MAP_SIZE - MAP_PADDING - (z - bounds.minZ) * scale
-    };
-}
+// The map layer: its origin in the world and metres per layer pixel
+const layerFrame = { originX: -1000, originZ: -1000, metresPerPixel: 2 };
+const radarPixelsPerMetre = (RADAR_CENTER - RADAR_EDGE_INSET) / RADAR_RANGE;
 
 interface MarkerPoint {
     x: number;
@@ -57,29 +43,16 @@ interface MarkerPoint {
     direction: number;
 }
 
-function worldToRadarMarker(
-    x: number,
-    z: number,
-    originX: number,
-    originZ: number,
-    heading: number
-): MarkerPoint {
-    const dx = (x - originX) * scale * RADAR_ZOOM;
-    const dz = (z - originZ) * scale * RADAR_ZOOM;
-    const cos = Math.cos(heading);
-    const sin = Math.sin(heading);
-    // Vehicle-forward is always screen-up. Its right-hand world axis maps to
-    // screen-right, so the map turns beneath the fixed player marker.
-    const rotatedX = dx * cos - dz * sin;
-    const rotatedY = -dx * sin - dz * cos;
-    const distance = Math.hypot(rotatedX, rotatedY);
+function worldToRadarMarker(x: number, z: number, originX: number, originZ: number, heading: number): MarkerPoint {
+    const offset = radarOffset((x - originX) * radarPixelsPerMetre, (z - originZ) * radarPixelsPerMetre, heading);
+    const distance = Math.hypot(offset.x, offset.y);
     const limit = RADAR_CENTER - RADAR_EDGE_INSET;
     const clamp = distance > limit ? limit / distance : 1;
     return {
-        x: RADAR_CENTER + rotatedX * clamp,
-        y: RADAR_CENTER + rotatedY * clamp,
+        x: RADAR_CENTER + offset.x * clamp,
+        y: RADAR_CENTER + offset.y * clamp,
         offMap: distance > limit,
-        direction: Math.atan2(rotatedY, rotatedX)
+        direction: Math.atan2(offset.y, offset.x)
     };
 }
 
@@ -131,74 +104,110 @@ function drawRoundedRect(
     ctx.closePath();
 }
 
-function drawStaticMap(city: CityData) {
-    staticLayer = document.createElement('canvas');
-    staticLayer.width = Math.round(MAP_SIZE * pixelRatio);
-    staticLayer.height = Math.round(MAP_SIZE * pixelRatio);
-    const ctx = staticLayer.getContext('2d');
-    if (!ctx) return;
-    ctx.scale(pixelRatio, pixelRatio);
+// ---- The map layer ----
 
-    // Roads are drawn from the exact authoritative geometry rather than a
-    // hardcoded grid, so the radar cannot drift away from the 3D world.
-    for (const road of city.roads) {
-        const p = worldToMap(road.x, road.z);
-        ctx.save();
-        ctx.translate(p.x, p.y);
-        ctx.rotate(road.rotation);
-        ctx.fillStyle = '#252a2b';
-        ctx.fillRect(-road.width * scale / 2, -road.length * scale / 2, road.width * scale, road.length * scale);
-        ctx.strokeStyle = 'rgba(246, 231, 186, 0.62)';
-        ctx.lineWidth = 0.7;
-        ctx.setLineDash([2.4, 2.8]);
-        ctx.beginPath();
-        ctx.moveTo(0, -road.length * scale / 2);
-        ctx.lineTo(0, road.length * scale / 2);
-        ctx.stroke();
-        ctx.restore();
+type RGB = [number, number, number];
+const GROUND: Record<number, RGB> = {
+    [SURFACE.sand]: [217, 200, 158],
+    [SURFACE.wetSand]: [189, 169, 131],
+    [SURFACE.rock]: [154, 145, 134],
+    [SURFACE.dirt]: [150, 128, 96],
+    [SURFACE.gravel]: [160, 152, 138]
+};
+const DRY_GRASS: RGB = [150, 142, 94];
+const LAWN: RGB = [122, 146, 88];
+const ROAD_COLOR: Record<RoadSurfaceName, string> = {
+    asphalt: '#3a3d3e', concrete: '#8f8d86', dirt: '#8a6c4b', gravel: '#9d9585', sand: '#d8c290', wood: '#8a6a48'
+};
+
+/** Draws the map into a layer canvas of one pixel per grid point. */
+function drawMapLayer(map: MapData): HTMLCanvasElement | null {
+    const hf = map.hf;
+    const { cols, rows, cellSize, originX, originZ, heightOffset, heightScale, zoneCell } = hf.spec;
+    layerFrame.originX = originX;
+    layerFrame.originZ = originZ;
+    layerFrame.metresPerPixel = cellSize;
+    const layer = document.createElement('canvas');
+    layer.width = cols;
+    layer.height = rows;
+    const ctx = layer.getContext('2d');
+    if (!ctx) return null;
+    const image = ctx.createImageData(cols, rows);
+    const data = image.data;
+    const zoneCols = Math.floor((cols - 1) * cellSize / zoneCell);
+    const perZone = zoneCell / cellSize;
+    const h = (i: number, j: number) => heightOffset + hf.q[Math.min(rows - 1, Math.max(0, j)) * cols + Math.min(cols - 1, Math.max(0, i))] * heightScale;
+    for (let j = 0; j < rows; j++) {
+        for (let i = 0; i < cols; i++) {
+            const k = j * cols + i;
+            const y = h(i, j);
+            let c: RGB;
+            if (y < hf.spec.waterLevel - 0.3) {
+                const t = Math.min(1, -y / 10);
+                c = [61 - 33 * t, 134 - 60 * t, 163 - 57 * t];
+            } else {
+                const surface = hf.surface[k];
+                const zone = hf.zones[Math.min(zoneCols - 1, Math.floor(j / perZone)) * zoneCols + Math.min(zoneCols - 1, Math.floor(i / perZone))];
+                c = GROUND[surface] ?? (zone === ZONE.residential || zone === ZONE.park ? LAWN : DRY_GRASS);
+                // Hill shading, light from the north west
+                const gx = (h(i + 1, j) - h(i - 1, j)) / (2 * cellSize), gz = (h(i, j + 1) - h(i, j - 1)) / (2 * cellSize);
+                const shade = Math.max(0.55, Math.min(1.25, 0.95 + (gx + gz) * 0.9));
+                c = [c[0] * shade, c[1] * shade, c[2] * shade];
+            }
+            data[k * 4] = c[0];
+            data[k * 4 + 1] = c[1];
+            data[k * 4 + 2] = c[2];
+            data[k * 4 + 3] = 255;
+        }
     }
-
-    for (const building of city.buildings) {
-        const p = worldToMap(building.x, building.z);
-        const width = Math.max(2, building.width * scale);
-        const depth = Math.max(2, building.depth * scale);
-        ctx.fillStyle = '#d2b795';
-        ctx.strokeStyle = 'rgba(76, 57, 47, 0.75)';
-        ctx.lineWidth = 0.7;
-        drawRoundedRect(ctx, p.x - width / 2, p.y - depth / 2, width, depth, 1.1);
+    ctx.putImageData(image, 0, 0);
+    const toLayer = (x: number, z: number): [number, number] => [(x - originX) / cellSize + 0.5, (z - originZ) / cellSize + 0.5];
+    // Lots
+    for (const area of map.net.areas) {
+        ctx.fillStyle = area.markings === 'plazaPavers' ? '#b98263' : ROAD_COLOR[area.surface];
+        ctx.beginPath();
+        area.polygon.forEach(([x, z], n) => {
+            const [px, py] = toLayer(x, z);
+            if (n === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+        });
+        ctx.closePath();
+        ctx.fill();
+    }
+    // Roads: a dark casing, then the surface
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    for (const pass of [0, 1]) {
+        for (const edge of map.net.edges) {
+            const width = edge.profile.width / cellSize;
+            ctx.strokeStyle = pass === 0 ? 'rgba(20, 22, 20, 0.45)' : ROAD_COLOR[edge.profile.surface];
+            ctx.lineWidth = pass === 0 ? width + 1.4 : width;
+            ctx.beginPath();
+            edge.samples.forEach((sample, n) => {
+                if (n % 3 !== 0 && n !== edge.samples.length - 1) return;
+                const [px, py] = toLayer(sample.x, sample.z);
+                if (n === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+            });
+            ctx.stroke();
+        }
+    }
+    // Buildings and landmarks
+    ctx.fillStyle = '#dcc7a6';
+    ctx.strokeStyle = 'rgba(70, 52, 40, 0.85)';
+    ctx.lineWidth = 0.6;
+    for (const placed of [...map.buildings, ...map.structures]) {
+        ctx.beginPath();
+        boxCorners(placementBox(placed)).forEach(([x, z], n) => {
+            const [px, py] = toLayer(x, z);
+            if (n === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+        });
+        ctx.closePath();
         ctx.fill();
         ctx.stroke();
     }
-
-    const { blockSize } = CITY_LAYOUT;
-    const blockPoint = (block: { x: number; z: number }) => {
-        const center = blockCenter(block.x, block.z);
-        return worldToMap(center.x, center.z);
-    };
-    const plaza = blockPoint(PLAZA_BLOCK);
-    const park = blockPoint(PARK_BLOCK);
-
-    ctx.fillStyle = '#cc7d5c';
-    ctx.fillRect(
-        plaza.x - blockSize * scale / 2,
-        plaza.y - blockSize * scale / 2,
-        blockSize * scale,
-        blockSize * scale
-    );
-    ctx.fillStyle = '#61a55d';
-    ctx.fillRect(
-        park.x - blockSize * scale / 2,
-        park.y - blockSize * scale / 2,
-        blockSize * scale,
-        blockSize * scale
-    );
-
-    ctx.fillStyle = '#f8f1db';
-    ctx.font = '700 7px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('PLAZA', plaza.x, plaza.y + 2.5);
-    ctx.fillText('PARK', park.x, park.y + 2.5);
-
+    return layer;
 }
 
 function colorToCss(color: number): string {
@@ -218,44 +227,21 @@ function drawRotatingMap(
     heading: number
 ) {
     if (!staticLayer) return;
-    const origin = worldToMap(originX, originZ);
-
     ctx.save();
     ctx.beginPath();
     ctx.arc(RADAR_CENTER, RADAR_CENTER, RADAR_CENTER - 1.5, 0, Math.PI * 2);
     ctx.clip();
-
     if (backdropLayer) {
-        ctx.drawImage(
-            backdropLayer,
-            0,
-            0,
-            backdropLayer.width,
-            backdropLayer.height,
-            0,
-            0,
-            MAP_SIZE,
-            MAP_SIZE
-        );
+        ctx.drawImage(backdropLayer, 0, 0, backdropLayer.width, backdropLayer.height, 0, 0, MAP_SIZE, MAP_SIZE);
     }
-
+    const { originX: lx0, originZ: lz0, metresPerPixel } = layerFrame;
     ctx.translate(RADAR_CENTER, RADAR_CENTER);
-    ctx.rotate(-heading);
-    ctx.scale(RADAR_ZOOM, RADAR_ZOOM);
-    ctx.translate(-origin.x, -origin.y);
+    ctx.rotate(radarRotation(heading));
+    ctx.scale(radarPixelsPerMetre * metresPerPixel, radarPixelsPerMetre * metresPerPixel);
+    ctx.translate(-((originX - lx0) / metresPerPixel + 0.5), -((originZ - lz0) / metresPerPixel + 0.5));
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(
-        staticLayer,
-        0,
-        0,
-        staticLayer.width,
-        staticLayer.height,
-        0,
-        0,
-        MAP_SIZE,
-        MAP_SIZE
-    );
+    ctx.drawImage(staticLayer, 0, 0);
     ctx.restore();
 }
 
@@ -306,8 +292,9 @@ function drawRadarOverlay(ctx: CanvasRenderingContext2D, heading: number) {
     }
 
     // North moves around the rim while the map remains vehicle-heading-up.
-    const northX = RADAR_CENTER - Math.sin(heading) * (RADAR_CENTER - 13);
-    const northY = RADAR_CENTER - Math.cos(heading) * (RADAR_CENTER - 13);
+    const north = radarNorth(heading);
+    const northX = RADAR_CENTER + north.x * (RADAR_CENTER - 13);
+    const northY = RADAR_CENTER + north.y * (RADAR_CENTER - 13);
     ctx.fillStyle = '#e84545';
     ctx.beginPath();
     ctx.arc(northX, northY, 7.5, 0, Math.PI * 2);
@@ -408,7 +395,7 @@ function buildRadarLayers() {
     foregroundCtx.fill();
 }
 
-export function initMinimap(city: CityData) {
+export function initMinimap(map: MapData) {
     canvas = document.getElementById('minimap-canvas') as HTMLCanvasElement | null;
     if (!canvas) return;
 
@@ -417,7 +404,7 @@ export function initMinimap(city: CityData) {
     canvas.height = Math.round(MAP_SIZE * pixelRatio);
     context = canvas.getContext('2d');
     buildRadarLayers();
-    drawStaticMap(city);
+    staticLayer = drawMapLayer(map);
     lastUpdate = -Infinity;
     updateMinimap(performance.now());
 }

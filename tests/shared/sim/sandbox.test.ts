@@ -67,7 +67,8 @@ describe('sandbox layout', () => {
         }
         expect(world.colliders.length).toBe(sandboxColliders().length);
         expect(world.ramps.length).toBe(SANDBOX.ramps.length);
-        expect(world.roads).toBeNull();
+        // A reset leaves the car where it is
+        expect(world.resetPose).toBeUndefined();
     });
 
     it('spawns the player and the dummies on free, flat ground, apart from each other', () => {

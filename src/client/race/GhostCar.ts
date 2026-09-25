@@ -4,7 +4,7 @@ import { isCarClassId } from '../../shared/sim/vehicleClasses.js';
 import { state } from '../state.js';
 import { CarModel, type CarType } from '../vehicle/CarModel.js';
 import { Nametag } from '../vehicle/Nametag.js';
-import { groundHeight } from '../world/environment.js';
+import { groundHeight } from '../world/ground.js';
 import type { GhostPlayback } from './ghostPlayback.js';
 
 // The time trial ghost on screen (docs/phase-2-design.md, 15.4): a

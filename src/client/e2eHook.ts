@@ -4,7 +4,8 @@ import { focusLightingOn, lightingTier, whenSkyReady } from './render/lighting.j
 import { textureStats, whenWorldTexturesLoaded } from './world/textures.js';
 import { frameStats } from './render/frameStats.js';
 import { models } from './assets/gameModels.js';
-import { groundHeight } from './world/environment.js';
+import { groundHeight } from './world/ground.js';
+import { kitStatus, mapDetail, mapScene } from './world/mapScene.js';
 import { palmStats, setPalmImpostorDistance, updatePalms, whenPalmImpostorsReady } from './world/palms.js';
 import { getKTX2Loader } from './assets/gltfLoader.js';
 import type { ModelCacheSnapshot } from './assets/ModelCache.js';
@@ -117,6 +118,16 @@ export interface ModelInfo {
     size: [number, number, number];
 }
 
+export interface MapWorldStats {
+    kitCells: number;
+    kitBuilt: number;
+    instances: Record<string, number>;
+    terrainTriangles: number;
+    detail: string;
+    kit: string;
+    groups: Record<string, { meshes: number; triangles: number }>;
+}
+
 // State of the realistic world look (render/look.ts, world/textures.ts)
 export interface WorldInfo {
     tier: string;
@@ -126,10 +137,8 @@ export interface WorldInfo {
     // Named top level scene objects of the world
     groups: string[];
     // Palms drawn as geometry and as impostors at the last frame, and
-    // whether the impostor atlas is baked (null before the city exists)
+    // whether the impostor atlas is baked (null before the map's world exists)
     palms: { near: number; impostors: number; baked: boolean } | null;
-    // Instances per street furniture kind
-    furniture: Record<string, number>;
 }
 
 function worldInfo(): WorldInfo {
@@ -138,9 +147,7 @@ function worldInfo(): WorldInfo {
         textures: { ...textureStats },
         environment: state.scene?.environment?.uuid ?? null,
         groups: (state.scene?.children ?? []).map(child => child.name).filter(Boolean),
-        palms: palmStats(),
-        furniture: Object.fromEntries((state.scene?.getObjectByName('furniture')?.children ?? [])
-            .map(mesh => [mesh.name.replace('furniture-', ''), (mesh as THREE.InstancedMesh).count]))
+        palms: palmStats()
     };
 }
 
@@ -614,7 +621,7 @@ export function installE2EHook(): void {
             }
             return { meshes, triangles };
         },
-        // The same as the sim's collider list (shared/world/colliderGen.ts)
+        // The same as the sim's collider list (shared/map/mapData.ts)
         colliders(): ColliderInput[] {
             return state.worldColliders.map(collider => ({ ...collider }));
         },
@@ -672,9 +679,30 @@ export function installE2EHook(): void {
             }
             return counts;
         },
+        // The map world: kit cells drawn and built, instances packed per
+        // kind, terrain triangles, and visible meshes and triangles per
+        // group of the map (draw call and triangle budgets)
+        mapWorldStats(): MapWorldStats | null {
+            const world = mapScene();
+            if (!world) return null;
+            const groups: Record<string, { meshes: number; triangles: number }> = {};
+            for (const group of world.group.children) {
+                let meshes = 0, triangles = 0;
+                group.traverseVisible(object => {
+                    const mesh = object as THREE.Mesh;
+                    if (!mesh.isMesh) return;
+                    meshes++;
+                    const index = mesh.geometry.index;
+                    const count = mesh.geometry.drawRange.count !== Infinity ? mesh.geometry.drawRange.count : (index ? index.count : mesh.geometry.attributes.position.count);
+                    triangles += count / 3 * ((mesh as THREE.InstancedMesh).isInstancedMesh ? (mesh as THREE.InstancedMesh).count : 1);
+                });
+                groups[group.name || group.type] = { meshes, triangles: Math.round(triangles) };
+            }
+            return { ...world.stats(), detail: mapDetail(), kit: kitStatus(), groups };
+        },
         // Rendered objects that stand on a collider (world/colliderTags.ts)
         colliderProps(): TaggedCollider[] {
-            return state.scene ? listTaggedColliders(state.scene) : [];
+            return listTaggedColliders();
         },
         // Puts the local car at rest at (x, z), facing angle. Online the
         // server places it (debugPlace, only with E2E=1) and the next

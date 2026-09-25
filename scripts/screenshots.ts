@@ -1,12 +1,15 @@
 // Screenshot set for visual before/after comparisons: starts the production
 // server, joins with headless Chromium (?e2e=1) and captures fixed views
-// (chase camera on a street, the car up close, its rear with brake lights,
-// a showroom of all car types from the front and the rear, close-ups of
-// the Kaefer, Pritsche, 356 and 181, plaza, park, street furniture, palms,
-// fountain, overview, city edge, mobile), and the race (lobby, the grid
-// in the countdown with the start portal, a checkpoint with barriers and
-// chevrons, the ramps and the hill road, the finish seen from 600 m, the
-// phone HUD in the countdown and the race, the results).
+// of Bulli Bay (docs/phase-3-design.md 10): the chase camera on Main
+// Street, the car up close, its rear with brake lights, a showroom of all
+// car types from the front and the rear, close-ups of the Kaefer, Pritsche,
+// 356 and 181, the plaza and its fountain, the palms, the promenade, the
+// beach and the pier at sunset, a hairpin of the Ridge Road, the lookout
+// over the bay, the harbour, the Party arena with eight cars, the diner and
+// the gas station, Seaview Heights, the ranch, the north cliffs, an
+// overview, mobile), and the race (lobby, the grid in the countdown with
+// the start portal, a checkpoint with barriers and chevrons, the finish
+// from far away, the phone HUD in the countdown and the race, the results).
 // race-start also records the meshes and triangles of the track dressing
 // (dressingMeshes, dressingTriangles; budget +20 draw calls and +30 k
 // triangles, docs/phase-2-design.md 17.4).
@@ -27,7 +30,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { chromium, devices, type Browser, type BrowserContextOptions, type Page } from '@playwright/test';
 import type { BulliDebugSnapshot, CameraPose, ScreenBox } from '../src/client/e2eHook.js';
-import { PARK_BLOCK, PLAZA_BLOCK, blockCenter, roadLineCenter } from '../src/shared/world/cityGen.js';
+import { mapFor } from '../src/server/maps.js';
+import { heightAt } from '../src/shared/map/heightfield.js';
+import { mapTracks } from '../src/shared/race/tracks/index.js';
 
 interface Options {
     out: string;
@@ -165,7 +170,7 @@ async function settle(page: Page, minMs: number): Promise<void> {
     while ((await snapshot(page)).render.frame < start + 10 && Date.now() < deadline) await sleep(100);
 }
 
-async function join(browser: Browser, contextOptions: BrowserContextOptions, baseURL: string, name: string, mode: 'party' | 'race' = 'party'): Promise<Page> {
+async function join(browser: Browser, contextOptions: BrowserContextOptions, baseURL: string, name: string, mode: 'party' | 'freeroam' | 'race' = 'party'): Promise<Page> {
     const context = await browser.newContext({ ...contextOptions, baseURL });
     await context.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, route =>
         route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
@@ -231,59 +236,72 @@ async function clearSpawned(page: Page): Promise<void> {
     await page.evaluate(() => (window as unknown as { __bulliDebug: { clearModels(): void } }).__bulliDebug.clearModels());
 }
 
-// Road center lines run at -98, -46, 6, 58, 110 on both axes.
-const MID_ROAD = roadLineCenter(2, 'x');
-const MID_CROSS = roadLineCenter(2, 'z');
-const EDGE_ROAD = roadLineCenter(4, 'x');
-// The showroom row stands across the boulevard on the crossing road one
-// block south of the city center: the whole row is on asphalt, and no palm
-// of the boulevard (at the block centers) stands among or right behind the cars
-const SHOWROOM_Z = roadLineCenter(1, 'z');
-const plaza = blockCenter(PLAZA_BLOCK.x, PLAZA_BLOCK.z);
-const park = blockCenter(PARK_BLOCK.x, PARK_BLOCK.z);
+// Bulli Bay: cameras stand at a height above the ground (or the sea) under
+// them, looking at a point above the ground under it
+const map = mapFor();
+const ground = (x: number, z: number) => Math.max(map.hf.spec.waterLevel, heightAt(map.hf, x, z));
+function view(position: [number, number, number], lookAt: [number, number, number], fov: number): CameraPose {
+    return {
+        position: [position[0], position[1] + ground(position[0], position[2]), position[2]],
+        lookAt: [lookAt[0], lookAt[1] + ground(lookAt[0], lookAt[2]), lookAt[2]],
+        fov
+    };
+}
+
+// Main Street between 1st and 2nd Avenue, heading east (+x)
+const MAIN = { x: -446, z: -20, yaw: Math.PI / 2 };
+// The diner's lot: a wide flat asphalt lot for the showroom (cars along x at z = 60)
+const LOT = { x: 610, z: 62 };
+const PLAZA = { x: -350, z: -76 };
 
 async function captureDesktop(browser: Browser, baseURL: string, options: Options, stats: ShotStats[]): Promise<void> {
-    const want = (view: string) => !options.only || options.only.includes(view);
+    const want = (name: string) => !options.only || options.only.includes(name);
     const page = await join(browser, {
         ...devices['Desktop Chrome'], viewport: { width: 1600, height: 900 }, deviceScaleFactor: 1
-    }, baseURL, 'Shots');
+    }, baseURL, 'Shots', 'freeroam');
     // The sim's colliders and the rendered props standing on them, to check
     // that a visual change of the world left the gameplay alone (compare
-    // before/after; tests/e2e/collider-parity.spec.ts checks they match)
+    // before/after; tests/client/mapScene.test.ts checks they match)
     const colliders = await page.evaluate(() => {
         const debug = (window as unknown as { __bulliDebug: { colliders(): unknown[]; colliderProps(): unknown[] } }).__bulliDebug;
         return { colliders: debug.colliders(), props: debug.colliderProps() };
     });
     fs.writeFileSync(path.join(options.out, 'colliders.json'), JSON.stringify(colliders) + '\n');
 
-    // Chase camera on the middle road looking north towards the plaza, HUD
-    // visible (checks UI legibility too). The car is fresh, so the respawn
-    // shield is still up.
-    if (want('street')) {
-        await place(page, MID_ROAD, -60, 0);
-        await settle(page, 2500);
-        await shoot(page, options.out, 'street', stats, true);
-    }
-
-    // Close-up of the car and its shield: materials, contact shadow, rim
-    if (want('car')) {
-        await place(page, MID_ROAD, -60, 0);
+    // A fixed view with the car parked at (x, z, yaw) and the HUD hidden
+    const still = async (name: string, car: [number, number, number], pose: CameraPose, ms = 1500) => {
+        if (!want(name)) return;
+        await place(page, ...car);
         await hideHud(page, true);
-        await setCamera(page, { position: [MID_ROAD + 6, 3.2, -60 + 8.5], lookAt: [MID_ROAD, 1.2, -60], fov: 40 });
-        await settle(page, 1200);
-        await shoot(page, options.out, 'car', stats);
+        await setCamera(page, pose);
+        await settle(page, ms);
+        await shoot(page, options.out, name, stats);
         await setCamera(page, null);
         await hideHud(page, false);
-    }
+    };
+    // The chase camera behind the car at (x, z, yaw), HUD visible
+    const chase = async (name: string, car: [number, number, number], ms = 2500) => {
+        if (!want(name)) return;
+        await place(page, ...car);
+        await settle(page, ms);
+        await shoot(page, options.out, name, stats, true);
+    };
+
+    // Main Street, the chase camera looking east: shop rows, palms,
+    // markings, HUD legibility. The car is fresh, so the respawn shield is up.
+    await chase('street', [MAIN.x, MAIN.z, MAIN.yaw]);
+
+    // Close-up of the car and its shield: materials, contact shadow, rim
+    await still('car', [MAIN.x, MAIN.z, MAIN.yaw], view([MAIN.x - 8.5, 3.2, MAIN.z + 6], [MAIN.x, 1.2, MAIN.z], 40), 1200);
 
     // Close-up of the car from the rear: brake lights, left blinker, the
     // cabin through the rear window, wheel and tyre detail
     if (want('car-rear')) {
-        await place(page, MID_ROAD, -120, 0);
+        await place(page, MAIN.x - 60, MAIN.z, MAIN.yaw);
         await hideHud(page, true);
-        const x = MID_ROAD + 3, z = -72;
-        await spawnCars(page, [{ type: 'bulli', color: 0x2E6FA8, x, z, yaw: 0.35, brake: true, steer: 0.3 }]);
-        await setCamera(page, { position: [x - 4.2, 2.6, z - 7.4], lookAt: [x, 1.0, z], fov: 40 });
+        const x = MAIN.x + 20, z = MAIN.z - 3;
+        await spawnCars(page, [{ type: 'bulli', color: 0x2E6FA8, x, z, yaw: MAIN.yaw + 0.35, brake: true, steer: 0.3 }]);
+        await setCamera(page, view([x - 7.4, 2.6, z - 4.2], [x, 1.0, z], 40));
         await settle(page, 1500);
         await shoot(page, options.out, 'car-rear', stats);
         await clearSpawned(page);
@@ -291,48 +309,29 @@ async function captureDesktop(browser: Browser, baseURL: string, options: Option
         await hideHud(page, false);
     }
 
-    // Showroom: every car type side by side in fixed colours (and the Bulli
-    // with its optional surfboard), seen from the front
+    // Showroom on the diner's lot: every car type side by side in fixed
+    // colours (and the Bulli with its optional surfboard), from the front
+    // (they face +z, the camera looks from +z) and from the rear
+    const types = ['jeep', 'sport', 'bulli', 'beetle', 'pickup'];
+    const colors = [0x6B8E4E, 0xC0392B, 0xD9A441, 0x2E6FA8, 0x8E5B3A];
     if (want('showroom')) {
-        await place(page, MID_ROAD, -120, 0);
+        await place(page, LOT.x - 30, LOT.z - 20, 0);
         await hideHud(page, true);
-        const z = SHOWROOM_Z;
-        const types = ['jeep', 'sport', 'bulli', 'beetle', 'pickup'];
-        const colors = [0x6B8E4E, 0xC0392B, 0xD9A441, 0x2E6FA8, 0x8E5B3A];
-        const cars: SpawnSpec[] = types.map((type, i) => ({ type, color: colors[i], x: MID_ROAD - 13 + i * 5.2, z, yaw: 0 }));
-        cars.push({ type: 'bulli', color: 0x3D8C7A, x: MID_ROAD + 13, z: z - 1, yaw: -0.5, surfboard: true });
+        const cars: SpawnSpec[] = types.map((type, i) => ({ type, color: colors[i], x: LOT.x - 13 + i * 5.2, z: LOT.z, yaw: 0 }));
+        cars.push({ type: 'bulli', color: 0x3D8C7A, x: LOT.x + 13, z: LOT.z - 1, yaw: -0.5, surfboard: true });
         await spawnCars(page, cars);
-        await setCamera(page, { position: [MID_ROAD + 2, 4.2, z + 17], lookAt: [MID_ROAD, 1.1, z], fov: 55 });
+        await setCamera(page, view([LOT.x + 2, 4.2, LOT.z + 17], [LOT.x, 1.1, LOT.z], 55));
         await settle(page, 1500);
         await shoot(page, options.out, 'showroom', stats);
         await clearSpawned(page);
         await setCamera(page, null);
         await hideHud(page, false);
     }
-
-    // Close-ups of the other four Blender cars (front three-quarter, braking,
-    // steering left) and the showroom row from behind
-    for (const [type, color] of [['beetle', 0x2E6FA8], ['pickup', 0x6B8E4E], ['sport', 0xC0392B], ['jeep', 0xD9A441]] as const) {
-        if (!want(`car-${type}`)) continue;
-        await place(page, MID_ROAD, -120, 0);
-        await hideHud(page, true);
-        const x = MID_ROAD + 3, z = -72;
-        await spawnCars(page, [{ type, color, x, z, yaw: -0.35, brake: true, steer: 0.25 }]);
-        await setCamera(page, { position: [x + 5.2, 2.4, z + 6.4], lookAt: [x, 0.9, z], fov: 40 });
-        await settle(page, 1500);
-        await shoot(page, options.out, `car-${type}`, stats);
-        await clearSpawned(page);
-        await setCamera(page, null);
-        await hideHud(page, false);
-    }
     if (want('showroom-rear')) {
-        await place(page, MID_ROAD, -120, 0);
+        await place(page, LOT.x - 30, LOT.z - 20, 0);
         await hideHud(page, true);
-        const z = SHOWROOM_Z;
-        const types = ['jeep', 'sport', 'bulli', 'beetle', 'pickup'];
-        const colors = [0x6B8E4E, 0xC0392B, 0xD9A441, 0x2E6FA8, 0x8E5B3A];
-        await spawnCars(page, types.map((type, i) => ({ type, color: colors[i], x: MID_ROAD - 13 + i * 5.2, z, yaw: 0, brake: true })));
-        await setCamera(page, { position: [MID_ROAD - 2, 4.2, z - 17], lookAt: [MID_ROAD, 1.1, z], fov: 55 });
+        await spawnCars(page, types.map((type, i) => ({ type, color: colors[i], x: LOT.x - 13 + i * 5.2, z: LOT.z, yaw: 0, brake: true })));
+        await setCamera(page, view([LOT.x - 2, 4.2, LOT.z - 17], [LOT.x, 1.1, LOT.z], 55));
         await settle(page, 1500);
         await shoot(page, options.out, 'showroom-rear', stats);
         await clearSpawned(page);
@@ -340,116 +339,80 @@ async function captureDesktop(browser: Browser, baseURL: string, options: Option
         await hideHud(page, false);
     }
 
-    // The car on the light plaza tiles: contact shadow, reflections, shield
-    if (want('car-plaza')) {
-        const x = plaza.x - 9;
-        const z = plaza.z + 10;
-        await place(page, x, z, 0.8);
+    // Close-ups of the other four Blender cars (front three-quarter, braking,
+    // steering left), on Main Street
+    for (const [type, color] of [['beetle', 0x2E6FA8], ['pickup', 0x6B8E4E], ['sport', 0xC0392B], ['jeep', 0xD9A441]] as const) {
+        if (!want(`car-${type}`)) continue;
+        await place(page, MAIN.x - 60, MAIN.z, MAIN.yaw);
         await hideHud(page, true);
-        await setCamera(page, { position: [x + 7.5, 4.2, z + 6.5], lookAt: [x, 1.0, z], fov: 42 });
-        await settle(page, 1200);
-        await shoot(page, options.out, 'car-plaza', stats);
+        const x = MAIN.x + 20, z = MAIN.z + 3;
+        await spawnCars(page, [{ type, color, x, z, yaw: MAIN.yaw - 0.35, brake: true, steer: 0.25 }]);
+        await setCamera(page, view([x + 6.4, 2.4, z - 5.2], [x, 0.9, z], 40));
+        await settle(page, 1500);
+        await shoot(page, options.out, `car-${type}`, stats);
+        await clearSpawned(page);
         await setCamera(page, null);
         await hideHud(page, false);
     }
 
-    // Plaza with fountain, parasols and planters, seen from the south east
-    if (want('plaza')) {
-        await place(page, plaza.x + 2, plaza.z + 22, Math.PI);
-        await hideHud(page, true);
-        await setCamera(page, { position: [plaza.x + 18, 9, plaza.z + 24], lookAt: [plaza.x, 1.5, plaza.z], fov: 55 });
-        await settle(page, 1500);
-        await shoot(page, options.out, 'plaza', stats);
-    }
+    // The plaza: pavers, lawns, the fountain; the car on the pavers
+    await still('car-plaza', [PLAZA.x - 9, PLAZA.z + 22, 0.8], view([PLAZA.x - 1.5, 4.2, PLAZA.z + 28.5], [PLAZA.x - 9, 1.0, PLAZA.z + 22], 42), 1200);
+    await still('plaza', [MAIN.x, MAIN.z, MAIN.yaw], view([PLAZA.x + 24, 9, PLAZA.z + 50], [PLAZA.x, 1.5, PLAZA.z], 55));
+    await still('fountain', [MAIN.x, MAIN.z, MAIN.yaw], view([PLAZA.x + 1.5, 3.2, PLAZA.z + 16.5], [PLAZA.x, 1.3, PLAZA.z + 6], 50));
 
-    // Palm Park from its south west corner
-    if (want('park')) {
-        await place(page, park.x - 26, park.z - 24, 0);
-        await hideHud(page, true);
-        await setCamera(page, { position: [park.x - 24, 10, park.z - 26], lookAt: [park.x, 1, park.z], fov: 55 });
-        await settle(page, 1500);
-        await shoot(page, options.out, 'park', stats);
-    }
-
-    // Street furniture at the signalized crossing next to the plaza: lamp
-    // and signal poles, hydrant, trash can (graphics G1 props)
-    if (want('props')) {
-        await place(page, MID_ROAD + 3, MID_CROSS - 30, 0);
-        await hideHud(page, true);
-        await setCamera(page, { position: [MID_ROAD - 3, 2.2, MID_CROSS - 20], lookAt: [MID_ROAD + 8.1, 2.4, MID_CROSS - 8.1], fov: 50 });
-        await settle(page, 1500);
-        await shoot(page, options.out, 'props', stats);
-    }
-
-    // A plain street light corner at the south edge: hydrant and trash can
-    // next to the posts (they stand inside the posts' colliders)
-    if (want('props-curb')) {
-        await place(page, MID_ROAD + 3, -60, Math.PI);
-        await hideHud(page, true);
-        await setCamera(page, { position: [MID_ROAD, 2.0, -81], lookAt: [MID_ROAD, 0.9, -92], fov: 70 });
-        await settle(page, 1500);
-        await shoot(page, options.out, 'props-curb', stats);
-    }
-
-    // Looking up at the boulevard palms (crowns against the sky)
-    if (want('palms')) {
-        await place(page, MID_ROAD, -96, 0);
-        await hideHud(page, true);
-        await setCamera(page, { position: [MID_ROAD - 4, 2.5, -40], lookAt: [MID_ROAD + 8.2, 10, -20], fov: 55 });
-        await settle(page, 1500);
-        await shoot(page, options.out, 'palms', stats);
-    }
-
-    // The same palms with every palm beyond 12 m drawn as impostor (far LOD)
+    // Looking up at the palms of Main Street (crowns against the sky), and
+    // the same with every palm beyond 12 m drawn as impostor (far LOD)
+    await still('palms', [MAIN.x - 60, MAIN.z, MAIN.yaw], view([MAIN.x - 10, 2.5, MAIN.z + 1], [MAIN.x + 20, 10, MAIN.z - 6], 55));
     if (want('palms-lod')) {
-        await place(page, MID_ROAD, -96, 0);
-        await hideHud(page, true);
         await page.evaluate(() => (window as unknown as { __bulliDebug: { setPalmImpostorDistance(m: number | null): void } }).__bulliDebug.setPalmImpostorDistance(12));
-        await setCamera(page, { position: [MID_ROAD - 4, 2.5, -40], lookAt: [MID_ROAD + 8.2, 10, -20], fov: 55 });
-        await settle(page, 1500);
-        await shoot(page, options.out, 'palms-lod', stats);
+        await still('palms-lod', [MAIN.x - 60, MAIN.z, MAIN.yaw], view([MAIN.x - 10, 2.5, MAIN.z + 1], [MAIN.x + 20, 10, MAIN.z - 6], 55));
         await page.evaluate(() => (window as unknown as { __bulliDebug: { setPalmImpostorDistance(m: number | null): void } }).__bulliDebug.setPalmImpostorDistance(null));
     }
 
-    // Close-up of the plaza fountain (water shader)
-    if (want('fountain')) {
-        await place(page, plaza.x + 2, plaza.z + 22, Math.PI);
+    // The promenade (Ocean Boulevard) with the chase camera heading north,
+    // the beach and the pier into the evening sun over the sea
+    await chase('promenade', [-560, -47.5, Math.PI]);
+    await still('sunset', [-560, -47.5, Math.PI], view([-600, 5, -80], [-800, 0, -60], 60));
+    await still('pier', [-560, -47.5, Math.PI], view([-596, 12, 25], [-700, 4, -20], 55));
+
+    // A hairpin of the Ridge Road (chase camera), the lookout over the bay
+    await chase('ridge', [471.3, -390.1, -3.133]);
+    await still('lookout', [676, -780, 0], view([640, 10, -730], [-300, 0, 100], 55));
+
+    // The harbour: Harbor Boulevard with its halls (chase camera)
+    await chase('harbor', [-250, 298, 1.546]);
+
+    // The Party arena from above its gate, with eight cars
+    if (want('arena')) {
+        await place(page, -250, 298, 1.546);
         await hideHud(page, true);
-        await setCamera(page, { position: [plaza.x + 1.5, 3.2, plaza.z + 10.5], lookAt: [plaza.x, 1.3, plaza.z], fov: 50 });
+        const cars: SpawnSpec[] = ['bulli', 'beetle', 'pickup', 'sport', 'jeep', 'bulli', 'beetle', 'pickup'].map((type, i) => ({
+            type, color: 0x3366aa + i * 0x151515, x: -200 + (i % 4) * 20, z: 560 + Math.floor(i / 4) * 40, yaw: i * 0.8
+        }));
+        await spawnCars(page, cars);
+        await setCamera(page, view([-170, 30, 470], [-170, 0, 590], 60));
         await settle(page, 1500);
-        await shoot(page, options.out, 'fountain', stats);
+        await shoot(page, options.out, 'arena', stats);
+        await clearSpawned(page);
+        await setCamera(page, null);
+        await hideHud(page, false);
     }
 
-    // High overview of the whole city and the terrain around it
-    if (want('overview')) {
-        await place(page, MID_ROAD, -60, 0);
-        await hideHud(page, true);
-        await setCamera(page, { position: [-170, 110, -170], lookAt: [5, 0, 5], fov: 50 });
-        await settle(page, 1500);
-        await shoot(page, options.out, 'overview', stats);
-    }
+    // The diner and the gas station from Canyon Road
+    await still('diner', [600, 59, 1.349], view([600, 7, 95], [645, 3, 140], 55));
+    await still('gas-station', [600, 59, 1.349], view([600, 7, 40], [640, 3, -10], 55));
 
-    // From the hills back to the city: terrain, fog and the city edge
-    if (want('outskirts-city')) {
-        await place(page, EDGE_ROAD, 100, 0);
-        await hideHud(page, true);
-        await setCamera(page, { position: [150, 30, -150], lookAt: [0, 0, 0], fov: 55 });
-        await settle(page, 1500);
-        await shoot(page, options.out, 'outskirts-city', stats);
-    }
-    await setCamera(page, null);
-    await hideHud(page, false);
+    // Seaview Heights, the ranch's fire road, the coast road on the north cliffs (chase camera)
+    await chase('residential', [-87.5, -191.5, 2.816]);
+    await chase('ranch', [574.5, 177.1, 0.22]);
+    await chase('cliffs', [-766.2, -814, 3.07]);
 
-    // Chase camera at the city edge, looking out over the terrain
-    if (want('outskirts')) {
-        await place(page, EDGE_ROAD, 100, 0);
-        await settle(page, 2000);
-        await shoot(page, options.out, 'outskirts', stats, true);
-    }
+    // High overview of the bay and the town
+    await still('overview', [MAIN.x, MAIN.z, MAIN.yaw], view([-900, 160, 300], [-300, 0, -100], 55));
 
     // Driving: chase camera in motion with exhaust/drift smoke
     if (want('drive')) {
-        await place(page, MID_ROAD, -95, 0);
+        await place(page, MAIN.x - 40, MAIN.z - 3, MAIN.yaw);
         await settle(page, 800);
         await page.keyboard.down('w');
         await sleep(1600);
@@ -461,13 +424,9 @@ async function captureDesktop(browser: Browser, baseURL: string, options: Option
         await page.keyboard.up('w');
     }
 
-    // Turning at a crossing: the car mid-corner, the cross street ahead has
-    // to stay readable with the chase camera
-    if (want('corner')) {
-        await place(page, MID_ROAD - 3, MID_CROSS - 14, Math.PI / 4);
-        await settle(page, 1500);
-        await shoot(page, options.out, 'corner', stats, true);
-    }
+    // Turning at a crossing: the car mid-corner at Main Street and 2nd
+    // Avenue, the cross street ahead has to stay readable
+    await chase('corner', [-400, -30, Math.PI / 4], 1500);
 
     await page.context().close();
 }
@@ -480,8 +439,8 @@ async function captureMobile(browser: Browser, baseURL: string, options: Options
         const viewport = orientation === 'portrait'
             ? iphone.viewport
             : { width: iphone.viewport.height, height: iphone.viewport.width };
-        const page = await join(browser, { ...iphone, viewport, screen: viewport }, baseURL, 'Mobile');
-        await place(page, MID_ROAD, -60, 0);
+        const page = await join(browser, { ...iphone, viewport, screen: viewport }, baseURL, 'Mobile', 'freeroam');
+        await place(page, MAIN.x, MAIN.z, MAIN.yaw);
         await settle(page, 2500);
         await shoot(page, options.out, view, stats, true);
         await page.context().close();
@@ -512,8 +471,18 @@ function dressing(page: Page): Promise<{ meshes: number; triangles: number }> {
     return page.evaluate(() => (window as unknown as { __bulliDebug: { raceDressing(): { meshes: number; triangles: number } } }).__bulliDebug.raceDressing());
 }
 
-const HILL_FINISH = { x: 356, z: 30, yaw: 0.54 };
-const BEFORE_FINISH = { x: HILL_FINISH.x - 25 * Math.sin(HILL_FINISH.yaw), z: HILL_FINISH.z - 25 * Math.cos(HILL_FINISH.yaw) };
+// The tracks on Bulli Bay: the Downtown Loop's first checkpoint, the Ridge
+// Climb's start portal, its first ramp and its finish on the lookout
+const TRACKS = mapTracks(map);
+const LOOP = TRACKS['downtown-loop'];
+const CLIMB = TRACKS['hill-sprint'];
+const CLIMB_FINISH = CLIMB.gates[CLIMB.gates.length - 1];
+const BEFORE_FINISH = { x: CLIMB_FINISH.x - 25 * Math.sin(CLIMB_FINISH.yaw), z: CLIMB_FINISH.z - 25 * Math.cos(CLIMB_FINISH.yaw), yaw: CLIMB_FINISH.yaw };
+// A camera `back` m behind (x, z) against the heading yaw, `side` m to its right
+function behind(p: { x: number; z: number; yaw: number }, back: number, side: number, up: number, ahead: number, fov: number): CameraPose {
+    const fx = Math.sin(p.yaw), fz = Math.cos(p.yaw);
+    return view([p.x - fx * back - fz * side, up, p.z - fz * back + fx * side], [p.x + fx * ahead, 3, p.z + fz * ahead], fov);
+}
 
 async function captureRace(browser: Browser, baseURL: string, options: Options, stats: ShotStats[]): Promise<void> {
     const views = ['race-lobby', 'race-checkpoint', 'race-start', 'race-portal', 'race-ramps', 'race-finish-far', 'race-results'];
@@ -531,19 +500,19 @@ async function captureRace(browser: Browser, baseURL: string, options: Options, 
             Object.assign(stats[stats.length - 1], { dressingMeshes: meshes, dressingTriangles: triangles });
             log(`race-lobby (Downtown Loop): the track dressing has ${meshes} meshes and ${triangles} triangles`);
         }
-        // Checkpoint 1 at the first corner, the barriers across the side street
-        // and the chevron board in its mouth
+        // Checkpoint 1 of the Downtown Loop, the barriers across the side
+        // streets and the chevron boards
         if (want('race-checkpoint')) {
             await hideHud(page, true);
-            await setCamera(page, { position: [2, 3.2, 20], lookAt: [12, 3.5, 58], fov: 55 });
+            await setCamera(page, behind(LOOP.gates[1], 30, 3, 3.2, 10, 55));
             await settle(page, 1500);
             await shoot(page, options.out, 'race-checkpoint', stats);
             await setCamera(page, null);
             await hideHud(page, false);
         }
-        // The Hill Sprint: the grid in the countdown, two red lights
+        // The Ridge Climb: the grid in the countdown, two red lights
         await page.locator('#race-lobby [data-track="hill-sprint"]').click();
-        await waitRace(page, race => race.trackId === 'hill-sprint', 'the Hill Sprint');
+        await waitRace(page, race => race.trackId === 'hill-sprint', 'the Ridge Climb');
         await page.locator('#race-ready').click();
         await waitRace(page, race => race.startTick !== null && race.tick >= race.startTick - 110, 'two red lights');
         if (want('race-start')) {
@@ -554,32 +523,30 @@ async function captureRace(browser: Browser, baseURL: string, options: Options, 
         }
         if (want('race-portal')) {
             await hideHud(page, true);
-            await setCamera(page, { position: [64, 2.2, 94], lookAt: [58, 4.2, 66], fov: 50 });
+            await setCamera(page, behind(CLIMB.gates[0], -12, 4, 2.2, -30, 50));
             await settle(page, 600);
             await shoot(page, options.out, 'race-portal', stats);
             await setCamera(page, null);
             await hideHud(page, false);
         }
         await waitRace(page, race => race.phase === 'racing' && race.tick > (race.startTick ?? 0) + 30, 'the start');
-        if (want('race-ramps')) {
+        if (want('race-ramps') && CLIMB.ramps.length) {
             await hideHud(page, true);
-            await setCamera(page, { position: [44, 6, -95], lookAt: [70, 0, -150], fov: 55 });
+            await setCamera(page, behind(CLIMB.ramps[0], 25, 6, 6, 20, 55));
             await settle(page, 1500);
             await shoot(page, options.out, 'race-ramps', stats);
         }
-        // The finish portal on the lookout from 600 m (visibility, fog)
+        // The finish portal on the lookout from 600 m below (visibility, fog)
         if (want('race-finish-far')) {
             await hideHud(page, true);
-            const back = 600;
-            const dx = -0.94, dz = -0.34;
-            await setCamera(page, { position: [HILL_FINISH.x + dx * back, 45, HILL_FINISH.z + dz * back], lookAt: [HILL_FINISH.x, 18, HILL_FINISH.z], fov: 20 });
+            await setCamera(page, behind(CLIMB_FINISH, 600, 0, 45, 0, 20));
             await settle(page, 1500);
             await shoot(page, options.out, 'race-finish-far', stats);
         }
         await setCamera(page, null);
         await hideHud(page, false);
         if (want('race-results')) {
-            await place(page, BEFORE_FINISH.x, BEFORE_FINISH.z, HILL_FINISH.yaw);
+            await place(page, BEFORE_FINISH.x, BEFORE_FINISH.z, BEFORE_FINISH.yaw);
             await page.keyboard.down('w');
             await waitRace(page, race => race.phase === 'results', 'the results');
             await page.keyboard.up('w');

@@ -1,30 +1,26 @@
-// Procedural terrain height, shared by client and server. The heightfield is
-// a sum of sine waves from the TerrainConfig of the map,
-// flattened over the city footprint so roads and buildings sit level.
+// Procedural terrain height of the sandbox (?sandbox=1) and of the sim's
+// own tests: a sum of sine waves from a TerrainConfig, flattened in a
+// circle round a centre. It was the ground of the old city before the
+// curated map (phase 3); the circle keeps that city's footprint (a square
+// from -104 to 116 m on both axes plus half a 12 m road), so the sim's
+// golden runs stay bit for bit the same.
 
-import { CITY_LAYOUT } from '../constants.js';
 import type { TerrainConfig } from '../protocol.js';
-import { CITY_BOUNDS } from './cityGen.js';
 
-// The city footprint is square and sits slightly off the origin (the grid
-// ends with an extra road on the + side), so both axes share one half extent.
-const CITY_CENTER_X = (CITY_BOUNDS.minX + CITY_BOUNDS.maxX) / 2;
-const CITY_CENTER_Z = (CITY_BOUNDS.minZ + CITY_BOUNDS.maxZ) / 2;
-const CITY_HALF_EXTENT = (CITY_BOUNDS.maxX - CITY_BOUNDS.minX) / 2;
-const CITY_CLEARANCE = CITY_LAYOUT.roadWidth / 2;
-// Circle that encloses the footprint plus half a road of clearance
-const CITY_FLAT_RADIUS = Math.SQRT2 * (CITY_HALF_EXTENT + CITY_CLEARANCE);
+const FLAT_CENTER = 6;
+const FLAT_HALF_EXTENT = 116;
+// Circle that encloses the square
+const FLAT_RADIUS = Math.SQRT2 * FLAT_HALF_EXTENT;
 // Width of the ring over which the terrain eases back to full height
-const CITY_BLEND_RADIUS = 40;
+const BLEND_RADIUS = 40;
 
-// Flattened city area, e.g. for keeping procedural scenery out of the city.
-export const CITY_TERRAIN_AREA = {
-    centerX: CITY_CENTER_X,
-    centerZ: CITY_CENTER_Z,
-    // Half side length of the footprint including the clearance
-    halfExtent: CITY_HALF_EXTENT + CITY_CLEARANCE,
-    flatRadius: CITY_FLAT_RADIUS,
-    blendRadius: CITY_BLEND_RADIUS
+// The flat area in the middle of the sine terrain
+export const TERRAIN_FLAT_AREA = {
+    centerX: FLAT_CENTER,
+    centerZ: FLAT_CENTER,
+    halfExtent: FLAT_HALF_EXTENT,
+    flatRadius: FLAT_RADIUS,
+    blendRadius: BLEND_RADIUS
 };
 
 export function getTerrainHeight(config: TerrainConfig, x: number, z: number): number {
@@ -33,14 +29,13 @@ export function getTerrainHeight(config: TerrainConfig, x: number, z: number): n
     const freq3 = config.frequency3 || 0;
     const amp3 = config.amplitude3 || 0;
 
-    // Flatten the full city footprint plus half a road of clearance. Both the
-    // footprint and its slightly offset center come from the shared layout.
-    const distFromCenter = Math.hypot(x - CITY_CENTER_X, z - CITY_CENTER_Z);
+    // Flat in the circle, easing back to full height over the ring
+    const distFromCenter = Math.hypot(x - FLAT_CENTER, z - FLAT_CENTER);
     let flattenFactor = 1.0;
-    if (distFromCenter < CITY_FLAT_RADIUS) {
+    if (distFromCenter < FLAT_RADIUS) {
         flattenFactor = 0.0;
-    } else if (distFromCenter < CITY_FLAT_RADIUS + CITY_BLEND_RADIUS) {
-        flattenFactor = (distFromCenter - CITY_FLAT_RADIUS) / CITY_BLEND_RADIUS;
+    } else if (distFromCenter < FLAT_RADIUS + BLEND_RADIUS) {
+        flattenFactor = (distFromCenter - FLAT_RADIUS) / BLEND_RADIUS;
         flattenFactor = flattenFactor * flattenFactor; // Smooth ease-in
     }
 

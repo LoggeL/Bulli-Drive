@@ -10,6 +10,9 @@ const SETTLE_MS = 2000;
 const SLOW_FRAME_MS = 20;
 const HEADROOM_FRAME_MS = 16.5;
 const MAX_SAMPLE_FRAME_MS = 250;
+// Slow sample windows at the lowest pixel ratio before the GPU counts as
+// struggling (the map world then drops to its mid detail level)
+const STRUGGLE_WINDOWS = 2;
 
 // Quality tiers of the world look (docs/graphics.md): 'desktop' is the high
 // tier, 'mobile' the low tier (phones: 1024 shadow map, no normal maps,
@@ -77,6 +80,9 @@ export class AdaptiveRenderQuality {
     private sampleWindowStart = 0;
     private sampledFrameTime = 0;
     private sampledFrames = 0;
+    private slowAtFloor = 0;
+    /** Slow even at the lowest pixel ratio for a while: less detail is the only way left. */
+    struggling = false;
 
     constructor(
         private readonly renderer: WebGLRenderer,
@@ -135,11 +141,13 @@ export class AdaptiveRenderQuality {
         let nextPixelRatio = Math.min(this.pixelRatio, maximum);
 
         if (averageFrameTime > SLOW_FRAME_MS) {
+            if (nextPixelRatio <= MIN_PIXEL_RATIO && ++this.slowAtFloor >= STRUGGLE_WINDOWS) this.struggling = true;
             nextPixelRatio = Math.max(MIN_PIXEL_RATIO, nextPixelRatio - PIXEL_RATIO_STEP);
         } else if (averageFrameTime < HEADROOM_FRAME_MS) {
             nextPixelRatio = Math.min(maximum, nextPixelRatio + PIXEL_RATIO_STEP);
         }
 
+        if (averageFrameTime <= SLOW_FRAME_MS) this.slowAtFloor = 0;
         if (nextPixelRatio !== this.pixelRatio) {
             this.pixelRatio = nextPixelRatio;
             this.renderer.setDrawingBufferSize(this.width, this.height, this.pixelRatio);

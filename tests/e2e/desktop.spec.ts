@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import {
     test, expect, openGame, joinFromSplash, snapshot, distance, placeOnClearRunway, v2, debugCall, waitFrames, meanColor
 } from './fixtures.js';
-import type { BulliDebugSnapshot, CarInfo, TextureProbe, WorldInfo } from '../../src/client/e2eHook.js';
+import type { BulliDebugSnapshot, CarInfo, MapWorldStats, TextureProbe, WorldInfo } from '../../src/client/e2eHook.js';
 
 // The critical path on the desktop, in the production build: load, the
 // assets (meshopt + KTX2 car models and world textures through the hashed
@@ -73,14 +73,15 @@ test('loads, joins, drives and survives a lost WebGL context on the desktop', as
     await waitFrames(page, 5);
     expect((await snapshot(page)).render.calls).toBeGreaterThan(10);
 
-    // The world: textures and sky in, baked palm impostors, no environment
-    // map on the software tier
+    // The world: textures and sky in, the map's world with its building
+    // kit, baked palm impostors, no environment map on the software tier
     const world = await debugCall<WorldInfo>(page, 'worldSettled');
     expect(world.tier).toBe('software');
     expect(world.textures.failed).toBe(0);
     expect(world.textures.requested).toBeGreaterThan(5);
     expect(world.textures.loaded).toBe(world.textures.requested);
-    expect(world.groups).toEqual(expect.arrayContaining(['city', 'environment', 'sky-dome']));
+    expect(world.groups).toEqual(expect.arrayContaining(['map', 'sky-dome']));
+    await expect.poll(async () => (await debugCall<MapWorldStats | null>(page, 'mapWorldStats'))?.kit).toBe('ready');
     expect(world.environment).toBeNull();
     expect(world.palms?.baked).toBe(true);
     // The own car is the GLB model

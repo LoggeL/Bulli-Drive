@@ -12,17 +12,14 @@ import { closeAction, reconnectDelayMs } from '../../shared/net/reconnect.js';
 import { isPowerupType } from '../../shared/party/rules.js';
 import { resetTuning, tuningIsDefault } from '../../shared/sim/tuning.js';
 import type { MapData } from '../../shared/map/mapData.js';
-import { generateWorld, WORLD_SEED } from '../../shared/world/worldGen.js';
 import { gameMap, loadGameMap } from '../map/gameMap.js';
 import { Bulli, type CarType } from '../entities/Bulli.js';
-import { createEnvironment } from '../world/environment.js';
-import { createCity } from '../world/city.js';
+import { createMapScene, setMapSceneRoom } from '../world/mapScene.js';
 import { clearPowerupMarkers, createPowerupMarker, applyPowerupEffect, setPowerupCollectedVisual } from '../world/powerups.js';
 import { clearProjectiles } from '../world/projectiles.js';
-import { DEFAULT_TERRAIN_CONFIG } from '../../shared/constants.js';
 import { clearCoins, confirmCoinPickup, createCoinsFromServer, removeCoinById, resetCoinById } from '../world/coins.js';
 import { updateScoreboardUI } from '../ui/playerList.js';
-import { groundHeight } from '../world/environment.js';
+import { groundHeight } from '../world/ground.js';
 import { playCollisionSound, playHitSound } from '../effects/sounds.js';
 import { spawnExplosion, spawnParticles } from '../effects/particles.js';
 import { addKillfeedEntry, showHitmarker, updateScoreUI } from '../ui/hud.js';
@@ -45,14 +42,13 @@ import { raceClient } from '../race/RaceClient.js';
 import { mapFeaturesGroup } from '../race/TrackDressing.js';
 
 // The connection to the game server on protocol v2 (docs/phase-1b-design.md,
-// 3 and 11): the handshake, the world from the seed, the room state, the
+// 3 and 11): the handshake, the map's world, the room state, the
 // events and the binary snapshots, which go to the prediction
 // (net/netDriver.ts) and the remote cars (net/remotes.ts). A lost
 // connection comes back on its own: the session token brings the same
 // player and car back within the grace time, a resume ticket from a
 // restart the colour and the Party score.
 
-let environmentInitialized = false;
 let map: MapData | null = null;
 let clockTimer = 0;
 let snapshotWarned = false;
@@ -379,16 +375,9 @@ function enterRoom(data: Extract<ServerMessage, { type: 'roomState' }>) {
         setGameMapWorld(map);
         const ramps = mapFeaturesGroup(map);
         if (ramps) state.scene.add(ramps);
-        if (!environmentInitialized) {
-            // The looks are still the old city's until the Bulli Bay renderer
-            // (phase 3, M4) replaces them; the sim already drives on Bulli Bay
-            const legacy = generateWorld(WORLD_SEED);
-            state.terrainConfig = DEFAULT_TERRAIN_CONFIG;
-            createEnvironment(legacy.trees);
-            createCity(legacy.city);
-            initMinimap(legacy.city);
-            environmentInitialized = true;
-        }
+        // The map's world: terrain, sea, roads, buildings, plants (once per page)
+        createMapScene(map);
+        initMinimap(map);
     } else {
         checkWorld(map, data.world);
     }
@@ -400,6 +389,7 @@ function enterRoom(data: Extract<ServerMessage, { type: 'roomState' }>) {
     clearPowerupMarkers();
 
     setCurrentRoom(data.room);
+    setMapSceneRoom(data.room.kind);
     const party = data.room.kind === 'party';
     if (data.items) {
         const collectedPowerups = new Set(data.items.powerups.filter(p => p.collected).map(p => p.id));

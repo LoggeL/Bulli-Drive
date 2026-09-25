@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { lookAzimuth } from '../../shared/map/lighting.js';
+import mapFile from '../../shared/maps/bulli-bay/map.json';
 
 // The realistic, calm sunset look of the world (graphics G1), taken over from
 // the world probe (gfx/real/world): low warm sun, HDRI-based sky and image
@@ -9,12 +11,13 @@ import * as THREE from 'three';
 // Colors are linear (they may exceed 1: fog in the sun direction is HDR).
 
 export const LOOK = {
-    // Degrees above the horizon and compass direction the sun shines from
-    // (0 = +z, 90 = +x). 17 degrees: golden hour light with long shadows
-    // that still leave the streets between the up to 26 m tall buildings
-    // partly lit (the probe's 9 degrees suited its two-storey town).
-    sunElevation: 17,
-    sunAzimuth: 28,
+    // Degrees above the horizon and direction the sun shines from (0 = +z,
+    // 90 = +x): the map's evening sun over the Pacific (map.json lighting,
+    // a compass azimuth of 285°, west-north-west, docs/phase-3-design.md
+    // A38). 17 degrees: golden hour light with long shadows that still
+    // leave the streets between the buildings partly lit.
+    sunElevation: mapFile.lighting.sunElevation,
+    sunAzimuth: lookAzimuth(mapFile.lighting.sunAzimuth),
     sunColor: 0xffbd88,
     sunIntensity: 3.9,
     exposure: 1.0,

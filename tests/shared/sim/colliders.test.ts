@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { mulberry32 } from '../../../src/shared/math/rng.js';
 import { DEFAULT_TERRAIN_CONFIG } from '../../../src/shared/constants.js';
-import { COLLIDER_TOPS, createSimWorld, SpatialGrid, type Collider, type ColliderInput } from '../../../src/shared/world/colliders.js';
+import { createSimWorld, SpatialGrid, type Collider, type ColliderInput } from '../../../src/shared/world/colliders.js';
 import { getTerrainHeight } from '../../../src/shared/world/terrain.js';
 
 // Static collision world (docs/phase-1a-design.md, 7.1 and 7.3)
@@ -69,8 +69,8 @@ describe('SpatialGrid', () => {
 describe('createSimWorld', () => {
     it('stores the ground height under each collider as its base and keeps the order', () => {
         const inputs: ColliderInput[] = [
-            { kind: 'box', x: 300, z: 200, hw: 5, hd: 8, top: COLLIDER_TOPS.building },
-            { kind: 'circle', x: -350, z: 120, r: 0.7, top: COLLIDER_TOPS.lamp }
+            { kind: 'box', x: 300, z: 200, hw: 5, hd: 8, top: Infinity },
+            { kind: 'circle', x: -350, z: 120, r: 0.7, top: 5.5 }
         ];
         const world = createSimWorld(DEFAULT_TERRAIN_CONFIG, inputs, []);
         expect(world.colliders.map(c => c.kind)).toEqual(['box', 'circle']);

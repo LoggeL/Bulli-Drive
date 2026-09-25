@@ -71,7 +71,7 @@ describe('createRaceWorld', () => {
             const world = createRaceWorld(map, def);
             const own = trackColliders(def);
             expect(world.slipstream).toBe(true);
-            expect(world.roads).toBeNull();
+            expect(world.resetPose).toBeDefined();
             expect(world.ramps).toHaveLength(map.ramps.length + def.ramps.length);
             // Contract order: the map's colliders first, the track's last
             expect(world.colliders.slice(0, map.colliders.length)).toEqual(map.simWorld.colliders);
@@ -120,9 +120,8 @@ describe('createRaceWorld', () => {
         expect(car.state.draft).toBe(0);
     });
 
-    it('uses the reset pose ahead of the road grid in any world that has one', () => {
+    it('uses the reset pose in any world that has one', () => {
         const world = createFlatWorld();
-        world.roads = { xLines: [0], zLines: [], minX: -100, maxX: 100, minZ: -100, maxZ: 100, snapRange: 40 };
         world.resetPose = lineResetPose(buildRacingLine({ ...track([]), centerline: [{ x: 58, z: 100 }, { x: 58, z: -100 }] }));
         const car = spawnCar(world, 'a', 'beetle', 20, 0, 0);
         // No slipstream step in this world: only the reset clears the draft
@@ -134,7 +133,7 @@ describe('createRaceWorld', () => {
         expect(car.state.draft).toBe(0.6);
         car.input.buttons = BTN_RESET;
         stepVehicle(car, world);
-        // Nearest line point: on the line x = 58, heading -z (not the road x = 0)
+        // Nearest line point: on the line x = 58, heading -z
         expect(car.state.x).toBeCloseTo(58, 9);
         expect(car.state.z).toBeCloseTo(0, 9);
         expect(car.state.yaw).toBeCloseTo(Math.PI, 12);

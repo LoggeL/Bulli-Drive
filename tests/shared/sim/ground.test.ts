@@ -3,7 +3,7 @@ import { BTN_HANDBRAKE, BTN_JUMP, BTN_RESET, DT, SIM_TUNING } from '../../../src
 import { createFlatWorld, FLAT_TERRAIN } from '../../../src/shared/sim/scenarios.js';
 import { CAR_CLASS_IDS } from '../../../src/shared/sim/vehicleClasses.js';
 import { createSimWorld, rampEdgeColliders, type RampDef } from '../../../src/shared/world/colliders.js';
-import { CITY_TERRAIN_AREA, getTerrainHeight } from '../../../src/shared/world/terrain.js';
+import { TERRAIN_FLAT_AREA, getTerrainHeight } from '../../../src/shared/world/terrain.js';
 import { DEFAULT_TERRAIN_CONFIG } from '../../../src/shared/constants.js';
 import { DEG, drive, forwardSpeed, spawnCar, speedOf } from './helpers.js';
 
@@ -162,7 +162,7 @@ describe('v2 ramp edges and terrain kinks', () => {
 
     it('does not launch the car at the kink of the city blend ring, out of town or into it', () => {
         const world = createSimWorld(DEFAULT_TERRAIN_CONFIG, [], []);
-        const { centerX, centerZ, flatRadius, blendRadius } = CITY_TERRAIN_AREA;
+        const { centerX, centerZ, flatRadius, blendRadius } = TERRAIN_FLAT_AREA;
         let worst = 0;
         for (let deg = 0; deg < 360; deg += 15) {
             const ux = Math.cos(deg * DEG), uz = Math.sin(deg * DEG);

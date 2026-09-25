@@ -47,35 +47,6 @@ export interface CoinData {
     collected: boolean;
 }
 
-export interface TreeData {
-    id: number;
-    x: number;
-    z: number;
-    height: number;
-}
-
-export interface BuildingData {
-    x: number;
-    z: number;
-    width: number;
-    depth: number;
-    height: number;
-    color: number;
-}
-
-export interface RoadData {
-    x: number;
-    z: number;
-    width: number;
-    length: number;
-    rotation: number;
-}
-
-export interface CityData {
-    buildings: BuildingData[];
-    roads: RoadData[];
-}
-
 // Room types (docs/phase-1b-design.md, section 2): the Party with coins,
 // powerups, shooting and HP is the default; Free Roam only drives and bumps;
 // the race and the solo time trial (docs/phase-2-design.md, 6).

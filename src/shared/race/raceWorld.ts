@@ -15,7 +15,7 @@ import type { TrackDef } from './types.js';
 // Water barrier row: 0.6 m deep, 1.0 m high
 export const BARRIER_DEPTH = 0.6;
 export const BARRIER_TOP = 1.0;
-// Chevron board posts: like the sign posts (colliders.ts COLLIDER_TOPS.signPost)
+// Chevron board posts: like the old city's sign posts (top 3.3 m)
 export const CHEVRON_POST_RADIUS = 0.35;
 export const CHEVRON_POST_OFFSET = 1.2;
 export const CHEVRON_POST_TOP = 3.3;
@@ -88,7 +88,7 @@ export function createRaceWorld(map: MapData, track: TrackDef): SimWorld {
         ...trackColliders(track)
     ];
     const ramps: RampDef[] = [...map.simWorld.ramps, ...track.ramps];
-    const world = createSimWorld(map.ground, colliders, ramps, null);
+    const world = createSimWorld(map.ground, colliders, ramps);
     world.resetPose = lineResetPose(racingLine(track));
     world.slipstream = true;
     return world;

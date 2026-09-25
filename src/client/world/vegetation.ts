@@ -83,39 +83,44 @@ export interface TreeSpot {
 // Card size in meters at scale 1
 const TREE_SIZE: Record<TreeKind, [number, number]> = { oak: [7.2, 10.3], cypress: [3.0, 12.0], bush: [7.2, 10.3] };
 
-/** Tree cards of one kind as an InstancedMesh (deterministic per seed). */
-export function createTreeCards(M: WorldMaterials, kind: TreeKind, spots: TreeSpot[], seed: number, castShadow = kind !== 'bush'): THREE.InstancedMesh | null {
-    if (!spots.length) return null;
-    const R = rng(seed);
+/** The crossed cards of a tree kind at scale 1 (foot at the origin). */
+export function treeCardGeometry(kind: TreeKind): THREE.BufferGeometry {
     const [width, height] = TREE_SIZE[kind];
-    const geometry = crossCard(kind === 'cypress' ? TREE_UV.cypress : TREE_UV.oak, width, height, kind === 'cypress' ? 2 : 3, kind === 'oak' ? 0.62 : 0);
-    const mesh = new THREE.InstancedMesh(geometry, M.tree, spots.length);
-    const matrix = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
+    return crossCard(kind === 'cypress' ? TREE_UV.cypress : TREE_UV.oak, width, height, kind === 'cypress' ? 2 : 3, kind === 'oak' ? 0.62 : 0);
+}
+
+/**
+ * Instance matrix and colour per tree (deterministic per seed): a random
+ * turn, uneven width and height, half of them mirrored (another silhouette
+ * from the same card), a tint from the sun that reaches the crown.
+ */
+export function treeCardInstances(kind: TreeKind, spots: readonly TreeSpot[], seed: number): { matrix: THREE.Matrix4; color: THREE.Color }[] {
+    const R = rng(seed);
+    const q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
     const up = new THREE.Vector3(0, 1, 0);
-    const color = new THREE.Color();
-    spots.forEach((spot, i) => {
+    return spots.map(spot => {
         q.setFromAxisAngle(up, R() * Math.PI);
-        // Uneven width and height per tree, half of them mirrored (another
-        // silhouette from the same card)
         const wide = spot.scale * (0.82 + R() * 0.36) * (R() < 0.5 ? -1 : 1);
         s.set(wide, spot.scale * (kind === 'bush' ? 0.7 : 0.88 + R() * 0.24), Math.abs(wide) * (0.9 + R() * 0.2));
-        matrix.compose(p.set(spot.x, spot.y - (kind === 'bush' ? 0.6 : 0.4) * spot.scale, spot.z), q, s);
-        mesh.setMatrixAt(i, matrix);
+        const matrix = new THREE.Matrix4().compose(p.set(spot.x, spot.y - (kind === 'bush' ? 0.6 : 0.4) * spot.scale, spot.z), q, s);
         const t = (0.8 + R() * 0.3) * (0.45 + 0.55 * (spot.sun ?? 1));
-        if (kind === 'bush') mesh.setColorAt(i, color.setRGB(t * 0.62, t * 0.74, t * 0.5));
-        else mesh.setColorAt(i, color.setRGB(t, t * (0.95 + R() * 0.1), t * 0.9));
+        const color = kind === 'bush' ? new THREE.Color().setRGB(t * 0.62, t * 0.74, t * 0.5) : new THREE.Color().setRGB(t, t * (0.95 + R() * 0.1), t * 0.9);
+        return { matrix, color };
     });
-    mesh.castShadow = castShadow;
-    // Crossed cards would shadow each other in hard halves (and leave a lit
-    // seam where they cross): the trees take no shadows, the baked occlusion
-    // in the vertex color darkens the foot of the crown instead
-    mesh.receiveShadow = kind === 'bush';
-    mesh.name = `trees-${kind}`;
-    mesh.computeBoundingSphere();
-    return mesh;
 }
 
 // --- Shrubs -----------------------------------------------------------------------
+
+/**
+ * A shrub of three crossed cards of unit size (M.shrub, foot at the
+ * origin): kind 0 is the flowering (bougainvillea) half of the atlas, 1 the
+ * green one. For instancing.
+ */
+export function shrubGeometry(kind: 0 | 1): THREE.BufferGeometry {
+    const batch = new Batch('shrub');
+    addShrub(batch, rng(kind + 7), 0, 0, 0, 1, kind);
+    return batch.build()!;
+}
 
 /**
  * Adds a shrub of three crossed cards to `batch` (M.shrub): kind 0 is the

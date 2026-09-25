@@ -6,7 +6,7 @@ import { rampRearBase, type RampDef } from '../../shared/world/colliders.js';
 import type { MapData } from '../../shared/map/mapData.js';
 import { lightingTier } from '../render/lighting.js';
 import { Batch, rgb } from '../world/batch.js';
-import { groundHeight, renderedGroundHeight } from '../world/environment.js';
+import { groundHeight } from '../world/ground.js';
 import { FINISH, PropBatch, type Finish } from '../world/furniture.js';
 import { worldMaterials } from '../world/worldMaterials.js';
 import type { GateLook } from './raceModel.js';
@@ -212,7 +212,7 @@ function atlasQuad(batch: Batch, center: THREE.Vector3, uAxis: THREE.Vector3, vA
 
 /** A flat mark on the ground (road paint) along yaw, length along the heading. */
 function groundMark(batch: Batch, x: number, z: number, yaw: number, width: number, length: number, cell: number, lift = 0.075): void {
-    const y = Math.max(groundHeight(x, z), renderedGroundHeight(x, z)) + lift;
+    const y = groundHeight(x, z) + lift;
     // u runs to the right of the heading (-left), v along the heading
     const right = new THREE.Vector3(-Math.cos(yaw), 0, Math.sin(yaw));
     const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
