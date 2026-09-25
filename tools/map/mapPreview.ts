@@ -12,7 +12,8 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from '@playwright/test';
-import { railLine } from '../../src/shared/map/rails.js';
+import { areaRailLine, railLine } from '../../src/shared/map/rails.js';
+import { routeToTrack } from '../../src/shared/map/routeToTrack.js';
 import { loadMapBundle, ROOT } from './mapBundle.js';
 import { encodePng } from './png.js';
 import { heightsOf, shadedRgb } from './preview.js';
@@ -65,7 +66,15 @@ export function previewData(mapId: string) {
             const p = e.samples[Math.floor(e.samples.length / 2)];
             return { name, x: p.x, z: p.z, angle: Math.atan2(p.tz, p.tx) };
         }),
-        rails: net.edges.flatMap(e => (e.def.rails ?? []).map(r => ({ kind: r.kind, points: every(railLine(e, r), 2).map(round) }))),
+        rails: [
+            ...net.edges.flatMap(e => (e.def.rails ?? []).map(r => ({ kind: r.kind, points: every(railLine(e, r), 2).map(round) }))),
+            ...net.areas.flatMap(a => (a.rails ?? []).map(r => ({ kind: r.kind, points: areaRailLine(a, r).map(round) })))
+        ],
+        // Jump ramps: the map's (free roam, party) and every track's
+        jumps: [
+            ...(pois.jumps ?? []),
+            ...validation.routes.flatMap(route => routeToTrack(net, route, bundle.map.mapVersion).ramps)
+        ].map(j => ({ x: j.x, z: j.z, yaw: j.yaw, length: j.length, width: j.width })),
         tracks: validation.routes.map((route, i) => ({
             id: route.track.id, name: route.track.name, kind: route.track.kind, laps: route.track.laps,
             bonus: route.track.bonus ?? false,
@@ -206,6 +215,12 @@ function draw(data: PreviewData, size: number): Promise<string> {
             for (const r of data.arena.ramps) {
                 box(r.x, r.z, r.yaw, r.length, r.width);
                 ctx.fillStyle = '#f1c40f'; ctx.fill();
+            }
+            // Jump ramps, outlined so they show up outside the arena too
+            for (const j of data.jumps) {
+                box(j.x, j.z, j.yaw, j.length, j.width);
+                ctx.fillStyle = '#f1c40f'; ctx.fill();
+                ctx.strokeStyle = '#111'; ctx.lineWidth = 1.2; ctx.stroke();
             }
             for (const [x, z] of data.arena.coins) { ctx.fillStyle = '#ffd700'; ctx.beginPath(); ctx.arc(X(x), Z(z), 1.8, 0, 7); ctx.fill(); }
             for (const [x, z] of data.arena.powerups) { ctx.fillStyle = '#3fa9ff'; ctx.beginPath(); ctx.arc(X(x), Z(z), 1.8, 0, 7); ctx.fill(); }
@@ -368,7 +383,7 @@ function draw(data: PreviewData, size: number): Promise<string> {
             legendLine('#888', [6, 4], 'Zonen');
             legendLine('#fff', [], 'Start / Ziel (weiß), Gates (Farbe)', 3);
             ctx.fillStyle = '#c0392b'; ctx.fillRect(lx, ly - 4, 26, 8);
-            label('Container, Rampe (gelb), Coins, Power-ups', lx + 34, ly, '12px sans-serif', '#333', '#f4f1ea', 'left');
+            label('Container, Rampen/Sprünge (gelb), Coins, Power-ups', lx + 34, ly, '12px sans-serif', '#333', '#f4f1ea', 'left');
             ly += 26;
             label('Landmarken', lx, ly, 'bold 15px sans-serif', '#1d2b3a', '#f4f1ea', 'left');
             ly += 20;

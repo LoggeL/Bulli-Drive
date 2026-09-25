@@ -10,7 +10,7 @@
 
 import type { Vec2 } from './geometry.js';
 import type { RoadEdgeData, RoadNetwork } from './roadNetwork.js';
-import type { RailKind, RailRange } from './roadSchema.js';
+import type { AreaRail, RailKind, RailRange, RoadArea } from './roadSchema.js';
 import { leftNormal, length2, pointAt } from './spline.js';
 
 // Capsule around the segment a-b with radius r; top as for the other
@@ -110,11 +110,100 @@ export function railColliders(edge: RoadEdgeData, rail: RailRange): SegmentColli
     return segmentsAlong(railLine(edge, rail), RAIL_TOPS[rail.kind]);
 }
 
-// All rails of the network, edge by edge in file order
+// ---- Railings along areas (pier, lookouts, quays) ----
+
+// A railing stands this far inside the area's outline by default: on the
+// deck, not on its edge
+export const DEFAULT_AREA_RAIL_OFFSET = 0.3;
+
+// Twice the signed area in the x-z plane (positive: counter-clockwise when
+// x points right and z up, i.e. clockwise on the map with north up)
+function signedArea2(polygon: readonly Vec2[]): number {
+    let sum = 0;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        sum += polygon[j][0] * polygon[i][1] - polygon[i][0] * polygon[j][1];
+    }
+    return sum;
+}
+
+// Sides of an area rail: indices of their first vertex, in order
+export function areaRailSides(area: RoadArea, rail: Pick<AreaRail, 'from' | 'to'>): number[] {
+    const n = area.polygon.length;
+    const count = rail.to === rail.from ? n : ((rail.to - rail.from) % n + n) % n;
+    const sides: number[] = [];
+    for (let k = 0; k < count; k++) sides.push((rail.from + k) % n);
+    return sides;
+}
+
+// The railing's line: the polygon's sides from vertex `from` to `to`,
+// moved `offset` inwards; inner corners are mitred (the moved sides meet),
+// the two ends move straight in. A rail round the whole outline is closed
+// (its last point is its first).
+export function areaRailLine(area: RoadArea, rail: AreaRail): Vec2[] {
+    const polygon = area.polygon;
+    const n = polygon.length;
+    const offset = rail.offset ?? DEFAULT_AREA_RAIL_OFFSET;
+    // Inward normal of side i: left of its direction for a polygon with
+    // positive signed area (left is (dz, -dx) with z up... here: (-dz, dx))
+    const inwardSign = signedArea2(polygon) > 0 ? 1 : -1;
+    const normal = (i: number): [number, number] => {
+        const a = polygon[i], b = polygon[(i + 1) % n];
+        const dx = b[0] - a[0], dz = b[1] - a[1];
+        const len = length2(dx, dz);
+        return [-dz / len * inwardSign, dx / len * inwardSign];
+    };
+    const sides = areaRailSides(area, rail);
+    const closed = rail.from === rail.to;
+    const points: Vec2[] = [];
+    const moved = (i: number, vertex: number): [number, number] => {
+        const [nx, nz] = normal(i);
+        return [polygon[vertex][0] + nx * offset, polygon[vertex][1] + nz * offset];
+    };
+    for (let k = 0; k <= sides.length; k++) {
+        const vertex = (rail.from + k) % n;
+        const before = k > 0 ? sides[k - 1] : closed ? sides[sides.length - 1] : -1;
+        const after = k < sides.length ? sides[k] : closed ? sides[0] : -1;
+        if (before < 0) { points.push(moved(after, vertex)); continue; }
+        if (after < 0) { points.push(moved(before, vertex)); continue; }
+        // Mitre: the vertex moved along the sum of both normals, scaled so
+        // that it lies `offset` from both sides
+        const [ax, az] = normal(before), [bx, bz] = normal(after);
+        const dot = ax * bx + az * bz;
+        const scale = offset / (1 + dot > 1e-6 ? (1 + dot) : 1);
+        points.push([polygon[vertex][0] + (ax + bx) * scale, polygon[vertex][1] + (az + bz) * scale]);
+    }
+    return points;
+}
+
+// The railing's straight sides cut into equal capsules of at most
+// RAIL_MAX_SEGMENT (the sides are straight, no sagitta to bound)
+export function areaRailColliders(area: RoadArea, rail: AreaRail): SegmentCollider[] {
+    const line = areaRailLine(area, rail);
+    const out: SegmentCollider[] = [];
+    for (let i = 1; i < line.length; i++) {
+        const [ax, az] = line[i - 1], [bx, bz] = line[i];
+        const pieces = Math.max(1, Math.ceil(length2(bx - ax, bz - az) / RAIL_MAX_SEGMENT - 1e-9));
+        for (let k = 0; k < pieces; k++) {
+            out.push({
+                kind: 'segment',
+                ax: toMillimetres(ax + (bx - ax) * k / pieces), az: toMillimetres(az + (bz - az) * k / pieces),
+                bx: toMillimetres(ax + (bx - ax) * (k + 1) / pieces), bz: toMillimetres(az + (bz - az) * (k + 1) / pieces),
+                r: RAIL_RADIUS,
+                top: RAIL_TOPS[rail.kind]
+            });
+        }
+    }
+    return out;
+}
+
+// All rails of the network: edge by edge in file order, then the areas'
 export function networkRailColliders(net: RoadNetwork): SegmentCollider[] {
     const out: SegmentCollider[] = [];
     for (const edge of net.edges) {
         for (const rail of edge.def.rails ?? []) out.push(...railColliders(edge, rail));
+    }
+    for (const area of net.areas) {
+        for (const rail of area.rails ?? []) out.push(...areaRailColliders(area, rail));
     }
     return out;
 }

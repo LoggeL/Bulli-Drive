@@ -113,6 +113,16 @@ const RoadEdgeSchema = v.strictObject({
     tags: v.optional(v.array(v.string()))
 });
 
+// Railing along the outline of an area (5.5, 7): the polygon's sides from
+// vertex `from` to vertex `to` (wrapping past the last vertex; from = to is
+// the whole outline), `offset` metres inside it
+const AreaRailSchema = v.strictObject({
+    from: v.pipe(v.number(), v.integer(), v.minValue(0)),
+    to: v.pipe(v.number(), v.integer(), v.minValue(0)),
+    kind: v.picklist(RAIL_KINDS),
+    offset: v.optional(NonNegative)
+});
+
 const RoadAreaSchema = v.strictObject({
     id: Id,
     polygon: v.pipe(v.array(Point), v.minLength(3)),
@@ -124,7 +134,10 @@ const RoadAreaSchema = v.strictObject({
     connects: v.array(Id),
     // Vertical sides instead of embankments and no flat margin around the
     // polygon (the pier: a deck over the water, not a dam)
-    walls: v.optional(v.boolean())
+    walls: v.optional(v.boolean()),
+    // Railings and guard rails along the outline (pier, lookouts, quays)
+    rails: v.optional(v.array(AreaRailSchema)),
+    tags: v.optional(v.array(v.string()))
 });
 
 export const RoadNetworkSchema = v.strictObject({
@@ -144,6 +157,7 @@ export type RoadEdge = v.InferOutput<typeof RoadEdgeSchema>;
 export type RoadArea = v.InferOutput<typeof RoadAreaSchema>;
 export type Curve = v.InferOutput<typeof CurveSchema>;
 export type RailRange = v.InferOutput<typeof RailRangeSchema>;
+export type AreaRail = v.InferOutput<typeof AreaRailSchema>;
 export type RailKind = typeof RAIL_KINDS[number];
 export type WallRange = v.InferOutput<typeof WallRangeSchema>;
 export type RoadSurfaceName = typeof ROAD_SURFACES[number];
@@ -226,6 +240,11 @@ export function validateRoadNetwork(file: RoadNetworkFile): string[] {
     for (const area of file.areas) {
         if (areaIds.has(area.id)) errors.push(`area ${area.id}: duplicate id`);
         areaIds.add(area.id);
+        for (const rail of area.rails ?? []) {
+            if (rail.from >= area.polygon.length || rail.to >= area.polygon.length) {
+                errors.push(`area ${area.id}: rail ${rail.from}..${rail.to} names a vertex the polygon does not have (${area.polygon.length})`);
+            }
+        }
         for (const id of area.connects) {
             if (!nodes.has(id)) errors.push(`area ${area.id}: unknown node ${id} in connects`);
         }

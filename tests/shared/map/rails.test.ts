@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
-    circleVsSegment, networkRailColliders, RAIL_MAX_SAGITTA, RAIL_RADIUS, RAIL_TOP, railColliders,
+    areaRailColliders, areaRailLine, circleVsSegment, networkRailColliders, RAIL_MAX_SAGITTA, RAIL_RADIUS, RAIL_TOP, railColliders,
     railLine, simplifyPolyline, type SegmentCollider
 } from '../../../src/shared/map/rails.js';
 import { buildRoadNetwork } from '../../../src/shared/map/roadNetwork.js';
-import type { RailRange } from '../../../src/shared/map/roadSchema.js';
+import { validateRoadNetwork, type RailRange, type RoadArea } from '../../../src/shared/map/roadSchema.js';
 import { edge, network, node } from './fixtures.js';
 
 // Guard rails as capsule chains (docs/phase-3-design.md, 5.5 and 8.2)
@@ -104,6 +104,59 @@ function distanceToSegment(x: number, z: number, c: SegmentCollider): number {
     const t = Math.max(0, Math.min(1, ((x - c.ax) * ex + (z - c.az) * ez) / (ex * ex + ez * ez)));
     return Math.hypot(x - c.ax - t * ex, z - c.az - t * ez);
 }
+
+describe('area railings', () => {
+    const area = (polygon: [number, number][], rails: RoadArea['rails'] = []): RoadArea =>
+        ({ id: 'deck', polygon, surface: 'wood', curb: false, connects: [], rails });
+    // 20 × 10 m rectangle, once in each winding
+    const ccw: [number, number][] = [[0, 0], [20, 0], [20, 10], [0, 10]];
+    const cw: [number, number][] = [[0, 0], [0, 10], [20, 10], [20, 0]];
+
+    it('follows the chosen sides 0.5 m inside, mitred at the corner, in either winding', () => {
+        // Sides 1 and 2 of ccw: east side and north... the sides x = 20 and z = 10
+        expect(areaRailLine(area(ccw), { from: 1, to: 3, kind: 'wood', offset: 0.5 }))
+            .toEqual([[19.5, 0], [19.5, 9.5], [0, 9.5]]);
+        // Sides 2 and 3 of cw (wrapping to vertex 0): x = 20 and z = 0
+        expect(areaRailLine(area(cw), { from: 2, to: 0, kind: 'wood', offset: 0.5 }))
+            .toEqual([[19.5, 10], [19.5, 0.5], [0, 0.5]]);
+    });
+
+    it('mitres an oblique corner so the railing stays the offset away from both sides', () => {
+        // The corner at (20 | 0) turns by 45° into the side up to (30 | 10)
+        const trapeze: [number, number][] = [[0, 0], [20, 0], [30, 10], [0, 10]];
+        const line = areaRailLine(area(trapeze), { from: 0, to: 2, kind: 'wood', offset: 0.5 });
+        const corner = line[1];
+        // Distance to the side z = 0 and to the side through (20 | 0) and (30 | 10)
+        expect(corner[1]).toBeCloseTo(0.5, 9);
+        expect(Math.abs((corner[0] - 20) - (corner[1] - 0)) / Math.SQRT2).toBeCloseTo(0.5, 9);
+        // Inside the polygon: right of the slanted side (x - z < 20)
+        expect(corner[0] - corner[1]).toBeLessThan(20);
+    });
+
+    it('closes round the whole outline when from = to, 0.3 m inside by default', () => {
+        const line = areaRailLine(area(ccw), { from: 0, to: 0, kind: 'fence' });
+        expect(line.map(([x, z]) => [+x.toFixed(9), +z.toFixed(9)])).toEqual([[0.3, 0.3], [19.7, 0.3], [19.7, 9.7], [0.3, 9.7], [0.3, 0.3]]);
+    });
+
+    it('builds capsules along the railing and adds them after the edges\' rails', () => {
+        const deck = area(ccw, [{ from: 0, to: 0, kind: 'fence' }]);
+        const colliders = areaRailColliders(deck, deck.rails![0]);
+        // 19.4 m sides in pieces of at most 8 m (3 each), 9.4 m sides (2 each)
+        expect(colliders).toHaveLength(10);
+        for (const c of colliders) expect(c).toMatchObject({ kind: 'segment', r: RAIL_RADIUS, top: Infinity });
+        const net = buildRoadNetwork(network([node('a', 0, 50), node('b', 100, 50)],
+            [edge('ab', 'a', 'b', [], { rails: [{ side: 'left', from: 0, to: -1, kind: 'wbeam' }] })], { areas: [deck] }));
+        const all = networkRailColliders(net);
+        expect(all).toHaveLength(13 + 10);
+        expect(all[0].top).toBe(RAIL_TOP);
+        expect(all.at(-1)!.top).toBe(Infinity);
+    });
+
+    it('refuses a rail naming a vertex the polygon does not have', () => {
+        const file = network([node('a', 0, 50), node('b', 100, 50)], [edge('ab', 'a', 'b')], { areas: [area(ccw, [{ from: 1, to: 4, kind: 'wood' }])] });
+        expect(validateRoadNetwork(file)).toEqual(['area deck: rail 1..4 names a vertex the polygon does not have (4)']);
+    });
+});
 
 describe('simplifyPolyline', () => {
     it('keeps corners and merges straight runs up to the maximum length', () => {

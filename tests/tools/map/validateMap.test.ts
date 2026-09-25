@@ -4,8 +4,9 @@ import type { MapFile, PoisFile, TrackRoute, ZonesFile } from '../../../src/shar
 import { buildRoadNetwork, type RoadNetwork } from '../../../src/shared/map/roadNetwork.js';
 import type { RoadArea, RoadNetworkFile } from '../../../src/shared/map/roadSchema.js';
 import {
-    boxDistance, checkBoundary, checkConnectivity, checkCrossings, checkCurves, checkGrades, checkPois, checkRails,
-    checkTrack, checkZones, segmentSegmentDistance, validateMap, type Finding
+    boxDistance, checkAreaRails, checkBoundary, checkConnectivity, checkCrossings, checkCurves, checkGrades, checkPois,
+    checkRails, checkRamp, checkTerrainMesh, checkTrack, checkZones, rampFlight, rampLip, routeFlow, segmentSegmentDistance,
+    terrainMeshStats, validateMap, type Finding
 } from '../../../tools/map/validateMap.js';
 import { edge, network, node, PROFILE } from '../../shared/map/fixtures.js';
 
@@ -275,6 +276,100 @@ describe('checkRails (guard-rail duty, 5.5 and A16)', () => {
     });
 });
 
+describe('checkAreaRails (railings along the pier, lookouts and quays)', () => {
+    // A deck 5 m above the ground (walls: no flat margin) south of a road
+    // along z = 0: x 21..61, z 5..45 (odd edges, so no grid point lies on
+    // them). Its north side touches the road.
+    const DECK: [number, number][] = [[21, 5], [61, 5], [61, 45], [21, 45]];
+    const ground = field((x, z) => (x > 21 && x < 61 && z > 5 && z < 45 ? 5 : 0));
+    const deck = (extra: Partial<RoadArea> = {}) => net(network([node('a', -80, 0), node('b', 80, 0)], [edge('ab', 'a', 'b')], {
+        areas: [{ id: 'deck', polygon: DECK, y: 5, surface: 'wood', curb: false, connects: [], walls: true, ...extra }]
+    }));
+
+    it('asks for a railing on every side that drops more than 2 m, not where the road goes on', () => {
+        const findings = checkAreaRails(deck(), ground);
+        expect(messages(findings).map(m => m.slice(0, 16))).toEqual(['area deck, side ', 'area deck, side ', 'area deck, side ']);
+        expect(messages(findings).map(m => m.slice(0, 17))).toEqual(['area deck, side 1', 'area deck, side 2', 'area deck, side 3']);
+        // 0.3 m inside the east side (x = 60.7) the bilinear deck is at
+        // 5 · 0.65 = 3.25 m, 4 m out the ground is 0
+        expect(findings[0].message).toMatch(/^area deck, side 1 \(1–39 m\): ground drops 3\.\d m beside it without a railing$/);
+    });
+
+    it('is satisfied by railings on those sides or the tag noRail', () => {
+        expect(checkAreaRails(deck({ rails: [{ from: 1, to: 0, kind: 'wood' }] }), ground)).toEqual([]);
+        expect(messages(checkAreaRails(deck({ rails: [{ from: 1, to: 3, kind: 'wood' }] }), ground))).toEqual([
+            expect.stringMatching(/^area deck, side 3 /)
+        ]);
+        expect(checkAreaRails(deck({ tags: ['noRail'] }), ground)).toEqual([]);
+    });
+
+    it('measures a level area from beyond its 4 m flat margin', () => {
+        // A car park level with its surroundings, then 1 : 1 down from 5 m
+        // out: 3 m lower 4 m beyond the flat margin
+        const lot = field((x, z) => 5 - Math.max(0, Math.max(21 - x, x - 61, 5 - z, z - 45) - 5));
+        expect(checkAreaRails(deck({ walls: false }), lot).length).toBe(3);
+        expect(checkAreaRails(deck({ walls: false }), FLAT)).toEqual([]);
+    });
+});
+
+describe('ramps: lip, flight, axis', () => {
+    const ramp = { x: 0, z: 0, yaw: 0, width: 8, length: 10, height: 1.2 };
+
+    it('measures the lip above the ground in front, less what the ground rises under the ramp', () => {
+        expect(rampLip(FLAT, ramp)).toBeCloseTo(1.2, 9);
+        // 10 % up along +z: the front edge's ground is 1 m higher than the rear's
+        const up = field((_, z) => 5 + 0.1 * z);
+        expect(rampLip(up, ramp)).toBeCloseTo(0.2, 9);
+        // Facing down the slope the ground falls 1 m: 2.2 m
+        expect(rampLip(up, { ...ramp, yaw: Math.PI })).toBeCloseTo(2.2, 9);
+        // 10 % across (x): the higher front corner at x = 4 is 0.4 m up
+        const across = field(x => 5 + 0.1 * x);
+        expect(rampLip(across, ramp)).toBeCloseTo(0.8, 9);
+    });
+
+    it('estimates the flight from the ramp slope, the lip and the sim\'s G_AIR = 20', () => {
+        // h / L = 0.2 at 20 m/s: vy = 20 · 0.2 / √1.04 = 3.922, vh = 19.61;
+        // falls 2 m: t = (3.922 + √(3.922² + 2 · 20 · 2)) / 20 = 0.6844 s
+        const flight = rampFlight({ ...ramp, height: 2 }, 2, 20);
+        expect(flight.time).toBeCloseTo(0.6844, 3);
+        expect(flight.distance).toBeCloseTo(13.42, 1);
+    });
+
+    it('reports a lip under 0.8 m and a ramp off the axes; 1.5708 counts as π/2', () => {
+        const up = field((_, z) => 5 + 0.1 * z);
+        expect(messages(checkRamp('r', ramp, up))).toEqual(['r: lip 0.20 m above the ground in front (height 1.2 m less the rise of the ground), needs 0.8 m']);
+        expect(checkRamp('r', { ...ramp, yaw: 1.5708 }, FLAT)).toEqual([]);
+        expect(messages(checkRamp('r', { ...ramp, yaw: 0.3 }, FLAT))).toEqual(['r: faces 17.2°, not along an axis (its walls need obox colliders, M3)']);
+    });
+});
+
+describe('checkTerrainMesh', () => {
+    // Corners alternating 10 ± a like a chessboard: every cell has
+    // |d| = |h00 + h11 - h10 - h01| = 4a
+    const saddle = (a: number, surface = 5) => {
+        const hf = field((x, z) => 10 + a * (Math.round((x + z) / 2) % 2 === 0 ? 1 : -1));
+        hf.surface.fill(surface);
+        return hf;
+    };
+
+    it('accepts a gentle twist (d = 0.4 m: 10 cm at 2 m, 0.6 cm at 0.5 m) off the roads', () => {
+        const stats = terrainMeshStats(saddle(0.1));
+        expect(stats.worst2m).toBeCloseTo(0.1, 2);
+        expect(stats.worstNear).toBeCloseTo(0.4 / 64, 3);
+        expect(checkTerrainMesh(saddle(0.1))).toEqual([]);
+    });
+
+    it('reports a twist the near subdivision cannot follow, and any on a road above 3 cm', () => {
+        // d = 4 m: 6.25 cm at 0.5 m
+        expect(messages(checkTerrainMesh(saddle(1)))).toEqual([expect.stringMatching(/^the terrain mesh misses the ground by 6\.\d cm even at 4× subdivision/)]);
+        // On asphalt (0): d = 0.4 m, 10 cm at 2 m
+        expect(messages(checkTerrainMesh(saddle(0.1, 0)))).toEqual([expect.stringMatching(/^the 2 m terrain mesh misses a road by 10\.\d cm/)]);
+        // Water and rock cells do not count
+        expect(checkTerrainMesh(saddle(1, 9))).toEqual([]);
+        expect(checkTerrainMesh(saddle(1, 8))).toEqual([]);
+    });
+});
+
 describe('checkBoundary', () => {
     const MAP: MapFile = {
         format: 'bulli-map', version: 1, mapId: 'test', mapVersion: 1, name: 'Test',
@@ -455,6 +550,34 @@ describe('checkPois', () => {
             .toEqual(['arena area nope is not in roads.json']);
     });
 
+    it('checks the jumps of the map: unique, inside, a working lip and a dry landing at 90 km/h', () => {
+        const jump = { id: 'kicker', x: 100, z: -40, yaw: 0, width: 6, length: 10, height: 1.5, look: 'earth' as const };
+        expect(checkPois(poiNetwork(), FLAT, POI_MAP, { ...validPois(), jumps: [jump] })).toEqual([]);
+        const low = { ...jump, id: 'low', x: 30, height: 0.5 };
+        const out = { ...jump, id: 'out', x: 245 };
+        // Water between z = -30 and -10: a jump at z = -48 heading south
+        // (+z) leaves at z = -43 and flies 15.2 m at 25 m/s (h / L = 0.15,
+        // lip 1.5 m: t = 0.615 s), landing at z = -27.8
+        const wet = field((_, z) => (z > -30 && z < -10 ? -2 : 5));
+        expect(messages(checkPois(poiNetwork(), FLAT, POI_MAP, { ...validPois(), jumps: [jump, jump, low, out] }))).toEqual([
+            'jump kicker: duplicate id',
+            'jump low: lip 0.50 m above the ground in front (height 0.5 m less the rise of the ground), needs 0.8 m',
+            'jump out reaches beyond the boundary'
+        ]);
+        expect(messages(checkPois(poiNetwork(), wet, POI_MAP, { ...validPois(), jumps: [{ ...jump, z: -48 }] })))
+            .toContainEqual('jump kicker: a car at 90 km/h lands in the water or beyond the boundary');
+        expect(checkPois(poiNetwork(), wet, POI_MAP, { ...validPois(), jumps: [{ ...jump, z: -52 }] })).toEqual([]);
+        // A ramp without a working lip gets no landing check on top
+        expect(messages(checkPois(poiNetwork(), wet, POI_MAP, { ...validPois(), jumps: [{ ...jump, z: -48, height: 0.5 }] })))
+            .toEqual(['jump kicker: lip 0.50 m above the ground in front (height 0.5 m less the rise of the ground), needs 0.8 m']);
+    });
+
+    it('checks the arena ramps\' lips and axes', () => {
+        const pois = validPois();
+        pois.arena.ramps[0] = { ...pois.arena.ramps[0], yaw: 0.5 };
+        expect(messages(checkPois(poiNetwork(), FLAT, POI_MAP, pois))).toEqual(['arena ramp 1: faces 28.6°, not along an axis (its walls need obox colliders, M3)']);
+    });
+
     it('reports a gate away from the fence and a landmark off its area', () => {
         const pois = validPois();
         pois.arena.gate = { ...pois.arena.gate, z: 80 };
@@ -518,7 +641,9 @@ describe('checkTrack', () => {
         });
         expect(messages(findings)).toEqual([
             expect.stringMatching(/^track loop: bend with R = \d+\.\d m allows \d+ km\/h, minCornerSpeed 60$/),
-            'track loop: ramp at s = 90 on ab2 reaches into a junction or beyond the edge'
+            'track loop: ramp at s = 90 on ab2 reaches into a junction or beyond the edge',
+            // Its front edge (s = 95) is already in the corner at B
+            'track loop: ramp at s = 90 on ab2: lands in a bend (R 12 m, 0 m after the ramp)'
         ]);
     });
 
@@ -563,6 +688,69 @@ describe('checkTrack', () => {
             ...LOOP, kind: 'sprint', laps: 1, route: ['ab1', 'ab2'], start: { edge: 'ab1', s: 50 }, finish: { edge: 'ab2', s: 80 }
         }).findings);
         expect(stalls.some(m => /^track loop: pickup stalls on the climb at \d+ m$/.test(m))).toBe(true);
+    });
+
+    it('lists the jumps with lip, take-off speed and flight, and asks for minJumps', () => {
+        const withRamp = { ...LOOP, minJumps: 2, ramps: [{ edge: 'bc', s: 100, length: 10, height: 1.5 }] };
+        const { findings, stats } = checkTrack(square(), big, withRamp);
+        expect(messages(findings)).toEqual(['track loop: 1 working jumps, needs 2']);
+        expect(stats!.jumps).toHaveLength(1);
+        const jump = stats!.jumps[0];
+        expect(jump).toMatchObject({ x: 200, z: 100, lip: 1.5 });
+        // Lap stations: ab1 0..76, M1 ..100, ab2 ..176, B's corner (6π)
+        // ..194.85, bc from its s = 12: s = 100 is station 194.85 + 88
+        expect(jump.s).toBeCloseTo(282.85, 1);
+        // h / L = 0.15 from 1.5 m: 0.51 s at 15 m/s .. 0.78 s at 40 m/s
+        expect(jump.speed).toBeGreaterThan(15 * 3.6);
+        expect(jump.airtime).toBeGreaterThan(0.5);
+        expect(jump.airtime).toBeLessThan(0.8);
+    });
+
+    it('reports a jump landing in a bend and a lip the slope eats', () => {
+        const late = checkTrack(square(), big, { ...LOOP, ramps: [{ edge: 'bc', s: 175, length: 10, height: 1.5 }] });
+        expect(messages(late.findings)).toEqual([expect.stringMatching(/^track loop: ramp at s = 175 on bc: lands in a bend \(R \d+ m, \d+ m after the ramp\)$/)]);
+        // bc runs south (+z): ground rising 12 % southwards takes 1.2 m of 1.5
+        const rising = field((_, z) => 5 + 0.12 * Math.max(0, Math.min(200, z)), { ...SPEC, cols: 201, rows: 201 });
+        const eaten = checkTrack(square(), rising, { ...LOOP, ramps: [{ edge: 'bc', s: 100, length: 10, height: 1.5 }] });
+        expect(messages(eaten.findings)).toContainEqual(expect.stringMatching(/^track loop: ramp at s = 100 on bc: lip 0\.30 m /));
+    });
+
+    it('measures the flow: longest straight and bends per km; race tracks keep the limits, bonus tracks do not', () => {
+        const { stats } = checkTrack(square(), big, LOOP);
+        // Straights of 176 m (bc, and ab1 + M1 + ab2 = 76 + 24 + 76), four
+        // corners per lap of 656 + 48 + 24π = 779.4 m: 5.1 per km
+        expect(stats!.longestStraight).toBeGreaterThan(174);
+        expect(stats!.longestStraight).toBeLessThan(178);
+        expect(stats!.bendsPerKm).toBeCloseTo(4 / 0.7794, 1);
+        // A 600 m straight sprint
+        const long = net(network([node('a', 0, 0), node('b', 700, 0)], [edge('ab', 'a', 'b')]));
+        const wide = field(() => 5, { ...SPEC, cols: 451, rows: 101, originX: -50, originZ: -100 });
+        const sprint: TrackRoute = { ...LOOP, kind: 'sprint', laps: 1, route: ['ab'], start: { edge: 'ab', s: 50 }, finish: { edge: 'ab', s: 650 } };
+        expect(messages(checkTrack(long, wide, sprint).findings)).toEqual([
+            'track loop: straight of 600 m, at most 450 m',
+            'track loop: 0.0 bends per km, at least 3'
+        ]);
+        expect(checkTrack(long, wide, { ...sprint, bonus: true }).findings).toEqual([]);
+    });
+
+    it('reports grid slots closer than 6 m on a narrow road and warns about oblique barrier rows', () => {
+        const narrow = net(network(
+            [
+                node('a', 0, 0, 'junction'), node('m1', 100, 0, 'junction'), node('b', 200, 0, 'junction'),
+                node('c', 200, 200, 'junction'), node('m2', 100, 200, 'junction'), node('d', 0, 200, 'junction'), node('x', 150, 60)
+            ],
+            [
+                edge('ab1', 'a', 'm1'), edge('ab2', 'm1', 'b'), edge('bc', 'b', 'c'), edge('cd1', 'c', 'm2'),
+                edge('cd2', 'm2', 'd'), edge('da', 'd', 'a'), edge('cross', 'm1', 'm2'), edge('diag', 'm1', 'x')
+            ],
+            { profiles: { road: { ...PROFILE, width: 7 } } }
+        ));
+        const { findings } = checkTrack(narrow, big, LOOP);
+        // Lanes ±1.75 m, 4 m apart: √(3.5² + 4²) = 5.3 m between neighbours
+        expect(findings.filter(f => f.message.includes('closer than 6 m'))).toHaveLength(7);
+        // The branch to x leaves M1 at 50° south-east of the road
+        expect(findings.filter(f => f.severity === 'warning').map(f => f.message))
+            .toEqual(['track loop: 1 barrier rows are not along an axis (obox colliders, M3)']);
     });
 
     it('averages the climb of a circuit per lap and names the slowest and fastest class', () => {

@@ -41,20 +41,21 @@ describe('formatMapJson', () => {
     it('changes only the lines of the edited objects', () => {
         const text = readSource('roads.json');
         const file = JSON.parse(text) as RoadNetworkFile;
-        const ridge = buildRoadNetwork(file).edgeById.get('ridge-1')!;
-        const middle = ridge.samples[Math.floor(ridge.samples.length / 2)];
+        // A Catmull-Rom edge (the Ridge Road's Bézier arcs cannot be split, A22)
+        const street = buildRoadNetwork(file).edgeById.get('hillcrest-3')!;
+        const middle = street.samples[Math.floor(street.samples.length / 2)];
         const hit = nearestRoad(buildRoadNetwork(file), middle.x, middle.z, 1)!;
-        const result = commitEdit(file, f => splitEdge(f, 'ridge-1', hit));
+        const result = commitEdit(file, f => splitEdge(f, 'hillcrest-3', hit));
         expect(result.ok).toBe(true);
         if (!result.ok) return;
         const out = formatMapJson(result.result.file);
         expect(parseRoadNetwork(JSON.parse(out)).ok).toBe(true);
         const before = new Set(text.split('\n'));
         const newLines = out.split('\n').filter(line => !before.has(line));
-        // The new joint, the shortened ridge-1 and its second half
+        // The new joint, the shortened hillcrest-3 and its second half
         expect(newLines).toHaveLength(3);
         expect(newLines.filter(line => line.includes('"id":"node-1"'))).toHaveLength(1);
-        expect(newLines.filter(line => line.includes('"id":"ridge-1-b"'))).toHaveLength(1);
+        expect(newLines.filter(line => line.includes('"id":"hillcrest-3-b"'))).toHaveLength(1);
         expect(out.split('\n').length).toBe(text.split('\n').length + 2);
     });
 });

@@ -13,14 +13,18 @@ import {
     weakestCornerSpeed, type ProfilePoint
 } from '../../src/shared/map/drivability.js';
 import { pointInPolygon, polygonEdgeDistance, segmentDistanceSq, type Vec2 } from '../../src/shared/map/geometry.js';
-import { flatHalfWidths } from '../../src/shared/map/corridor.js';
-import { heightAt, waterDepth, type Heightfield } from '../../src/shared/map/heightfield.js';
+import { FLAT_MARGIN, flatHalfWidths } from '../../src/shared/map/corridor.js';
+import { heightAt, meshDeviation, waterDepth, type Heightfield } from '../../src/shared/map/heightfield.js';
 import type { MapFile, PoisFile, TracksFile, ZonesFile } from '../../src/shared/map/mapFiles.js';
+import { areaRailSides, DEFAULT_AREA_RAIL_OFFSET } from '../../src/shared/map/rails.js';
+import { AXIS_SNAP, isAxisYaw, routeBends, routeToTrack, snapYaw, type MapTrackDef } from '../../src/shared/map/routeToTrack.js';
+import type { RampDef } from '../../src/shared/world/colliders.js';
+import { SIM_TUNING_DEFAULTS } from '../../src/shared/sim/constants.js';
 import {
     junctionRadius, roadSurfaceAt, type RoadEdgeData, type RoadNetwork
 } from '../../src/shared/map/roadNetwork.js';
 import { leftNormal, pointAt } from '../../src/shared/map/spline.js';
-import { resolveRoute, type ResolvedRoute } from '../../src/shared/map/trackRoute.js';
+import { resolveRoute, routePointAt, type ResolvedRoute } from '../../src/shared/map/trackRoute.js';
 import { SURFACE } from '../../src/shared/map/types.js';
 import { CAR_CLASS_IDS, VEHICLE_CLASSES } from '../../src/shared/sim/vehicleClasses.js';
 
@@ -84,6 +88,27 @@ export const CONTAINER_LENGTH = 12.2;
 export const CONTAINER_WIDTH = 2.44;
 // Items keep this distance from containers and ramps (reachable)
 export const ITEM_CLEARANCE = 2;
+// A ramp's lip, its height above the ground in front of it, must be at
+// least this: on a slope the ground rises under the ramp (the sim puts its
+// base at the rear edge), and a lip below AIR_GAP-sized steps barely lifts
+// a car (docs/phase-3-design.md, A31)
+export const MIN_RAMP_LIP = 0.8;
+// The route must run this straight (curvature ≤ 1/LANDING_RADIUS) from the
+// ramp over the estimated flight plus a car length
+export const LANDING_RADIUS = 60;
+export const LANDING_MARGIN = 10;
+// Flow of a race track (bonus tracks excepted): no straight longer than
+// MAX_STRAIGHT (curvature below STRAIGHT_CURVATURE), at least
+// MIN_BENDS_PER_KM bends that turn FLOW_BEND_TURN or more
+export const STRAIGHT_CURVATURE = 1 / 500;
+export const MAX_STRAIGHT = 450;
+export const FLOW_BEND_CURVATURE = 1 / 300;
+export const FLOW_BEND_TURN = 14 * Math.PI / 180;
+export const MIN_BENDS_PER_KM = 3;
+// Phase 2 keeps grid slots at least this far apart (tracks.test.ts)
+export const GRID_SPACING = 6;
+// Free-roam jumps must land on dry ground inside the map at this speed (km/h)
+export const JUMP_CHECK_SPEED = 90;
 
 function finding(check: string, message: string, at?: { x: number; z: number }, severity: Severity = 'error'): Finding {
     return at ? { check, severity, message, x: round(at.x), z: round(at.z) } : { check, severity, message };
@@ -352,6 +377,57 @@ export function checkRails(net: RoadNetwork, hf: Heightfield): Finding[] {
     return findings;
 }
 
+// Guard-rail duty along areas (5.5, 7): where the ground drops more than
+// RAIL_DROP within RAIL_PROBE beyond an area's side (beyond its flat margin,
+// or right at the side of an area with walls), that side needs a railing
+// (area rails) unless a road carries on there or the area has the tag
+// noRail. The pier, the lookouts and the quays are such areas.
+export function checkAreaRails(net: RoadNetwork, hf: Heightfield): Finding[] {
+    const findings: Finding[] = [];
+    for (const area of net.areas) {
+        if (area.tags?.includes('noRail')) continue;
+        const polygon = area.polygon;
+        const n = polygon.length;
+        const railed = new Set<number>();
+        for (const rail of area.rails ?? []) for (const side of areaRailSides(area, rail)) railed.add(side);
+        // Outward normal: the side's right for a polygon counter-clockwise in
+        // x-z (positive signed area), else its left
+        let area2 = 0;
+        for (let i = 0, j = n - 1; i < n; j = i++) area2 += polygon[j][0] * polygon[i][1] - polygon[i][0] * polygon[j][1];
+        const outward = area2 > 0 ? -1 : 1;
+        const margin = area.walls ? 0 : FLAT_MARGIN;
+        for (let i = 0; i < n; i++) {
+            if (railed.has(i)) continue;
+            const [ax, az] = polygon[i], [bx, bz] = polygon[(i + 1) % n];
+            const len = Math.hypot(bx - ax, bz - az);
+            const nx = -(bz - az) / len * outward, nz = (bx - ax) / len * outward;
+            let run: { from: number; to: number; drop: number; x: number; z: number } | null = null;
+            const flush = () => {
+                if (run && run.to - run.from >= RAIL_MIN_STRETCH) {
+                    findings.push(finding('rails', `area ${area.id}, side ${i} (${run.from.toFixed(0)}–${run.to.toFixed(0)} m): ground drops ${run.drop.toFixed(1)} m beside it without a railing`, run));
+                }
+                run = null;
+            };
+            for (let d = 1; d <= len - 1; d += 2) {
+                const px = ax + (bx - ax) * d / len, pz = az + (bz - az) * d / len;
+                const inside = heightAt(hf, px - nx * DEFAULT_AREA_RAIL_OFFSET, pz - nz * DEFAULT_AREA_RAIL_OFFSET);
+                const ex = px + nx * margin, ez = pz + nz * margin;
+                const ox = ex + nx * RAIL_PROBE, oz = ez + nz * RAIL_PROBE;
+                const drop = Math.max(inside, heightAt(hf, ex, ez)) - heightAt(hf, ox, oz);
+                if (drop > RAIL_DROP && roadSurfaceAt(net, ox, oz) === null) {
+                    if (!run) run = { from: d, to: d, drop, x: px, z: pz };
+                    run.to = d;
+                    run.drop = Math.max(run.drop, drop);
+                } else {
+                    flush();
+                }
+            }
+            flush();
+        }
+    }
+    return findings;
+}
+
 // Every road and area lies inside the drivable boundary of map.json
 export function checkBoundary(net: RoadNetwork, map: MapFile): Finding[] {
     const findings: Finding[] = [];
@@ -374,12 +450,79 @@ export function checkBoundary(net: RoadNetwork, map: MapFile): Finding[] {
     return findings;
 }
 
+// ---- Ramps ----
+
+// Height of a ramp's lip above the ground in front of it (m), the least of
+// the middle and both corners of its front edge. The sim puts the ramp's
+// base at the ground under the middle of its rear edge (rampRearBase), so a
+// ramp on a rising slope loses what the ground rises over its length.
+export function rampLip(hf: Heightfield, ramp: RampDef): number {
+    const fx = Math.sin(ramp.yaw), fz = Math.cos(ramp.yaw);
+    const lx = fz, lz = -fx;
+    const half = ramp.length / 2;
+    const base = heightAt(hf, ramp.x - fx * half, ramp.z - fz * half);
+    let lip = Infinity;
+    for (const side of [-1, 0, 1]) {
+        const x = ramp.x + fx * half + lx * side * ramp.width / 2, z = ramp.z + fz * half + lz * side * ramp.width / 2;
+        lip = Math.min(lip, base + ramp.height - heightAt(hf, x, z));
+    }
+    return lip;
+}
+
+// Flight after a ramp at speed v (m/s) over level ground: the car leaves
+// along the ramp's slope and falls with the sim's G_AIR from the lip
+export function rampFlight(ramp: RampDef, lip: number, v: number): { time: number; distance: number } {
+    const g = SIM_TUNING_DEFAULTS.G_AIR;
+    const slope = ramp.height / ramp.length;
+    const vy = v * slope / Math.sqrt(1 + slope * slope);
+    const vh = v / Math.sqrt(1 + slope * slope);
+    const time = (vy + Math.sqrt(vy * vy + 2 * g * Math.max(0, lip))) / g;
+    return { time, distance: vh * time };
+}
+
+// A ramp works as a jump: enough lip, and facing along an axis (the phase 2
+// sim builds its side walls as axis-aligned boxes; oblique ramps need the
+// obox collider of M3)
+export function checkRamp(label: string, ramp: RampDef, hf: Heightfield): Finding[] {
+    const findings: Finding[] = [];
+    // Yaws written into the JSON (1.5708) snap onto their axis as in
+    // routeToTrack; the integration builds ramps with snapYaw as well
+    ramp = { ...ramp, yaw: snapYaw(ramp.yaw, AXIS_SNAP) };
+    const lip = rampLip(hf, ramp);
+    if (lip < MIN_RAMP_LIP) {
+        findings.push(finding('ramps', `${label}: lip ${lip.toFixed(2)} m above the ground in front (height ${ramp.height} m less the rise of the ground), needs ${MIN_RAMP_LIP} m`, ramp));
+    }
+    if (!isAxisYaw(ramp.yaw)) {
+        findings.push(finding('ramps', `${label}: faces ${(ramp.yaw * 180 / Math.PI).toFixed(1)}°, not along an axis (its walls need obox colliders, M3)`, ramp));
+    }
+    return findings;
+}
+
 // ---- Tracks ----
+
+export interface JumpStats {
+    x: number;
+    z: number;
+    // Route station of the ramp's centre
+    s: number;
+    lip: number;
+    // Take-off speed of the slowest class (km/h) and its flight
+    speed: number;
+    airtime: number;
+    distance: number;
+}
 
 export interface TrackStats {
     id: string;
     length: number;
     gates: number;
+    // Working jumps along the route
+    jumps: JumpStats[];
+    // Longest straight (curvature below STRAIGHT_CURVATURE) and bends per km
+    longestStraight: number;
+    bendsPerKm: number;
+    // Barrier rows that need the obox collider (not along an axis)
+    obliqueBarriers: number;
     // Height gained and lost along the route (m)
     climb: number;
     descent: number;
@@ -404,6 +547,39 @@ function profilePoints(route: ResolvedRoute, hf: Heightfield, laps: number): Pro
         points.push({ s: laps * route.length, curvature: p.curvature, surface: p.surface, y: heightAt(hf, p.x, p.z) });
     }
     return points;
+}
+
+// Longest stretch of the race (sprint: start to finish; circuit: the lap)
+// whose curvature stays below STRAIGHT_CURVATURE, and the bends per km
+// turning at least FLOW_BEND_TURN
+export function routeFlow(route: ResolvedRoute): { longestStraight: number; bendsPerKm: number } {
+    const inRace = (S: number) => route.closed || (S >= route.startS && S <= route.finishS);
+    const pts = route.points.filter(p => inRace(p.s));
+    const n = pts.length;
+    // Start after a bend on a circuit, so a straight across the lap start counts whole
+    let first = 0;
+    if (route.closed) {
+        const bent = pts.findIndex(p => Math.abs(p.curvature) >= STRAIGHT_CURVATURE);
+        first = bent < 0 ? 0 : bent;
+    }
+    let longest = 0, runStart: number | null = null;
+    for (let i = 0; i <= n; i++) {
+        const k = (first + i) % n;
+        const p = pts[k];
+        const S = i < n ? p.s + (route.closed && k < first ? route.length : 0) : NaN;
+        const straight = i < n && Math.abs(p.curvature) < STRAIGHT_CURVATURE;
+        if (straight && runStart === null) runStart = S;
+        if ((!straight || i === n) && runStart !== null) {
+            const prev = pts[(first + i - 1) % n];
+            const end = prev.s + (route.closed && (first + i - 1) % n < first ? route.length : 0);
+            longest = Math.max(longest, end - runStart);
+            runStart = null;
+        }
+    }
+    const race = route.closed ? route.length : route.finishS - route.startS;
+    const bends = routeBends(route, FLOW_BEND_CURVATURE)
+        .filter(b => Math.abs(b.turn) >= FLOW_BEND_TURN && inRace(b.apex));
+    return { longestStraight: longest, bendsPerKm: bends.length / (race / 1000) };
 }
 
 // The route passes close to itself: two points further apart along the
@@ -456,17 +632,49 @@ export function checkTrack(net: RoadNetwork, hf: Heightfield, track: TracksFile[
         if (roadSurfaceAt(net, gate.x, gate.z) === null) findings.push(finding(check, `track ${track.id}: ${gate.visual} gate is not on the road`, gate));
     }
     if (route.gates.length < (route.closed ? 3 : 2)) findings.push(finding(check, `track ${track.id}: only ${route.gates.length} gates`));
+    // Ramp stations along the route (checked for junctions and width here,
+    // lip, axis and landing below)
+    const rampStations: (number | null)[] = [];
     for (const ramp of track.ramps ?? []) {
         const part = route.parts.find(p => p.edge.id === ramp.edge);
         const edge = net.edgeById.get(ramp.edge);
-        if (!part || !edge) { findings.push(finding(check, `track ${track.id}: ramp on edge ${ramp.edge}, which is not on the route`)); continue; }
+        if (!part || !edge) {
+            findings.push(finding(check, `track ${track.id}: ramp on edge ${ramp.edge}, which is not on the route`));
+            rampStations.push(null);
+            continue;
+        }
         const d = part.reversed ? edge.length - ramp.s : ramp.s;
         const at = sampleAt(edge, ramp.s);
+        rampStations.push(part.routeStart + d - part.keepFrom);
         if (d - ramp.length / 2 < part.keepFrom || d + ramp.length / 2 > part.keepTo) {
             findings.push(finding(check, `track ${track.id}: ramp at s = ${ramp.s} on ${ramp.edge} reaches into a junction or beyond the edge`, at));
         }
         if ((ramp.width ?? edge.profile.width) > edge.profile.width) {
             findings.push(finding(check, `track ${track.id}: ramp at s = ${ramp.s} on ${ramp.edge} is wider than the road`, at));
+        }
+    }
+
+    // The TrackDef of phase 2: grid slots apart, barrier rows along an axis
+    const built: MapTrackDef = routeToTrack(net, route, 0);
+    for (let i = 0; i < built.grid.length; i++) {
+        for (let j = 0; j < i; j++) {
+            const a = built.grid[i], b = built.grid[j];
+            if (Math.hypot(a.x - b.x, a.z - b.z) < GRID_SPACING) {
+                findings.push(finding(check, `track ${track.id}: grid slots ${j + 1} and ${i + 1} are closer than ${GRID_SPACING} m (road too narrow)`, a));
+            }
+        }
+    }
+    const obliqueBarriers = built.hints.filter(h => h.kind === 'barrier' && !isAxisYaw(h.yaw)).length;
+    if (obliqueBarriers) findings.push(finding(check, `track ${track.id}: ${obliqueBarriers} barrier rows are not along an axis (obox colliders, M3)`, undefined, 'warning'));
+
+    // Flow
+    const flow = routeFlow(route);
+    if (!track.bonus) {
+        if (flow.longestStraight > MAX_STRAIGHT) {
+            findings.push(finding(check, `track ${track.id}: straight of ${flow.longestStraight.toFixed(0)} m, at most ${MAX_STRAIGHT} m`));
+        }
+        if (flow.bendsPerKm < MIN_BENDS_PER_KM) {
+            findings.push(finding(check, `track ${track.id}: ${flow.bendsPerKm.toFixed(1)} bends per km, at least ${MIN_BENDS_PER_KM}`));
         }
     }
 
@@ -482,14 +690,45 @@ export function checkTrack(net: RoadNetwork, hf: Heightfield, track: TracksFile[
     }
     if (route.closed) { climb /= track.laps; descent /= track.laps; }
     let slowest = { car: '', time: -Infinity }, fastest = { car: '', time: Infinity };
+    let slowestSpeeds: Float64Array | null = null;
     for (const id of CAR_CLASS_IDS) {
         const profile = speedProfile(VEHICLE_CLASSES[id], run, 0, CORNER_GRIP_MARGIN);
         if (profile.stall >= 0) {
             const p = run[profile.stall];
             findings.push(finding(check, `track ${track.id}: ${id} stalls on the climb at ${p.s.toFixed(0)} m`));
         }
-        if (profile.time > slowest.time) slowest = { car: id, time: profile.time };
+        if (profile.time > slowest.time) { slowest = { car: id, time: profile.time }; slowestSpeeds = profile.speeds; }
         if (profile.time < fastest.time) fastest = { car: id, time: profile.time };
+    }
+
+    // Jumps: every ramp with a working lip along an axis, its take-off speed
+    // (slowest class, first lap) and flight; the route must run straight
+    // over the flight
+    const jumps: JumpStats[] = [];
+    built.ramps.forEach((ramp, i) => {
+        const S = rampStations[i];
+        if (S === null) return;
+        const label = `track ${track.id}: ramp at s = ${track.ramps![i].s} on ${track.ramps![i].edge}`;
+        const rampFindings = checkRamp(label, ramp, hf);
+        findings.push(...rampFindings);
+        if (rampFindings.length) return;
+        const lip = rampLip(hf, ramp);
+        const front = S + ramp.length / 2;
+        let k = run.findIndex(p => p.s >= front);
+        if (k < 0) k = run.length - 1;
+        const v = slowestSpeeds ? slowestSpeeds[k] : 0;
+        const flight = rampFlight(ramp, lip, v);
+        for (let d = 0; d <= flight.distance + LANDING_MARGIN; d += 2) {
+            const p = routePointAt(route, front + d);
+            if (Math.abs(p.curvature) > 1 / LANDING_RADIUS) {
+                findings.push(finding(check, `${label}: lands in a bend (R ${(1 / Math.abs(p.curvature)).toFixed(0)} m, ${d.toFixed(0)} m after the ramp)`, p));
+                break;
+            }
+        }
+        jumps.push({ x: ramp.x, z: ramp.z, s: S, lip, speed: v * KMH_PER_MS, airtime: flight.time, distance: flight.distance });
+    });
+    if (jumps.length < (track.minJumps ?? 0)) {
+        findings.push(finding(check, `track ${track.id}: ${jumps.length} working jumps, needs ${track.minJumps}`));
     }
     return {
         findings,
@@ -498,6 +737,10 @@ export function checkTrack(net: RoadNetwork, hf: Heightfield, track: TracksFile[
             id: track.id,
             length: route.closed ? route.length : route.finishS - route.startS,
             gates: route.gates.length,
+            jumps,
+            longestStraight: flow.longestStraight,
+            bendsPerKm: flow.bendsPerKm,
+            obliqueBarriers,
             climb, descent, slowest, fastest,
             minCornerSpeed: worst.speed
         }
@@ -593,6 +836,7 @@ export function checkPois(net: RoadNetwork, hf: Heightfield, map: MapFile, pois:
         if (boxCorners(r.x, r.z, r.yaw, r.length, r.width).some(([x, z]) => !inArena(x, z, 1))) {
             findings.push(finding(check, `arena ramp ${i + 1} is not inside the arena`, r));
         }
+        findings.push(...checkRamp(`arena ramp ${i + 1}`, r, hf));
     });
     const blocked = (x: number, z: number) =>
         containers.some(c => boxDistance(x, z, c.x, c.z, c.yaw, CONTAINER_LENGTH, CONTAINER_WIDTH) < ITEM_CLEARANCE)
@@ -614,6 +858,26 @@ export function checkPois(net: RoadNetwork, hf: Heightfield, map: MapFile, pois:
         findings.push(finding(check, 'the arena gate is not on the arena\'s outline', gate));
     }
 
+    // Jump ramps of the map: inside the boundary, working, and a landing on
+    // dry ground inside the map for a car at JUMP_CHECK_SPEED
+    const seen = new Set<string>();
+    for (const jump of pois.jumps ?? []) {
+        const label = `jump ${jump.id}`;
+        if (seen.has(jump.id)) findings.push(finding(check, `${label}: duplicate id`));
+        seen.add(jump.id);
+        const corners = boxCorners(jump.x, jump.z, jump.yaw, jump.length, jump.width);
+        if (corners.some(([x, z]) => !pointInPolygon(map.boundary, x, z))) findings.push(finding(check, `${label} reaches beyond the boundary`, jump));
+        const rampFindings = checkRamp(label, jump, hf);
+        findings.push(...rampFindings);
+        if (rampFindings.length) continue;
+        const flight = rampFlight(jump, rampLip(hf, jump), JUMP_CHECK_SPEED / KMH_PER_MS);
+        const reach = jump.length / 2 + flight.distance;
+        const lx = jump.x + Math.sin(jump.yaw) * reach, lz = jump.z + Math.cos(jump.yaw) * reach;
+        if (!pointInPolygon(map.boundary, lx, lz) || waterDepth(hf, lx, lz) > -0.1) {
+            findings.push(finding(check, `${label}: a car at ${JUMP_CHECK_SPEED} km/h lands in the water or beyond the boundary`, { x: lx, z: lz }));
+        }
+    }
+
     // Landmarks on the map, on their area if they name one
     for (const mark of pois.landmarks) {
         if (!pointInPolygon(map.boundary, mark.x, mark.z)) findings.push(finding(check, `landmark ${mark.id} is outside the boundary`, mark));
@@ -622,6 +886,52 @@ export function checkPois(net: RoadNetwork, hf: Heightfield, map: MapFile, pois:
             if (!area) findings.push(finding(check, `landmark ${mark.id}: unknown area ${mark.area}`));
             else if (!pointInPolygon(area.polygon, mark.x, mark.z)) findings.push(finding(check, `landmark ${mark.id} is not on area ${mark.area}`, mark));
         }
+    }
+    return findings;
+}
+
+// ---- Terrain mesh against the sim's ground (design E7, A32) ----
+
+// The client's terrain mesh puts its vertices on the bilinear surface
+// (texelFetch of the four corners, the same interpolation as heightAt) and
+// subdivides the 2 m cells near the camera MESH_NEAR_SUBDIVISION times; its
+// flat triangles then miss the sim's ground by at most MESH_NEAR_LIMIT in
+// every cell a car can reach (not water, not rock). Roads are flat across,
+// so there the plain 2 m mesh already fits within MESH_ROAD_LIMIT.
+export const MESH_NEAR_SUBDIVISION = 4;
+export const MESH_NEAR_LIMIT = 0.05;
+export const MESH_ROAD_LIMIT = 0.03;
+const PAVED_OR_TRACK = new Set<number>([SURFACE.asphalt, SURFACE.concrete, SURFACE.wood, SURFACE.gravel, SURFACE.dirt]);
+
+export interface MeshStats { worst2m: number; worstNear: number; worstRoad: number; cellsOver5cm2m: number }
+
+export function terrainMeshStats(hf: Heightfield): MeshStats & { at: { x: number; z: number }; roadAt: { x: number; z: number } } {
+    const { cols, rows, cellSize, originX, originZ } = hf.spec;
+    const stats = { worst2m: 0, worstNear: 0, worstRoad: 0, cellsOver5cm2m: 0, at: { x: 0, z: 0 }, roadAt: { x: 0, z: 0 } };
+    for (let j = 0; j < rows - 1; j++) {
+        for (let i = 0; i < cols - 1; i++) {
+            const k = j * cols + i;
+            const corners = [hf.surface[k], hf.surface[k + 1], hf.surface[k + cols], hf.surface[k + cols + 1]];
+            if (corners.some(s => s === SURFACE.water || s === SURFACE.rock)) continue;
+            const d = meshDeviation(hf, i, j);
+            const at = { x: originX + (i + 0.5) * cellSize, z: originZ + (j + 0.5) * cellSize };
+            if (d > 0.05) stats.cellsOver5cm2m++;
+            if (d > stats.worst2m) { stats.worst2m = d; stats.at = at; }
+            stats.worstNear = Math.max(stats.worstNear, meshDeviation(hf, i, j, MESH_NEAR_SUBDIVISION));
+            if (corners.every(s => PAVED_OR_TRACK.has(s)) && d > stats.worstRoad) { stats.worstRoad = d; stats.roadAt = at; }
+        }
+    }
+    return stats;
+}
+
+export function checkTerrainMesh(hf: Heightfield): Finding[] {
+    const stats = terrainMeshStats(hf);
+    const findings: Finding[] = [];
+    if (stats.worstNear > MESH_NEAR_LIMIT) {
+        findings.push(finding('terrain', `the terrain mesh misses the ground by ${(stats.worstNear * 100).toFixed(1)} cm even at ${MESH_NEAR_SUBDIVISION}× subdivision (at most ${MESH_NEAR_LIMIT * 100} cm)`, stats.at));
+    }
+    if (stats.worstRoad > MESH_ROAD_LIMIT) {
+        findings.push(finding('terrain', `the 2 m terrain mesh misses a road by ${(stats.worstRoad * 100).toFixed(1)} cm (at most ${MESH_ROAD_LIMIT * 100} cm)`, stats.roadAt));
     }
     return findings;
 }
@@ -658,9 +968,11 @@ export function validateMap(bundle: MapBundle): ValidationResult {
         ...checkGrades(net, hf),
         ...checkCurves(net),
         ...checkRails(net, hf),
+        ...checkAreaRails(net, hf),
         ...checkBoundary(net, bundle.map),
         ...checkPois(net, hf, bundle.map, bundle.pois),
-        ...checkZones(bundle.zones, hf)
+        ...checkZones(bundle.zones, hf),
+        ...checkTerrainMesh(hf)
     ];
     const tracks: TrackStats[] = [];
     const routes: ResolvedRoute[] = [];

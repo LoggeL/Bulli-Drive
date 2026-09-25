@@ -24,7 +24,14 @@ export const MapFileSchema = v.strictObject({
     name: v.string(),
     // Drivable limit (8.3): every road lies inside; the sim builds the
     // outline as a fence where it is not sea
-    boundary: Polygon
+    boundary: Polygon,
+    // Light of the map (world-look.md): the sun's compass azimuth (degrees
+    // from north, clockwise: 270 = west) and elevation; the client turns it
+    // into its sun direction and rotates the sky HDRI to match (lighting.ts)
+    lighting: v.optional(v.strictObject({
+        sunAzimuth: v.pipe(v.number(), v.minValue(0), v.ltValue(360)),
+        sunElevation: v.pipe(v.number(), v.gtValue(0), v.maxValue(90))
+    }))
 });
 
 export const ZONE_NAMES = [
@@ -66,6 +73,9 @@ const RampSchema = v.strictObject({
     width: Positive, length: Positive, height: Positive
 });
 
+// Looks of a ramp (phase 2: steel and earth; sand on the beach and dunes)
+export const RAMP_LOOKS = ['steel', 'earth', 'sand', 'wood'] as const;
+
 export const PoisFileSchema = v.strictObject({
     format: v.literal('bulli-pois'),
     version: v.literal(1),
@@ -88,6 +98,14 @@ export const PoisFileSchema = v.strictObject({
         // Slots at the arena's rim looking to the middle (12)
         party: v.pipe(v.array(Pose), v.minLength(1))
     }),
+    // Jump ramps of the whole map (free roam and party; a race world adds
+    // its track's ramps): the sim's RampDef with an ID and a look
+    jumps: v.optional(v.array(v.strictObject({
+        id: Id,
+        x: Finite, z: Finite, yaw: Finite,
+        width: Positive, length: Positive, height: Positive,
+        look: v.picklist(RAMP_LOOKS)
+    }))),
     // Party arena "Cannery Lot" (12)
     arena: v.strictObject({
         // roads.json area of the lot
@@ -125,10 +143,14 @@ export const TrackRouteSchema = v.strictObject({
     // Every corner must allow this speed (km/h) for the weakest car class
     // (drivability check, drivability.ts)
     minCornerSpeed: v.pipe(v.number(), v.gtValue(0)),
-    // Ramps on the route (race world only): station, size (m)
+    // Ramps on the route (race world only): station of the ramp's centre,
+    // size (m), look
     ramps: v.optional(v.array(v.strictObject({
-        edge: Id, s: NonNegative, length: Positive, height: Positive, width: v.optional(Positive)
+        edge: Id, s: NonNegative, length: Positive, height: Positive, width: v.optional(Positive),
+        look: v.optional(v.picklist(RAMP_LOOKS))
     }))),
+    // At least this many jumps (ramps with a working lip) on the route
+    minJumps: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0))),
     // Chevron boards outside bends sharper than this curvature (1/m)
     chevronCurvature: v.optional(Positive)
 });
@@ -148,6 +170,7 @@ export type Landmark = PoisFile['landmarks'][number];
 export type TracksFile = v.InferOutput<typeof TracksFileSchema>;
 export type TrackRoute = v.InferOutput<typeof TrackRouteSchema>;
 export type EdgeStation = v.InferOutput<typeof EdgeStation>;
+export type Jump = NonNullable<PoisFile['jumps']>[number];
 
 function duplicates(kind: string, ids: readonly string[]): string[] {
     const seen = new Set<string>();

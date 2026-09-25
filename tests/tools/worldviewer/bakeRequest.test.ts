@@ -58,8 +58,8 @@ describe('runBake', () => {
         expect(runBake(garbage).ok).toBe(false);
         // Each source goes through its schema, and the error names the file
         const badMap = request();
-        expect(badMap.sources.map).toContain('"mapVersion": 2');
-        badMap.sources.map = badMap.sources.map.replace('"mapVersion": 2', '"mapVersion": 0');
+        expect(badMap.sources.map).toContain('"mapVersion": 4');
+        badMap.sources.map = badMap.sources.map.replace('"mapVersion": 4', '"mapVersion": 0');
         const mapResponse = runBake(badMap);
         expect(mapResponse.ok ? '' : mapResponse.error).toMatch(/^map\.json:/);
         const badZones = request();

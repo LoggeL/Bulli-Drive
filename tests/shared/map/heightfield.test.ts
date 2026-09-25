@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-    BULLI_BAY_GRID, decodeHeightfield, encodeHeightfield, heightAt, HeightfieldFormatError,
+    BULLI_BAY_GRID, decodeHeightfield, encodeHeightfield, heightAt, HeightfieldFormatError, meshDeviation,
     predictDecode, predictEncode, quantizeHeight, surfaceAt, unzigzag16, waterDepth, zigzag16,
     zoneAt, zoneCols, zoneRows, type GridSpec, type Heightfield
 } from '../../../src/shared/map/heightfield.js';
@@ -93,6 +93,35 @@ describe('heightAt (bilinear, 6.3)', () => {
         expect(heightAt(hf2, -1000, -1000)).toBeCloseTo(0, 12);
         expect(heightAt(hf2, -998, -1000)).toBeCloseTo(1.5, 12);
         expect(heightAt(hf2, -999, -999)).toBeCloseTo(0.75, 12);
+    });
+});
+
+describe('meshDeviation (terrain mesh against the bilinear ground)', () => {
+    // Corners 0, 3, 7, 11: d = h00 + h11 - h10 - h01 = 0 + 11 - 3 - 7 = 1.
+    // Two triangles through the corners give the centre either (0 + 11) / 2
+    // = 5.5 or (3 + 7) / 2 = 5; the bilinear centre is 21 / 4 = 5.25, both
+    // miss it by 0.25 = |d| / 4.
+    const hf = field(UNIT, [0, 3, 7, 11]);
+
+    it('is a quarter of the twist of the cell, the miss of either diagonal at the centre', () => {
+        expect(meshDeviation(hf, 0, 0)).toBe(0.25);
+        expect(Math.abs(heightAt(hf, 1, 1) - (0 + 11) / 2)).toBe(0.25);
+        expect(Math.abs(heightAt(hf, 1, 1) - (3 + 7) / 2)).toBe(0.25);
+    });
+
+    it('shrinks with the square of the subdivision', () => {
+        // Half-size quads: each has a quarter of the twist, missing by 1/16
+        expect(meshDeviation(hf, 0, 0, 2)).toBe(1 / 16);
+        expect(meshDeviation(hf, 0, 0, 4)).toBe(1 / 64);
+    });
+
+    it('is 0 for a plane and outside the grid, and scales to metres', () => {
+        expect(meshDeviation(field(UNIT, [1, 3, 5, 7]), 0, 0)).toBe(0);
+        expect(meshDeviation(hf, 1, 0)).toBe(0);
+        expect(meshDeviation(hf, -1, 0)).toBe(0);
+        // 1 cm steps: a twist of 100 steps is 1 m, a quarter of it 0.25 m
+        const cm = field({ ...UNIT, heightScale: 0.01 }, [0, 0, 0, 100]);
+        expect(meshDeviation(cm, 0, 0)).toBe(0.25);
     });
 });
 

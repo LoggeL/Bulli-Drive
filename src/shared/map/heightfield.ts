@@ -104,6 +104,21 @@ export function zoneAt(hf: Heightfield, x: number, z: number): number {
     return hf.zones[j * cols + i];
 }
 
+// How far the terrain mesh can stray from the sim's ground in cell (i, j)
+// (m): the bilinear surface of a cell is h00 + (h10-h00)·fx + (h01-h00)·fz
+// + d·fx·fz with d = h00 + h11 - h10 - h01. Two triangles through the four
+// corners miss it by up to |d| / 4 (at the cell's centre, either diagonal);
+// a mesh with a vertex every cellSize / k on the bilinear surface misses it
+// by |d| / (4 k²). Cells outside the grid count as 0.
+export function meshDeviation(hf: Heightfield, i: number, j: number, subdivision = 1): number {
+    const { cols, rows, heightScale } = hf.spec;
+    if (i < 0 || j < 0 || i >= cols - 1 || j >= rows - 1) return 0;
+    const k = j * cols + i;
+    const q = hf.q;
+    const d = q[k] + q[k + cols + 1] - q[k + 1] - q[k + cols];
+    return Math.abs(d) * heightScale / (4 * subdivision * subdivision);
+}
+
 // Water depth above the ground (negative on land), section 7
 export function waterDepth(hf: Heightfield, x: number, z: number): number {
     return hf.spec.waterLevel - heightAt(hf, x, z);

@@ -10,7 +10,10 @@ import { parseMapFile, parsePoisFile, parseTracksFile, parseZonesFile } from '..
 import { buildRoadNetwork, roadSurfaceAt } from '../../../src/shared/map/roadNetwork.js';
 import { parseRoadNetwork } from '../../../src/shared/map/roadSchema.js';
 import { leftNormal } from '../../../src/shared/map/spline.js';
+import { sunDirection } from '../../../src/shared/map/lighting.js';
 import { routeToTrack } from '../../../src/shared/map/routeToTrack.js';
+import { MAP_VERSION_FOR_RACES } from '../../../src/shared/race/mapVersion.js';
+import { MAP_VERSION } from '../../../src/shared/world/mapData.js';
 import { routePointAt, type ResolvedRoute } from '../../../src/shared/map/trackRoute.js';
 import { createCourse, createRaceProgress, passGate } from '../../../src/shared/race/progress.js';
 import { buildRacingLine } from '../../../src/shared/race/racingLine.js';
@@ -96,40 +99,61 @@ describe('Bulli Bay validation (tools/map/validate.ts)', () => {
     }, 20_000);
 
     it('builds the tracks as section 4 describes them', () => {
-        // T1: circuit of about 1.3 km, counter-clockwise, start on Main
-        // Street heading east
+        // T1: circuit of about 1.2 km, counter-clockwise, through the grid
+        // and its two diagonals
         const loop = routeOf('downtown-loop');
         expect(loop.closed).toBe(true);
-        expect(loop.length).toBeGreaterThan(1300 * 0.9);
-        expect(loop.length).toBeLessThan(1300 * 1.1);
+        expect(loop.length).toBeGreaterThan(1200 * 0.9);
+        expect(loop.length).toBeLessThan(1200 * 1.1);
         expect(orientation(loop)).toBeLessThan(0);
-        expect(loop.gates[0].yaw).toBeCloseTo(Math.PI / 2, 1);
-        // Six 90° corners, five to the left and one to the right
+        // Corners over 30°: three right angles of the grid, the diagonals
+        // Portola (55.5° onto it from 4th Avenue, 34.5° off it onto Cliff
+        // Street) and Mission (54° on and off): six to the left, one right
         const turns = loop.junctions.map(pass => {
             const a = routePointAt(loop, pass.entryS), b = routePointAt(loop, pass.exitS);
             const [lx, lz] = leftNormal(a.tx, a.tz);
-            return Math.atan2(b.tx * lx + b.tz * lz, b.tx * a.tx + b.tz * a.tz);
-        }).filter(angle => Math.abs(angle) > Math.PI / 4);
-        expect(turns.map(angle => (angle > 0 ? 'left' : 'right')).sort()).toEqual(['left', 'left', 'left', 'left', 'left', 'right']);
+            return Math.atan2(b.tx * lx + b.tz * lz, b.tx * a.tx + b.tz * a.tz) * 180 / Math.PI;
+        }).filter(angle => Math.abs(angle) > 30);
+        const left = turns.filter(a => a > 0).sort((a, b) => a - b), right = turns.filter(a => a < 0);
+        const expected = [34.5, 54, 55.5, 90, 90, 90];
+        expect(left).toHaveLength(expected.length);
         // (within 10°: the tangents are read from the 2 m centre line points)
-        for (const angle of turns) expect(Math.abs(Math.abs(angle) - Math.PI / 2)).toBeLessThan(10 * Math.PI / 180);
+        left.forEach((angle, i) => expect(Math.abs(angle - expected[i])).toBeLessThan(10));
+        expect(right).toHaveLength(1);
+        expect(Math.abs(right[0] + 54)).toBeLessThan(10);
         // T4: circuit of about 1.2 km, clockwise
         const harbor = routeOf('harbor-circuit');
         expect(harbor.closed).toBe(true);
         expect(harbor.length).toBeGreaterThan(1200 * 0.9);
         expect(harbor.length).toBeLessThan(1200 * 1.1);
         expect(orientation(harbor)).toBeGreaterThan(0);
-        // T2: from the north edge of the map to the south cliffs
+        // T2: from the north edge of the map along both headlands to the
+        // south vista, about 2 km
         const coast = routeOf('coast-sprint');
         expect(coast.closed).toBe(false);
         expect(coast.gates[0].z).toBeLessThan(-900);
-        expect(coast.gates[coast.gates.length - 1].z).toBeGreaterThan(850);
+        expect(coast.gates[coast.gates.length - 1].z).toBeGreaterThan(800);
+        expect(coast.finishS - coast.startS).toBeGreaterThan(1800);
         // T3: from downtown up the ridge, climbing more than 120 m to the lookout
         const stats = validated().tracks.find(t => t.id === 'hill-sprint')!;
         expect(stats.climb).toBeGreaterThan(120);
         const finish = routeOf('hill-sprint').gates.at(-1)!;
-        // Lookout parking at (640 | -760)
-        expect(Math.hypot(finish.x - 640, finish.z + 760)).toBeLessThan(120);
+        // Lookout parking west of (640 | -770)
+        expect(Math.hypot(finish.x - 640, finish.z + 770)).toBeLessThan(60);
+        // T5: at least 1.5 km of sand and dirt (finding: 0.7 km was too short)
+        const rally = routeOf('dune-rally');
+        expect(rally.finishS - rally.startS).toBeGreaterThan(1500);
+    }, 20_000);
+
+    it('has the jumps, flow and bends the review asked for: jumps on every sprint, no straight over 450 m', () => {
+        const stats = (id: string) => validated().tracks.find(t => t.id === id)!;
+        for (const id of ['coast-sprint', 'hill-sprint', 'dune-rally']) expect(stats(id).jumps.length, id).toBeGreaterThanOrEqual(2);
+        for (const id of ['downtown-loop', 'coast-sprint', 'hill-sprint', 'harbor-circuit']) {
+            expect(stats(id).longestStraight, id).toBeLessThanOrEqual(450);
+            expect(stats(id).bendsPerKm, id).toBeGreaterThanOrEqual(3);
+        }
+        // Every jump lifts at least 0.8 m above the ground in front
+        for (const t of validated().tracks) for (const jump of t.jumps) expect(jump.lip, t.id).toBeGreaterThanOrEqual(0.8);
     }, 20_000);
 
     it('puts every grid slot and gate of every track on the road', () => {
@@ -190,12 +214,18 @@ describe('Bulli Bay terrain.bhf', () => {
         // Pier deck at y = 5 over the sea, wood (section 6.4 step 7)
         expect(heightAt(hf, -700, -20)).toBeCloseTo(5, 2);
         expect(surfaceAt(hf, -700, -20)).toBe(SURFACE.wood);
-        expect(waterDepth(hf, -700, -30)).toBeGreaterThan(0.6);
+        expect(waterDepth(hf, -720, -30)).toBeGreaterThan(0.6);
         // Open sea in the west, sea floor at -12 m (3.1)
         expect(heightAt(hf, -950, 0)).toBeCloseTo(-12, 2);
         expect(surfaceAt(hf, -950, 0)).toBe(SURFACE.water);
-        // Lookout on the ridge at about 145 m (3.1, a start value)
-        expect(Math.abs(heightAt(hf, 640, -770) - 145)).toBeLessThan(5);
+        // A bay between two headlands (finding 3): sea west of the beach at
+        // z = 0 and x = -700, but cliffs up to 40 m at the same x in the
+        // north and 30 m in the south
+        expect(waterDepth(hf, -700, 0)).toBeGreaterThan(0);
+        expect(heightAt(hf, -760, -800)).toBeGreaterThan(35);
+        expect(heightAt(hf, -700, 830)).toBeGreaterThan(20);
+        // Lookout car park on the ridge, cut in at 130 m (3.1, start value)
+        expect(heightAt(hf, 660, -777)).toBeCloseTo(130, 1);
         // Party arena "Cannery Lot": concrete, arena zone (E10)
         expect(surfaceAt(hf, -170, 590)).toBe(SURFACE.concrete);
         expect(zoneAt(hf, -170, 590)).toBe(ZONE.arena);
@@ -204,6 +234,27 @@ describe('Bulli Bay terrain.bhf', () => {
         expect(downtown).toBeGreaterThan(4);
         expect(downtown).toBeLessThan(14);
         expect(zoneAt(hf, -400, 0)).toBe(ZONE.downtown);
+        // Dunes of sand between the beach and the PCH
+        expect(surfaceAt(hf, -660, -470)).toBe(SURFACE.sand);
+    });
+
+    it('sets the evening sun over the Pacific (finding 13): 1 km from the pier towards it is open sea', () => {
+        const map = parseMapFile(readJson('map.json'));
+        if (!map.ok) throw new Error(map.errors.join('\n'));
+        const [x, , z] = sunDirection(map.value.lighting!);
+        // Towards the sun on the ground: (x, z) normalised
+        const len = Math.hypot(x, z);
+        expect(waterDepth(hf, -600 + 1000 * x / len, -20 + 1000 * z / len)).toBeGreaterThan(5);
+        // West-north-west: west of the pier and a little north of it
+        expect(x).toBeLessThan(-0.9);
+        expect(z).toBeLessThan(0);
+    });
+
+    it('carries a map version above those of the procedural city and its races', () => {
+        const map = parseMapFile(readJson('map.json'));
+        if (!map.ok) throw new Error(map.errors.join('\n'));
+        expect(map.value.mapVersion).toBeGreaterThan(Math.max(MAP_VERSION, MAP_VERSION_FOR_RACES));
+        expect(hf.mapVersion).toBe(map.value.mapVersion);
     });
 
     it('keeps every road within its grade limit on the baked ground', () => {
