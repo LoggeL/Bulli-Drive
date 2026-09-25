@@ -253,7 +253,7 @@ describe('placeFurniture at a signalled junction', () => {
     });
 
     it('stands no signal at a junction without settings, and none at an unsignalled one', () => {
-        const plain = (junctionSettings?: object) => buildRoadNetwork(network(
+        const plain = (junctionSettings?: { shape: 'auto'; control: 'stop'; crosswalks: boolean }) => buildRoadNetwork(network(
             [node('w', -90, 0), node('e', 90, 0), node('c', 0, 0, 'junction', junctionSettings ? { junction: junctionSettings } : {})],
             [edge('wc', 'w', 'c'), edge('ce', 'c', 'e')],
             { profiles: { road: { ...PROFILE, sidewalk: { left: 2, right: 2 } } } }
