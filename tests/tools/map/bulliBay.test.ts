@@ -12,8 +12,6 @@ import { parseRoadNetwork } from '../../../src/shared/map/roadSchema.js';
 import { leftNormal } from '../../../src/shared/map/spline.js';
 import { sunDirection } from '../../../src/shared/map/lighting.js';
 import { routeToTrack } from '../../../src/shared/map/routeToTrack.js';
-import { MAP_VERSION_FOR_RACES } from '../../../src/shared/race/mapVersion.js';
-import { MAP_VERSION } from '../../../src/shared/world/mapData.js';
 import { routePointAt, type ResolvedRoute } from '../../../src/shared/map/trackRoute.js';
 import { createCourse, createRaceProgress, passGate } from '../../../src/shared/race/progress.js';
 import { buildRacingLine } from '../../../src/shared/race/racingLine.js';
@@ -253,7 +251,9 @@ describe('Bulli Bay terrain.bhf', () => {
     it('carries a map version above those of the procedural city and its races', () => {
         const map = parseMapFile(readJson('map.json'));
         if (!map.ok) throw new Error(map.errors.join('\n'));
-        expect(map.value.mapVersion).toBeGreaterThan(Math.max(MAP_VERSION, MAP_VERSION_FOR_RACES));
+        // The old city was map version 2, its phase 2 races 3 (the ghost key
+        // of the time trial holds the version, so old ghosts cannot match)
+        expect(map.value.mapVersion).toBeGreaterThan(3);
         expect(hf.mapVersion).toBe(map.value.mapVersion);
     });
 

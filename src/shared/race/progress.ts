@@ -25,16 +25,26 @@ export interface Course {
     // Distance along the line from the gate before to gate k (circuit: gate
     // n-1 before gate 0; sprint: the line's start before gate 0)
     legLength: number[];
+    // Surface ID under each point of the line (SURFACE in map/types.ts),
+    // null where the course was built without its world (the bots plan
+    // their speed with it, docs/phase-3-design.md, 8.1)
+    surfaces: Uint8Array | null;
 }
 
-export function createCourse(track: TrackDef, line: Polyline = racingLine(track)): Course {
+/**
+ * A track's course. With the surface of the world it is raced in (the
+ * race world's surfaceAt), the course knows the surface under every point
+ * of its line.
+ */
+export function createCourse(track: TrackDef, line: Polyline = racingLine(track), surfaceAt?: (x: number, z: number) => number): Course {
     const gateS = gateArcLengths(track, line);
     const n = gateS.length;
     const legLength = gateS.map((s, k) => {
         if (k > 0) return s - gateS[k - 1];
         return track.kind === 'circuit' ? s - gateS[n - 1] + line.length : s;
     });
-    return { track, line, gateS, legLength };
+    const surfaces = surfaceAt ? Uint8Array.from(line.points, p => surfaceAt(p.x, p.z)) : null;
+    return { track, line, gateS, legLength, surfaces };
 }
 
 export interface RaceProgress {

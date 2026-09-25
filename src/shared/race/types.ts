@@ -1,3 +1,5 @@
+import type { RampDef } from '../world/colliders.js';
+
 // Data shapes of the race mode (docs/phase-2-design.md, 5.1 and 9).
 // Conventions as in the sim: 1 u = 1 m, forward is (sin yaw, cos yaw), left
 // is (cos yaw, -sin yaw); yaw = 0 points to +z, π/2 to +x.
@@ -55,4 +57,11 @@ export interface TrackDef {
     grid: GridSlot[];            // at least MAX_RACERS slots behind gates[0]
     hints: TrackHint[];
     minimap: { minX: number; maxX: number; minZ: number; maxZ: number };
+    // Jump ramps of the track (race world only, docs/phase-3-design.md, 13.2)
+    ramps: TrackRamp[];
+}
+
+// A ramp of the track: the sim's RampDef and how it looks
+export interface TrackRamp extends RampDef {
+    look?: 'steel' | 'earth' | 'sand' | 'wood';
 }

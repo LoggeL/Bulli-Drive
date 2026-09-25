@@ -7,8 +7,7 @@
 // it is computed with exactly rounded operations and rounded to whole
 // millimetres (positions) and micro-radians (yaws, trackRoute.ts).
 
-import type { GateDef, GridSlot, TrackDef, TrackHint, Vec2 } from '../race/types.js';
-import type { RampDef } from '../world/colliders.js';
+import type { GateDef, GridSlot, TrackDef, TrackHint, TrackRamp, Vec2 } from '../race/types.js';
 import type { TrackRoute } from './mapFiles.js';
 import { toMillimetres } from './rails.js';
 import { junctionRadius, type RoadNetwork } from './roadNetwork.js';
@@ -18,7 +17,7 @@ import { ROUTE_SPACING, routePointAt, yawOf, type ResolvedRoute, type RoutePoint
 // A TrackDef of a curated map. The ID is a string until the tracks join
 // TRACK_IDS with the switch to the map (M5); the ramps belong to the race
 // world (phase 2 adds its ramps from the map, 5.5).
-export type MapTrackDef = Omit<TrackDef, 'id'> & { id: string; ramps: RampDef[]; bonus: boolean };
+export type MapTrackDef = Omit<TrackDef, 'id'> & { id: string; bonus: boolean };
 
 // Yaws within this of an axis snap onto it: the phase 2 sim builds barrier
 // rows and ramp walls as axis-aligned boxes only (trackColliders,
@@ -175,7 +174,7 @@ function near(route: ResolvedRoute, S: number, a: number, b: number): boolean {
 
 // The ramps of the track: centred at their station, facing the driving
 // direction (snapped onto an axis within RAMP_AXIS_SNAP)
-export function routeRamps(route: ResolvedRoute, track: TrackRoute): RampDef[] {
+export function routeRamps(route: ResolvedRoute, track: TrackRoute): TrackRamp[] {
     return (track.ramps ?? []).flatMap(ramp => {
         const part = route.parts.find(p => p.edge.id === ramp.edge);
         if (!part) return [];
@@ -186,7 +185,8 @@ export function routeRamps(route: ResolvedRoute, track: TrackRoute): RampDef[] {
             yaw: snapYaw(yawOf(p.tx * sign, p.tz * sign), RAMP_AXIS_SNAP),
             width: ramp.width ?? Math.min(MAX_DEFAULT_RAMP_WIDTH, part.edge.profile.width - 2),
             length: ramp.length,
-            height: ramp.height
+            height: ramp.height,
+            ...(ramp.look ? { look: ramp.look } : {})
         }];
     });
 }

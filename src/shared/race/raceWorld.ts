@@ -3,10 +3,11 @@
 // reset onto the racing line and the slipstream. Client and server build
 // the same world from the same shared data.
 
+import type { MapData } from '../map/mapData.js';
+import { yawAxis } from '../map/structures.js';
 import type { VehicleState } from '../sim/types.js';
-import { createSimWorld, type ColliderInput, type SimWorld } from '../world/colliders.js';
-import { mapRampColliders, mapRampDefs } from '../world/mapFeatures.js';
-import { canonicalStringify, fnv1a, type MapData } from '../world/mapData.js';
+import { createSimWorld, rampEdgeColliders, type ColliderInput, type RampDef, type SimWorld } from '../world/colliders.js';
+import { canonicalStringify, fnv1a } from '../world/mapData.js';
 import { createProjection, projectGlobal, type Polyline } from './geometry.js';
 import { racingLine } from './racingLine.js';
 import type { TrackDef } from './types.js';
@@ -19,13 +20,22 @@ export const CHEVRON_POST_RADIUS = 0.35;
 export const CHEVRON_POST_OFFSET = 1.2;
 export const CHEVRON_POST_TOP = 3.3;
 
-/** Colliders of the track's hints: a box per barrier row, two circles per chevron board. */
+/**
+ * Colliders of the track's hints: a box per barrier row (turned where the
+ * row is not along an axis, docs/phase-3-design.md, A30), two circles per
+ * chevron board.
+ */
 export function trackColliders(track: TrackDef): ColliderInput[] {
     const out: ColliderInput[] = [];
     for (const hint of track.hints) {
         if (hint.kind === 'barrier') {
             const quarter = hint.yaw / (Math.PI / 2);
-            if (Math.abs(quarter - Math.round(quarter)) > 1e-9) throw new Error('barrier rows need a yaw along an axis');
+            if (Math.abs(quarter - Math.round(quarter)) > 1e-9) {
+                // The row runs along the left axis: an obox whose local z is the yaw's forward
+                const [ux, uz] = yawAxis(hint.yaw);
+                out.push({ kind: 'obox', x: hint.x, z: hint.z, hw: hint.length / 2, hd: BARRIER_DEPTH / 2, ux, uz, top: BARRIER_TOP });
+                continue;
+            }
             // The row runs along the left axis (cos yaw, -sin yaw)
             const acrossX = Math.abs(Math.round(Math.cos(hint.yaw))) === 1;
             out.push({
@@ -64,13 +74,21 @@ export function lineResetPose(line: Polyline): (s: VehicleState) => boolean {
 }
 
 /**
- * Map + track as one sim world. Collider order: the map's (trees, rocks,
- * city), the ramp edges, then the track's. Until the map carries the ramps
- * itself (MAP_VERSION 3, step 4 of the plan) the race world adds them here.
+ * Map + track as one sim world on the map's ground. Collider order: the
+ * map's (with its ramps' edge walls), the edge walls of the track's ramps,
+ * then the track's hints. The track's ramps follow the map's, so the map's
+ * ramp indices stay.
  */
 export function createRaceWorld(map: MapData, track: TrackDef): SimWorld {
-    const colliders = [...map.colliders, ...mapRampColliders(map.terrain), ...trackColliders(track)];
-    const world = createSimWorld(map.terrain, colliders, mapRampDefs(), null);
+    const first = map.ramps.length;
+    const ground = map.simWorld.terrainHeight;
+    const colliders = [
+        ...map.colliders,
+        ...track.ramps.flatMap((ramp, i) => rampEdgeColliders(ramp, first + i, true, ground)),
+        ...trackColliders(track)
+    ];
+    const ramps: RampDef[] = [...map.simWorld.ramps, ...track.ramps];
+    const world = createSimWorld(map.ground, colliders, ramps, null);
     world.resetPose = lineResetPose(racingLine(track));
     world.slipstream = true;
     return world;

@@ -25,7 +25,7 @@ const SQUARE: TrackDef = {
         { x: 100, z: 50, yaw: Math.PI, width: 20, visual: 'arch' },
         { x: 50, z: 0, yaw: -Math.PI / 2, width: 20, visual: 'arch' }
     ],
-    grid: [], hints: [], minimap: { minX: 0, maxX: 100, minZ: 0, maxZ: 100 }
+    grid: [], hints: [], minimap: { minX: 0, maxX: 100, minZ: 0, maxZ: 100 }, ramps: []
 };
 
 const SPRINT: TrackDef = {
@@ -54,6 +54,17 @@ function crossSquareGate(p: RaceProgress, course: Course, k: number, tick: numbe
     const fx = Math.sin(g.yaw), fz = Math.cos(g.yaw);
     return passGate(p, course, tick, START, g.x - fx, g.z - fz, g.x + fx, g.z + fz);
 }
+
+describe('createCourse', () => {
+    it('reads the surface under every point of the line from the world it is raced in, else none', () => {
+        const line = buildRacingLine(SQUARE);
+        expect(createCourse(SQUARE, line).surfaces).toBeNull();
+        // Sand west of x = 50, tarmac east of it
+        const course = createCourse(SQUARE, line, x => (x < 50 ? 6 : 0));
+        expect(course.surfaces).toHaveLength(line.points.length);
+        line.points.forEach((p, i) => expect(course.surfaces![i]).toBe(p.x < 50 ? 6 : 0));
+    });
+});
 
 describe('laps and gate order', () => {
     it('counts laps from the crossings: circuit min(laps, floor((passed - 1)/n) + 1), sprint 1', () => {
