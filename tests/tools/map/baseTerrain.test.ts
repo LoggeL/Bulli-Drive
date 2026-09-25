@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-    baseHeight, baseSample, bell, crestProfile, ellipseRadius, fbm, latticeValue, noiseAmplitude, parseBaseTerrain,
-    polylineNearest, regionSurface, ridgedFbm, smoothstep, terrainNoise, valueNoise, WARP_SEED_X, WARP_SEED_Z, type BaseTerrain
+    baseHeight, baseSample, bell, ellipseRadius, fbm, latticeValue, noiseAmplitude, parseBaseTerrain,
+    nearestWithin, polylineNearest, regionSurface, RIDGE_STEPS, ridgedFbm, smoothRidgeLine, smoothstep, terrainNoise, valueNoise, WARP_SEED_X, WARP_SEED_Z, type BaseTerrain
 } from '../../../tools/map/baseTerrain.js';
 import { FLAT_COAST } from './fixtures.js';
 
@@ -113,14 +113,6 @@ describe('baseHeight', () => {
 describe('ridges and canyons', () => {
     const land = (x: number) => 4 + 0.02 * (x + 150);
 
-    it('has a sharp crest and a soft foot: (1 - d/width)²', () => {
-        expect(crestProfile(0)).toBe(1);
-        expect(crestProfile(0.5)).toBe(0.25);
-        expect(crestProfile(0.9)).toBeCloseTo(0.01, 12);
-        expect(crestProfile(1)).toBe(0);
-        expect(crestProfile(2)).toBe(0);
-    });
-
     it('finds the nearest point of a line and interpolates its height', () => {
         const line: [number, number, number][] = [[0, 0, 10], [100, 0, 30], [100, 100, 30]];
         expect(polylineNearest(line, 50, 20)).toEqual({ distance: 20, value: 20 });
@@ -129,7 +121,41 @@ describe('ridges and canyons', () => {
         expect(polylineNearest(line, -30, 40)).toEqual({ distance: 50, value: 10 });
     });
 
-    it('raises a ridge along its line, the highest of ridges and hills winning', () => {
+    it('smooths a ridge line through its vertices, the height linear per segment', () => {
+        const line: [number, number, number][] = [[0, 0, 10], [100, 0, 30], [100, 100, 50]];
+        const dense = smoothRidgeLine(line);
+        expect(dense).toHaveLength(1 + 2 * RIDGE_STEPS);
+        expect(dense[0]).toEqual([0, 0, 10]);
+        expect(dense[RIDGE_STEPS]).toEqual([100, 0, 30]);
+        expect(dense.at(-1)).toEqual([100, 100, 50]);
+        // Half-way along the first segment: height 20. It runs through the
+        // corner with the tangent (1, 1)/√2, so it swings out of the chord
+        // (z < 0) just before it instead of a sharp kink
+        expect(dense[RIDGE_STEPS / 2][2]).toBe(20);
+        expect(dense[RIDGE_STEPS * 3 / 4][1]).toBeLessThan(-1);
+    });
+
+    it('finds through its cell index the same nearest point as a search over all segments', () => {
+        const dense = smoothRidgeLine([[0, 0, 10], [120, 40, 30], [150, 180, 60], [40, 260, 20]]);
+        const reach = 45;
+        let checked = 0;
+        // Points on a 7 m lattice, offset so many lie near cell corners
+        for (let x = -60; x <= 220; x += 7) {
+            for (let z = -60; z <= 330; z += 7) {
+                const all = polylineNearest(dense, x + 0.3, z - 0.2);
+                const indexed = nearestWithin(dense, reach, x + 0.3, z - 0.2);
+                if (all.distance <= reach) {
+                    expect(indexed).toEqual(all);
+                    checked++;
+                } else {
+                    expect(indexed).toBeNull();
+                }
+            }
+        }
+        expect(checked).toBeGreaterThan(300);
+    });
+
+    it('raises a ridge along its line with the bell profile, the highest of ridges and hills winning', () => {
         const base: BaseTerrain = {
             ...FLAT_COAST,
             ridges: [{ id: 'r', line: [[0, -100, 20], [0, 100, 60]], width: 40 }],
@@ -137,8 +163,10 @@ describe('ridges and canyons', () => {
         };
         // On the crest at z = -50: 20 + 40 · 0.25 = 30 (the hill is 0 there)
         expect(baseHeight(base, 0, -50)).toBeCloseTo(land(0) + 30, 12);
-        // 20 m beside it: a quarter of that
-        expect(baseHeight(base, 20, -50)).toBeCloseTo(land(20) + 30 * 0.25, 12);
+        // 20 m beside it, half the width: bell(0.5) = half of that
+        expect(baseHeight(base, 20, -50)).toBeCloseTo(land(20) + 30 * 0.5, 12);
+        // 10 m: smoothstep(0.75) = 0.84375
+        expect(baseHeight(base, 10, -50)).toBeCloseTo(land(10) + 30 * 0.84375, 12);
         // At the hill's centre the hill (50) beats the ridge (40)
         expect(baseHeight(base, 0, 0)).toBeCloseTo(land(0) + 50, 12);
         // At z = 50 the ridge (50) beats the hill (0 beyond its radius)
@@ -146,10 +174,11 @@ describe('ridges and canyons', () => {
         expect(baseHeight(base, 45, 50)).toBeCloseTo(land(45), 12);
     });
 
-    it('cuts a canyon along its line, V-shaped with a soft rim', () => {
+    it('cuts a canyon along its line with the bell profile', () => {
         const base: BaseTerrain = { ...FLAT_COAST, canyons: [{ id: 'c', line: [[100, -100], [100, 100]], depth: 12, width: 30 }] };
         expect(baseHeight(base, 100, 0)).toBeCloseTo(land(100) - 12, 12);
-        expect(baseHeight(base, 115, 0)).toBeCloseTo(land(115) - 3, 12);
+        // Half the width: bell(0.5) = 0.5
+        expect(baseHeight(base, 115, 0)).toBeCloseTo(land(115) - 6, 12);
         expect(baseHeight(base, 131, 0)).toBeCloseTo(land(131), 12);
     });
 });
@@ -162,8 +191,9 @@ describe('noise mix, warp and regions', () => {
             const v = ridgedFbm(i * 13.7, i * -5.1, 9, 120, 3, 0.5);
             expect(Math.abs(v)).toBeLessThanOrEqual(1);
         }
-        // One octave at a lattice point: r = (1 - |lattice value|)², mapped to 2r - 1
-        const lattice = latticeValue(2, 3, 9 + 101);
+        // One octave at a lattice point: r = (1 - |lattice value|)², mapped
+        // to 2r - 1, from the same lattice as fbm
+        const lattice = latticeValue(2, 3, 9);
         expect(ridgedFbm(2 * 50, 3 * 50, 9, 50, 1, 0.5)).toBeCloseTo(2 * (1 - Math.abs(lattice)) ** 2 - 1, 12);
     });
 

@@ -10,6 +10,7 @@
 
 import * as v from 'valibot';
 import { pointInPolygon, polylineDistance, signedPolygonDistance, type Vec2 } from '../../src/shared/map/geometry.js';
+import { catmullRomChain, evalCubic, type CurvePoint } from '../../src/shared/map/spline.js';
 
 const Finite = v.pipe(v.number(), v.finite());
 const Positive = v.pipe(v.number(), v.finite(), v.gtValue(0));
@@ -57,17 +58,17 @@ export const BaseTerrainSchema = v.strictObject({
         plateau: NonNegative,
         fade: Positive
     })),
-    // Ridges: a crest along `line` ([x, z, height] per vertex, the height
-    // interpolated along the line), falling to 0 at `width` metres from it
-    // with the profile (1 - d/width)²: a sharp crest and a soft foot. Like
-    // hills, the highest wins.
+    // Ridges: a crest along `line` ([x, z, height] per vertex; the line is
+    // smoothed as a centripetal Catmull-Rom spline, the height interpolated
+    // along it), falling to 0 at `width` metres with the bell profile of the
+    // hills: a rounded crest and a soft foot. Like hills, the highest wins.
     ridges: v.optional(v.array(v.strictObject({
         id: v.string(),
         line: v.pipe(v.array(v.tuple([Finite, Finite, Finite])), v.minLength(2)),
         width: Positive
     }))),
-    // Canyons and gullies: cut `depth` metres deep along `line`, with the
-    // same profile over `width` metres (a V-shaped floor, a soft rim)
+    // Canyons and gullies: cut `depth` metres deep along `line` (smoothed
+    // like a ridge line) with the bell profile over `width` metres
     canyons: v.optional(v.array(v.strictObject({
         id: v.string(),
         line: v.pipe(v.array(Point), v.minLength(2)),
@@ -147,18 +148,25 @@ export function fbm(x: number, z: number, seed: number, wavelength: number, octa
     return sum / norm;
 }
 
-// Ridged fBm: each octave is (1 - |n|)², sharp at the crests of the value
-// noise, mapped from [0, 1] to [-1, 1]
+// Ridged fBm: each octave is (1 - |n|)² of the same value noise as fbm
+// (sharp where the noise crosses 0), mapped from [0, 1] to [-1, 1]
 export function ridgedFbm(x: number, z: number, seed: number, wavelength: number, octaves: number, gain: number): number {
-    let sum = 0, norm = 0, weight = 1, scale = 1 / wavelength;
+    return fbmPair(x, z, seed, wavelength, octaves, gain).ridged;
+}
+
+// fbm and ridgedFbm from one pass over the octaves (one value noise each)
+export function fbmPair(x: number, z: number, seed: number, wavelength: number, octaves: number, gain: number): { plain: number; ridged: number } {
+    let plain = 0, ridged = 0, norm = 0, weight = 1, scale = 1 / wavelength;
     for (let o = 0; o < octaves; o++) {
-        const r = 1 - Math.abs(valueNoise(x * scale, z * scale, seed + 101 + o * 7919));
-        sum += weight * r * r;
+        const n = valueNoise(x * scale, z * scale, seed + o * 7919);
+        const r = 1 - Math.abs(n);
+        plain += weight * n;
+        ridged += weight * r * r;
         norm += weight;
         weight *= gain;
         scale *= 2;
     }
-    return 2 * sum / norm - 1;
+    return { plain: plain / norm, ridged: 2 * ridged / norm - 1 };
 }
 
 // Seed offsets of the two warp noises (x and z)
@@ -175,10 +183,10 @@ export function terrainNoise(noise: BaseTerrain['noise'], seed: number, x: numbe
         x += dx;
         z += dz;
     }
-    const plain = fbm(x, z, seed, noise.wavelength, noise.octaves, noise.gain);
     const share = noise.ridged ?? 0;
-    if (share <= 0) return plain;
-    return plain + (ridgedFbm(x, z, seed, noise.wavelength, noise.octaves, noise.gain) - plain) * share;
+    if (share <= 0) return fbm(x, z, seed, noise.wavelength, noise.octaves, noise.gain);
+    const both = fbmPair(x, z, seed, noise.wavelength, noise.octaves, noise.gain);
+    return both.plain + (both.ridged - both.plain) * share;
 }
 
 // Noise amplitude at (x, z): the base amplitude, moved towards each
@@ -188,10 +196,31 @@ export function terrainNoise(noise: BaseTerrain['noise'], seed: number, x: numbe
 export function noiseAmplitude(noise: BaseTerrain['noise'], x: number, z: number): number {
     let amplitude = noise.amplitude;
     for (const region of noise.regions ?? []) {
+        // Beyond blend / 2 outside the polygon's box the weight is 0
+        const box = polygonBox(region.polygon, region.blend / 2);
+        if (x < box[0] || x > box[2] || z < box[1] || z > box[3]) continue;
         const w = smoothstep(0.5 + signedPolygonDistance(region.polygon, x, z) / region.blend);
         amplitude += (region.amplitude - amplitude) * w;
     }
     return amplitude;
+}
+
+// Bounding box of a polygon grown by `margin`: minX, minZ, maxX, maxZ (cached)
+const boxes = new WeakMap<object, [number, number, number, number]>();
+function polygonBox(polygon: readonly (readonly [number, number])[], margin: number): [number, number, number, number] {
+    let box = boxes.get(polygon);
+    if (!box) {
+        box = [Infinity, Infinity, -Infinity, -Infinity];
+        for (const [x, z] of polygon) {
+            if (x < box[0]) box[0] = x;
+            if (z < box[1]) box[1] = z;
+            if (x > box[2]) box[2] = x;
+            if (z > box[3]) box[3] = z;
+        }
+        box = [box[0] - margin, box[1] - margin, box[2] + margin, box[3] + margin];
+        boxes.set(polygon, box);
+    }
+    return box;
 }
 
 // Distance to a polyline and the interpolated third coordinate of the
@@ -211,12 +240,110 @@ export function polylineNearest(line: readonly (readonly [number, number, number
     return { distance: Math.sqrt(best), value };
 }
 
-// Cross profile of ridges and canyons: 1 on the line, (1 - t)² at t = d/width, 0 beyond
-export function crestProfile(t: number): number {
-    if (t >= 1) return 0;
-    const u = 1 - (t < 0 ? 0 : t);
-    return u * u;
+// A canyon's line smoothed like a ridge line (third coordinate 0)
+const flatLines = new WeakMap<object, [number, number, number][]>();
+function smoothLine(line: readonly (readonly [number, number])[]): [number, number, number][] {
+    let out = flatLines.get(line);
+    if (!out) flatLines.set(line, out = smoothRidgeLine(line.map(p => [p[0], p[1], 0] as const)));
+    return out;
 }
+
+// Cells of the index over a smoothed line: each cell lists the segments
+// that come within `reach` of it, so a point only measures those. The
+// nearest segment within `reach` of a point is always in its cell's list,
+// so the result equals a search over all segments.
+const LINE_CELL = 32;
+interface LineIndex { x0: number; z0: number; cols: number; rows: number; starts: Int32Array; segs: Int32Array }
+const lineIndexes = new WeakMap<object, LineIndex>();
+
+function lineIndex(dense: readonly (readonly [number, number, number])[], reach: number): LineIndex {
+    let index = lineIndexes.get(dense);
+    if (index) return index;
+    let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+    for (const [x, z] of dense) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (z < minZ) minZ = z;
+        if (z > maxZ) maxZ = z;
+    }
+    const x0 = Math.floor((minX - reach) / LINE_CELL) * LINE_CELL, z0 = Math.floor((minZ - reach) / LINE_CELL) * LINE_CELL;
+    const cols = Math.ceil((maxX + reach - x0) / LINE_CELL) + 1, rows = Math.ceil((maxZ + reach - z0) / LINE_CELL) + 1;
+    // A segment belongs to a cell if it comes within reach of the cell's
+    // centre plus half the cell's diagonal
+    const slack = reach + LINE_CELL * 0.7072;
+    const lists: number[][] = [];
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+            const cx = x0 + (c + 0.5) * LINE_CELL, cz = z0 + (r + 0.5) * LINE_CELL;
+            const list: number[] = [];
+            for (let i = 1; i < dense.length; i++) {
+                const [ax, az] = dense[i - 1], [bx, bz] = dense[i];
+                const ex = bx - ax, ez = bz - az;
+                const len2 = ex * ex + ez * ez;
+                let t = len2 > 0 ? ((cx - ax) * ex + (cz - az) * ez) / len2 : 0;
+                if (t < 0) t = 0; else if (t > 1) t = 1;
+                const dx = cx - (ax + t * ex), dz = cz - (az + t * ez);
+                if (dx * dx + dz * dz <= slack * slack) list.push(i);
+            }
+            lists.push(list);
+        }
+    }
+    const starts = new Int32Array(lists.length + 1);
+    lists.forEach((list, k) => { starts[k + 1] = starts[k] + list.length; });
+    const segs = new Int32Array(starts[lists.length]);
+    lists.forEach((list, k) => segs.set(list, starts[k]));
+    index = { x0, z0, cols, rows, starts, segs };
+    lineIndexes.set(dense, index);
+    return index;
+}
+
+// polylineNearest over the segments within `reach` of (x, z) only; null
+// when none comes that close
+export function nearestWithin(dense: readonly (readonly [number, number, number])[], reach: number, x: number, z: number): { distance: number; value: number } | null {
+    const index = lineIndex(dense, reach);
+    const c = Math.floor((x - index.x0) / LINE_CELL), r = Math.floor((z - index.z0) / LINE_CELL);
+    if (c < 0 || r < 0 || c >= index.cols || r >= index.rows) return null;
+    const k = r * index.cols + c;
+    let best = Infinity, value = 0;
+    for (let n = index.starts[k]; n < index.starts[k + 1]; n++) {
+        const i = index.segs[n];
+        const [ax, az, ah] = dense[i - 1], [bx, bz, bh] = dense[i];
+        const ex = bx - ax, ez = bz - az;
+        const len2 = ex * ex + ez * ez;
+        let t = len2 > 0 ? ((x - ax) * ex + (z - az) * ez) / len2 : 0;
+        if (t < 0) t = 0; else if (t > 1) t = 1;
+        const dx = x - (ax + t * ex), dz = z - (az + t * ez);
+        const d2 = dx * dx + dz * dz;
+        if (d2 < best) { best = d2; value = ah + (bh - ah) * t; }
+    }
+    if (best > reach * reach) return null;
+    return { distance: Math.sqrt(best), value };
+}
+
+// Steps per spline segment when a ridge line is smoothed
+export const RIDGE_STEPS = 16;
+
+// A ridge's line smoothed into a dense polyline [x, z, height]: the
+// Catmull-Rom spline through the vertices (straight into its ends), the
+// height linear along each segment's parameter. Cached per line.
+const smoothed = new WeakMap<object, [number, number, number][]>();
+export function smoothRidgeLine(line: readonly (readonly [number, number, number])[]): [number, number, number][] {
+    let out = smoothed.get(line);
+    if (out) return out;
+    const segments = catmullRomChain(line.map(p => [p[0], p[1]] as const));
+    const p: CurvePoint = { x: 0, z: 0, dx: 0, dz: 0, ddx: 0, ddz: 0 };
+    out = [[line[0][0], line[0][1], line[0][2]]];
+    segments.forEach((segment, k) => {
+        for (let i = 1; i <= RIDGE_STEPS; i++) {
+            const u = i / RIDGE_STEPS;
+            evalCubic(segment, u, p);
+            out!.push([p.x, p.z, line[k][2] + (line[k + 1][2] - line[k][2]) * u]);
+        }
+    });
+    smoothed.set(line, out);
+    return out;
+}
+
 
 // Normalised elliptic radius: 0 in the centre, 1 on the outline
 export function ellipseRadius(e: { x: number; z: number; radii: readonly [number, number]; axis?: Vec2 }, x: number, z: number): number {
@@ -254,13 +381,13 @@ export function baseSample(base: BaseTerrain, x: number, z: number): BaseSample 
     let hill = 0;
     for (const h of base.hills) hill = Math.max(hill, h.height * bell(ellipseRadius(h, x, z)));
     for (const ridge of base.ridges ?? []) {
-        const near = polylineNearest(ridge.line, x, z);
-        if (near.distance < ridge.width) hill = Math.max(hill, near.value * crestProfile(near.distance / ridge.width));
+        const near = nearestWithin(smoothRidgeLine(ridge.line), ridge.width, x, z);
+        if (near && near.distance < ridge.width) hill = Math.max(hill, near.value * bell(near.distance / ridge.width));
     }
     land += hill;
     for (const canyon of base.canyons ?? []) {
-        const d = polylineDistance(canyon.line, x, z);
-        if (d < canyon.width) land -= canyon.depth * crestProfile(d / canyon.width);
+        const near = nearestWithin(smoothLine(canyon.line), canyon.width, x, z);
+        if (near && near.distance < canyon.width) land -= canyon.depth * bell(near.distance / canyon.width);
     }
     for (const flat of base.flats) {
         const w = flat.strength * bell(ellipseRadius(flat, x, z));
