@@ -133,10 +133,10 @@ test('touch on a phone: splash, Free Roam, stick and buttons, room chip and a lo
 
     // ---- A lost connection ----
     // Drop the socket and keep the reconnect back past the grace time of
-    // the e2e server (3 s): the banner shows after a second and leaves the
+    // the e2e server (2 s): the banner shows after a second and leaves the
     // controls and the HUD free, the car holds still meanwhile
     await page.evaluate(() => (window as unknown as { __bulliDebug: { dropConnection(holdMs: number): void } })
-        .__bulliDebug.dropConnection(5000));
+        .__bulliDebug.dropConnection(4000));
     const notice = page.locator('#net-notice');
     await expect(notice).toBeVisible();
     await expect(notice).toContainText('Reconnecting');

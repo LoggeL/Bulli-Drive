@@ -63,9 +63,9 @@ export default defineConfig({
     webServer: {
         command: 'node dist/server/index.js',
         // E2E=1: the server takes debugPlace (placeLocalCar in the tests).
-        // GRACE_MS: a closed test page's car leaves after 3 s instead of
+        // GRACE_MS: a closed test page's car leaves after 2 s instead of
         // waiting 30 s as an idle ghost on the runway of the next test
-        env: { PORT: String(PORT), E2E: '1', GRACE_MS: '3000' },
+        env: { PORT: String(PORT), E2E: '1', GRACE_MS: '2000' },
         // Healthy once the tick runs (docs/phase-1b-design.md, 11.4)
         url: `${BASE_URL}/healthz`,
         reuseExistingServer: false,

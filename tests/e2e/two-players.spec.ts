@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { test, expect, joinGame, snapshot, distance, placeOnClearRunway, netState, debugCall } from './fixtures.js';
+import { test, expect, openGame, joinFromSplash, snapshot, distance, placeOnClearRunway, netState, debugCall } from './fixtures.js';
 import type { CarInfo } from '../../src/client/e2eHook.js';
 import { CAR_IDLE, CAR_LAGGY } from '../../src/shared/net/codec.js';
 import { LAGGY_WINDOW_TICKS } from '../../src/shared/net/constants.js';
@@ -81,10 +81,14 @@ async function waitUntilSolid(pages: Page[]) {
     const quiet = pages.map(() => ({ since: -1, missed: -1 }));
     const settled = await expect.poll(async () => {
         const nets = await Promise.all(pages.map(page => netState(page)));
-        return nets.every((net, i) => {
+        // Every page's quiet stretch is tracked on every poll (a short-
+        // circuiting every() started the second page's only once the first
+        // one was quiet, which cost a whole extra window)
+        const solid = nets.map((net, i) => {
             if (net.stats.missedInputs !== quiet[i].missed) quiet[i] = { since: net.tick, missed: net.stats.missedInputs };
             return (net.selfFlags & (CAR_IDLE | CAR_LAGGY)) === 0 && net.tick - quiet[i].since >= LAGGY_WINDOW_TICKS;
         });
+        return solid.every(Boolean);
     }, { timeout: 30_000 }).toBe(true).then(() => true, () => false);
     if (settled) return;
     // Why a car stays a ghost (a stalled page, lost inputs, a hidden tab)
@@ -105,10 +109,16 @@ test('two players see each other, and a head-on ram shows on both screens', asyn
     const query = '&drawfps=2';
     const alice = await openPlayer('alice-ram');
     const bob = await openPlayer('bob-ram');
+    // Both pages load up to the splash screen before either car plays:
+    // loading a page (its shaders) stalls the other page in the shared
+    // GPU process, and a playing car that misses its inputs for seconds
+    // turns into a lag ghost that takes up to 10 s to recover
+    await openGame(alice, query);
+    await openGame(bob, query);
     // Free Roam from the splash screen: no powerup on the runway can
     // make a car a ghost
-    const aliceId = await joinGame(alice, 'E2E Alice Ram', query, 'freeroam');
-    const bobId = await joinGame(bob, 'E2E Bob Ram', query, 'freeroam');
+    const aliceId = await joinFromSplash(alice, 'E2E Alice Ram', 'freeroam');
+    const bobId = await joinFromSplash(bob, 'E2E Bob Ram', 'freeroam');
     // The server put the page into the Party first; the switch went
     // out before the car was asked for
     const types = alice.sentMessages.map(message => message.type);
@@ -202,7 +212,7 @@ test('two players see each other, and a head-on ram shows on both screens', asyn
     }, { timeout: 30_000 }).toBeLessThan(0.5);
 
     // Bob closes his tab: once the server lets his session go (grace time
-    // of the e2e server, 3 s) his car and his nametag leave Alice's screen
+    // of the e2e server, 2 s) his car and his nametag leave Alice's screen
     // instead of standing there frozen
     await expect(alice.page.locator('.nametag-name', { hasText: 'E2E Bob Ram' })).toHaveCount(1);
     await bob.page.close();

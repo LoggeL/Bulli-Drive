@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { Page } from '@playwright/test';
 import { PROTOCOL_VERSION } from '../../src/shared/protocol.js';
-import { test, expect, joinGame, snapshot, netState, topmostAtCenter, type Player } from './fixtures.js';
+import { test, expect, FLOW_DRAW_FPS, joinGame, snapshot, netState, topmostAtCenter, type Player } from './fixtures.js';
 
 // A new deploy while pages are open (docs/phase-1b-design.md, 3.2, 11.2,
 // 11.3, 15.3), against the production build: an index.html from the old
@@ -125,7 +125,7 @@ test('a server restart: the banner shows, the page comes back on its own with it
         await waitHealthy(port);
         const player = await openPlayer('restart', { allowedProblems: RECONNECT_NOISE });
         const { page } = player;
-        const firstId = await joinGame(player, 'E2E Restart', '', undefined, `http://127.0.0.1:${port}`);
+        const firstId = await joinGame(player, 'E2E Restart', FLOW_DRAW_FPS, undefined, `http://127.0.0.1:${port}`);
 
         // Collect a coin: the server counts it (+10)
         const coin = (await coins(page)).find(c => !c.collected)!;
