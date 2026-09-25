@@ -2,7 +2,8 @@
 // Downtown "Laternen, Ampeln, Bänke, Hydranten, Mülleimer", Park/Plaza
 // "Bänke"): street lights, traffic signals, fire hydrants, benches and trash
 // cans on the sidewalks of the paved roads in Downtown and the park, placed
-// from the road samples like the street palms (plants.ts). Each piece has a
+// from the road samples like the street palms (plants.ts), and a ring of
+// benches round the plaza's fountain. Each piece has a
 // small collider, as in the old city: a car on the sidewalk hits a light or
 // a signal pole; a hydrant, a trash can or a bench can be jumped.
 //
@@ -14,7 +15,7 @@ import { zoneAt, type Heightfield } from './heightfield.js';
 import type { Plant } from './plants.js';
 import { PLANT_COLLIDERS } from './plants.js';
 import type { RoadArea } from './roadSchema.js';
-import { isOnRoad, junctionRadius, JUNCTION_TRIM_EXTRA, type RoadEdgeData, type RoadNetwork } from './roadNetwork.js';
+import { insideCorridor, isOnRoad, junctionRadius, JUNCTION_TRIM_EXTRA, type RoadEdgeData, type RoadNetwork } from './roadNetwork.js';
 import { leftNormal, pointAt } from './spline.js';
 import { boxContains, toMillimetre, type BoxIndex, type OBox } from './structures.js';
 import { isPaved, SURFACE, ZONE } from './types.js';
@@ -57,6 +58,10 @@ export const BENCH_BACK = 0.55;
 export const BENCH_SIDEWALK = 3;
 // The trash can this far along from its bench's middle
 export const TRASH_CAN_OFFSET = 2.1;
+// Benches round a fountain: this many on a ring of this radius, facing it,
+// a trash can beside every other one
+export const FOUNTAIN_BENCHES = 8;
+export const FOUNTAIN_BENCH_RING = 11;
 // The narrowest sidewalk with furniture
 export const MIN_SIDEWALK = 1.5;
 // Clearances (m) round a piece's collider
@@ -71,6 +76,8 @@ export interface FurnitureContext {
     buildings: BoxIndex;
     reserved: readonly OBox[];
     plants: readonly Plant[];
+    // Fountains on a square, with a ring of benches round them
+    fountains: readonly Vec2[];
 }
 
 /** Radius of a piece's footprint (the bench: its half length). */
@@ -146,10 +153,29 @@ function furnished(edge: RoadEdgeData): boolean {
     return isPaved(SURFACE[edge.profile.surface]) && (edge.profile.sidewalk.left >= MIN_SIDEWALK || edge.profile.sidewalk.right >= MIN_SIDEWALK);
 }
 
+// Benches (and trash cans) on the ring round each fountain: on its square
+// (an area), off the roads and their sidewalks, facing the fountain
+function fountainBenches(ctx: FurnitureContext, out: Furniture[]): void {
+    for (const [fx, fz] of ctx.fountains) {
+        for (let k = 0; k < FOUNTAIN_BENCHES; k++) {
+            // Starting half a step off north, clockwise seen from above
+            const a = (k + 0.5) * 2 * Math.PI / FOUNTAIN_BENCHES;
+            const sx = Math.sin(a), sz = Math.cos(a);
+            for (const [kind, along] of k % 2 === 0 ? [['bench', 0], ['trashCan', TRASH_CAN_OFFSET]] as const : [['bench', 0]] as const) {
+                // Along the ring's tangent (cos a, -sin a) from the bench
+                const x = toMillimetre(fx + sx * FOUNTAIN_BENCH_RING + sz * along);
+                const z = toMillimetre(fz + sz * FOUNTAIN_BENCH_RING - sx * along);
+                if (!ctx.areas.some(area => pointInPolygon(area.polygon, x, z)) || insideCorridor(ctx.net, x, z, furnitureRadius(kind))) continue;
+                out.push({ kind, x, z, ux: toMillimetre(-sx), uz: toMillimetre(-sz) });
+            }
+        }
+    }
+}
+
 /**
  * Every piece of street furniture: the signals at the signalled junctions
  * (nodes in id order), then per edge (id order) a hydrant, the lights, the
- * benches with their trash cans.
+ * benches with their trash cans, then the benches round the fountains.
  */
 export function placeFurniture(ctx: FurnitureContext): Furniture[] {
     const out: Furniture[] = [];
@@ -196,5 +222,6 @@ export function placeFurniture(ctx: FurnitureContext): Furniture[] {
             }
         }
     }
+    fountainBenches(ctx, out);
     return out;
 }

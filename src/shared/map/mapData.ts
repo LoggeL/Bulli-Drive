@@ -376,7 +376,8 @@ export function createMapData(sources: MapSources, hf: Heightfield): MapData {
     const buildingIndex = new BoxIndex();
     for (const lot of buildings) buildingIndex.add(placementBox(lot));
     const plants = placePlants({ net, hf, areas: net.areas, boundary: map.boundary, buildings: buildingIndex, reserved });
-    const furniture = placeFurniture({ net, hf, areas: net.areas, boundary: map.boundary, buildings: buildingIndex, reserved, plants });
+    const fountains = pois.landmarks.filter(landmark => landmark.kind === 'fountain').map(({ x, z }): [number, number] => [x, z]);
+    const furniture = placeFurniture({ net, hf, areas: net.areas, boundary: map.boundary, buildings: buildingIndex, reserved, plants, fountains });
 
     // The colliders, in a fixed order (it decides the order of the
     // collision response): rails, the border, the arena fence, landmarks

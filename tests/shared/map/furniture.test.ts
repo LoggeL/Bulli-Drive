@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { mapFor } from '../../../src/server/maps.js';
 import { FURNITURE_COLLIDERS, FURNITURE_ZONES, placeFurniture, type Furniture, type FurnitureContext } from '../../../src/shared/map/furniture.js';
 import { zoneAt } from '../../../src/shared/map/heightfield.js';
-import { buildRoadNetwork, isOnRoad } from '../../../src/shared/map/roadNetwork.js';
+import { pointInPolygon } from '../../../src/shared/map/geometry.js';
+import { buildRoadNetwork, insideCorridor, isOnRoad } from '../../../src/shared/map/roadNetwork.js';
 import { BoxIndex, boxContains, placementBox } from '../../../src/shared/map/structures.js';
 import { ZONE } from '../../../src/shared/map/types.js';
 import { edge, makeHeightfield, network, node, PROFILE } from './fixtures.js';
@@ -14,7 +15,7 @@ import { edge, makeHeightfield, network, node, PROFILE } from './fixtures.js';
 const BOUNDARY: [number, number][] = [[-100, -100], [100, -100], [100, 100], [-100, 100]];
 
 function context(net: ReturnType<typeof buildRoadNetwork>, zone = () => ZONE.downtown as number): FurnitureContext {
-    return { net, hf: makeHeightfield(() => 1, zone), areas: net.areas, boundary: BOUNDARY, buildings: new BoxIndex(), reserved: [], plants: [] };
+    return { net, hf: makeHeightfield(() => 1, zone), areas: net.areas, boundary: BOUNDARY, buildings: new BoxIndex(), reserved: [], plants: [], fountains: [] };
 }
 
 const where = (pieces: Furniture[], kind: Furniture['kind']) => pieces.filter(p => p.kind === kind).map(p => [p.x, p.z, p.ux, p.uz]);
@@ -96,6 +97,31 @@ describe('placeFurniture behind a junction', () => {
     });
 });
 
+describe('placeFurniture on a square', () => {
+    it('rings the fountain with eight benches 11 m out facing it, a trash can beside every other one', () => {
+        // A 60 m square area east of a road, its fountain at (30, 0)
+        const net = buildRoadNetwork(network([node('w', -90, -60), node('e', -90, 60)], [edge('ns', 'w', 'e')], {
+            areas: [{ id: 'square', surface: 'concrete', curb: false, polygon: [[0, -30], [60, -30], [60, 30], [0, 30]], connects: [] }]
+        }));
+        const pieces = placeFurniture({ ...context(net), fountains: [[30, 0]] });
+        const benches = pieces.filter(p => p.kind === 'bench');
+        expect(benches).toHaveLength(8);
+        // The first at 22.5° from +z: (30 + 11 sin 22.5°, 11 cos 22.5°), facing back
+        const s = Math.sin(Math.PI / 8), c = Math.cos(Math.PI / 8);
+        expect(benches[0].x).toBeCloseTo(30 + 11 * s, 3);
+        expect(benches[0].z).toBeCloseTo(11 * c, 3);
+        expect([benches[0].ux, benches[0].uz]).toEqual([-Math.round(s * 1000) / 1000, -Math.round(c * 1000) / 1000]);
+        for (const bench of benches) expect(Math.hypot(bench.x - 30, bench.z)).toBeCloseTo(11, 2);
+        // Trash cans 2.1 m along the ring's tangent from benches 0, 2, 4, 6
+        const cans = pieces.filter(p => p.kind === 'trashCan');
+        expect(cans).toHaveLength(4);
+        expect(cans[0].x).toBeCloseTo(30 + 11 * s + 2.1 * c, 3);
+        expect(cans[0].z).toBeCloseTo(11 * c - 2.1 * s, 3);
+        // Without the square round it: none
+        expect(placeFurniture({ ...context(net), fountains: [[-30, 0]] }).filter(p => p.kind === 'bench')).toEqual([]);
+    });
+});
+
 describe('placeFurniture at a signalled junction', () => {
     // Two 10 m roads crossing at (0, 0), 2 m sidewalks: trim radius
     // 5 + 2 = 7 m, a pole a metre before it on the right of each approach
@@ -136,13 +162,16 @@ describe('placeFurniture at a signalled junction', () => {
 describe('Bulli Bay\'s street furniture', () => {
     const map = mapFor();
 
-    it('stands off the carriageways, in Downtown and the park, clear of buildings and plants, each on its collider', () => {
+    it('stands off the carriageways, in Downtown and the park, clear of buildings, each on its collider, benches round the fountain', () => {
         expect(map.furniture.length).toBeGreaterThan(200);
         const buildings = new BoxIndex();
         for (const lot of map.buildings) buildings.add(placementBox(lot));
         for (const piece of map.furniture) {
             const tag = `${piece.kind} at ${piece.x}, ${piece.z}`;
-            expect(isOnRoad(map.net, piece.x, piece.z), tag).toBe(false);
+            // On the plaza (an area) off the roads and sidewalks round it,
+            // elsewhere off every drivable surface
+            if (map.net.areas.some(area => pointInPolygon(area.polygon, piece.x, piece.z))) expect(insideCorridor(map.net, piece.x, piece.z, 0), tag).toBe(false);
+            else expect(isOnRoad(map.net, piece.x, piece.z), tag).toBe(false);
             expect(FURNITURE_ZONES, tag).toContain(zoneAt(map.hf, piece.x, piece.z));
             expect(buildings.contains(piece.x, piece.z, 0.2), tag).toBe(false);
             expect(Math.hypot(piece.ux, piece.uz), tag).toBeCloseTo(1, 3);
@@ -153,5 +182,7 @@ describe('Bulli Bay\'s street furniture', () => {
         }
         // Main Street's signals: its junctions with the four avenues
         expect(map.furniture.filter(p => p.kind === 'signal').length).toBeGreaterThanOrEqual(16);
+        // The plaza's ring: all eight benches round the fountain (-350, -70)
+        expect(map.furniture.filter(p => p.kind === 'bench' && Math.abs(Math.hypot(p.x + 350, p.z + 70) - 11) < 0.01)).toHaveLength(8);
     });
 });
