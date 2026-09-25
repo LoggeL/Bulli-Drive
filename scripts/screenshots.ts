@@ -194,8 +194,20 @@ async function join(browser: Browser, contextOptions: BrowserContextOptions, bas
     return page;
 }
 
+// Draw calls (including the shadow pass) and triangles per render tier
+// (docs/phase-3-design.md 10). The phone tier is checked in the render job
+// (tests/e2e-render/phone-tier.spec.ts) and the software tier in the E2E
+// desktop path; the desktop needs a GPU, so this script measures it and
+// warns about every view above its tier's budget.
+const BUDGETS: Record<string, { calls: number; triangles: number }> = {
+    desktop: { calls: 300, triangles: 1_200_000 },
+    mobile: { calls: 150, triangles: 500_000 },
+    software: { calls: 110, triangles: 300_000 }
+};
+const overBudget: string[] = [];
+
 interface ShotStats {
-    view: string; calls: number; triangles: number; shadowCalls?: number; carWidth?: number; carHeight?: number;
+    view: string; tier?: string; calls: number; triangles: number; shadowCalls?: number; carWidth?: number; carHeight?: number;
     // race-start: meshes and triangles of the track dressing and the map features
     dressingMeshes?: number;
     dressingTriangles?: number;
@@ -210,8 +222,13 @@ async function shoot(page: Page, out: string, view: string, stats: ShotStats[], 
         : null;
     await page.screenshot({ path: file });
     const { render } = await snapshot(page);
+    const tier = await page.evaluate(() => (window as unknown as { __bulliDebug: { worldInfo(): { tier: string } } }).__bulliDebug.worldInfo().tier);
     // calls/triangles: the whole frame including the shadow pass (shadowCalls)
-    const entry: ShotStats = { view, calls: render.calls, triangles: render.triangles, shadowCalls: render.shadowCalls };
+    const entry: ShotStats = { view, tier, calls: render.calls, triangles: render.triangles, shadowCalls: render.shadowCalls };
+    const budget = BUDGETS[tier];
+    if (budget && (render.calls > budget.calls || render.triangles > budget.triangles)) {
+        overBudget.push(`${view} (${tier}): ${render.calls} calls, ${render.triangles} triangles, budget ${budget.calls} and ${budget.triangles}`);
+    }
     if (box) {
         entry.carWidth = Number(box.width.toFixed(3));
         entry.carHeight = Number(box.height.toFixed(3));
@@ -660,6 +677,9 @@ async function main() {
         const summary = { date: new Date().toISOString(), renderer, shots: stats };
         fs.writeFileSync(path.join(options.out, 'stats.json'), JSON.stringify(summary, null, 2) + '\n');
         log(`wrote ${stats.length} screenshots to ${options.out}`);
+        // Only a warning: the views and the GPU decide, not a test runner
+        if (overBudget.length) log(`WARNING: ${overBudget.length} views above their tier's budget:\n  ${overBudget.join('\n  ')}`);
+        else log('every view within its tier\'s budget of draw calls and triangles');
     } finally {
         await browser?.close();
         server.kill();
