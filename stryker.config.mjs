@@ -40,9 +40,12 @@ const GROUPS = {
         'src/server/rooms/RaceRoom.ts', 'src/server/rooms/TimeTrialRoom.ts'
     ],
     // Curated map (phase 3): road network, splines, heightfield, corridors,
-    // rails, routes, drivability, the pure parts of the bake tool and the
-    // map validation
-    map: ['src/shared/map/**/*.ts', 'tools/map/baseTerrain.ts', 'tools/map/bakeTerrain.ts', 'tools/map/validateMap.ts']
+    // rails, routes, drivability, the pure parts of the bake tool, the map
+    // validation and the worldviewer's editor logic
+    map: [
+        'src/shared/map/**/*.ts', 'tools/map/baseTerrain.ts', 'tools/map/bakeTerrain.ts', 'tools/map/bakeSources.ts',
+        'tools/map/validateMap.ts', 'tools/worldviewer/logic/**/*.ts'
+    ]
 };
 
 const group = process.env.MUTATION_GROUP || '';

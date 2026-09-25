@@ -7,7 +7,7 @@
     "dev:lan": "concurrently --kill-others-on-fail --names server,vite --prefix-colors blue,magenta \"tsx watch src/server/index.ts\" \"vite --host\"",
     "build": "vite build && tsc -p tsconfig.server.json",
     "start": "node dist/server/index.js",
-    "typecheck": "tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "typecheck": "tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.test.json --noEmit && tsc -p tsconfig.worldviewer.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:bots": "vitest run --config vitest.bots.config.ts",
@@ -19,6 +19,7 @@
     "perf:sim": "tsx scripts/sim-bench.ts",
     "screenshots": "npm run build && tsx scripts/screenshots.ts",
     "ci": "npm run typecheck && npm test && npm run build",
+    "worldviewer": "vite --config tools/worldviewer/vite.config.ts",
     "assets:models": "npm --prefix tools run models",
     "assets:textures": "npm --prefix tools run textures"
   },

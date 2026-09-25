@@ -13,20 +13,17 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { brotliCompressSync, constants as zlibConstants, gzipSync } from 'node:zlib';
-import { BULLI_BAY_GRID, BHF_HEADER_BYTES, type GridSpec } from '../../src/shared/map/heightfield.js';
-import { parseMapFile, parseZonesFile } from '../../src/shared/map/mapFiles.js';
-import { parseRoadNetwork } from '../../src/shared/map/roadSchema.js';
-import { parseBaseTerrain } from './baseTerrain.js';
-import { BAKE_VERSION, bakeTerrain, type BakeResult } from './bakeTerrain.js';
-import { fnv1a128, toHex } from './hash.js';
+import { BHF_HEADER_BYTES } from '../../src/shared/map/heightfield.js';
+import { BAKE_VERSION, type BakeResult } from './bakeTerrain.js';
+import { bakeSources, type MapSources } from './bakeSources.js';
+import { toHex } from './hash.js';
 import { renderPreview } from './preview.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const GRIDS: Record<string, GridSpec> = { 'bulli-bay': BULLI_BAY_GRID };
 
-// The sources the bake reads. pois.json and tracks.json do not shape the
-// terrain and are not part of the hash.
-export interface MapSources { roads: Uint8Array; map: Uint8Array; zones: Uint8Array; base: Uint8Array }
+// Hashing and baking the source bytes live in bakeSources.ts (no file
+// access, the worldviewer bakes in the browser with it)
+export { bakeSources, sourceHash, type MapSources } from './bakeSources.js';
 
 export function readSources(mapId: string): MapSources {
     const dir = path.join(ROOT, 'src/shared/maps', mapId);
@@ -36,30 +33,6 @@ export function readSources(mapId: string): MapSources {
         zones: readFileSync(path.join(dir, 'zones.json')),
         base: readFileSync(path.join(dir, 'base.json'))
     };
-}
-
-// FNV-1a-128 over the sources and the bake version (6.1, A13)
-export function sourceHash(sources: MapSources): Uint8Array {
-    const separator = new Uint8Array([0]);
-    const version = new TextEncoder().encode(`bake-version:${BAKE_VERSION}`);
-    return fnv1a128(sources.roads, separator, sources.map, separator, sources.zones, separator,
-        sources.base, separator, version);
-}
-
-export function bakeSources(mapId: string, sources: MapSources): BakeResult {
-    const spec = GRIDS[mapId];
-    if (!spec) throw new Error(`no grid for map ${mapId}`);
-    const decode = (bytes: Uint8Array) => JSON.parse(new TextDecoder().decode(bytes)) as unknown;
-    const roads = parseRoadNetwork(decode(sources.roads));
-    if (!roads.ok) throw new Error(`roads.json:\n  ${roads.errors.join('\n  ')}`);
-    const map = parseMapFile(decode(sources.map));
-    if (!map.ok) throw new Error(`map.json:\n  ${map.errors.join('\n  ')}`);
-    const zones = parseZonesFile(decode(sources.zones));
-    if (!zones.ok) throw new Error(`zones.json:\n  ${zones.errors.join('\n  ')}`);
-    const base = parseBaseTerrain(decode(sources.base));
-    return bakeTerrain({
-        roads: roads.value, map: map.value, zones: zones.value, base, spec, sourceHash: sourceHash(sources)
-    });
 }
 
 function compressedSizes(bytes: Uint8Array): { gzip: number; brotli: number } {

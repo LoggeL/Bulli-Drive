@@ -48,7 +48,7 @@ reachable from the LAN as well: `npm run build && npm start`, then
 | `npm run dev:lan` | Same as `dev`, but Vite also listens on the LAN, for testing on real phones |
 | `npm run build` | Client with Vite to `dist/client` (hashed assets, `build-version.txt`), server with `tsc` to `dist/server` and `dist/shared` |
 | `npm start` | Runs the production build on port 8000 (`PORT` to override) |
-| `npm run typecheck` | Type-checks client, server, tests, scripts and build config |
+| `npm run typecheck` | Type-checks client, server, tests, scripts, build config and the worldviewer |
 | `npm test` | Vitest unit tests in `tests/` (golden tests for world generation, terrain, RNG and the v2 sim scenarios, the binary codec and protocol validation, the tick scheduler, rooms and Party rules, the prediction against the real rooms with simulated latency and loss, speedometer scale, model cache, budgets of the packed models and textures) |
 | `npm run test:e2e` | Builds, then runs the Playwright tests of the critical user paths in `tests/e2e` against the production server (port 8799, `E2E_PORT` to override; the restart test starts its own server on `E2E_PORT + 1`), among them a race on the phone from the splash to the results |
 | `npm run test:e2e:render` | Builds, then runs the render checks in the browser: the phone tier's draw call and triangle budget, a world without its textures that is shaded, not black, and the touch HUD of the Party and of a race in eight phone and tablet viewports without overlaps (`tests/e2e-render`, Playwright project `render`) |
@@ -59,6 +59,7 @@ reachable from the LAN as well: `npm run build && npm start`, then
 | `npm run screenshots` | Builds, then captures a fixed set of views with headless Chromium for visual before/after comparisons, the race included (lobby, grid, checkpoint, ramps, the finish from 600 m, results, the phone HUD) (`-- --out=<dir>`, `--gl=swiftshader`, `--compare=<a>,<b>`, `--only=<views>`; `stats.json` records how much of the frame the car takes and the draw calls and triangles of the track dressing; see `scripts/screenshots.ts`) |
 | `npx tsx scripts/sim-golden-drift.ts` | Shows how far the v2 golden scenarios drift when `Math.sin` & co. round differently in the last bit, and that the golden tolerance still catches tiny tuning changes |
 | `npm run ci` | typecheck, unit tests and build in one go |
+| `npm run worldviewer` | Map viewer and spline editor for the curated map on port 5174 (`-- --port <n>` to change), a Vite app of its own outside the game bundle, see [Worldviewer](#worldviewer-map-viewer-and-spline-editor) |
 | `npm run assets:models` | Builds the car models in Blender and packs them (meshopt + KTX2) into `public/models` (needs Blender 5.2 and `npm --prefix tools ci` once; see [tools/models/README.md](tools/models/README.md)) |
 | `npm run assets:textures` | Downloads the CC0 textures and HDRIs (Poly Haven) and encodes them to KTX2 in `public/textures` ([tools/textures/README.md](tools/textures/README.md)) |
 
@@ -145,6 +146,58 @@ powerup effects (Turbo, Mega, Super-Jump, Ghost, Shield) and switches the
 body. Changes live in the page only; to keep them, paste the exported JSON
 into the defaults (`SIM_TUNING` in `src/shared/sim/constants.ts`, the classes
 in `src/shared/sim/vehicleClasses.ts`).
+
+### Worldviewer: map viewer and spline editor
+`npm run worldviewer` opens `http://localhost:5174`: the curated map of phase
+3 (Bulli Bay, [docs/phase-3-design.md](docs/phase-3-design.md)) in 3D, built
+from the same files and shared modules the game will load. It is a Vite app of
+its own (`tools/worldviewer`, config `tools/worldviewer/vite.config.ts`) and is
+never part of the game build; `npx vite build --config tools/worldviewer/vite.config.ts`
+writes a static copy to `output/worldviewer`.
+
+It shows the baked heightfield (`public/maps/bulli-bay/terrain.bhf`, coloured by
+surface, height or zone), the roads of `roads.json` as ribbons with their guard
+rails, areas and nodes (yellow junctions, blue joints, red dead ends), the zones,
+landmarks and spawns of `zones.json` and `pois.json`, and any track of
+`tracks.json` with its centre line, gates (white: start/finish) and starting
+grid. The status line shows position, height, surface, zone and road under the
+pointer. Left drag pans, right drag turns, the wheel zooms.
+
+Editing `roads.json`:
+
+| Tool | Key | What it does |
+|---|---|---|
+| Select | V | Click a road or node to select it, drag nodes, support points and Bézier handles; the panel edits name, profile, width, surface, grade limit, one-way and the guard rail per side |
+| Draw | N | Click to start a road and to add nodes; a click on a road joins it there (new junction), on a node connects to it; Esc ends the road. "New roads" picks the profile |
+| Point | P | Adds a support point where you click on a road |
+| Split | S | Splits a road with a new joint |
+| | Del | Deletes the selection; deleting a joint joins its two roads again |
+| | Ctrl/⌘ Z, Ctrl/⌘ Shift Z | Undo, redo (a drag is one step) |
+| | F | Looks at the selection |
+
+Every edit goes through `tools/worldviewer/logic/editOps.ts` (pure functions,
+unit tests in `tests/tools/worldviewer`) and is kept only if the result passes
+the schema and the checks of `src/shared/map/roadSchema.ts`; positions are
+rounded to 0.1 m. Width and surface are stored as `overrides` of the profile and
+only while they differ from it. The page keeps an unsaved draft in the browser
+and offers it again after a reload.
+
+- **Export:** "Download" or "Copy to clipboard" gives the new `roads.json`; save it
+  as `src/shared/maps/bulli-bay/roads.json`. The export uses the layout of the
+  committed file (one line per node, edge and area), so unchanged lines stay byte
+  for byte the same and the diff shows only the edited objects. "Open…" loads a
+  `roads.json` from disk.
+- **Rebake:** "Rebake heightfield" bakes the edited roads in a web worker with the
+  bake code of `tools/map` (under a second); for unchanged sources the result is
+  the committed `terrain.bhf` byte for byte. "Download terrain.bhf" saves it, but
+  the repository's `terrain.bhf` and `manifest.json` come from
+  `npx tsx tools/map/bake.ts` after the export (the data tests check the hash).
+- **Check:** "Validate map" runs `tools/map/validateMap.ts` (the checks of
+  `npx tsx tools/map/validate.ts`) on the edited roads and the current
+  heightfield; click a finding to look at it.
+- **Tracks** are shown, not edited: splitting or joining an edge that a track names
+  breaks its route in `tracks.json`, and the header lists every broken track.
+  Fix `route`, `start` and `finish` there by hand.
 
 ## Architecture
 

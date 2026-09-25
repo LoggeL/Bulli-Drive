@@ -5,14 +5,15 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BULLI_BAY_GRID, decodeHeightfield, type GridSpec } from '../../src/shared/map/heightfield.js';
+import { decodeHeightfield } from '../../src/shared/map/heightfield.js';
 import { parseMapFile, parsePoisFile, parseTracksFile, parseZonesFile } from '../../src/shared/map/mapFiles.js';
 import { buildRoadNetwork } from '../../src/shared/map/roadNetwork.js';
 import { parseRoadNetwork, type ParseResult, type RoadNetworkFile } from '../../src/shared/map/roadSchema.js';
+import { GRIDS } from './bakeSources.js';
 import type { MapBundle } from './validateMap.js';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-export const GRIDS: Record<string, GridSpec> = { 'bulli-bay': BULLI_BAY_GRID };
+export { GRIDS };
 
 function load<T>(dir: string, name: string, parse: (value: unknown) => ParseResult<T>): T {
     const result = parse(JSON.parse(readFileSync(path.join(dir, name), 'utf8')) as unknown);
