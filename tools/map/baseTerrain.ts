@@ -123,7 +123,7 @@ export function fbm(x: number, z: number, seed: number, wavelength: number, octa
 export function ellipseRadius(e: { x: number; z: number; radii: readonly [number, number]; axis?: Vec2 }, x: number, z: number): number {
     let ux = 1, uz = 0;
     if (e.axis) {
-        const len = Math.hypot(e.axis[0], e.axis[1]);
+        const len = Math.sqrt(e.axis[0] * e.axis[0] + e.axis[1] * e.axis[1]);
         ux = e.axis[0] / len;
         uz = e.axis[1] / len;
     }

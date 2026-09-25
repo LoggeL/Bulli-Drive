@@ -378,7 +378,7 @@ export function bakeTerrain(input: BakeInput): BakeResult {
                 if (h < spec.waterLevel - WATER_SURFACE_DEPTH) id = SURFACE.water;
                 else if (coast[k] < base.beach.width && h < spec.waterLevel + WET_SAND_HEIGHT) id = SURFACE.wetSand;
                 else if (region) id = SURFACE[region];
-                else if (Math.hypot(gx, gz) > ROCK_SLOPE) id = SURFACE.rock;
+                else if (gx * gx + gz * gz > ROCK_SLOPE * ROCK_SLOPE) id = SURFACE.rock;
                 else if (coast[k] < base.beach.width && h < base.beach.top + BEACH_SAND_MARGIN) id = SURFACE.sand;
                 else id = SURFACE.grass;
             }

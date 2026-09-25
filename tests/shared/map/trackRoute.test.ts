@@ -362,10 +362,13 @@ describe('gateAllowed, junctionAt, yawOf', () => {
             .toEqual(['start at 130 m is in or next to a junction or in a hairpin']);
     });
 
-    it('turns a direction into the sim yaw: forward = (sin yaw, cos yaw)', () => {
+    it('turns a direction into the sim yaw: forward = (sin yaw, cos yaw), rounded to a micro-radian', () => {
         expect(yawOf(0, 1)).toBe(0);
-        expect(yawOf(1, 0)).toBeCloseTo(Math.PI / 2, 12);
-        expect(yawOf(-1, 0)).toBeCloseTo(-Math.PI / 2, 12);
-        expect(Math.abs(yawOf(0, -1))).toBeCloseTo(Math.PI, 12);
+        // π/2 = 1.5707963… and π = 3.1415926…, rounded to 6 decimals
+        expect(yawOf(1, 0)).toBe(1.570796);
+        expect(yawOf(-1, 0)).toBe(-1.570796);
+        expect(Math.abs(yawOf(0, -1))).toBe(3.141593);
+        // 45°: 0.7853981… → 0.785398
+        expect(yawOf(1, 1)).toBe(0.785398);
     });
 });

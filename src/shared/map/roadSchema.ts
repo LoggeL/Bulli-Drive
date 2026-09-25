@@ -163,7 +163,8 @@ export function schemaErrors(issues: readonly v.BaseIssue<unknown>[]): string[] 
 export const MIN_POINT_SPACING = 0.5;
 
 function distance(a: readonly [number, number], b: readonly [number, number]): number {
-    return Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const dx = b[0] - a[0], dz = b[1] - a[1];
+    return Math.sqrt(dx * dx + dz * dz);
 }
 
 // The checks between objects: unique IDs, references, node kinds against

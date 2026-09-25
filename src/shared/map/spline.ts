@@ -3,9 +3,11 @@
 // resampling to exactly 1 m of arc length that bake, road meshes, resets
 // and routeToTrack share.
 //
-// The samples use Math.sqrt and may differ between engines in single ULPs.
-// That is fine: they reach the sim only through the baked heightfield
-// (bit-identical bytes) and through poses the server sends.
+// Determinism: the samples feed the guard-rail colliders, which go into the
+// sim and into worldHash, which client and server compare strictly. So this
+// module uses only +, -, ×, ÷ and Math.sqrt, which IEEE-754 and ECMAScript
+// round exactly, never Math.hypot or trigonometry, which engines only
+// approximate (tests/shared/map/determinism.test.ts).
 
 import type { RoadSample } from './types.js';
 
@@ -100,10 +102,15 @@ export function evalCubic(seg: CubicSegment, u: number, out: CurvePoint): CurveP
 const MIN_TABLE_STEPS = 64;
 const LENGTH_TABLE_STEP = 0.25;
 
+// Length of (dx, dz) with exactly rounded operations only (see the header)
+export function length2(dx: number, dz: number): number {
+    return Math.sqrt(dx * dx + dz * dz);
+}
+
 function controlPolygonLength(seg: CubicSegment): number {
-    return Math.hypot(seg.c1x - seg.p0x, seg.c1z - seg.p0z)
-        + Math.hypot(seg.c2x - seg.c1x, seg.c2z - seg.c1z)
-        + Math.hypot(seg.p1x - seg.c2x, seg.p1z - seg.c2z);
+    return length2(seg.c1x - seg.p0x, seg.c1z - seg.p0z)
+        + length2(seg.c2x - seg.c1x, seg.c2z - seg.c1z)
+        + length2(seg.p1x - seg.c2x, seg.p1z - seg.c2z);
 }
 
 // Resamples a chain of segments to points spaced `step` metres of arc
@@ -122,7 +129,7 @@ export function sampleSegments(segments: readonly CubicSegment[], step = 1): { s
         for (let i = 1; i <= steps; i++) {
             const u = i / steps;
             evalCubic(seg, u, p);
-            total += Math.hypot(p.x - prevX, p.z - prevZ);
+            total += length2(p.x - prevX, p.z - prevZ);
             prevX = p.x; prevZ = p.z;
             segIndex.push(k); params.push(u); lengths.push(total);
         }
@@ -143,7 +150,7 @@ export function sampleSegments(segments: readonly CubicSegment[], step = 1): { s
         u = l1 > l0 ? u0 + (params[row] - u0) * (s - l0) / (l1 - l0) : params[row];
         if (s <= 0) { k = 0; u = 0; }
         evalCubic(segments[k], u, p);
-        const speed = Math.hypot(p.dx, p.dz);
+        const speed = length2(p.dx, p.dz);
         const tx = speed > 0 ? p.dx / speed : 1, tz = speed > 0 ? p.dz / speed : 0;
         // Signed curvature, positive towards the left normal (tz, -tx):
         // κ = (x''·z' - z''·x') / |r'|³
@@ -166,7 +173,7 @@ export function pointAt(samples: readonly RoadSample[], s: number): RoadSample {
     const a = samples[i], b = samples[i + 1];
     const t = (s - a.s) / (b.s - a.s);
     let tx = a.tx + (b.tx - a.tx) * t, tz = a.tz + (b.tz - a.tz) * t;
-    const len = Math.hypot(tx, tz);
+    const len = length2(tx, tz);
     if (len > 0) { tx /= len; tz /= len; }
     return {
         x: a.x + (b.x - a.x) * t,

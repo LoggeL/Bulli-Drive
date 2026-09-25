@@ -1,4 +1,5 @@
-// Small plane geometry helpers of the map modules (x/z plane, y up).
+// Small plane geometry helpers of the map modules (x/z plane, y up). Only
+// exactly rounded operations (+, -, ×, ÷, Math.sqrt), see spline.ts.
 
 export type Vec2 = readonly [number, number];
 
@@ -36,7 +37,7 @@ export function polygonEdgeDistance(polygon: readonly Vec2[], x: number, z: numb
 
 // Distance to an open polyline
 export function polylineDistance(line: readonly Vec2[], x: number, z: number): number {
-    if (line.length === 1) return Math.hypot(x - line[0][0], z - line[0][1]);
+    if (line.length === 1) return Math.sqrt(segmentDistanceSq(x, z, line[0][0], line[0][1], line[0][0], line[0][1]));
     let best = Infinity;
     for (let i = 1; i < line.length; i++) {
         const d2 = segmentDistanceSq(x, z, line[i - 1][0], line[i - 1][1], line[i][0], line[i][1]);

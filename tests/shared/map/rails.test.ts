@@ -78,9 +78,23 @@ describe('railColliders', () => {
         const colliders = railColliders(inner, rail);
         // Outer rail radius 15 + 5.5 = 20.5: an 8 m chord would bulge 0.39 m
         expect(colliders.length).toBeGreaterThan(Math.ceil(inner.length / 8));
+        // The sagitta plus the rounding of the ends to millimetres
         for (const [x, z] of line) {
             const nearest = Math.min(...colliders.map(c => distanceToSegment(x, z, c)));
-            expect(nearest).toBeLessThanOrEqual(RAIL_MAX_SAGITTA + 1e-9);
+            expect(nearest).toBeLessThanOrEqual(RAIL_MAX_SAGITTA + 0.001);
+        }
+    });
+
+    it('rounds every collider end to whole millimetres (the hash sees no stray last bits)', () => {
+        const R = 15;
+        const k = 0.5522847498 * R;
+        const net = buildRoadNetwork(network([node('a', 0.123456, 0), node('b', R, -R)], [
+            { ...edge('in', 'a', 'b'), curve: { type: 'bezier', segments: [{ c1: [k, 0], c2: [R, -R + k] }] } }
+        ]));
+        const colliders = railColliders(net.edgeById.get('in')!, { side: 'left', from: 0, to: -1, kind: 'wbeam' });
+        expect(colliders.length).toBeGreaterThan(2);
+        for (const c of colliders) {
+            for (const v of [c.ax, c.az, c.bx, c.bz]) expect(Math.abs(v * 1000 - Math.round(v * 1000))).toBeLessThan(1e-6);
         }
     });
 });

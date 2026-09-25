@@ -2,11 +2,16 @@
 // (docs/phase-3-design.md, 5.5 and 8.2, design E8). The collider shape is
 // the new `segment` kind; the sim integration (M3) adds it to the sim's
 // Collider union and uses circleVsSegment in its narrow phase.
+//
+// The colliders go into the sim and into worldHash, which client and server
+// compare strictly. They are computed with exactly rounded operations only
+// (spline.ts) and their coordinates are rounded to whole millimetres, so a
+// stray last bit cannot reach the hash.
 
 import type { Vec2 } from './geometry.js';
 import type { RoadEdgeData, RoadNetwork } from './roadNetwork.js';
 import type { RailKind, RailRange } from './roadSchema.js';
-import { leftNormal, pointAt } from './spline.js';
+import { leftNormal, length2, pointAt } from './spline.js';
 
 // Capsule around the segment a-b with radius r; top as for the other
 // colliders (height of the upper edge above the ground at the collider)
@@ -58,8 +63,8 @@ export function railLine(edge: RoadEdgeData, rail: RailRange): Vec2[] {
 // Distance of point p from the line through a and b (or from a if a = b)
 function lineDistance(p: Vec2, a: Vec2, b: Vec2): number {
     const ex = b[0] - a[0], ez = b[1] - a[1];
-    const len = Math.hypot(ex, ez);
-    if (len === 0) return Math.hypot(p[0] - a[0], p[1] - a[1]);
+    const len = length2(ex, ez);
+    if (len === 0) return length2(p[0] - a[0], p[1] - a[1]);
     return Math.abs((p[0] - a[0]) * ez - (p[1] - a[1]) * ex) / len;
 }
 
@@ -73,7 +78,7 @@ export function simplifyPolyline(points: readonly Vec2[], maxLength: number, tol
         let b = a + 1;
         while (b + 1 < points.length) {
             const next = b + 1;
-            if (Math.hypot(points[next][0] - points[a][0], points[next][1] - points[a][1]) > maxLength) break;
+            if (length2(points[next][0] - points[a][0], points[next][1] - points[a][1]) > maxLength) break;
             let fits = true;
             for (let k = a + 1; k < next && fits; k++) fits = lineDistance(points[k], points[a], points[next]) <= tolerance;
             if (!fits) break;
@@ -85,15 +90,24 @@ export function simplifyPolyline(points: readonly Vec2[], maxLength: number, tol
     return pieces;
 }
 
-export function railColliders(edge: RoadEdgeData, rail: RailRange): SegmentCollider[] {
-    const line = railLine(edge, rail);
+// A collider coordinate rounded to whole millimetres. Math.round and the
+// division are exact, so equal inputs give equal outputs in every engine.
+export function toMillimetres(v: number): number {
+    return Math.round(v * 1000) / 1000;
+}
+
+function segmentsAlong(line: readonly Vec2[], top: number): SegmentCollider[] {
     return simplifyPolyline(line, RAIL_MAX_SEGMENT, RAIL_MAX_SAGITTA).map(([a, b]) => ({
         kind: 'segment',
-        ax: line[a][0], az: line[a][1],
-        bx: line[b][0], bz: line[b][1],
+        ax: toMillimetres(line[a][0]), az: toMillimetres(line[a][1]),
+        bx: toMillimetres(line[b][0]), bz: toMillimetres(line[b][1]),
         r: RAIL_RADIUS,
-        top: RAIL_TOPS[rail.kind]
+        top
     }));
+}
+
+export function railColliders(edge: RoadEdgeData, rail: RailRange): SegmentCollider[] {
+    return segmentsAlong(railLine(edge, rail), RAIL_TOPS[rail.kind]);
 }
 
 // All rails of the network, edge by edge in file order

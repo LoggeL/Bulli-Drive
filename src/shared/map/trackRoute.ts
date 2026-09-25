@@ -9,7 +9,7 @@ import type { TrackRoute } from './mapFiles.js';
 import {
     junctionRadius, type EdgeEnd, type RoadEdgeData, type RoadNetwork, type RoadNodeData
 } from './roadNetwork.js';
-import { cubic, leftNormal, pointAt, sampleSegments } from './spline.js';
+import { cubic, leftNormal, length2, pointAt, sampleSegments } from './spline.js';
 import { SURFACE } from './types.js';
 
 // Spacing of the centre line (13.2, step 2: fits the projection window of
@@ -105,9 +105,14 @@ export interface ResolvedRoute {
 
 export type RouteResult = { ok: true; route: ResolvedRoute } | { ok: false; errors: string[] };
 
-// Driving direction yaw of the sim: forward = (sin yaw, cos yaw)
+// Driving direction yaw of the sim: forward = (sin yaw, cos yaw). Math.atan2
+// is only approximated by the engines, and the yaw goes into the TrackDef
+// that client and server hash (trackHash). Rounded to a micro-radian, the
+// last-bit differences of atan2 vanish (only a value within one ulp of a
+// rounding boundary could still differ).
+export const YAW_RESOLUTION = 1e6;
 export function yawOf(tx: number, tz: number): number {
-    return Math.atan2(tx, tz);
+    return Math.round(Math.atan2(tx, tz) * YAW_RESOLUTION) / YAW_RESOLUTION; // determinism: rounded
 }
 
 interface Step { edge: RoadEdgeData; reversed: boolean }
@@ -196,7 +201,7 @@ export function resolveRoute(net: RoadNetwork, track: TrackRoute): RouteResult {
     const push = (p: DensePoint) => {
         if (dense.length) {
             const q = dense[dense.length - 1];
-            const d = Math.hypot(p.x - q.x, p.z - q.z);
+            const d = length2(p.x - q.x, p.z - q.z);
             if (d < 1e-6) return;
             s += d;
         }
@@ -206,7 +211,7 @@ export function resolveRoute(net: RoadNetwork, track: TrackRoute): RouteResult {
     parts.forEach((part, i) => {
         const first = partPoint(part, part.keepFrom, i);
         const last = dense[dense.length - 1];
-        part.routeStart = last ? s + Math.hypot(first.x - last.x, first.z - last.z) : 0;
+        part.routeStart = last ? s + length2(first.x - last.x, first.z - last.z) : 0;
         const kept = part.keepTo - part.keepFrom;
         const count = Math.ceil(kept);
         for (let k = 0; k <= count; k++) push(partPoint(part, part.keepFrom + Math.min(kept, k), i));
@@ -217,7 +222,7 @@ export function resolveRoute(net: RoadNetwork, track: TrackRoute): RouteResult {
         const node = part.exit;
         const entryS = s;
         if (node.def.kind === 'junction') {
-            const m = Math.hypot(b.x - a.x, b.z - a.z) / 3;
+            const m = length2(b.x - a.x, b.z - a.z) / 3;
             const curve = sampleSegments([cubic([a.x, a.z], [a.x + a.tx * m, a.z + a.tz * m],
                 [b.x - b.tx * m, b.z - b.tz * m], [b.x, b.z])]).samples;
             for (let k = 1; k < curve.length - 1; k++) {
@@ -227,7 +232,7 @@ export function resolveRoute(net: RoadNetwork, track: TrackRoute): RouteResult {
                     halfWidth: Math.max(a.halfWidth, b.halfWidth), surface: a.surface, part: -1
                 });
             }
-            const exitS = s + Math.hypot(b.x - dense[dense.length - 1].x, b.z - dense[dense.length - 1].z);
+            const exitS = s + length2(b.x - dense[dense.length - 1].x, b.z - dense[dense.length - 1].z);
             const used = [
                 { edge: part.edge.index, atStart: part.reversed },
                 { edge: next.edge.index, atStart: !next.reversed }
@@ -240,7 +245,7 @@ export function resolveRoute(net: RoadNetwork, track: TrackRoute): RouteResult {
     if (closed) {
         // Back to the first point, which closes the line
         const first = dense[0], last = dense[dense.length - 1];
-        length += Math.hypot(first.x - last.x, first.z - last.z);
+        length += length2(first.x - last.x, first.z - last.z);
         dense.push(first);
         denseS.push(length);
     }
@@ -293,7 +298,7 @@ function resample(dense: readonly DensePoint[], denseS: readonly number[], lengt
         const span = denseS[Math.min(dense.length - 1, j + 1)] - denseS[j];
         const t = span > 0 ? Math.min(1, Math.max(0, (S - denseS[j]) / span)) : 0;
         let tx = a.tx + (b.tx - a.tx) * t, tz = a.tz + (b.tz - a.tz) * t;
-        const len = Math.hypot(tx, tz) || 1;
+        const len = length2(tx, tz) || 1;
         tx /= len; tz /= len;
         const near = t < 0.5 ? a : b;
         points.push({
@@ -326,7 +331,7 @@ export function routePointAt(route: ResolvedRoute, S: number): RoutePoint {
     const bs = i + 1 < pts.length ? b.s : route.length;
     const t = bs > a.s ? (s - a.s) / (bs - a.s) : 0;
     let tx = a.tx + (b.tx - a.tx) * t, tz = a.tz + (b.tz - a.tz) * t;
-    const len = Math.hypot(tx, tz) || 1;
+    const len = length2(tx, tz) || 1;
     tx /= len; tz /= len;
     return {
         x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t, tx, tz, s,

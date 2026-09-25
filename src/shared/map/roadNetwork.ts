@@ -141,7 +141,7 @@ export function buildRoadNetwork(file: RoadNetworkFile): RoadNetwork {
         });
         // Leaving directions of a smooth joint are opposite
         const cos = -(a[0] * b[0] + a[1] * b[1]);
-        const angle = Math.acos(Math.min(1, Math.max(-1, cos)));
+        const angle = Math.acos(Math.min(1, Math.max(-1, cos))); // determinism: report only
         if (angle > JOINT_TOLERANCE_RAD) {
             issues.push(`node ${node.id}: joint is not tangent-continuous (${(angle * 180 / Math.PI).toFixed(2)}°)`);
         }
