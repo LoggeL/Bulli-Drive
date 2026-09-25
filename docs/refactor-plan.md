@@ -211,6 +211,11 @@ Verbindliche Spezifikation, Entscheidungen und Testplan: [`phase-2-design.md`](p
   - QualityTiers
   - `routeToTrack` für neue Strecken auf den Splines
 - **Exit:** Unter 300 Draw Calls. 60 FPS auf dem Referenz-Desktop, mindestens 30 FPS auf dem Handy (Tier low) bei stabilem Speicher (iOS ohne Tab-Reload nach 20 Minuten). Die Strecken aus Phase 2 laufen unverändert oder sind auf die neue Map portiert.
+- **Stand** (Branch `map/phase-3`, Einzelheiten in [`phase-3-design.md`](phase-3-design.md), Abschnitt 18):
+  - [x] Karte als Daten (Splines, Plätze, Zonen, POIs, Strecken), Heightfield-Bake, Validierung, worldviewer mit Spline-Editor, Gebäude-Kit (M1)
+  - [x] Sim und Server auf Bulli Bay (M3): Heightfield als Boden, Oberflächen mit Griff und Rollwiderstand, Wasser-Reset, Leitplanken, Gebäude, Bäume und Landmarken als Collider (`segment`, `obox`), Reset auf die nächste Straße, Spawns je Modus aus `pois.json`, die Party in der Arena, die Phase-2-Strecken portiert, Protokoll v4
+  - [ ] Client-Rendering der Karte (M4: Terrain, Ribbons, Chunks, Gebäude, Props, Meer); bis dahin zeichnet der Client noch die alte Stadt
+  - [ ] Neue Strecken im Rennbetrieb, Minimap, alte Stadt löschen, Release (M5)
 
 **Phase 4 – Open-World-Multiplayer und Persistenz (3–4 Wochen)**
 - **Deliverables:**
