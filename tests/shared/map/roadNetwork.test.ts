@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
     buildRoadNetwork, DEFAULT_ROUNDABOUT_RADIUS, isOnRoad, junctionRadius, nearestRoad, roadChains,
-    roadSurfaceAt
+    roadSurfaceAt, roadSurfaceIdAt, type RoadHit
 } from '../../../src/shared/map/roadNetwork.js';
+import { SURFACE } from '../../../src/shared/map/types.js';
 import { parseZonesFile } from '../../../src/shared/map/mapFiles.js';
 import { parseRoadNetwork, validateRoadNetwork } from '../../../src/shared/map/roadSchema.js';
 import { edge, network, node, PROFILE } from './fixtures.js';
@@ -109,6 +110,31 @@ describe('nearestRoad', () => {
         expect(nearestRoad(net, 70, 3)!.lateral).toBeCloseTo(-3, 9);
     });
 
+    it('writes into a given hit instead of allocating one', () => {
+        const { net } = build();
+        const out = { s: -1 } as RoadHit;
+        const hit = nearestRoad(net, 30.5, -4, 50, out);
+        expect(hit).toBe(out);
+        expect(out.s).toBeCloseTo(30.5, 9);
+        expect(out.lateral).toBeCloseTo(4, 9);
+        expect(nearestRoad(net, 50, 60, 50, out)).toBeNull();
+    });
+
+    it('finds a segment registered in a cell next to the searched ones (1 m search margin)', () => {
+        // A second road puts the index origin at x = -0.5, so its 16 m cells
+        // end at x = 15.5: the segment from sample x = 15 to 16 is filed in
+        // the first cell, the query at x = 15.9 with a 0.2 m reach only
+        // covers the second. The nearest point is (15.9, 0), 0.1 m away;
+        // without the margin the search would stop at sample 16, 0.14 m away.
+        const net = buildRoadNetwork(network(
+            [node('w', 0, 0), node('e', 40, 0), node('a', -0.5, 60), node('b', 10, 60)],
+            [edge('main', 'w', 'e'), edge('other', 'a', 'b')]
+        ));
+        const hit = nearestRoad(net, 15.9, 0.1, 0.2)!;
+        expect(hit.s).toBeCloseTo(15.9, 9);
+        expect(hit.distance).toBeCloseTo(0.1, 9);
+    });
+
     it('clamps to the end of the road', () => {
         const { net } = build();
         const hit = nearestRoad(net, 106, 8)!;
@@ -206,6 +232,29 @@ describe('roadSurfaceAt and isOnRoad', () => {
             areas: [square, { ...square, id: 'square-2' }]
         }));
         expect(roadSurfaceAt(both, 30, 0)).toEqual({ surface: 'asphalt', area: 'square' });
+    });
+
+    it('gives the surface IDs of table 8.1, -1 offroad', () => {
+        const { net } = build();
+        expect(roadSurfaceIdAt(net, 30, 4.9)).toBe(SURFACE.asphalt);
+        expect(roadSurfaceIdAt(net, 90, 15)).toBe(SURFACE.concrete);
+        expect(roadSurfaceIdAt(net, -20, 0)).toBe(SURFACE.wood);
+        expect(roadSurfaceIdAt(net, 52.9, -40)).toBe(SURFACE.dirt);
+        expect(roadSurfaceIdAt(net, 30, 5.1)).toBe(-1);
+        // Inside the lot's bounding box but outside the road: concrete only
+        // inside the polygon (here the box is the polygon)
+        expect(roadSurfaceIdAt(net, 119.9, 19.9)).toBe(SURFACE.concrete);
+        expect(roadSurfaceIdAt(net, 120.1, 19.9)).toBe(-1);
+    });
+
+    it('gives the lower edge index where two roads of one surface overlap, in whatever order the cells come', () => {
+        // Edge 0 runs west, so its segment at x = 15.5 is filed at sample
+        // x = 16 (second cell); edge 1 runs east, filed at x = 15 (first cell)
+        const net = buildRoadNetwork(network(
+            [node('a', 40, 0), node('b', 0, 0), node('c', 0, 4), node('d', 40, 4)],
+            [edge('early', 'a', 'b'), edge('late', 'c', 'd')]
+        ));
+        expect(roadSurfaceAt(net, 15.5, 2)).toEqual({ surface: 'asphalt', edge: 'early' });
     });
 
     it('searches as far as the widest road reaches', () => {

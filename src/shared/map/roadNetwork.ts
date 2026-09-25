@@ -42,6 +42,8 @@ export interface RoadNetwork {
     nodeById: Map<string, RoadNodeData>;
     edgeById: Map<string, RoadEdgeData>;
     index: SampleIndex;
+    // Bounding box of each area: minX, minZ, maxX, maxZ
+    areaBounds: Float64Array;
     // Largest half width of any edge (search radius of the surface query)
     maxHalfWidth: number;
     // Findings that do not stop the build (joints that are not C1)
@@ -149,9 +151,20 @@ export function buildRoadNetwork(file: RoadNetworkFile): RoadNetwork {
 
     let maxHalfWidth = 0;
     for (const edge of edges) maxHalfWidth = Math.max(maxHalfWidth, edge.halfWidth);
+    const areaBounds = new Float64Array(4 * file.areas.length);
+    file.areas.forEach((area, i) => {
+        let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+        for (const [x, z] of area.polygon) {
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (z < minZ) minZ = z;
+            if (z > maxZ) maxZ = z;
+        }
+        areaBounds.set([minX, minZ, maxX, maxZ], 4 * i);
+    });
     return {
         mapId: file.mapId, nodes, edges, areas: file.areas, nodeById, edgeById,
-        index: new SampleIndex(edges), maxHalfWidth, issues
+        index: new SampleIndex(edges), areaBounds, maxHalfWidth, issues
     };
 }
 
@@ -311,65 +324,86 @@ export interface RoadHit {
     lateral: number;
 }
 
+// Projection of a query point onto one centre-line segment; scratch state
+// of the queries below, reused so they allocate nothing per segment
+interface Projection { t: number; qx: number; qz: number; dx: number; dz: number; distance: number }
+
 // Projects (x, z) onto the centre-line segment from sample k to k + 1
-function projectSegment(edge: RoadEdgeData, k: number, x: number, z: number, out: RoadHit): number {
+function projectSegment(edge: RoadEdgeData, k: number, x: number, z: number, out: Projection): void {
     const a = edge.samples[k], b = edge.samples[k + 1];
     const ex = b.x - a.x, ez = b.z - a.z;
     const len2 = ex * ex + ez * ez;
     let t = len2 > 0 ? ((x - a.x) * ex + (z - a.z) * ez) / len2 : 0;
     if (t < 0) t = 0; else if (t > 1) t = 1;
-    const qx = a.x + ex * t, qz = a.z + ez * t;
-    const dx = x - qx, dz = z - qz;
-    const distance = Math.sqrt(dx * dx + dz * dz);
-    let tx = a.tx + (b.tx - a.tx) * t, tz = a.tz + (b.tz - a.tz) * t;
-    const tl = Math.sqrt(tx * tx + tz * tz);
-    tx /= tl; tz /= tl;
-    out.edge = edge;
-    out.s = a.s + (b.s - a.s) * t;
-    out.x = qx; out.z = qz;
-    out.tx = tx; out.tz = tz;
-    out.distance = distance;
-    // Left normal (tz, -tx)
-    out.lateral = dx * tz - dz * tx;
-    return distance;
+    out.t = t;
+    out.qx = a.x + ex * t;
+    out.qz = a.z + ez * t;
+    out.dx = x - out.qx;
+    out.dz = z - out.qz;
+    out.distance = Math.sqrt(out.dx * out.dx + out.dz * out.dz);
 }
 
-// Visits every centre-line segment registered in the cells that overlap the
-// square of half size `radius` around (x, z)
-function forEachCandidate(net: RoadNetwork, x: number, z: number, radius: number,
-    visit: (edge: RoadEdgeData, k: number) => void): void {
+function newProjection(): Projection {
+    return { t: 0, qx: 0, qz: 0, dx: 0, dz: 0, distance: 0 };
+}
+
+// Cell ranges of the index covering the square of half size `radius`
+// around (x, z). Each segment is registered once, in the cell of its first
+// sample; a segment is at most one sample spacing (1 m) long, so a search
+// radius one metre larger than the distance of interest finds it.
+function cellRange(index: SampleIndex, x: number, z: number, radius: number, out: Int32Array): void {
+    out[0] = index.cellX(x - radius); out[1] = index.cellX(x + radius);
+    out[2] = index.cellZ(z - radius); out[3] = index.cellZ(z + radius);
+}
+
+/**
+ * Nearest point on any road's centre line within maxDistance, or null.
+ * Ties go to the lower edge index, then the lower station. Writes into
+ * `out` when given (no allocation), else returns a new hit.
+ *
+ * Not for the sim tick: a search over the index costs a few microseconds.
+ * Use it for resets, the minimap and tools; the tick reads surfaceAt,
+ * heightAt and waterDepth from the heightfield (design 8.3).
+ */
+export function nearestRoad(net: RoadNetwork, x: number, z: number, maxDistance = 50, out?: RoadHit): RoadHit | null {
     const index = net.index;
-    const x0 = index.cellX(x - radius), x1 = index.cellX(x + radius);
-    const z0 = index.cellZ(z - radius), z1 = index.cellZ(z + radius);
-    for (let cz = z0; cz <= z1; cz++) {
-        for (let cx = x0; cx <= x1; cx++) {
+    const range = scratchRange;
+    const probe = scratchProjection;
+    cellRange(index, x, z, maxDistance + 1, range);
+    let bestEdge = -1, bestK = 0, bestT = 0, bestDistance = Infinity, bestS = Infinity;
+    let bestDx = 0, bestDz = 0, bestQx = 0, bestQz = 0;
+    for (let cz = range[2]; cz <= range[3]; cz++) {
+        for (let cx = range[0]; cx <= range[1]; cx++) {
             const cell = cz * index.cols + cx;
             for (let slot = index.cellStart[cell]; slot < index.cellStart[cell + 1]; slot++) {
                 const edge = net.edges[index.edgeOf[slot]];
                 const k = index.sampleOf[slot];
-                if (k + 1 < edge.samples.length) visit(edge, k);
-                if (k > 0) visit(edge, k - 1);
+                if (k + 1 >= edge.samples.length) continue;
+                projectSegment(edge, k, x, z, probe);
+                const d = probe.distance;
+                if (d > maxDistance || d > bestDistance) continue;
+                const s = edge.samples[k].s + (edge.samples[k + 1].s - edge.samples[k].s) * probe.t;
+                if (d === bestDistance && (edge.index > bestEdge || (edge.index === bestEdge && s >= bestS))) continue;
+                bestEdge = edge.index; bestK = k; bestT = probe.t; bestDistance = d; bestS = s;
+                bestDx = probe.dx; bestDz = probe.dz; bestQx = probe.qx; bestQz = probe.qz;
             }
         }
     }
-}
-
-// Nearest point on any road's centre line within maxDistance, or null.
-// Ties go to the lower edge index, then the lower station.
-export function nearestRoad(net: RoadNetwork, x: number, z: number, maxDistance = 50): RoadHit | null {
-    let best: RoadHit | null = null;
-    const probe = { edge: net.edges[0], s: 0, x: 0, z: 0, tx: 0, tz: 0, distance: 0, lateral: 0 } as RoadHit;
-    // The segment of a sample can reach up to one sample spacing (1 m)
-    // beyond the cells searched for it
-    forEachCandidate(net, x, z, maxDistance + 1, (edge, k) => {
-        const d = projectSegment(edge, k, x, z, probe);
-        if (d > maxDistance) return;
-        if (!best || d < best.distance || (d === best.distance
-            && (edge.index < best.edge.index || (edge.index === best.edge.index && probe.s < best.s)))) {
-            best = { ...probe };
-        }
-    });
-    return best;
+    if (bestEdge < 0) return null;
+    const edge = net.edges[bestEdge];
+    const a = edge.samples[bestK], b = edge.samples[bestK + 1];
+    let tx = a.tx + (b.tx - a.tx) * bestT, tz = a.tz + (b.tz - a.tz) * bestT;
+    const tl = Math.sqrt(tx * tx + tz * tz);
+    tx /= tl; tz /= tl;
+    const hit = out ?? { edge, s: 0, x: 0, z: 0, tx: 0, tz: 0, distance: 0, lateral: 0 };
+    hit.edge = edge;
+    hit.s = bestS;
+    hit.x = bestQx; hit.z = bestQz;
+    hit.tx = tx; hit.tz = tz;
+    hit.distance = bestDistance;
+    // Left normal (tz, -tx)
+    hit.lateral = bestDx * tz - bestDz * tx;
+    return hit;
 }
 
 export interface SurfaceHit {
@@ -379,35 +413,73 @@ export interface SurfaceHit {
     edge?: string;
 }
 
-// Road surface at a position: inside an area its surface, on a road's
-// drivable width that road's surface, otherwise null (offroad: the terrain
-// decides). Where several claim the point, the higher priority of table 8.1
-// wins; on a tie areas before edges, then the lower index.
-export function roadSurfaceAt(net: RoadNetwork, x: number, z: number): SurfaceHit | null {
-    let best: SurfaceHit | null = null;
-    // Rank: priority first, then areas (by index) before edges (by index)
-    let bestPriority = -1, bestOrder = Infinity;
-    const consider = (surface: SurfaceName, order: number, hit: Omit<SurfaceHit, 'surface'>) => {
-        const priority = SURFACE_PRIORITY[SURFACE[surface]];
-        if (priority > bestPriority || (priority === bestPriority && order < bestOrder)) {
-            bestPriority = priority;
-            bestOrder = order;
-            best = { surface, ...hit };
-        }
-    };
-    net.areas.forEach((area, i) => {
-        if (pointInPolygon(area.polygon, x, z)) consider(area.surface, i, { area: area.id });
-    });
-    const probe = { edge: net.edges[0], s: 0, x: 0, z: 0, tx: 0, tz: 0, distance: 0, lateral: 0 } as RoadHit;
-    if (net.edges.length) {
-        forEachCandidate(net, x, z, net.maxHalfWidth + 1, (edge, k) => {
-            projectSegment(edge, k, x, z, probe);
-            if (probe.distance <= edge.halfWidth) {
-                consider(edge.profile.surface, net.areas.length + edge.index, { edge: edge.id });
+const SURFACE_NAMES = Object.keys(SURFACE) as SurfaceName[];
+
+// Scratch state of the queries (single-threaded JavaScript: never shared
+// between two running queries)
+const scratchProjection = newProjection();
+const scratchRange = new Int32Array(4);
+let lastArea = -1;
+let lastEdge = -1;
+
+/**
+ * Surface ID of the road or area at a position (SURFACE in types.ts), or
+ * -1 offroad (the terrain decides). Inside an area its surface, on a road's
+ * drivable width that road's surface. Where several claim the point, the
+ * higher priority of table 8.1 wins; on a tie areas before edges, then the
+ * lower index. Allocates nothing.
+ *
+ * Not for the sim tick either: the tick reads the baked surface layer
+ * (surfaceAt in heightfield.ts, O(1)); this query is for the tools and the
+ * map validation.
+ */
+export function roadSurfaceIdAt(net: RoadNetwork, x: number, z: number): number {
+    let best = -1, bestPriority = -1;
+    lastArea = lastEdge = -1;
+    const bounds = net.areaBounds;
+    for (let i = 0; i < net.areas.length; i++) {
+        const b = 4 * i;
+        if (x < bounds[b] || x > bounds[b + 2] || z < bounds[b + 1] || z > bounds[b + 3]) continue;
+        const area = net.areas[i];
+        if (!pointInPolygon(area.polygon, x, z)) continue;
+        const id = SURFACE[area.surface];
+        // Areas come in index order, so only a higher priority replaces one
+        if (SURFACE_PRIORITY[id] > bestPriority) { best = id; bestPriority = SURFACE_PRIORITY[id]; lastArea = i; }
+    }
+    if (net.edges.length === 0) return best;
+    const index = net.index;
+    const range = scratchRange;
+    const probe = scratchProjection;
+    cellRange(index, x, z, net.maxHalfWidth + 1, range);
+    let bestEdge = Infinity;
+    for (let cz = range[2]; cz <= range[3]; cz++) {
+        for (let cx = range[0]; cx <= range[1]; cx++) {
+            const cell = cz * index.cols + cx;
+            for (let slot = index.cellStart[cell]; slot < index.cellStart[cell + 1]; slot++) {
+                const edge = net.edges[index.edgeOf[slot]];
+                const k = index.sampleOf[slot];
+                if (k + 1 >= edge.samples.length) continue;
+                const id = SURFACE[edge.profile.surface];
+                const priority = SURFACE_PRIORITY[id];
+                // Cannot win: lower priority, or equal and an area or a lower edge holds it
+                if (priority < bestPriority || (priority === bestPriority && (lastArea >= 0 || edge.index >= bestEdge))) continue;
+                projectSegment(edge, k, x, z, probe);
+                if (probe.distance > edge.halfWidth) continue;
+                best = id; bestPriority = priority; bestEdge = edge.index;
+                lastArea = -1; lastEdge = edge.index;
             }
-        });
+        }
     }
     return best;
+}
+
+// Road surface at a position as a name with its source, or null offroad
+// (roadSurfaceIdAt with the result spelled out; for tools and tests)
+export function roadSurfaceAt(net: RoadNetwork, x: number, z: number): SurfaceHit | null {
+    const id = roadSurfaceIdAt(net, x, z);
+    if (id < 0) return null;
+    if (lastArea >= 0) return { surface: SURFACE_NAMES[id], area: net.areas[lastArea].id };
+    return { surface: SURFACE_NAMES[id], edge: net.edges[lastEdge].id };
 }
 
 export function isOnRoad(net: RoadNetwork, x: number, z: number): boolean {

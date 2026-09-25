@@ -38,10 +38,15 @@ function code(line: string): string {
     return at >= 0 ? line.slice(0, at) : line;
 }
 
+// Block comments blanked out, line breaks kept (so line numbers still fit)
+function withoutBlockComments(source: string): string {
+    return source.replace(/\/\*[\s\S]*?\*\//g, comment => comment.replace(/[^\n]/g, ' '));
+}
+
 describe('map modules use only exactly rounded arithmetic', () => {
     for (const file of FILES) {
         it(file, () => {
-            const lines = readFileSync(path.join(ROOT, file), 'utf8').split('\n');
+            const lines = withoutBlockComments(readFileSync(path.join(ROOT, file), 'utf8')).split('\n');
             const offending = lines
                 .map((line, i) => ({ line, n: i + 1 }))
                 .filter(({ line }) => APPROXIMATED.test(code(line)) && !line.includes('determinism:'))
@@ -57,5 +62,6 @@ describe('map modules use only exactly rounded arithmetic', () => {
         expect(flagged('const a = x ** 2;')).toBe(true);
         expect(flagged('const d = Math.sqrt(dx * dx + dz * dz); // not Math.hypot')).toBe(false);
         expect(flagged('const y = Math.round(Math.atan2(a, b) * 1e6) / 1e6; // determinism: rounded')).toBe(false);
+        expect(withoutBlockComments('/**\n * Math.hypot\n */\nx').split('\n').some(flagged)).toBe(false);
     });
 });
