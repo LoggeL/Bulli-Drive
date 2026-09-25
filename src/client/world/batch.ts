@@ -49,7 +49,7 @@ export class Batch {
         for (const key of Object.keys(g.attributes)) {
             if (!KEPT_ATTRIBUTES.has(key)) g.deleteAttribute(key);
         }
-        for (const key of Object.keys(g.morphAttributes)) delete g.morphAttributes[key];
+        g.morphAttributes = {};
         if (!g.attributes.normal) g.computeVertexNormals();
         if (matrix) g.applyMatrix4(matrix);
         const count = g.attributes.position.count;

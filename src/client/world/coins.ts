@@ -122,7 +122,7 @@ function showCoinAgain(coinId: number) {
     }
 }
 
-// 'time' is state.clock.elapsedTime in seconds; derive real dt from the delta
+// 'time' is state.clock.getElapsed() in seconds; derive real dt from the delta
 // between calls so the magnet pull is framerate-independent.
 let lastAnimTime: number | null = null;
 

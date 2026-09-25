@@ -181,8 +181,8 @@ function rowAverage(texture: THREE.DataTexture): THREE.DataTexture {
 }
 
 async function loadHdriTextures(): Promise<SkyTextures> {
-    const { RGBELoader } = await import('three/examples/jsm/loaders/RGBELoader.js');
-    const loader = new RGBELoader();
+    const { HDRLoader } = await import('three/examples/jsm/loaders/HDRLoader.js');
+    const loader = new HDRLoader();
     const base = `${import.meta.env.BASE_URL}textures/hdri/`;
     const [sky, ground] = await Promise.all([
         loader.loadAsync(`${base}qwantani_sunset_puresky_1k.hdr`),

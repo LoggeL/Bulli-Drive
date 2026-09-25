@@ -1,13 +1,14 @@
 import type { WebGLRenderer } from 'three';
 import type { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
-import transcoderPath from 'virtual:basis-transcoder';
 import type { ModelLoader } from './ModelCache.js';
 
 // GLTFLoader wired for the packed assets of tools/models and tools/textures:
 // EXT_meshopt_compression (meshopt decoder, WASM inlined in the module) and
-// KHR_texture_basisu (KTX2Loader + the Basis transcoder that vite.config.ts
-// serves under assets/basis-<hash>/). The loader modules are imported lazily,
-// so they load in parallel with the rest of the startup.
+// KHR_texture_basisu (KTX2Loader + the Basis transcoder of the installed
+// three.js: KTX2Loader points at it with new URL(..., import.meta.url), so
+// Vite emits basis_transcoder.js/.wasm content-hashed under assets/). The
+// loader modules are imported lazily, so they load in parallel with the rest
+// of the startup.
 
 let ktx2Loader: Promise<KTX2Loader> | null = null;
 
@@ -19,7 +20,6 @@ let ktx2Loader: Promise<KTX2Loader> | null = null;
 export function getKTX2Loader(renderer: WebGLRenderer): Promise<KTX2Loader> {
     ktx2Loader ??= import('three/examples/jsm/loaders/KTX2Loader.js').then(({ KTX2Loader }) => {
         const loader = new KTX2Loader();
-        loader.setTranscoderPath(transcoderPath);
         // Two workers are plenty for a handful of small car textures and keep
         // phones responsive during the splash screen
         loader.setWorkerLimit(2);

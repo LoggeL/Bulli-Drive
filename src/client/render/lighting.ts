@@ -90,12 +90,17 @@ export function setupLighting(scene: THREE.Scene, renderer: THREE.WebGLRenderer)
     renderer.toneMappingExposure = LOOK.exposure;
     const tier = renderTier = detectRenderTier(renderer);
     renderer.shadowMap.enabled = true;
-    // Soft shadows take more shadow map lookups per pixel than a CPU affords
-    renderer.shadowMap.type = tier === 'software' ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
+    // One filter for every tier (three r186 has no PCFSoftShadowMap): PCF
+    // with the smooth 3 x 3 kernel of patchShadowFilter. Its nine hardware
+    // lookups cost less than the 17 of r160's PCFShadowMap the software tier
+    // used before.
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     // Shader chunk patches, before any material compiles
     installGrade();
     installHeightFog();
+    patchShadowFilter();
     patchShadowChunks();
+    patchReflectionBend();
 
     initWorldTextures(renderer, LIGHTING.anisotropy[tier]);
     const noise = worldTexture('generated/world_noise');
@@ -223,8 +228,8 @@ function placeSun(focus: THREE.Vector3): void {
 const SHADOW_PATCH_MARKER = '// bulli: shadow edge fade';
 
 /**
- * Two changes to three's shadow lookup, patched into the shared shader chunks
- * before any material compiles:
+ * Two changes to three's lookup of the directional (sun) shadow, patched into
+ * the shared lights chunk before any material compiles:
  * - Shadows fade out towards the border of the shadow map instead of ending
  *   at a hard line (the only shadow-casting light is the sun).
  * - Materials that define BULLI_GRAZING_SHADOW_FADE (the terrain) drop the
@@ -233,29 +238,26 @@ const SHADOW_PATCH_MARKER = '// bulli: shadow edge fade';
  *   shadows on slopes facing away from the low sun become long, dark streaks
  *   on otherwise lit grass, and on distant, hazy hills they look like dark
  *   tree silhouettes hanging in the air.
+ * Both work on the result of getShadow() at its call site, so they do not
+ * depend on the filter (PCF, VSM, basic) that three compiles for it.
  */
-function patchShadowChunks(): void {
+export function patchShadowChunks(): boolean {
     const chunks = THREE.ShaderChunk as unknown as Record<string, string>;
-    if (chunks.shadowmap_pars_fragment.includes(SHADOW_PATCH_MARKER)) return;
+    if (chunks.lights_fragment_begin.includes(SHADOW_PATCH_MARKER)) return true;
 
-    // The first return in the chunk is the one of getShadow()
-    chunks.shadowmap_pars_fragment = chunks.shadowmap_pars_fragment.replace(
-        'return shadow;',
-        /* glsl */`${SHADOW_PATCH_MARKER}
-		vec2 bulliShadowEdge = min( shadowCoord.xy, 1.0 - shadowCoord.xy );
-		shadow = mix( 1.0, shadow, smoothstep( 0.0, ${LIGHTING.shadow.edgeFade.toFixed(3)}, min( bulliShadowEdge.x, bulliShadowEdge.y ) ) );
-		return shadow;`
-    );
-
-    const directional = 'directLight.color *= ( directLight.visible && receiveShadow ) ? getShadow( directionalShadowMap[ i ], directionalLightShadow.shadowMapSize, directionalLightShadow.shadowBias, directionalLightShadow.shadowRadius, vDirectionalShadowCoord[ i ] ) : 1.0;';
+    const directional = 'directLight.color *= ( directLight.visible && receiveShadow ) ? getShadow( directionalShadowMap[ i ], directionalLightShadow.shadowMapSize, directionalLightShadow.shadowIntensity, directionalLightShadow.shadowBias, directionalLightShadow.shadowRadius, vDirectionalShadowCoord[ i ] ) : 1.0;';
     if (!chunks.lights_fragment_begin.includes(directional)) {
-        console.warn('lighting: shadow chunk changed, grazing shadow fade disabled');
-        return;
+        console.warn('lighting: shadow chunk changed, shadow edge and grazing fade disabled');
+        return false;
     }
     chunks.lights_fragment_begin = chunks.lights_fragment_begin.replace(
         directional,
         /* glsl */`{
-			float bulliShadow = ( directLight.visible && receiveShadow ) ? getShadow( directionalShadowMap[ i ], directionalLightShadow.shadowMapSize, directionalLightShadow.shadowBias, directionalLightShadow.shadowRadius, vDirectionalShadowCoord[ i ] ) : 1.0;
+			${SHADOW_PATCH_MARKER}
+			float bulliShadow = ( directLight.visible && receiveShadow ) ? getShadow( directionalShadowMap[ i ], directionalLightShadow.shadowMapSize, directionalLightShadow.shadowIntensity, directionalLightShadow.shadowBias, directionalLightShadow.shadowRadius, vDirectionalShadowCoord[ i ] ) : 1.0;
+			vec2 bulliShadowUv = vDirectionalShadowCoord[ i ].xy / vDirectionalShadowCoord[ i ].w;
+			vec2 bulliShadowEdge = min( bulliShadowUv, 1.0 - bulliShadowUv );
+			bulliShadow = mix( 1.0, bulliShadow, smoothstep( 0.0, ${LIGHTING.shadow.edgeFade.toFixed(3)}, min( bulliShadowEdge.x, bulliShadowEdge.y ) ) );
 			#ifdef BULLI_GRAZING_SHADOW_FADE
 			bulliShadow = mix( 1.0, bulliShadow, smoothstep( 0.05, 0.3, dot( geometryNormal, directLight.direction ) ) );
 			bulliShadow = mix( bulliShadow, 1.0, smoothstep( ${LIGHTING.terrainShadowFade.start.toFixed(1)}, ${LIGHTING.terrainShadowFade.end.toFixed(1)}, length( vViewPosition ) ) );
@@ -263,6 +265,63 @@ function patchShadowChunks(): void {
 			directLight.color *= bulliShadow;
 		}`
     );
+    return true;
+}
+
+const SHADOW_FILTER_MARKER = '// bulli: 3x3 PCF';
+
+/**
+ * Replaces the five taps of three's PCF (a Vogel disk rotated per pixel by
+ * interleaved gradient noise) with a 3 x 3 grid of hardware-filtered
+ * lookups one texel apart. That is the penumbra of r160's PCFSoftShadowMap
+ * the look was tuned on: smooth, where the rotated disk leaves a grainy
+ * dither along every shadow edge (there is no temporal filter to hide it).
+ */
+export function patchShadowFilter(): boolean {
+    const chunks = THREE.ShaderChunk as unknown as Record<string, string>;
+    if (chunks.shadowmap_pars_fragment.includes(SHADOW_FILTER_MARKER)) return true;
+    // The sampling expression of getShadow() in the PCF branch
+    const vogel = /shadow = \(\s*texture\( shadowMap, vec3\( shadowCoord\.xy \+ vogelDiskSample\( 0, 5, phi \) \* radius, shadowCoord\.z \) \)[\s\S]*?\) \* 0\.2;/;
+    if (!vogel.test(chunks.shadowmap_pars_fragment)) {
+        console.warn('lighting: PCF shadow chunk changed, shadow filter not patched');
+        return false;
+    }
+    chunks.shadowmap_pars_fragment = chunks.shadowmap_pars_fragment.replace(vogel, /* glsl */`${SHADOW_FILTER_MARKER}
+				shadow = 0.0;
+				for ( int bx = - 1; bx <= 1; bx ++ ) {
+					for ( int by = - 1; by <= 1; by ++ ) {
+						shadow += texture( shadowMap, vec3( shadowCoord.xy + vec2( float( bx ), float( by ) ) * texelSize * shadowRadius, shadowCoord.z ) );
+					}
+				}
+				shadow *= 1.0 / 9.0;`);
+    return true;
+}
+
+// --- Reflection direction ------------------------------------------------------
+
+const REFLECTION_PATCH_MARKER = '// bulli: reflection bend';
+
+/**
+ * Keeps the bend of the environment reflection towards the normal at
+ * roughness^2, as in three r160 (r186 bends by roughness^4, as Filament).
+ * The look (look.ts) and the per-material envMapIntensity values were tuned
+ * on it: with the weaker bend, rough surfaces seen at a grazing angle mirror
+ * the bright horizon, so the palm crowns got a pale sheen and the road
+ * markings lost their sunset gloss.
+ */
+export function patchReflectionBend(): boolean {
+    const chunks = THREE.ShaderChunk as unknown as Record<string, string>;
+    if (chunks.envmap_physical_pars_fragment.includes(REFLECTION_PATCH_MARKER)) return true;
+    const bend = 'reflectVec = normalize( mix( reflectVec, normal, pow4( roughness ) ) );';
+    if (!chunks.envmap_physical_pars_fragment.includes(bend)) {
+        console.warn('lighting: environment reflection chunk changed, reflection bend not patched');
+        return false;
+    }
+    chunks.envmap_physical_pars_fragment = chunks.envmap_physical_pars_fragment.replace(
+        bend,
+        `${REFLECTION_PATCH_MARKER}\n\t\t\treflectVec = normalize( mix( reflectVec, normal, pow2( roughness ) ) );`
+    );
+    return true;
 }
 
 // --- Contact shadows --------------------------------------------------------

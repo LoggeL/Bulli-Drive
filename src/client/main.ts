@@ -173,7 +173,8 @@ function init() {
         showInteractionPrompt('TUNING ONLY IN THE SANDBOX (?sandbox=1&tune=1)');
     }
 
-    // Start Loop
+    // Start Loop (the first frame's dt counts from here, as with THREE.Clock)
+    state.clock.reset();
     requestAnimationFrame(animate);
 }
 
@@ -215,8 +216,11 @@ let lastDrawAt = -Infinity;
 function animate(frameTime: number) {
     requestAnimationFrame(animate);
     perfMonitor?.beginFrame();
-    const dt = state.clock.getDelta();
-    const time = state.clock.elapsedTime;
+    // performance.now() rather than the rAF timestamp: the same clock
+    // THREE.Clock read, so dt keeps its meaning
+    state.frameAt = performance.now();
+    const dt = state.clock.update(state.frameAt).getDelta();
+    const time = state.clock.getElapsed();
 
     if (state.bulli) {
         state.bulli.update(dt);
@@ -313,7 +317,7 @@ function animate(frameTime: number) {
     const drawNow = E2E_DRAW_INTERVAL_MS === 0 || frameTime - lastDrawAt >= E2E_DRAW_INTERVAL_MS;
     if (drawNow && state.renderer && state.scene && state.camera && !isWebGLContextLost()) {
         lastDrawAt = frameTime;
-        updateWorldShaders(state.clock.elapsedTime);
+        updateWorldShaders(state.clock.getElapsed());
         updateLighting();
         // Near geometry or impostor per palm, for the final camera
         updatePalms(state.camera);

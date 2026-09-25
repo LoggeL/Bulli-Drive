@@ -14,8 +14,7 @@ import { resetTuning } from '../../src/shared/sim/tuning.js';
 // import / reset reach the local car and the dummies. The sim of the
 // dummies (laps, rams, determinism) is tested in tests/shared/sim/sandbox.test.ts.
 
-// The KTX2 transcoder is a virtual module of the client build; nothing
-// here loads a model or a texture
+// Nothing here loads a model or a texture
 vi.mock('../../src/client/assets/gltfLoader.js', () => ({
     createGltfModelLoader: () => Promise.reject(new Error('no models in this test')),
     getKTX2Loader: () => null

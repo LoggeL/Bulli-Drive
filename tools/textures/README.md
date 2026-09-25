@@ -38,8 +38,8 @@ node tools/textures/build.mjs --force    # re-encode everything
   by the client or a requested one is missing (the street sign atlas and the
   diner interior were dropped for that reason).
 - `public/textures/hdri/*.hdr`: Victoria Sunset (IBL/reflections) and
-  Qwantani Sunset Pure Sky (sky), both 1k Radiance files; three r160's
-  KTX2Loader cannot read UASTC HDR. `fetch.mjs` also downloads Victoria at 2k
+  Qwantani Sunset Pure Sky (sky), both 1k Radiance files, loaded with three's
+  HDRLoader (r160's KTX2Loader could not read UASTC HDR). `fetch.mjs` also downloads Victoria at 2k
   for the Blender look-dev renders. The game server sends them Brotli or
   gzip compressed with a content ETag (`src/server/staticAssets.ts`); the
   hashed KTX2 and GLB URLs (`?v=<hash>`) are cached for a year.

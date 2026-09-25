@@ -39,9 +39,9 @@ test('loads, joins, drives and survives a lost WebGL context on the desktop', as
     const { page } = player;
     const transcoder: string[] = [];
     page.on('response', response => {
-        if (/\/assets\/basis-[0-9a-f]+\/basis_transcoder\.(js|wasm)$/.test(response.url()) && response.ok()) {
-            transcoder.push(response.url().split('/').pop()!);
-        }
+        // Emitted by Vite with a content hash: assets/basis_transcoder-<hash>.js/.wasm
+        const file = /\/assets\/(basis_transcoder)-[\w-]+\.(js|wasm)$/.exec(response.url());
+        if (file && response.ok()) transcoder.push(`${file[1]}.${file[2]}`);
     });
 
     // ---- Splash screen: the keys, the assets load meanwhile ----

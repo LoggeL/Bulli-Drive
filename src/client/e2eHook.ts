@@ -92,7 +92,7 @@ export interface BulliDebugSnapshot {
     // Combined keyboard/touch drive axes
     inputs: { throttle: number; steer: number };
     // performance.now() at which the game loop took its last frame's dt
-    // (THREE.Clock.getDelta), in ms; the dt the physics really got
+    // (state.clock.update), in ms; the dt the physics really got
     frameTime: number;
     // three.js counters of the last rendered frame
     // calls/triangles include the shadow pass, shadowCalls is its share
@@ -578,7 +578,7 @@ export function installE2EHook(): void {
                 local: state.bulli ? carSnapshot(state.bulli) : null,
                 remotes,
                 inputs: { throttle: state.inputs.throttle, steer: state.inputs.steer },
-                frameTime: state.clock.oldTime,
+                frameTime: state.frameAt,
                 render: {
                     frame: state.renderer?.info.render.frame ?? 0,
                     calls: state.renderer?.info.render.calls ?? 0,
