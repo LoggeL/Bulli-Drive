@@ -143,6 +143,12 @@ test('loads, joins, drives and survives a lost WebGL context on the desktop', as
         fov: 55
     });
     await waitFrames(page, 3);
+    // The budget of the software tier (docs/phase-3-design.md 10: 110 draw
+    // calls, 300 k triangles), without a shadow pass (A71)
+    const { render } = await snapshot(page);
+    expect(render.shadowCalls).toBe(0);
+    expect(render.calls).toBeLessThanOrEqual(110);
+    expect(render.triangles).toBeLessThanOrEqual(300_000);
     const colorBefore = await meanColor(page);
 
     const notice = page.locator('#context-lost');
