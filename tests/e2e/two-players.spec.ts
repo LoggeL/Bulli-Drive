@@ -212,7 +212,7 @@ test('two players see each other, and a head-on ram shows on both screens', asyn
     }, { timeout: 30_000 }).toBeLessThan(0.5);
 
     // Bob closes his tab: once the server lets his session go (grace time
-    // of the e2e server, 2 s) his car and his nametag leave Alice's screen
+    // of the e2e server, 3 s) his car and his nametag leave Alice's screen
     // instead of standing there frozen
     await expect(alice.page.locator('.nametag-name', { hasText: 'E2E Bob Ram' })).toHaveCount(1);
     await bob.page.close();
