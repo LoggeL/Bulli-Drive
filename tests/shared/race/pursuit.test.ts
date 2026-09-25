@@ -150,6 +150,25 @@ describe('StuckWatch', () => {
         expect(going.backoffCount).toBeGreaterThan(2);
     });
 
+    it('keeps the stuck count while the car creeps (1.2 to 4 m/s), and starts it over above 4 m/s', () => {
+        // Stuck for 60 ticks, then creeping at 2 m/s for 30 ticks, then stuck
+        // again: the back-off comes after 90 stuck ticks in all, at tick 120;
+        // at 5 m/s in between the count starts over (back-off at tick 180)
+        function backoffAt(between: number): number {
+            const watch = new StuckWatch();
+            const s = createVehicleState();
+            for (let t = 0; t < 300; t++) {
+                const o = input();
+                if (watch.override(o) !== 'drive') return t;
+                o.throttle = 255;
+                watch.watch(s, t >= 60 && t < 90 ? between : 0, o);
+            }
+            return -1;
+        }
+        expect(backoffAt(2)).toBe(STUCK_TICKS + 30);
+        expect(backoffAt(5)).toBe(90 + STUCK_TICKS);
+    });
+
     it('counts a forced reset once while it is held, and ends a back-off for it', () => {
         const watch = new StuckWatch();
         stuckFor(watch, STUCK_TICKS + 3);

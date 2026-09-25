@@ -174,10 +174,11 @@ describe('zoneFence', () => {
         expect(zoneFence({ minX: 0, minZ: 0, maxX: 100, maxZ: 50 }, none)).toEqual([
             [[0, 0], [0, 50]], [[0, 50], [100, 50]], [[100, 50], [100, 0]], [[100, 0], [0, 0]]
         ]);
-        // A 20 × 10 m building across the side z = 50 from x = 40 to 60: the
-        // fence stops at its walls; steps have their middle at x + 0.5
+        // A building across the side z = 50 from x = 40.3 to 59.7: the fence
+        // stops within a 1 m step of its walls (a step is left out when its
+        // middle, x + 0.5, lies in the building: 40.5 and 59.5 do)
         const walls = new BoxIndex();
-        walls.add({ x: 50, z: 50, hw: 10, hd: 5, ux: 0, uz: 1 });
+        walls.add({ x: 50, z: 50, hw: 9.7, hd: 5, ux: 0, uz: 1 });
         const lines = zoneFence({ minX: 0, minZ: 0, maxX: 100, maxZ: 50 }, walls);
         expect(lines).toEqual([
             [[0, 0], [0, 50]], [[0, 50], [40, 50]], [[60, 50], [100, 50]], [[100, 50], [100, 0]], [[100, 0], [0, 0]]

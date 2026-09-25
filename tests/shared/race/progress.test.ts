@@ -431,7 +431,8 @@ describe('resetBeforeNextGate (10.3)', () => {
         // the next gate G2 at (100, 50), s = 250
         crossSquareGate(p, course, 0, START + 1);
         crossSquareGate(p, course, 1, START + 2);
-        p.lineIndex = 1;
+        // Tracked on the line (any index counts, the first one too)
+        p.lineIndex = 0;
         p.sLine = 230;
         const s = createVehicleState();
         // The sim's reset took it to the nearest leg, x = 0 at z = 60 (s = 60):

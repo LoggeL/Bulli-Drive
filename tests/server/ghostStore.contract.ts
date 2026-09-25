@@ -75,6 +75,16 @@ export function ghostStoreContract(name: string, make: MakeStore): void {
             // Nothing to keep: everything goes
             expect(store.retain([])).toBe(1);
             expect(store.best(newMap)).toBeNull();
+            // A record whose player's best fell out of the personal list
+            // still counts: a's record, then b and c push a out (2 kept)
+            const small = make(() => new Uint8Array(13), 2);
+            small.submit(ghostRun('a', 1400));
+            small.submit(ghostRun('b', 1500));
+            small.submit(ghostRun('c', 1600));
+            expect(small.personalBest(KEY, 'a')).toBeNull();
+            expect(small.best(KEY)!.playerKey).toBe('a');
+            expect(small.retain([])).toBe(3);
+            expect(small.best(KEY)).toBeNull();
         });
 
         it('keeps personal bests up to the limit, dropping the least recently used', () => {
