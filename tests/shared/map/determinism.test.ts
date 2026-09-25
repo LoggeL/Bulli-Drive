@@ -16,14 +16,18 @@ import { describe, expect, it } from 'vitest';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 
 const FILES = [
+    'src/shared/map/buildings.ts',
     'src/shared/map/corridor.ts',
     'src/shared/map/geometry.ts',
     'src/shared/map/heightfield.ts',
+    'src/shared/map/mapData.ts',
+    'src/shared/map/plants.ts',
     'src/shared/map/rails.ts',
     'src/shared/map/roadNetwork.ts',
     'src/shared/map/roadSchema.ts',
     'src/shared/map/routeToTrack.ts',
     'src/shared/map/spline.ts',
+    'src/shared/map/structures.ts',
     'src/shared/map/trackRoute.ts',
     'tools/map/bakeSources.ts',
     'tools/map/bakeTerrain.ts',

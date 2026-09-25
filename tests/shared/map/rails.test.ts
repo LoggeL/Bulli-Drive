@@ -105,6 +105,32 @@ function distanceToSegment(x: number, z: number, c: SegmentCollider): number {
     return Math.hypot(x - c.ax - t * ex, z - c.az - t * ez);
 }
 
+describe('rails at junctions', () => {
+    it('keep out of a junction: from its trim radius plus half the road width plus 2 m, on both ends', () => {
+        // A crossing at (100, 0): the east-west road through it and a road to the north
+        const net = buildRoadNetwork(network(
+            [node('w', 0, 0), node('x', 100, 0, 'junction'), node('e', 200, 0), node('n', 100, -100)],
+            [
+                edge('west', 'w', 'x', [], { rails: [{ side: 'left', from: 0, to: -1, kind: 'wbeam' }] }),
+                edge('east', 'x', 'e', [], { rails: [{ side: 'left', from: 0, to: -1, kind: 'wbeam' }] }),
+                edge('north', 'x', 'n')
+            ]
+        ));
+        // Trim radius 5 + 2 (half the widest road plus 2 m), half the width 5, plus 2: 14 m
+        const west = railColliders(net.edgeById.get('west')!, { side: 'left', from: 0, to: -1, kind: 'wbeam' }, net);
+        expect(Math.min(...west.map(c => c.ax))).toBeCloseTo(0, 6);
+        expect(Math.max(...west.map(c => c.bx))).toBeCloseTo(100 - 14, 6);
+        const east = railColliders(net.edgeById.get('east')!, { side: 'left', from: 0, to: -1, kind: 'wbeam' }, net);
+        expect(Math.min(...east.map(c => c.ax))).toBeCloseTo(100 + 14, 6);
+        expect(Math.max(...east.map(c => c.bx))).toBeCloseTo(200, 6);
+        // Without the network (the look of a single edge) the rail runs to the node
+        expect(Math.max(...railColliders(net.edgeById.get('west')!, { side: 'left', from: 0, to: -1, kind: 'wbeam' }).map(c => c.bx))).toBeCloseTo(100, 6);
+        // A rail that lies within the clip entirely is left out
+        expect(railColliders(net.edgeById.get('east')!, { side: 'left', from: 0, to: 10, kind: 'wbeam' }, net)).toEqual([]);
+        expect(networkRailColliders(net)).toEqual([...west, ...east]);
+    });
+});
+
 describe('area railings', () => {
     const area = (polygon: [number, number][], rails: RoadArea['rails'] = []): RoadArea =>
         ({ id: 'deck', polygon, surface: 'wood', curb: false, connects: [], rails });

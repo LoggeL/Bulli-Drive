@@ -46,6 +46,9 @@ export interface RoadNetwork {
     areaBounds: Float64Array;
     // Largest half width of any edge (search radius of the surface query)
     maxHalfWidth: number;
+    // Largest corridor half width: drivable half width plus the wider
+    // sidewalk and the shoulder (search radius of insideCorridor)
+    maxCorridor: number;
     // Findings that do not stop the build (joints that are not C1)
     issues: string[];
 }
@@ -149,8 +152,12 @@ export function buildRoadNetwork(file: RoadNetworkFile): RoadNetwork {
         }
     }
 
-    let maxHalfWidth = 0;
-    for (const edge of edges) maxHalfWidth = Math.max(maxHalfWidth, edge.halfWidth);
+    let maxHalfWidth = 0, maxCorridor = 0;
+    for (const edge of edges) {
+        maxHalfWidth = Math.max(maxHalfWidth, edge.halfWidth);
+        const p = edge.profile;
+        maxCorridor = Math.max(maxCorridor, edge.halfWidth + Math.max(p.sidewalk.left, p.sidewalk.right) + p.shoulder);
+    }
     const areaBounds = new Float64Array(4 * file.areas.length);
     file.areas.forEach((area, i) => {
         let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
@@ -164,7 +171,7 @@ export function buildRoadNetwork(file: RoadNetworkFile): RoadNetwork {
     });
     return {
         mapId: file.mapId, nodes, edges, areas: file.areas, nodeById, edgeById,
-        index: new SampleIndex(edges), areaBounds, maxHalfWidth, issues
+        index: new SampleIndex(edges), areaBounds, maxHalfWidth, maxCorridor, issues
     };
 }
 
@@ -480,6 +487,39 @@ export function roadSurfaceAt(net: RoadNetwork, x: number, z: number): SurfaceHi
     if (id < 0) return null;
     if (lastArea >= 0) return { surface: SURFACE_NAMES[id], area: net.areas[lastArea].id };
     return { surface: SURFACE_NAMES[id], edge: net.edges[lastEdge].id };
+}
+
+/**
+ * True when (x, z) lies within `margin` of a road's corridor: its drivable
+ * width, the sidewalk on that side and the shoulder (5.2). For placing
+ * buildings and plants beside the roads (buildings.ts, plants.ts); not for
+ * the sim tick. Allocates nothing.
+ */
+export function insideCorridor(net: RoadNetwork, x: number, z: number, margin: number): boolean {
+    if (net.edges.length === 0) return false;
+    const index = net.index;
+    const range = scratchRange;
+    const probe = scratchProjection;
+    cellRange(index, x, z, net.maxCorridor + margin + 1, range);
+    for (let cz = range[2]; cz <= range[3]; cz++) {
+        for (let cx = range[0]; cx <= range[1]; cx++) {
+            const cell = cz * index.cols + cx;
+            for (let slot = index.cellStart[cell]; slot < index.cellStart[cell + 1]; slot++) {
+                const edge = net.edges[index.edgeOf[slot]];
+                const k = index.sampleOf[slot];
+                if (k + 1 >= edge.samples.length) continue;
+                projectSegment(edge, k, x, z, probe);
+                const p = edge.profile;
+                if (probe.distance >= edge.halfWidth + Math.max(p.sidewalk.left, p.sidewalk.right) + p.shoulder + margin) continue;
+                // Left of the edge direction: the left sidewalk
+                const a = edge.samples[k];
+                const left = probe.dx * a.tz - probe.dz * a.tx > 0;
+                const reach = edge.halfWidth + (left ? p.sidewalk.left : p.sidewalk.right) + p.shoulder + margin;
+                if (probe.distance < reach) return true;
+            }
+        }
+    }
+    return false;
 }
 
 export function isOnRoad(net: RoadNetwork, x: number, z: number): boolean {

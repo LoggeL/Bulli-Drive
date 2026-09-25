@@ -67,7 +67,7 @@ export function previewData(mapId: string) {
             return { name, x: p.x, z: p.z, angle: Math.atan2(p.tz, p.tx) };
         }),
         rails: [
-            ...net.edges.flatMap(e => (e.def.rails ?? []).map(r => ({ kind: r.kind, points: every(railLine(e, r), 2).map(round) }))),
+            ...net.edges.flatMap(e => (e.def.rails ?? []).map(r => ({ kind: r.kind, points: every(railLine(e, r, net), 2).map(round) }))),
             ...net.areas.flatMap(a => (a.rails ?? []).map(r => ({ kind: r.kind, points: areaRailLine(a, r).map(round) })))
         ],
         // Jump ramps: the map's (free roam, party) and every track's

@@ -7,8 +7,9 @@ import { fingerprint, type FingerprintInput } from './fingerprint.js';
 
 // Bit-identical map data in every engine (docs/phase-3-design.md, E4, 5.3
 // and A28): the fingerprint of heightAt, the road samples, the rail
-// colliders, the TrackDefs and the whole bake, computed in Node and in the
-// browser engine of the project (WebKit for Safari and iOS, Chromium).
+// colliders, the TrackDefs, the whole bake and the world hash of the map
+// data (M3), computed in Node and in the browser engine of the project
+// (WebKit for Safari and iOS, Chromium).
 // worldHash and trackHash are compared strictly between client and server;
 // a stray last bit in one engine would send its players into a reload loop.
 
@@ -19,7 +20,7 @@ const text = (name: string) => readFileSync(path.join(MAP, name), 'utf8');
 function input(): FingerprintInput {
     return {
         roads: text('roads.json'), map: text('map.json'), zones: text('zones.json'), base: text('base.json'),
-        tracks: text('tracks.json'),
+        tracks: text('tracks.json'), pois: text('pois.json'),
         terrain: new Uint8Array(readFileSync(path.join(ROOT, 'public/maps/bulli-bay/terrain.bhf')))
     };
 }

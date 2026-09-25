@@ -265,7 +265,7 @@ export class WorldScene {
         const byKind = new Map<string, number[]>();
         for (const edge of net.edges) {
             for (const rail of edge.def.rails ?? []) {
-                const line = railLine(edge, rail);
+                const line = railLine(edge, rail, net);
                 const list = byKind.get(rail.kind) ?? [];
                 for (let i = 0; i + 1 < line.length; i++) {
                     const [ax, az] = line[i], [bx, bz] = line[i + 1];

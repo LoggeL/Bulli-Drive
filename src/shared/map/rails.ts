@@ -9,7 +9,7 @@
 // stray last bit cannot reach the hash.
 
 import type { Vec2 } from './geometry.js';
-import type { RoadEdgeData, RoadNetwork } from './roadNetwork.js';
+import { junctionRadius, type RoadEdgeData, type RoadNetwork } from './roadNetwork.js';
 import type { AreaRail, RailKind, RailRange, RoadArea } from './roadSchema.js';
 import { leftNormal, length2, pointAt } from './spline.js';
 
@@ -39,16 +39,38 @@ export const RAIL_TOPS: Record<RailKind, number> = {
     fence: Infinity
 };
 
-// Station range of a rail on its edge (to = -1: up to the end)
-export function railRange(edge: RoadEdgeData, rail: Pick<RailRange, 'from' | 'to'>): [number, number] {
-    const to = rail.to < 0 ? edge.length : Math.min(rail.to, edge.length);
-    return [Math.min(rail.from, to), to];
+// A rail keeps out of a junction: it starts this far beyond the junction's
+// trim radius plus half the road width, where a route turning through the
+// junction has left the corner (its transition begins half a road width
+// before the trim, trackRoute.ts)
+export const RAIL_JUNCTION_GAP = 2;
+
+// How far into the edge a junction at its start or end reaches for rails
+export function junctionRailClip(net: RoadNetwork, edge: RoadEdgeData, atStart: boolean): number {
+    const node = net.nodes[atStart ? edge.from : edge.to];
+    if (node.def.kind !== 'junction') return 0;
+    return junctionRadius(net, node) + edge.halfWidth + RAIL_JUNCTION_GAP;
+}
+
+// Station range of a rail on its edge (to = -1: up to the end). With the
+// network, a rail stops short of the junctions at the edge's ends
+// (junctionRailClip); a rail left without length is [to, to].
+export function railRange(edge: RoadEdgeData, rail: Pick<RailRange, 'from' | 'to'>, net?: RoadNetwork): [number, number] {
+    let to = rail.to < 0 ? edge.length : Math.min(rail.to, edge.length);
+    let from = Math.min(rail.from, to);
+    if (net) {
+        from = Math.max(from, junctionRailClip(net, edge, true));
+        to = Math.min(to, edge.length - junctionRailClip(net, edge, false));
+        if (from > to) from = to;
+    }
+    return [from, to];
 }
 
 // The rail's line: the edge's samples between from and to, shifted to the
-// side by half the road width plus the offset
-export function railLine(edge: RoadEdgeData, rail: RailRange): Vec2[] {
-    const [from, to] = railRange(edge, rail);
+// side by half the road width plus the offset (with the network: clear of
+// the junctions)
+export function railLine(edge: RoadEdgeData, rail: RailRange, net?: RoadNetwork): Vec2[] {
+    const [from, to] = railRange(edge, rail, net);
     const lateral = (rail.side === 'left' ? 1 : -1) * (edge.halfWidth + (rail.offset ?? DEFAULT_RAIL_OFFSET));
     const stations = [from];
     for (const sample of edge.samples) if (sample.s > from && sample.s < to) stations.push(sample.s);
@@ -106,8 +128,10 @@ function segmentsAlong(line: readonly Vec2[], top: number): SegmentCollider[] {
     }));
 }
 
-export function railColliders(edge: RoadEdgeData, rail: RailRange): SegmentCollider[] {
-    return segmentsAlong(railLine(edge, rail), RAIL_TOPS[rail.kind]);
+export function railColliders(edge: RoadEdgeData, rail: RailRange, net?: RoadNetwork): SegmentCollider[] {
+    const [from, to] = railRange(edge, rail, net);
+    if (to <= from) return [];
+    return segmentsAlong(railLine(edge, rail, net), RAIL_TOPS[rail.kind]);
 }
 
 // ---- Railings along areas (pier, lookouts, quays) ----
@@ -196,11 +220,12 @@ export function areaRailColliders(area: RoadArea, rail: AreaRail): SegmentCollid
     return out;
 }
 
-// All rails of the network: edge by edge in file order, then the areas'
+// All rails of the network: edge by edge in file order (clear of the
+// junctions), then the areas'
 export function networkRailColliders(net: RoadNetwork): SegmentCollider[] {
     const out: SegmentCollider[] = [];
     for (const edge of net.edges) {
-        for (const rail of edge.def.rails ?? []) out.push(...railColliders(edge, rail));
+        for (const rail of edge.def.rails ?? []) out.push(...railColliders(edge, rail, net));
     }
     for (const area of net.areas) {
         for (const rail of area.rails ?? []) out.push(...areaRailColliders(area, rail));

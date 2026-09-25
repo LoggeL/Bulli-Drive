@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildWorldColliders, cityColliders, rockColliders, treeColliders } from '../../src/shared/world/colliderGen.js';
 import { COLLIDER_TOPS, type ColliderInput } from '../../src/shared/world/colliders.js';
 import { blockCenter, isInCityArea, isOnRoad, PLAZA_BLOCK } from '../../src/shared/world/cityGen.js';
-import { canonicalStringify, createMapData, fnv1a, worldHash } from '../../src/shared/world/mapData.js';
+import { canonicalStringify, fnv1a, worldHash } from '../../src/shared/world/mapData.js';
 import { insideCitySceneryExclusion, PROP_RADII, rockPlacements } from '../../src/shared/world/props.js';
 import { generateWorld } from '../../src/shared/world/worldGen.js';
 import {
@@ -11,7 +11,7 @@ import {
 
 // The static colliders both sides build (docs/phase-1b-design.md, 6). The
 // golden hash (worldGolden.ts) pins the ordered list: count, order and
-// every dimension. It only changes on purpose, together with MAP_VERSION.
+// every dimension. It only changes on purpose.
 
 describe('buildWorldColliders', () => {
     const world = generateWorld();
@@ -83,20 +83,19 @@ describe('buildWorldColliders', () => {
     });
 });
 
-describe('createMapData', () => {
-    const map = createMapData();
+describe('the old city\'s world hash', () => {
+    const world = generateWorld();
+    const colliders = buildWorldColliders(world);
 
-    it('holds the shared collider list and a sim world built from it', () => {
-        expect(map.colliders).toHaveLength(GOLDEN_COLLIDER_COUNT);
-        expect(collidersSha(map.colliders)).toBe(GOLDEN_COLLIDERS_SHA);
-        expect(map.simWorld.colliders).toHaveLength(map.colliders.length);
-        expect(map.simWorld.roads).not.toBeNull();
+    it('holds the shared collider list', () => {
+        expect(colliders).toHaveLength(GOLDEN_COLLIDER_COUNT);
+        expect(collidersSha(colliders)).toBe(GOLDEN_COLLIDERS_SHA);
     });
 
     it('hashes world and colliders to the golden world hash', () => {
-        expect(map.worldHash).toBe(GOLDEN_WORLD_HASH);
-        expect(worldHash(map.world, map.colliders)).toBe(map.worldHash);
-        expect(createMapData(1).worldHash).not.toBe(map.worldHash);
+        expect(worldHash(world, colliders)).toBe(GOLDEN_WORLD_HASH);
+        const other = generateWorld(1);
+        expect(worldHash(other, buildWorldColliders(other))).not.toBe(GOLDEN_WORLD_HASH);
     });
 
     it('serializes canonically', () => {

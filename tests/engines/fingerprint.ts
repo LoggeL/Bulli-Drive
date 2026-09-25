@@ -1,8 +1,10 @@
 // Fingerprint of everything the map computes that must come out
 // bit-identical in every JavaScript engine (docs/phase-3-design.md, E4 and
 // 5.3): heightAt, the road samples, the rail colliders, the tracks'
-// TrackDefs and the whole bake. Runs in Node (the test) and, bundled, in
-// WebKit and Chromium (map-determinism.spec.ts); the two must be equal.
+// TrackDefs, the whole bake and the map's worldHash (buildings, plants,
+// landmarks, fences: what client and server compare in 'roomState'). Runs
+// in Node (the test) and, bundled, in WebKit and Chromium
+// (map-determinism.spec.ts); the two must be equal.
 
 import { BULLI_BAY_GRID, decodeHeightfield, heightAt } from '../../src/shared/map/heightfield.js';
 import { parseTracksFile } from '../../src/shared/map/mapFiles.js';
@@ -12,6 +14,8 @@ import { parseRoadNetwork } from '../../src/shared/map/roadSchema.js';
 import { routeToTrack } from '../../src/shared/map/routeToTrack.js';
 import { resolveRoute } from '../../src/shared/map/trackRoute.js';
 import { canonicalStringify, fnv1a } from '../../src/shared/world/mapData.js';
+import { createMapData } from '../../src/shared/map/mapData.js';
+import { parseMapSources } from '../../src/shared/map/mapSources.js';
 import { bakeSources } from '../../tools/map/bakeSources.js';
 
 export interface FingerprintInput {
@@ -20,6 +24,7 @@ export interface FingerprintInput {
     zones: string;
     base: string;
     tracks: string;
+    pois: string;
     terrain: Uint8Array;
 }
 
@@ -65,7 +70,12 @@ export function fingerprint(input: FingerprintInput): Record<string, string> {
         roads: encoder.encode(input.roads), map: encoder.encode(input.map),
         zones: encoder.encode(input.zones), base: encoder.encode(input.base)
     });
+    const map = createMapData(parseMapSources({
+        roads: JSON.parse(input.roads), map: JSON.parse(input.map), zones: JSON.parse(input.zones),
+        pois: JSON.parse(input.pois), tracks: JSON.parse(input.tracks)
+    }), hf);
     return {
+        world: map.worldHash,
         heights: fnvDoubles(heights),
         samples: fnvDoubles(samples),
         rails: fnv1a(canonicalStringify(networkRailColliders(net))),

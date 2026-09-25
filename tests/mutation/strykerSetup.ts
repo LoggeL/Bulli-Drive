@@ -39,7 +39,13 @@ const SKIPPED_TESTS = new Set([
     // (tests/tools/map/bakeTerrain.test.ts, corridor.test.ts); these stay
     // the byte-exact regression lock of the normal run.
     'runBake > bakes the committed source texts into the committed terrain.bhf byte for byte',
-    'runBake > reports elevation pins the grade limit cannot reach'
+    'runBake > reports elevation pins the grade limit cannot reach',
+    // Whole-map checks of Bulli Bay's world (three map builds, and every
+    // building's footprint against the corridors: about 1 s each, far
+    // longer instrumented). The rules have their own tests on small maps
+    // in the same file (tests/shared/map/mapData.test.ts).
+    'Bulli Bay > builds the same world twice, and a moved coin or height changes its hash',
+    'Bulli Bay > keeps every building clear of the corridors and areas, in its zone, on level dry ground, apart from the others'
 ]);
 
 beforeEach(context => {

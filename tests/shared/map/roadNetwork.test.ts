@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-    buildRoadNetwork, DEFAULT_ROUNDABOUT_RADIUS, isOnRoad, junctionRadius, nearestRoad, roadChains,
+    buildRoadNetwork, DEFAULT_ROUNDABOUT_RADIUS, insideCorridor, isOnRoad, junctionRadius, nearestRoad, roadChains,
     roadSurfaceAt, roadSurfaceIdAt, type RoadHit
 } from '../../../src/shared/map/roadNetwork.js';
 import { SURFACE } from '../../../src/shared/map/types.js';
@@ -266,6 +266,28 @@ describe('roadSurfaceAt and isOnRoad', () => {
         ));
         expect(roadSurfaceAt(wide, 50, 229)).toEqual({ surface: 'asphalt', edge: 'boulevard' });
         expect(roadSurfaceAt(wide, 50, 231)).toBeNull();
+    });
+});
+
+describe('insideCorridor', () => {
+    // A road heading east, 10 m wide, 2 m sidewalk on the left (north),
+    // 4 m on the right, 1 m shoulder
+    const net = buildRoadNetwork(network([node('w', 0, 0), node('e', 100, 0)], [edge('main', 'w', 'e')], {
+        profiles: { road: { ...PROFILE, sidewalk: { left: 2, right: 4 }, shoulder: 1 } }
+    }));
+
+    it('reaches over the road, the sidewalk of that side and the shoulder, plus the margin', () => {
+        // North (left): 5 + 2 + 1 = 8 m
+        expect(insideCorridor(net, 50, -7.99, 0)).toBe(true);
+        expect(insideCorridor(net, 50, -8.01, 0)).toBe(false);
+        // South (right): 5 + 4 + 1 = 10 m
+        expect(insideCorridor(net, 50, 9.99, 0)).toBe(true);
+        expect(insideCorridor(net, 50, 10.01, 0)).toBe(false);
+        expect(insideCorridor(net, 50, 10.5, 1)).toBe(true);
+        // Beyond the ends of the road only within the reach of its end
+        expect(insideCorridor(net, 105, 0, 0)).toBe(true);
+        expect(insideCorridor(net, 111, 0, 0)).toBe(false);
+        expect(net.maxCorridor).toBe(10);
     });
 });
 

@@ -22,13 +22,14 @@ export function versionedAssetCache() {
     };
 }
 
-// The sky HDRIs (public/textures/hdri, 2.7 MB of Radiance .hdr) are not in
-// any compression list (Express sends application/octet-stream, the CDN
-// passes that through unchanged), yet Radiance RLE packs to about 60 % with
-// Brotli. They are compressed once at startup, off the event loop (zlib's
-// thread pool), and served with a content ETag, so a deploy that leaves
-// them unchanged does not make every client download them again. Until the
-// compressed copies exist, the raw file goes out.
+// Binary assets that no CDN or Express compresses on its own: the sky
+// HDRIs (public/textures/hdri, 2.7 MB of Radiance .hdr, about 60 % with
+// Brotli) and the maps' baked terrain (public/maps/<map>/terrain.bhf, 3 MB,
+// about 10 % with Brotli; docs/phase-3-design.md, E13 and A37). They are
+// compressed once at startup, off the event loop (zlib's thread pool), and
+// served with a content ETag, so a deploy that leaves them unchanged does
+// not make every client download them again. Until the compressed copies
+// exist, the raw file goes out.
 
 interface Entry {
     etag: string;
@@ -38,11 +39,29 @@ interface Entry {
 }
 
 export const HDR_CONTENT_TYPE = 'image/vnd.radiance';
+export const BHF_CONTENT_TYPE = 'application/octet-stream';
 
-export function hdriMiddleware(directory: string) {
+// Relative paths (with /) of the files under directory with the extension
+function filesUnder(directory: string, extension: string, prefix = ''): string[] {
+    if (!fs.existsSync(directory)) return [];
+    const out: string[] = [];
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+        const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+        if (entry.isDirectory()) out.push(...filesUnder(path.join(directory, entry.name), extension, relative));
+        else if (entry.name.endsWith(extension)) out.push(relative);
+    }
+    return out;
+}
+
+/**
+ * Serves the files with the extension under directory (and its
+ * subdirectories) compressed with Brotli or Gzip as the request accepts,
+ * with the content type and a content ETag. A Cache-Control set before
+ * (versionedAssetCache for a hashed URL) stays; otherwise a day.
+ */
+export function compressedAssets(directory: string, extension: string, contentType: string) {
     const entries = new Map<string, Entry>();
-    const names = fs.existsSync(directory) ? fs.readdirSync(directory).filter(name => name.endsWith('.hdr')) : [];
-    for (const name of names) {
+    for (const name of filesUnder(directory, extension)) {
         const raw = fs.readFileSync(path.join(directory, name));
         const entry: Entry = { etag: `"${crypto.createHash('sha1').update(raw).digest('hex').slice(0, 20)}"`, raw };
         entries.set(name, entry);
@@ -56,8 +75,8 @@ export function hdriMiddleware(directory: string) {
         if (request.method !== 'GET' && request.method !== 'HEAD') return next();
         const entry = entries.get(request.path.replace(/^\//, ''));
         if (!entry) return next();
-        response.setHeader('Content-Type', HDR_CONTENT_TYPE);
-        response.setHeader('Cache-Control', 'public, max-age=86400');
+        response.setHeader('Content-Type', contentType);
+        if (!response.getHeader('Cache-Control')) response.setHeader('Cache-Control', 'public, max-age=86400');
         response.setHeader('ETag', entry.etag);
         response.setHeader('Vary', 'Accept-Encoding');
         if (request.headers['if-none-match'] === entry.etag) {
@@ -77,4 +96,12 @@ export function hdriMiddleware(directory: string) {
         if (request.method === 'HEAD') response.end();
         else response.end(body);
     };
+}
+
+export function hdriMiddleware(directory: string) {
+    return compressedAssets(directory, '.hdr', HDR_CONTENT_TYPE);
+}
+
+export function terrainMiddleware(directory: string) {
+    return compressedAssets(directory, '.bhf', BHF_CONTENT_TYPE);
 }
