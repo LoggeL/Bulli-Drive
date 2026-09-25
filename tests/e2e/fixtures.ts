@@ -84,7 +84,7 @@ export const test = base.extend<Fixtures>({
 
 /**
  * For the paths that are about the flow, not the picture (touch controls,
- * the race, missing assets): the page draws 5 frames a second while the
+ * the race, missing assets, a server restart): the page draws 5 frames a second while the
  * game, the netcode and the HUD run every frame (flags.ts). Software WebGL
  * drawing every frame took half the CPU of the E2E job on a 4-core runner;
  * the picture is measured in the render job (tests/e2e-render) and in the
@@ -183,33 +183,13 @@ export async function waitFrames(page: Page, frames: number): Promise<void> {
 }
 
 /**
- * Mean colour of the rendered view without the HUD, decoded in the page
- * (no image library).
+ * Mean colour of the next frame the game draws, without the HUD (the
+ * canvas's drawing buffer, read back in the page right after the render).
  */
-export async function meanColor(page: Page): Promise<[number, number, number]> {
-    await page.addStyleTag({ content: 'body.mean-color-shot > *:not(canvas) { visibility: hidden !important; }' });
-    await page.evaluate(() => document.body.classList.add('mean-color-shot'));
-    const png = (await page.screenshot()).toString('base64');
-    await page.evaluate(() => document.body.classList.remove('mean-color-shot'));
-    return page.evaluate(async data => {
-        const image = new Image();
-        image.src = `data:image/png;base64,${data}`;
-        await image.decode();
-        const canvas = document.createElement('canvas');
-        canvas.width = image.width;
-        canvas.height = image.height;
-        const ctx = canvas.getContext('2d')!;
-        ctx.drawImage(image, 0, 0);
-        const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-        const sum = [0, 0, 0];
-        for (let i = 0; i < pixels.length; i += 4) {
-            sum[0] += pixels[i];
-            sum[1] += pixels[i + 1];
-            sum[2] += pixels[i + 2];
-        }
-        const n = pixels.length / 4;
-        return [sum[0] / n, sum[1] / n, sum[2] / n] as [number, number, number];
-    }, png);
+export function meanColor(page: Page): Promise<[number, number, number]> {
+    return page.evaluate(() => (window as unknown as {
+        __bulliDebug: { nextFrameMeanColor(): Promise<[number, number, number]> };
+    }).__bulliDebug.nextFrameMeanColor());
 }
 
 /** Whether the element under the middle of `selector` belongs to it (nothing covers it). */
