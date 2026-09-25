@@ -65,9 +65,11 @@ test('the phone tier stays within 150 draw calls and 500 k triangles including s
 
     for (const view of VIEWS) {
         await place(page, view);
-        // The kit cells round a new spot are merged over a few frames
+        // The kit cells round a new spot are merged over a few frames; once
+        // they are ready the counts settle within two frames (measured at
+        // all three views), four leave room
         await expect.poll(async () => (await page.evaluate(() => (window as unknown as { __bulliDebug: WorldHook }).__bulliDebug.mapWorldStats()))?.kit).toBe('ready');
-        await waitFrames(page, 12);
+        await waitFrames(page, 4);
         const { render } = await snapshot(page);
         const stats = await page.evaluate(() => (window as unknown as { __bulliDebug: WorldHook }).__bulliDebug.mapWorldStats());
         expect(stats?.detail).toBe('low');
@@ -77,7 +79,7 @@ test('the phone tier stays within 150 draw calls and 500 k triangles including s
     }
     // Palms beyond 110 m (the phone tier's impostor distance) are cards
     await place(page, MAIN_STREET);
-    await waitFrames(page, 12);
+    await waitFrames(page, 4);
     const { palms } = await page.evaluate(() => (window as unknown as { __bulliDebug: WorldHook }).__bulliDebug.worldInfo());
     expect(palms?.impostors).toBeGreaterThan(0);
     expect(palms?.near).toBeGreaterThan(0);
