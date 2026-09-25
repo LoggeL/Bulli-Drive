@@ -5,8 +5,11 @@
 // Party it wanders from point to point across the arena. The bot steers
 // towards a point 12 m + 0.4 s · v ahead, cruises at 20-35 m/s (the arena:
 // 12-20) and slows for the bends ahead. Mode ram chases the nearest car
-// instead for a few seconds. A car that stops making progress backs off,
-// and after a few tries holds the reset button (back onto the road).
+// instead for a few seconds (and gives up once it had to back off). In
+// the arena a car turns round in three moves for a point behind it, and
+// when every way is blocked takes the freest one out. A car that stops
+// making progress backs off, and after a few tries holds the reset button
+// (back onto the road).
 // Pure: no socket, no clock; the Node tests drive it against the sim alone.
 // Pure pursuit, the steer input and the stuck logic are shared with the
 // race bots (src/shared/race/pursuit.ts).
@@ -16,7 +19,7 @@ import { colliderBounds, type SimWorld } from '../../src/shared/world/colliders.
 import type { RandomSource } from '../../src/shared/math/rng.js';
 import { nearestRoad, type RoadEdgeData, type RoadNetwork } from '../../src/shared/map/roadNetwork.js';
 import { isPaved, SURFACE, SURFACE_GRIP } from '../../src/shared/map/types.js';
-import { forwardSpeed, pursuitSteer, StuckWatch } from '../../src/shared/race/pursuit.js';
+import { forwardSpeed, pursuitSteer, STUCK_TICKS, StuckWatch, wrapAngle } from '../../src/shared/race/pursuit.js';
 import type { VehicleInput, VehicleParams, VehicleState } from '../../src/shared/sim/types.js';
 
 export { forwardSpeed, steerForAngle, wrapAngle } from '../../src/shared/race/pursuit.js';
@@ -68,6 +71,24 @@ const ARENA_TRIES = 16;
 const ARENA_REACH_MIN = 25;
 const ARENA_REACH_MAX = 60;
 const ARENA_CONE = Math.PI / 3;
+// Directions tried for the way out when every target is blocked
+const ESCAPE_WAYS = 24;
+// In the arena a point behind the car (after a bump, a back-off, at the
+// fence) is reached by a turn in three moves: slower than TURN_SPEED (m/s)
+// and more than TURN_START off the nose, the car reverses with the wheel
+// the other way (the nose swings round) until the point lies within
+// TURN_DONE of it, for at most TURN_MAX_TICKS, then drives on. The next
+// turn waits TURN_COOLDOWN_TICKS. A turn that does not get going (still
+// slower than TURN_STALLED after TURN_STALL_TICKS: something behind the
+// car) stops, and the next one waits longer than the stuck logic, which
+// then backs off and resets as before.
+const TURN_SPEED = 4;
+const TURN_START = 1.75;
+const TURN_DONE = 1.05;
+const TURN_MAX_TICKS = 120;
+const TURN_COOLDOWN_TICKS = 60;
+const TURN_STALL_TICKS = 30;
+const TURN_STALLED = 0.5;
 
 // A car to chase (ram mode): position and velocity (m, m/s)
 export interface ChaseTarget {
@@ -112,6 +133,9 @@ export class RoadDriver {
     private readonly stuck = new StuckWatch();
     private chaseTicks = 0;
     private replanHold = 0;
+    // Three-point turn in the arena: ticks reversed so far, then the pause
+    private turnTicks = 0;
+    private turnCooldown = 0;
     private lastX = NaN;
     private lastZ = NaN;
     // For tests and reports
@@ -156,7 +180,7 @@ export class RoadDriver {
         this.legs.length = 0;
         this.points.length = 0;
         this.stuck.restart();
-        this.chaseTicks = this.replanHold = 0;
+        this.chaseTicks = this.replanHold = this.turnTicks = this.turnCooldown = 0;
         this.lastX = this.lastZ = NaN;
     }
 
@@ -175,7 +199,12 @@ export class RoadDriver {
         // backing off an obstacle: reverse with the wheel the other way
         const stuck = this.stuck.override(out);
         if (stuck === 'resetDone') this.restart();
-        else if (stuck === 'backoffDone') this.points.length = 0;
+        else if (stuck === 'backoffDone') {
+            this.points.length = 0;
+            // A chase that ended against something (a car wedged at a
+            // container, the fence) is over: the bump happened or never will
+            if (this.chaseTicks > 0) this.chaseTicks = CHASE_MAX_TICKS;
+        }
         if (stuck !== 'drive') return out;
 
         // In the arena a car behind a container is no target: the chase would
@@ -193,8 +222,36 @@ export class RoadDriver {
             if (!chase) this.chaseTicks = 0;
             this.follow(s, p, u, out);
         }
+        if (this.arena) this.turnRound(s, u, out);
         this.stuck.watch(s, u, out);
         return out;
+    }
+
+    // The three-point turn for a look-ahead point behind the car (arena)
+    private turnRound(s: VehicleState, u: number, out: VehicleInput): void {
+        const alpha = wrapAngle(Math.atan2(this.lookahead.x - s.x, this.lookahead.z - s.z) - s.yaw);
+        const off = Math.abs(alpha);
+        if (this.turnTicks > 0) {
+            if (this.turnTicks >= TURN_STALL_TICKS && Math.abs(u) < TURN_STALLED) {
+                this.turnTicks = 0;
+                this.turnCooldown = 2 * STUCK_TICKS;
+            } else if (off < TURN_DONE || this.turnTicks >= TURN_MAX_TICKS) {
+                this.turnTicks = 0;
+                this.turnCooldown = TURN_COOLDOWN_TICKS;
+            } else {
+                this.turnTicks++;
+            }
+        } else if (this.turnCooldown > 0) {
+            this.turnCooldown--;
+        } else if (off > TURN_START && u < TURN_SPEED) {
+            this.turnTicks = 1;
+        }
+        if (this.turnTicks > 0) {
+            // Reversing: the wheel the other way swings the nose towards the point
+            out.steer = alpha > 0 ? -127 : 127;
+            out.throttle = 0;
+            out.brake = 255;
+        }
     }
 
     /** True while the last chase ran out and the target is still there (ram cooldown). */
@@ -325,8 +382,8 @@ export class RoadDriver {
                     const inside = candidate.x > a.minX && candidate.x < a.maxX && candidate.z > a.minZ && candidate.z < a.maxZ;
                     if (inside && this.clearWay(from, candidate)) target = candidate;
                 }
-                // Hemmed in: anywhere in the arena
-                target ??= { x: a.minX + this.random() * (a.maxX - a.minX), z: a.minZ + this.random() * (a.maxZ - a.minZ), grip: 0.97 };
+                // Hemmed in: the freest way out, else anywhere in the arena
+                target ??= this.escape(from) ?? { x: a.minX + this.random() * (a.maxX - a.minX), z: a.minZ + this.random() * (a.maxZ - a.minZ), grip: 0.97 };
                 this.heading = Math.atan2(target.x - from.x, target.z - from.z);
                 this.points.push(target);
                 continue;
@@ -374,24 +431,56 @@ export class RoadDriver {
     }
 
     // True when the straight way from a to b keeps `clearance` from every
-    // collider's bounding box in the arena, from 4 m out (the car may stand
-    // right next to a container it just backed off from)
+    // collider's bounding box in the arena
     private clearWay(a: Point, b: Point, clearance = ARENA_CLEARANCE): boolean {
-        const world = this.arenaWorld;
-        if (!world) return true;
         const length = Math.hypot(b.x - a.x, b.z - a.z);
+        return this.freeLength(a, b.x - a.x, b.z - a.z, length, clearance) >= length;
+    }
+
+    // How far (m, up to `length`) the straight way from a along (dx, dz)
+    // keeps `clearance` from every collider's bounding box in the arena,
+    // checked in steps of at most 2 m. Within the first 4 m a box only counts
+    // when the way comes nearer to it than the car stands: a car right next
+    // to a container it just backed off from may drive away from it, not
+    // into it.
+    private freeLength(a: Point, dx: number, dz: number, length: number, clearance: number): number {
+        const world = this.arenaWorld;
+        if (!world || length <= 0) return length;
+        const norm = Math.hypot(dx, dz) || 1;
+        const ux = dx / norm, uz = dz / norm;
         const steps = Math.max(1, Math.ceil(length / 2));
+        const step = length / steps;
         const found = this.found ??= new Int32Array(world.colliders.length);
-        for (let i = Math.min(steps, Math.ceil(4 / Math.max(1e-6, length / steps))); i <= steps; i++) {
-            const x = a.x + (b.x - a.x) * i / steps, z = a.z + (b.z - a.z) * i / steps;
-            const r = clearance;
+        const r = clearance;
+        for (let i = 1; i <= steps; i++) {
+            const x = a.x + ux * step * i, z = a.z + uz * step * i;
             const count = world.grid.query(x - r, z - r, x + r, z + r, found);
             for (let k = 0; k < count; k++) {
                 const [minX, minZ, maxX, maxZ] = colliderBounds(world.colliders[found[k]]);
-                if (x > minX - r && x < maxX + r && z > minZ - r && z < maxZ + r) return false;
+                if (!(x > minX - r && x < maxX + r && z > minZ - r && z < maxZ + r)) continue;
+                if (step * i > 4) return step * (i - 1);
+                const gap = (px: number, pz: number) => Math.hypot(Math.max(minX - px, 0, px - maxX), Math.max(minZ - pz, 0, pz - maxZ));
+                if (gap(x, z) < gap(a.x, a.z)) return step * (i - 1);
             }
         }
-        return true;
+        return length;
+    }
+
+    // Hemmed in (no target clear of everything by ARENA_CLEARANCE): the way
+    // out that runs freest, with 1 m to spare, in one of ESCAPE_WAYS
+    // directions; null when every one is blocked at once
+    private escape(from: Point): RoutePoint | null {
+        let best = 0, bestYaw = 0;
+        for (let k = 0; k < ESCAPE_WAYS; k++) {
+            const yaw = this.heading + k * 2 * Math.PI / ESCAPE_WAYS;
+            const free = this.freeLength(from, Math.sin(yaw), Math.cos(yaw), ARENA_REACH_MAX, 1);
+            if (free > best) {
+                best = free;
+                bestYaw = yaw;
+            }
+        }
+        if (best < 2) return null;
+        return { x: from.x + Math.sin(bestYaw) * best, z: from.z + Math.cos(bestYaw) * best, grip: 0.97 };
     }
 
     private routeLength(): number {

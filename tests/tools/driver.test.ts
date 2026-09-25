@@ -87,6 +87,55 @@ describe('RoadDriver', () => {
         expect(driver.distance).toBeGreaterThan(25);
     });
 
+    // A bulli in the Party's arena for `seconds`, chasing `target` (parked
+    // there) when given: the distance it drove and its back-offs
+    function arenaRun(x: number, z: number, yaw: number, seconds: number, seed: number, target?: [number, number, number]) {
+        const car = createSimCar('bot', 'bulli');
+        spawnVehicle(car.state, map.partyWorld, x, z, yaw);
+        const cars = [car];
+        if (target) {
+            cars.push(createSimCar('target', 'bulli'));
+            spawnVehicle(cars[1].state, map.partyWorld, ...target);
+        }
+        for (const c of cars) c.state.ghostTicks = 0;
+        const driver = new RoadDriver(mulberry32(seed));
+        driver.setMap(map, true);
+        for (let t = 0; t < 60 * seconds; t++) {
+            const s = cars[1]?.state;
+            driver.drive(car.state, car.params, car.input, s ? { x: s.x, z: s.z, vx: s.vx, vz: s.vz } : null);
+            stepWorld(cars, map.partyWorld);
+        }
+        return driver;
+    }
+
+    it.each([1, 2, 3, 4, 5])('turns round in three moves, nose against the arena fence (seed %i)', (seed) => {
+        // 3 m from the north fence (z 659.5), facing it: every target lies
+        // behind. Going forward only, it pushes into the fence and backs
+        // off; turning round it drives away (80-100 m in 8 s)
+        const driver = arenaRun(-195, 656.5, 0, 8, seed);
+        expect(driver.distance).toBeGreaterThan(70);
+        expect(driver.backoffCount).toBe(0);
+    });
+
+    it.each([1, 2, 3, 4, 5])('backs away from a container it faces, out the freest way (seed %i)', (seed) => {
+        // Nose at the west face of the container at x -241.5..-234.5,
+        // z 589.9..602.1, the arena's fence 17 m behind: no target keeps 3 m
+        // from both, so the bot takes the freest way and turns round for it
+        // (about 56 m in 8 s; stuck at the container: a few metres)
+        const driver = arenaRun(-242.4, 594.8, 72 * Math.PI / 180, 8, seed);
+        expect(driver.distance).toBeGreaterThan(45);
+        expect(driver.backoffCount).toBe(0);
+    });
+
+    it('gives up a chase that ends against the fence and drives on', () => {
+        // The target parked in the arena's north-west corner, the ram bot 10 m
+        // away heading for it: the bump, a back-off, then the chase is over
+        // (30-40 m in 8 s; chasing on it pushes into the corner: under 20 m)
+        const driver = arenaRun(-250, 650, -Math.PI * 0.75, 8, 1, [-257, 657, -Math.PI * 0.75]);
+        expect(driver.backoffCount).toBe(1);
+        expect(driver.distance).toBeGreaterThan(25);
+    });
+
     it('chases a car standing on a free road and runs into it', () => {
         const runway = longestRunway(map);
         const car = createSimCar('ram', 'bulli');
