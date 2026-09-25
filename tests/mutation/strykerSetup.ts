@@ -33,7 +33,13 @@ const SKIPPED_TESTS = new Set([
     // killed 502 mutants, all but one of which other tests cover as well.
     'v2 tunneling between cars > two beetles meeting head-on at 85 m/s each never pass through each other',
     'v2 tunneling between cars > a beetle T-boning another at 85 m/s never passes through it',
-    'v2 stability > stays finite over 10 000 ticks of random input among colliders and other cars'
+    'v2 stability > stays finite over 10 000 ticks of random input among colliders and other cars',
+    // Two full bakes of Bulli Bay (1.5 s each, instrumented over 10 s). The
+    // bake's parts have their own tests on small grids
+    // (tests/tools/map/bakeTerrain.test.ts, corridor.test.ts); these stay
+    // the byte-exact regression lock of the normal run.
+    'runBake > bakes the committed source texts into the committed terrain.bhf byte for byte',
+    'runBake > reports elevation pins the grade limit cannot reach'
 ]);
 
 beforeEach(context => {

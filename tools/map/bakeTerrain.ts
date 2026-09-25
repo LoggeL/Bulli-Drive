@@ -28,7 +28,7 @@ import { baseSample, regionSurface, type BaseTerrain } from './baseTerrain.js';
 
 // Bumped whenever the bake's algorithm changes its output; part of the
 // sourceHash, so a stale terrain.bhf is detected
-export const BAKE_VERSION = 1;
+export const BAKE_VERSION = 2;
 
 // Natural ground below the water line by more than this is sea floor
 const WATER_SURFACE_DEPTH = 0.05;

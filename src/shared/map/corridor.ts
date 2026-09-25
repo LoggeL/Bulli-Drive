@@ -427,27 +427,33 @@ export class TerrainShaper {
     }
 
     // Search radius around a box of road heights [yMin, yMax]: far enough
-    // that the cone from the road reaches every natural height nearby
+    // that the cone from the road reaches every grid point whose natural
+    // height it has to change. A block of the grid matters when its highest
+    // point is above the cone's top or its lowest below the cone's bottom
+    // at the block's nearest distance d: flat + run · (height difference)
+    // ≥ d. Every block within MAX_REACH is checked (by its min and max, so
+    // no grid point is missed), the radius is the farthest distance the
+    // cone reaches into a block that matters.
     private reach(minX: number, minZ: number, maxX: number, maxZ: number, yMin: number, yMax: number, flat: number): number {
         const g = this.grid;
         let radius = flat + 2 * g.cellSize;
-        for (let iteration = 0; iteration < 8; iteration++) {
-            const [i0, i1] = this.span(minX - radius, maxX + radius, g.originX, g.cols);
-            const [j0, j1] = this.span(minZ - radius, maxZ + radius, g.originZ, g.rows);
-            let low = Infinity, high = -Infinity;
-            for (let bj = Math.floor(j0 / BLOCK); bj <= Math.floor(j1 / BLOCK); bj++) {
-                for (let bi = Math.floor(i0 / BLOCK); bi <= Math.floor(i1 / BLOCK); bi++) {
-                    const b = bj * this.blockCols + bi;
-                    if (this.blockMin[b] < low) low = this.blockMin[b];
-                    if (this.blockMax[b] > high) high = this.blockMax[b];
-                }
+        const [i0, i1] = this.span(minX - MAX_REACH, maxX + MAX_REACH, g.originX, g.cols);
+        const [j0, j1] = this.span(minZ - MAX_REACH, maxZ + MAX_REACH, g.originZ, g.rows);
+        const extent = (BLOCK - 1) * g.cellSize;
+        for (let bj = Math.floor(j0 / BLOCK); bj <= Math.floor(j1 / BLOCK); bj++) {
+            const bz0 = g.originZ + bj * BLOCK * g.cellSize;
+            const dz = Math.max(0, bz0 - maxZ, minZ - (bz0 + extent));
+            for (let bi = Math.floor(i0 / BLOCK); bi <= Math.floor(i1 / BLOCK); bi++) {
+                const bx0 = g.originX + bi * BLOCK * g.cellSize;
+                const dx = Math.max(0, bx0 - maxX, minX - (bx0 + extent));
+                const d = Math.sqrt(dx * dx + dz * dz);
+                if (d > MAX_REACH) continue;
+                const b = bj * this.blockCols + bi;
+                const need = flat + this.run * Math.max(0, this.blockMax[b] - yMin, yMax - this.blockMin[b]);
+                if (need >= d && need + g.cellSize > radius) radius = need + g.cellSize;
             }
-            const needed = flat + this.run * Math.max(0, high - yMin, yMax - low) + g.cellSize;
-            if (needed <= radius) return radius;
-            radius = Math.min(MAX_REACH, needed);
-            if (radius === MAX_REACH) return radius;
         }
-        return radius;
+        return radius < MAX_REACH ? radius : MAX_REACH;
     }
 
     private bound(k: number, y: number, d: number): void {
