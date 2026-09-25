@@ -497,9 +497,10 @@ describe('checkTrack', () => {
         // best acceleration of the classes (11 m/s²) held all the way
         expect(stats!.fastest.time).toBeGreaterThan(Math.sqrt(2 * 2 * 780 / 11));
         expect(stats!.slowest.time).toBeGreaterThanOrEqual(stats!.fastest.time);
-        // The corners (R ≈ 7) are the slowest bends: about √(14.7 · 7) m/s
-        expect(stats!.minCornerSpeed).toBeGreaterThan(25);
-        expect(stats!.minCornerSpeed).toBeLessThan(45);
+        // The corners (R ≈ 12: trim 7 + half width 5) are the slowest bends:
+        // about √(14.7 · 12) m/s = 48 km/h
+        expect(stats!.minCornerSpeed).toBeGreaterThan(42);
+        expect(stats!.minCornerSpeed).toBeLessThan(54);
     });
 
     it('reports routing errors with the track ID', () => {

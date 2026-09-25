@@ -10,11 +10,14 @@ import { edge, network, node } from './fixtures.js';
 // Race routes over a hand-built network (docs/phase-3-design.md, 13.2 and
 // 15): a 200 m square A-B-C-D (north edge z = 0, east edge x = 200) with a
 // cross street M1-M2 at x = 100. All roads are 10 m wide, so every junction
-// trims 5 + 2 = 7 m. Expected stations and positions are worked out by hand
-// from that geometry.
+// trims 5 + 2 = 7 m and the route leaves an edge for the transition through
+// a junction half a road width earlier, 12 m from the node's centre.
+// Expected stations and positions are worked out by hand from that
+// geometry.
 
 const TRIM = 7;
 const HALF = 5;
+const REACH = TRIM + HALF;
 
 function squareNetwork(extra: Parameters<typeof edge>[4] = {}): RoadNetwork {
     return buildRoadNetwork(network(
@@ -82,14 +85,18 @@ describe('resolveRoute: checks of 13.2, step 1', () => {
 
     it('refuses start and finish in a junction, off the route, or a finish before the start', () => {
         const net = squareNetwork();
-        // ab1 keeps s = 7 .. 93 between the trims at A and M1
+        // ab1 keeps s = 12 .. 88 between the transitions at A and M1
         expect(errorsOf(net, { start: { edge: 'ab1', s: 95 } }))
             .toEqual(['start at s = 95 on ab1 lies in a junction or beyond the edge']);
         expect(errorsOf(net, { start: { edge: 'cross', s: 50 } }))
             .toEqual(['start on edge cross, which is not on the route']);
         expect(errorsOf(net, {
             kind: 'sprint', laps: 1, route: ['ab1', 'ab2', 'bc'], start: { edge: 'bc', s: 100 }, finish: { edge: 'ab2', s: 60 }
-        })).toEqual([expect.stringMatching(/^finish \(160 m\) is not after the start \(29[5-8] m\)$/)]);
+        // Finish: ab1 0 .. 88, M1 straight on 24 m, ab2 from station 112 (s =
+        // 12): 112 + 60 - 12 = 160. Start: ab2 up to 112 + 76 = 188, the
+        // corner at B a quarter circle of R = 12 (6π = 18.85 m), bc from
+        // s = 12: 188 + 18.85 + 100 - 12 = 294.85
+        })).toEqual([expect.stringMatching(/^finish \(160 m\) is not after the start \(29[45] m\)$/)]);
     });
 
     it('needs room for the grid behind the start of a sprint', () => {
@@ -102,19 +109,14 @@ describe('resolveRoute: checks of 13.2, step 1', () => {
 });
 
 describe('resolveRoute: centre line (13.2, step 2)', () => {
-    it('keeps the edges between the junction trims and joins them through each junction', () => {
+    it('keeps the edges between the junction transitions and joins them through each junction', () => {
         const route = resolved(squareNetwork());
         expect(route.closed).toBe(true);
-        // Kept straights: 4 × (100 - 14) + 2 × (200 - 14) = 716 m; straight
-        // through M1 and M2: 14 m each. A 90° corner joins two trimmed ends
-        // 7√2 m apart with a cubic whose handles are a third of that, so its
-        // length lies between the chord (9.90 m) and the control polygon
-        // (2 · 3.30 + √2 · (7 - 3.30) = 11.83 m).
-        const chord = TRIM * Math.SQRT2;
-        const handle = chord / 3;
-        const polygon = 2 * handle + Math.hypot(TRIM - handle, TRIM - handle);
-        expect(route.length).toBeGreaterThan(716 + 28 + 4 * chord);
-        expect(route.length).toBeLessThan(716 + 28 + 4 * polygon);
+        // Kept straights: 4 × (100 - 24) + 2 × (200 - 24) = 656 m; straight
+        // through M1 and M2: 24 m each. A 90° corner is a quarter circle
+        // with its tangent points 12 m from the node: R = 12, 6π = 18.85 m
+        // (the cubic Bézier circle is within 0.03 % of it).
+        expect(route.length).toBeCloseTo(656 + 48 + 4 * 6 * Math.PI, 1);
         // Resampled every 2 m around the closed loop
         const steps = route.points.map((p, i) => i ? p.s - route.points[i - 1].s : 0).slice(1);
         expect(Math.min(...steps)).toBeCloseTo(route.length / route.points.length, 9);
@@ -124,13 +126,13 @@ describe('resolveRoute: centre line (13.2, step 2)', () => {
 
     it('starts the lap after the first junction and follows the edges in driving direction', () => {
         const route = resolved(squareNetwork());
-        // Station 0 = ab1 at s = 7, heading east
-        expect(route.points[0].x).toBeCloseTo(TRIM, 6);
+        // Station 0 = ab1 at s = 12, heading east
+        expect(route.points[0].x).toBeCloseTo(REACH, 6);
         expect(route.points[0].z).toBeCloseTo(0, 6);
         expect(route.points[0].tx).toBeCloseTo(1, 6);
-        // Station 50 on ab1: x = 57; the east side (bc) runs south (+z)
+        // Station 50 on ab1: x = 62; the east side (bc) runs south (+z)
         const p = routePointAt(route, 50);
-        expect(p.x).toBeCloseTo(57, 6);
+        expect(p.x).toBeCloseTo(62, 6);
         expect(p.z).toBeCloseTo(0, 6);
         const east = route.points.find(q => q.x > 199 && q.z > 90 && q.z < 110)!;
         expect(east.tz).toBeCloseTo(1, 6);
@@ -138,6 +140,11 @@ describe('resolveRoute: centre line (13.2, step 2)', () => {
         // negative curvature, as the left normal points outwards
         const corner = route.points.reduce((a, b) => (Math.abs(b.curvature) > Math.abs(a.curvature) ? b : a));
         expect(corner.curvature).toBeLessThan(0);
+        // The corner's radius is the 12 m of the transition: the cubic's
+        // curvature stays within 2 % of 1/12 (measured on the Bézier circle
+        // approximation), where the trims alone gave about 6 m
+        expect(1 / Math.abs(corner.curvature)).toBeGreaterThan(REACH * 0.98);
+        expect(1 / Math.abs(corner.curvature)).toBeLessThan(REACH * 1.02);
     });
 
     it('maps start stations on edges driven backwards from the edge start', () => {
@@ -185,14 +192,13 @@ describe('resolveRoute: centre line (13.2, step 2)', () => {
 describe('routePointAt', () => {
     it('interpolates between the points and wraps around a circuit', () => {
         const route = resolved(squareNetwork());
-        expect(routePointAt(route, 51).x).toBeCloseTo(58, 6);
-        expect(routePointAt(route, route.length + 50).x).toBeCloseTo(57, 6);
-        // 30 m before the lap start: on da (x = 0, heading north), 30 - T m
-        // before its trimmed end at z = 7, T = the corner at A (9.9 .. 11.8 m)
+        expect(routePointAt(route, 51).x).toBeCloseTo(63, 6);
+        expect(routePointAt(route, route.length + 50).x).toBeCloseTo(62, 6);
+        // 30 m before the lap start: on da (x = 0, heading north), 30 - 6π m
+        // before its kept end at z = 12 (the corner at A is 6π = 18.85 m)
         const before = routePointAt(route, -30);
         expect(before.x).toBeCloseTo(0, 6);
-        expect(before.z).toBeGreaterThan(7 + 30 - 11.83);
-        expect(before.z).toBeLessThan(7 + 30 - 9.9);
+        expect(before.z).toBeCloseTo(12 + 30 - 6 * Math.PI, 1);
         expect(before.tz).toBeCloseTo(-1, 6);
         // Inside a corner the tangent stays a unit vector
         const corner = route.points.reduce((a, b) => (Math.abs(b.curvature) > Math.abs(a.curvature) ? b : a));
@@ -212,25 +218,25 @@ describe('routePointAt', () => {
 describe('resolveRoute: gates and grid (13.2, steps 3 and 4)', () => {
     it('puts a gate 25 m after each junction where the route could turn, facing the driving direction', () => {
         const route = resolved(squareNetwork());
-        // Start/finish at ab1 s = 60 (station 53), then after M1 and after
+        // Start/finish at ab1 s = 60 (station 48), then after M1 and after
         // M2; the corners A to D have no other branch
         expect(route.gates.map(g => g.visual)).toEqual(['startFinish', 'arch', 'arch']);
         const [start, afterM1, afterM2] = route.gates;
         expect(start.x).toBeCloseTo(60, 6);
         expect(start.yaw).toBeCloseTo(Math.PI / 2, 6);
-        // M1's trim ends at x = 107, the gate stands 25 m on (the first
-        // station of the 2 m search that is clear of the 25 m): x = 132..134
-        expect(afterM1.x).toBeGreaterThanOrEqual(107 + 25 - 1e-6);
-        expect(afterM1.x).toBeLessThanOrEqual(107 + 27 + 1e-6);
+        // M1's transition ends at x = 112, the gate stands 25 m on (the first
+        // station of the 2 m search that is clear of the 25 m): x = 137..139
+        expect(afterM1.x).toBeGreaterThanOrEqual(112 + 25 - 1e-6);
+        expect(afterM1.x).toBeLessThanOrEqual(112 + 27 + 1e-6);
         expect(afterM1.z).toBeCloseTo(0, 6);
         expect(afterM1.yaw).toBeCloseTo(Math.PI / 2, 6);
-        // M2 is passed westwards: trim end x = 93, gate at x = 66..68, heading -x
-        expect(afterM2.x).toBeLessThanOrEqual(93 - 25 + 1e-6);
-        expect(afterM2.x).toBeGreaterThanOrEqual(93 - 27 - 1e-6);
+        // M2 is passed westwards: transition end x = 88, gate at x = 61..63, heading -x
+        expect(afterM2.x).toBeLessThanOrEqual(88 - 25 + 1e-6);
+        expect(afterM2.x).toBeGreaterThanOrEqual(88 - 27 - 1e-6);
         expect(afterM2.z).toBeCloseTo(200, 6);
         expect(afterM2.yaw).toBeCloseTo(-Math.PI / 2, 6);
-        // Road width + 2 m
-        for (const gate of route.gates) expect(gate.width).toBe(2 * HALF + 2);
+        // Road width + 2 m, but at least 14 m (here 10 + 2 = 12 → 14)
+        for (const gate of route.gates) expect(gate.width).toBe(14);
         // Gates in driving order
         const stations = route.gates.map(g => g.s);
         expect(stations[1]).toBeGreaterThan(stations[0]);
@@ -281,10 +287,10 @@ describe('resolveRoute: gates and grid (13.2, steps 3 and 4)', () => {
         expect(finish.x).toBeCloseTo(200, 6);
         expect(finish.z).toBeCloseTo(150, 6);
         expect(finish.yaw).toBeCloseTo(0, 6);
-        expect(sprint.gates[1].x).toBeGreaterThanOrEqual(132 - 1e-6);
-        expect(sprint.gates[1].x).toBeLessThanOrEqual(134 + 1e-6);
-        // Finish at ab2 s = 40 (station 140): the gate after M1 (125 .. 127)
-        // would stand less than 20 m before it
+        expect(sprint.gates[1].x).toBeGreaterThanOrEqual(137 - 1e-6);
+        expect(sprint.gates[1].x).toBeLessThanOrEqual(139 + 1e-6);
+        // Finish at ab2 s = 40 (station 112 + 40 - 12 = 140): the gate after
+        // M1 (137 .. 139) would stand less than 20 m before it
         const short = resolved(squareNetwork(), {
             kind: 'sprint', laps: 1, route: ['ab1', 'ab2'], start: { edge: 'ab1', s: 50 }, finish: { edge: 'ab2', s: 40 }
         });
@@ -304,16 +310,16 @@ describe('resolveRoute: gates and grid (13.2, steps 3 and 4)', () => {
         const net = squareNetwork();
         expect(errorsOf(net, { start: { edge: 'ab2', s: 3 } }))
             .toEqual(['start at s = 3 on ab2 lies in a junction or beyond the edge']);
-        // Finish ab2 s = 88: station 107 + 81 = 188, 5 m before B's corner
+        // Finish ab2 s = 88: station 112 + 76 = 188, where B's corner begins
         expect(errorsOf(net, {
             kind: 'sprint', laps: 1, route: ['ab1', 'ab2', 'bc'], start: { edge: 'ab1', s: 50 }, finish: { edge: 'ab2', s: 88 }
         })).toEqual(['finish at 188 m is in a junction or a hairpin']);
     });
 
     it('refuses a grid slot inside a junction', () => {
-        // Start at ab2 s = 30: station 100 + 30 - 7 = 123, 23 m after M1's
-        // transition (stations 86 .. 100). Slots 6 to 8 stand at 97, 93, 89.
-        expect(errorsOf(squareNetwork(), { start: { edge: 'ab2', s: 30 } })).toEqual([
+        // Start at ab2 s = 35: station 100 + 35 - 12 = 123, 23 m after M1's
+        // transition (stations 76 .. 100). Slots 6 to 8 stand at 97, 93, 89.
+        expect(errorsOf(squareNetwork(), { start: { edge: 'ab2', s: 35 } })).toEqual([
             'start at 123 m is in or next to a junction or in a hairpin',
             'grid slot 6 lies in junction m1', 'grid slot 7 lies in junction m1', 'grid slot 8 lies in junction m1'
         ]);
@@ -323,15 +329,15 @@ describe('resolveRoute: gates and grid (13.2, steps 3 and 4)', () => {
 describe('gateAllowed, junctionAt, yawOf', () => {
     it('keeps gates out of junctions and 25 m after them, 10 m before them', () => {
         const route = resolved(squareNetwork());
-        // M1 transition: stations 86 .. 100
+        // M1 transition: stations 76 .. 100
         expect(junctionAt(route, 90)?.node.id).toBe('m1');
         expect(junctionAt(route, 110)).toBeNull();
         expect(gateAllowed(route, 90)).toBe(false);
         expect(gateAllowed(route, 120)).toBe(false);
         expect(gateAllowed(route, 127)).toBe(true);
-        // 10 m before M1: stations 76 .. 86
-        expect(gateAllowed(route, 78)).toBe(false);
-        expect(gateAllowed(route, 70)).toBe(true);
+        // 10 m before M1: stations 66 .. 76
+        expect(gateAllowed(route, 68)).toBe(false);
+        expect(gateAllowed(route, 60)).toBe(true);
     });
 
     it('keeps gates out of hairpins (curvature above 1/30 m within ±4 m) and off the ends of a sprint', () => {

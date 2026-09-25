@@ -22,6 +22,7 @@ const FILES = [
     'src/shared/map/rails.ts',
     'src/shared/map/roadNetwork.ts',
     'src/shared/map/roadSchema.ts',
+    'src/shared/map/routeToTrack.ts',
     'src/shared/map/spline.ts',
     'src/shared/map/trackRoute.ts',
     'tools/map/bakeSources.ts',

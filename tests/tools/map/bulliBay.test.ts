@@ -10,7 +10,11 @@ import { parseMapFile, parsePoisFile, parseTracksFile, parseZonesFile } from '..
 import { buildRoadNetwork, roadSurfaceAt } from '../../../src/shared/map/roadNetwork.js';
 import { parseRoadNetwork } from '../../../src/shared/map/roadSchema.js';
 import { leftNormal } from '../../../src/shared/map/spline.js';
+import { routeToTrack } from '../../../src/shared/map/routeToTrack.js';
 import { routePointAt, type ResolvedRoute } from '../../../src/shared/map/trackRoute.js';
+import { createCourse, createRaceProgress, passGate } from '../../../src/shared/race/progress.js';
+import { buildRacingLine } from '../../../src/shared/race/racingLine.js';
+import { TRACK_IDS, type TrackDef } from '../../../src/shared/race/types.js';
 import { SURFACE, ZONE } from '../../../src/shared/map/types.js';
 import { readSources, sourceHash } from '../../../tools/map/bake.js';
 import { parseBaseTerrain } from '../../../tools/map/baseTerrain.js';
@@ -134,6 +138,34 @@ describe('Bulli Bay validation (tools/map/validate.ts)', () => {
             for (const p of [...route.grid, ...route.gates]) {
                 expect(roadSurfaceAt(net, p.x, p.z), `${route.track.id} at (${p.x.toFixed(0)} | ${p.z.toFixed(0)})`).not.toBeNull();
             }
+        }
+    }, 20_000);
+});
+
+describe('Bulli Bay tracks as phase 2 TrackDefs (routeToTrack)', () => {
+    it('keeps the IDs of the ported phase 2 tracks (E11); the new ones join TRACK_IDS with M5', () => {
+        const ids = validated().routes.map(r => r.track.id);
+        for (const id of TRACK_IDS) expect(ids).toContain(id);
+    }, 20_000);
+
+    it('can drive every track along its racing line through every gate, in order, to the finish', () => {
+        const bundle = loadMapBundle('bulli-bay');
+        for (const route of validated().routes) {
+            const track = routeToTrack(bundle.net, route, bundle.map.mapVersion) as unknown as TrackDef;
+            const line = buildRacingLine(track);
+            const course = createCourse(track, line);
+            const p = createRaceProgress();
+            const pts = line.points;
+            let tick = 1;
+            const laps = track.kind === 'circuit' ? track.laps + 1 : 1;
+            for (let lap = 0; lap < laps && p.status === 'racing'; lap++) {
+                const count = track.kind === 'circuit' ? pts.length : pts.length - 1;
+                for (let i = 0; i < count && p.status === 'racing'; i++) {
+                    const a = pts[i], b = pts[(i + 1) % pts.length];
+                    passGate(p, course, tick++, 0, a.x, a.z, b.x, b.z);
+                }
+            }
+            expect(p.status, track.id).toBe('finished');
         }
     }, 20_000);
 });

@@ -9,7 +9,7 @@ import type { TrackRoute } from './mapFiles.js';
 import {
     junctionRadius, type EdgeEnd, type RoadEdgeData, type RoadNetwork, type RoadNodeData
 } from './roadNetwork.js';
-import { cubic, leftNormal, length2, pointAt, sampleSegments } from './spline.js';
+import { cubic, leftNormal, length2, pointAt, sampleSegments, type CubicSegment } from './spline.js';
 import { SURFACE } from './types.js';
 
 // Spacing of the centre line (13.2, step 2: fits the projection window of
@@ -25,8 +25,11 @@ export const GATE_MAX_CURVATURE = 1 / 30;
 const GATE_BEND_WINDOW = 4;
 // Gates closer than this to an earlier one are dropped
 export const GATE_MIN_GAP = 20;
-// Gate width beyond the road (13.2: road width + 2 m)
+// Gate width beyond the road (13.2: road width + 2 m), at least
+// GATE_MIN_WIDTH: a car overtaking on the verge or cutting across a sand
+// track still passes (phase 2's city gates are 16 m)
 export const GATE_EXTRA_WIDTH = 2;
+export const GATE_MIN_WIDTH = 14;
 // Starting grid (13.2, step 4, and phase 2): 8 slots staggered in two
 // lanes, the pole 6 m behind the start gate, every further slot 4 m back,
 // so a lane has a car every 8 m
@@ -170,6 +173,45 @@ function partPoint(part: RoutePart, d: number, index: number): DensePoint {
     };
 }
 
+// How far before (and after) a junction's centre the route leaves the edge
+// for its transition curve: the trim radius plus `extra`, half the width of
+// the narrower of the two roads. A 90° turn then gets a radius of about
+// trim + half width, which fits into the junction area (its inner corner
+// stays clear of a car), where the trims alone gave about 6-8 m.
+export function transitionReach(trim: number, extra: number): number {
+    return trim + extra;
+}
+
+// The transition through a junction from a (leaving along its tangent) to
+// b (arriving along its tangent) as one cubic Bézier segment. Where the two
+// tangent lines meet in front of a and behind b, the handles are those of
+// the circle approximation, (4/3)·tan(θ/4)/tan(θ/2) of the distance to the
+// intersection (θ the turn), so a symmetric turn is a circular arc within
+// 0.03 %. Parallel tangents (straight through, a lane change) take a third
+// of the chord. Only exactly rounded operations: the half-angle tangents
+// come from the cross and dot products.
+export function transitionCurve(a: { x: number; z: number; tx: number; tz: number },
+    b: { x: number; z: number; tx: number; tz: number }): CubicSegment {
+    const cross = a.tx * b.tz - a.tz * b.tx;
+    let ha = length2(b.x - a.x, b.z - a.z) / 3, hb = ha;
+    if (Math.abs(cross) > 1e-9) {
+        // a + ta·A = b - tb·B with the unit tangents A and B (Cramer's rule
+        // on ta·A + tb·B = b - a)
+        const dx = b.x - a.x, dz = b.z - a.z;
+        const ta = (dx * b.tz - dz * b.tx) / cross;
+        const tb = (a.tx * dz - a.tz * dx) / cross;
+        if (ta > 0 && tb > 0) {
+            const dot = a.tx * b.tx + a.tz * b.tz;
+            // tan(θ/2) = sin θ / (1 + cos θ); (4/3)·tan(θ/4)/tan(θ/2) = (4/3) / (1 + √(1 + tan²(θ/2)))
+            const half = Math.abs(cross) / (1 + dot);
+            const k = 4 / 3 / (1 + Math.sqrt(1 + half * half));
+            ha = k * ta;
+            hb = k * tb;
+        }
+    }
+    return cubic([a.x, a.z], [a.x + a.tx * ha, a.z + a.tz * ha], [b.x - b.tx * hb, b.z - b.tz * hb], [b.x, b.z]);
+}
+
 // Resolves a route: 13.2, steps 1 to 4
 export function resolveRoute(net: RoadNetwork, track: TrackRoute): RouteResult {
     const { steps, errors } = checkSteps(net, track);
@@ -183,9 +225,25 @@ export function resolveRoute(net: RoadNetwork, track: TrackRoute): RouteResult {
         const exit = net.nodes[step.reversed ? step.edge.from : step.edge.to];
         return { edge: step.edge, reversed: step.reversed, entry, exit, keepFrom: 0, keepTo: step.edge.length, routeStart: 0 };
     });
+    // At a junction the transition starts half a road width before the trim
+    // (transitionReach), where the edge is long enough for it
+    const reachAt = (i: number, entry: boolean): number => {
+        const part = parts[i];
+        const node = entry ? part.entry : part.exit;
+        const other = parts[(i + (entry ? n - 1 : 1)) % n];
+        return transitionReach(junctionRadius(net, node), node.def.kind === 'junction' ? Math.min(part.edge.halfWidth, other.edge.halfWidth) : 0);
+    };
     parts.forEach((part, i) => {
-        if (i > 0 || closed) part.keepFrom = junctionRadius(net, part.entry);
-        if (i < n - 1 || closed) part.keepTo = part.edge.length - junctionRadius(net, part.exit);
+        const hasEntry = i > 0 || closed, hasExit = i < n - 1 || closed;
+        const trimFrom = hasEntry ? junctionRadius(net, part.entry) : 0;
+        const trimTo = hasExit ? junctionRadius(net, part.exit) : 0;
+        part.keepFrom = hasEntry ? reachAt(i, true) : 0;
+        part.keepTo = part.edge.length - (hasExit ? reachAt(i, false) : 0);
+        if (part.keepTo - part.keepFrom < 1) {
+            // Too short for the wide transitions: the trims alone
+            part.keepFrom = trimFrom;
+            part.keepTo = part.edge.length - trimTo;
+        }
         if (part.keepTo - part.keepFrom < 1) {
             errors.push(`edge ${part.edge.id} is shorter than the junctions at its ends take`);
         }
@@ -222,9 +280,7 @@ export function resolveRoute(net: RoadNetwork, track: TrackRoute): RouteResult {
         const node = part.exit;
         const entryS = s;
         if (node.def.kind === 'junction') {
-            const m = length2(b.x - a.x, b.z - a.z) / 3;
-            const curve = sampleSegments([cubic([a.x, a.z], [a.x + a.tx * m, a.z + a.tz * m],
-                [b.x - b.tx * m, b.z - b.tz * m], [b.x, b.z])]).samples;
+            const curve = sampleSegments([transitionCurve(a, b)]).samples;
             for (let k = 1; k < curve.length - 1; k++) {
                 const c = curve[k];
                 push({
@@ -372,7 +428,7 @@ export function gateAllowed(route: ResolvedRoute, S: number, finish = false): bo
 function gateAt(route: ResolvedRoute, S: number, visual: GateVisual): RouteGate {
     const p = routePointAt(route, S);
     return {
-        x: p.x, z: p.z, yaw: yawOf(p.tx, p.tz), width: 2 * p.halfWidth + GATE_EXTRA_WIDTH,
+        x: p.x, z: p.z, yaw: yawOf(p.tx, p.tz), width: Math.max(GATE_MIN_WIDTH, 2 * p.halfWidth + GATE_EXTRA_WIDTH),
         s: route.closed ? wrap(route, S) : S, visual
     };
 }
