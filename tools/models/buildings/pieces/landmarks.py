@@ -1,11 +1,14 @@
 # Landmarks of the California coast (design 11.1): a lighthouse on the headland (white tapered
 # masonry tower, gallery, lantern with a red roof, like Pigeon Point or Point Pinos), a steel water
-# tower on four braced legs, a Streamline Moderne roadside diner ("BULLI'S DINER" on a roof sign)
-# and a 1950s gas station (canopy with the "SEASIDE SERVICE" fascia, pump island, office with a
-# service bay, pylon sign). Every piece stands on its own lot: origin on the ground at the middle
-# of the street side, which faces three.js +Z (Blender -Y); the lot extends to Blender +Y.
+# tower on four braced legs, a Streamline Moderne roadside diner ("BULLI'S DINER" on a roof sign),
+# a 1950s gas station (canopy with the "SEASIDE SERVICE" fascia, pump island, office with a
+# service bay, pylon sign) and a harbour's slewing jib crane on a concrete caisson at the water's
+# edge. Every piece stands on its own lot: origin on the ground at the middle of the street side,
+# which faces three.js +Z (Blender -Y); the lot extends to Blender +Y. The crane's front is the
+# water: its jib reaches out over it.
 #
-# Params (kit.json): kind ("lighthouse" | "water_tower" | "diner" | "gas_station"), seed.
+# Params (kit.json): kind ("lighthouse" | "water_tower" | "diner" | "gas_station" | "quay_crane"),
+# seed.
 import math
 from bd_kit import (K, Opening, tile, pal, decal, wall, box, rect, lin, mul, Rng, WHITE, UP, beam, cylinder,
                     prism)
@@ -18,7 +21,7 @@ TOWER_PAINT = ["white", "trim_cream", "lifeguard_blue"]
 def build(spec, lod):
     kind = spec["kind"]
     k, meta = {"lighthouse": lighthouse, "water_tower": water_tower, "diner": diner,
-               "gas_station": gas_station}[kind](spec, lod)
+               "gas_station": gas_station, "quay_crane": quay_crane}[kind](spec, lod)
     x0, x1, y0, y1 = meta["footprint"]
     if y0 != 0.0:
         # round pieces are built around their axis: move the lot's street side to the origin
@@ -221,6 +224,69 @@ def gas_station(spec, lod):
     rect(k, (px - 1.85, py - 0.11, 6.03), (1, 0, 0), (0, 0, 1), 3.7, 0.69, decal("sign_service"))
     rect(k, (px + 1.85, py + 0.11, 6.03), (-1, 0, 0), (0, 0, 1), 3.7, 0.69, decal("sign_service"))
     return k, {"footprint": [-6.0, 6.0, 0.0, 16.0], "overhang": 1.35, "foundation": 0.4}
+
+
+# --------------------------------------------------------------------------
+def quay_crane(spec, lod):
+    """slewing jib crane of a small harbour: an 8 x 8 m caisson (the footprint and collider), a
+    red pedestal, the slewing platform with the machinery house, the cab and the counterweight, an
+    A-frame and a luffing jib out over the water (front, Blender -Y), its tip 20 m out"""
+    k = K()
+    cy = 4.0
+    concrete = tile("concrete", lin("#BDB6A8"))
+    red = pal("signal_red")
+    white = pal("white")
+    steel = pal("steel_dark")
+    # caisson: 1.4 m above the beach, 3 m down into the sand and the surf
+    box(k, (-4.0, 0.0, -3.0), (4.0, 8.0, 1.4), concrete, "xXyYZ")
+    if lod < 2:
+        for x in (-3.2, 3.2):
+            cylinder(k, (x, 0.7, 1.4), (x, 0.7, 1.9), 0.22, 8, pal("iron"), cap_top=True)
+    box(k, (-1.3, cy - 1.3, 1.4), (1.3, cy + 1.3, 11.0), red, "xXyY")
+    # slewing platform, machinery house over the land side, cab at the front right
+    box(k, (-2.8, cy - 3.2, 11.0), (2.8, cy + 5.6, 11.6), steel, "xXyYzZ")
+    box(k, (-2.4, cy - 0.6, 11.6), (2.4, cy + 4.2, 15.0), white, "xXyYZ")
+    box(k, (0.6, cy - 3.0, 11.6), (2.4, cy - 0.6, 14.2), white, "xXyYZ")
+    box(k, (-2.2, cy + 4.2, 11.6), (2.2, cy + 5.6, 14.4), tile("concrete", lin("#8E887E")), "xXyYZ")
+    if lod < 2:
+        rect(k, (0.75, cy - 3.01, 12.5), (1, 0, 0), (0, 0, 1), 1.5, 1.3, pal("glass"))
+        rect(k, (2.41, cy - 2.85, 12.5), (0, 1, 0), (0, 0, 1), 2.0, 1.3, pal("glass"))
+        rect(k, (-1.6, cy - 0.61, 13.0), (1, 0, 0), (0, 0, 1), 1.4, 0.9, pal("glass"))
+        box(k, (-2.5, cy - 0.7, 15.0), (2.5, cy + 4.3, 15.25), red, "xXyYzZ")
+    # A-frame over the house, the jib from its foot at the platform's front edge
+    apex = Vector((0.0, cy + 1.4, 22.0))
+    for x in (-2.2, 2.2):
+        beam(k, Vector((x, cy + 2.8, 15.0)), apex + Vector((x * 0.08, 0.0, 0.0)), 0.36, 0.36, red)
+    pivot = Vector((0.0, cy - 2.6, 12.0))
+    tip = Vector((0.0, cy - 24.0, 23.2))
+    axis = (tip - pivot).normalized()
+    side = Vector((1.0, 0.0, 0.0))
+    up = axis.cross(side).normalized() * -1.0
+    if lod == 2:
+        # as deep as the lattice at its tip (0.6 m + the chords): no higher than LOD0
+        beam(k, pivot, tip, 0.76, 0.76, red, up=up)
+    else:
+        # lattice: four chords tapering from 1.5 to 0.6 m, zigzag diagonals on the sides (and on
+        # top and bottom up close)
+        panels = [11, 6][lod]
+        corner = lambda t, i, j: pivot.lerp(tip, t) + side * (i * (0.75 - 0.45 * t)) + up * (j * (0.75 - 0.45 * t))
+        corners = [(-1, -1), (1, -1), (1, 1), (-1, 1)]
+        for (i, j) in corners:
+            beam(k, corner(0.0, i, j), corner(1.0, i, j), 0.16, 0.16, red, up=up)
+        faces = [((-1, -1), (-1, 1)), ((1, -1), (1, 1))]
+        if lod == 0:
+            faces += [((-1, 1), (1, 1)), ((-1, -1), (1, -1))]
+        for n in range(panels):
+            t0, t1 = n / panels, (n + 1) / panels
+            for (a, b) in faces:
+                p, q = (a, b) if n % 2 == 0 else (b, a)
+                beam(k, corner(t0, *p), corner(t1, *q), 0.07, 0.07, red, up=up)
+    # luffing rope from the apex to the tip, the hoist rope and its hook block
+    beam(k, apex, tip, 0.06, 0.06, steel)
+    hook = Vector((0.0, tip.y, 9.6))
+    beam(k, tip, hook, 0.05, 0.05, steel)
+    box(k, (-0.3, tip.y - 0.3, 8.8), (0.3, tip.y + 0.3, 9.6), pal("safety_yellow"), "xXyYzZ")
+    return k, {"footprint": [-4.0, 4.0, 0.0, 8.0], "overhang": 20.6, "foundation": 3.0, "ao_dist": 3.0}
 
 
 def render(objs, R, out_dir, tag):

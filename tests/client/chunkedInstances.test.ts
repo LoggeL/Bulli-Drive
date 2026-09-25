@@ -57,4 +57,21 @@ describe('chunked instances', () => {
         instances.update(view, 'all-but-one', 0, 0);
         expect(instances.mesh.count).toBe(4);
     });
+
+    it('leave out the instances nearer than `from` (the far model of a near and far pair)', () => {
+        // Distances from (0, 0): 14.1, 28.3, 300 m
+        const specs = [at(10, 10), at(20, 20), at(300, 0)];
+        const far = new ChunkedInstances(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial(), specs, 350, 'far', 20);
+        const near = new ChunkedInstances(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial(), specs, 20, 'near');
+        const view = new ChunkView(-20, 200);
+        view.inFrustum.fill(1);
+        view.distance.fill(0);
+        far.update(view, 'all', 0, 0);
+        near.update(view, 'all', 0, 0);
+        // Each instance in exactly one of the two
+        expect([near.mesh.count, far.mesh.count]).toEqual([1, 2]);
+        far.from = 0;
+        far.update(view, 'all', 0, 0);
+        expect(far.mesh.count).toBe(3);
+    });
 });

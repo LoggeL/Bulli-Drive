@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { Batch, rgb, type BoxUv, type RGB } from './batch.js';
 
-// Props built from simple parts (graphics G1): the railings, fence posts
-// and sunshades of the map (world/mapWorld.ts) and the race dressing
+// Props built from simple parts (graphics G1): the street furniture
+// (world/streetFurniture.ts), the railings, fence posts, sunshades and
+// coin telescopes of the map (world/mapWorld.ts) and the race dressing
 // (race/TrackDressing.ts). Finishes come from the `surface` vertex attribute
 // (roughness, metalness, emission, traffic light lens) of the shared
 // furniture material (materials.ts): painted cast iron, galvanized steel,
@@ -36,8 +37,6 @@ export const FINISH = {
     canLiner: { color: rgb(0x111311), rough: 0.7 },
     wood: { color: rgb(0x8a5b37), rough: 0.72 },
     concrete: { color: rgb(0xb9b3a7), rough: 0.9 },
-    terracotta: { color: rgb(0xa9593a), rough: 0.78 },
-    soil: { color: rgb(0x3a2c22), rough: 1 },
     canvasPole: { color: rgb(0xd8d2c4), rough: 0.5 }
 } satisfies Record<string, Finish>;
 

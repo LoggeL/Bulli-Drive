@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mapFor } from '../../../src/server/maps.js';
 import { LOT_RULES, placeBuildings } from '../../../src/shared/map/buildings.js';
 import { pointInPolygon, type Vec2 } from '../../../src/shared/map/geometry.js';
-import { heightAt, zoneAt, type GridSpec, type Heightfield } from '../../../src/shared/map/heightfield.js';
+import { heightAt, zoneAt } from '../../../src/shared/map/heightfield.js';
 import {
     arenaFence, boundaryFence, createMapData, FENCE_PIECE, heightfieldHash, LANDMARK_PIECES, roadResetPose, zoneFence
 } from '../../../src/shared/map/mapData.js';
@@ -15,28 +15,11 @@ import { SURFACE, ZONE } from '../../../src/shared/map/types.js';
 import { createVehicleState } from '../../../src/shared/sim/types.js';
 import { createSimCar, spawnVehicle } from '../../../src/shared/sim/vehicle.js';
 import { stepWorld } from '../../../src/shared/sim/world.js';
-import { edge, network, node, PROFILE } from './fixtures.js';
+import { edge, makeHeightfield, network, node, PROFILE } from './fixtures.js';
 
 // The map's runtime data (src/shared/map/mapData.ts, docs/phase-3-design.md,
 // 8, 11 and 12): on small hand-built maps with expectations from the rules,
 // and invariants of Bulli Bay's own data.
-
-// A 200 × 200 m heightfield (2 m grid) from functions of the position
-function makeHeightfield(height: (x: number, z: number) => number, zone: (x: number, z: number) => number = () => ZONE.downtown,
-    surface: (x: number, z: number) => number = () => SURFACE.grass): Heightfield {
-    const spec: GridSpec = { cols: 101, rows: 101, cellSize: 2, originX: -100, originZ: -100, heightOffset: -20, heightScale: 0.01, waterLevel: 0, zoneCell: 8 };
-    const q = new Uint16Array(101 * 101), s = new Uint8Array(101 * 101);
-    for (let j = 0; j < 101; j++) {
-        for (let i = 0; i < 101; i++) {
-            const x = -100 + 2 * i, z = -100 + 2 * j;
-            q[j * 101 + i] = Math.round((height(x, z) + 20) / 0.01);
-            s[j * 101 + i] = surface(x, z);
-        }
-    }
-    const zones = new Uint8Array(25 * 25);
-    for (let j = 0; j < 25; j++) for (let i = 0; i < 25; i++) zones[j * 25 + i] = zone(-100 + 8 * i + 4, -100 + 8 * j + 4);
-    return { spec, q, surface: s, zones, mapVersion: 1, sourceHash: new Uint8Array(16) };
-}
 
 // An east-west road from (-90, 0) to (90, 0), 10 m wide, 3 m sidewalks
 function straightRoad(surface: 'asphalt' | 'dirt' = 'asphalt') {

@@ -920,8 +920,8 @@
   },
   "landmarks": {
    "file": "kit_landmarks.glb",
-   "bytes": 92248,
-   "hash": "70ec3be08fb5",
+   "bytes": 121112,
+   "hash": "c516292b1b6f",
    "pieces": {
     "landmark_diner": {
      "category": "landmark",
@@ -1000,6 +1000,33 @@
       {
        "lod": 2,
        "triangles": 278,
+       "primitives": 1
+      }
+     ]
+    },
+    "landmark_quay_crane": {
+     "category": "landmark",
+     "footprint": {
+      "minX": -4,
+      "maxX": 4,
+      "minZ": -8,
+      "maxZ": 0
+     },
+     "height": 23.54,
+     "lods": [
+      {
+       "lod": 0,
+       "triangles": 894,
+       "primitives": 1
+      },
+      {
+       "lod": 1,
+       "triangles": 510,
+       "primitives": 1
+      },
+      {
+       "lod": 2,
+       "triangles": 268,
        "primitives": 1
       }
      ]
@@ -1523,7 +1550,7 @@
  },
  "_doc": "Written by tools/models/buildings/build-kit.mjs. One GLB per kit group; every piece is a node with extras (footprint in three.js axes, height, LOD distances, params) and one mesh child per LOD. The material kit_atlas references the KTX2 atlas files next to the GLBs (glTF convention, no flipY). Not loaded by the game yet (phase 3, M4).",
  "totals": {
-  "glbBytes": 2063548,
+  "glbBytes": 2092412,
   "atlasBytes": 1031335
  }
 }

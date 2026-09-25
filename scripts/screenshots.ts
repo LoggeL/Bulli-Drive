@@ -5,11 +5,12 @@
 // car types from the front and the rear, close-ups of the Kaefer, Pritsche,
 // 356 and 181, the plaza and its fountain, the palms, the promenade, the
 // beach and the pier at sunset, a hairpin of the Ridge Road, the lookout
-// over the bay, the harbour, the Party arena with eight cars, the diner and
-// the gas station, Seaview Heights, the ranch, the north cliffs, an
-// overview, mobile), and the race (lobby, the grid in the countdown with
-// the start portal, a checkpoint with barriers and chevrons, the finish
-// from far away, the phone HUD in the countdown and the race, the results).
+// over the bay, the harbour and its cranes, the Party arena with eight
+// cars, the diner and the gas station, Seaview Heights, the ranch, the
+// north cliffs, an overview, mobile), and the race (lobby, the grid in the
+// countdown with the start portal, a checkpoint with barriers and chevrons,
+// the finish from far away, the phone HUD in the countdown and the race,
+// the results).
 // race-start also records the meshes and triangles of the track dressing
 // (dressingMeshes, dressingTriangles; budget +20 draw calls and +30 k
 // triangles, docs/phase-2-design.md 17.4).
@@ -377,10 +378,13 @@ async function captureDesktop(browser: Browser, baseURL: string, options: Option
 
     // A hairpin of the Ridge Road (chase camera), the lookout over the bay
     await chase('ridge', [471.3, -390.1, -3.133]);
-    await still('lookout', [676, -780, 0], view([640, 10, -730], [-300, 0, 100], 55));
+    // (from the knoll above its lot, behind the coin telescopes)
+    await still('lookout', [690, -790, 0], view([617.6, 3.5, -747.6], [-300, 60, 100], 55));
 
-    // The harbour: Harbor Boulevard with its halls (chase camera)
+    // The harbour: Harbor Boulevard with its halls (chase camera), the
+    // quay cranes from the beach
     await chase('harbor', [-250, 298, 1.546]);
+    await still('cranes', [-455, 640, Math.PI], view([-462, 4, 645], [-492, 12, 500], 55));
 
     // The Party arena from above its gate, with eight cars
     if (want('arena')) {

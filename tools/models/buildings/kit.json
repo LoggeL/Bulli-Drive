@@ -419,6 +419,11 @@
           "id": "landmark_gas_station",
           "kind": "gas_station",
           "seed": 7
+        },
+        {
+          "id": "landmark_quay_crane",
+          "kind": "quay_crane",
+          "seed": 9
         }
       ]
     },

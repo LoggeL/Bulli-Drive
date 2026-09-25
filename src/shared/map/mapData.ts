@@ -20,6 +20,7 @@ import { heightAt, surfaceAt, type Heightfield } from './heightfield.js';
 import type { Landmark, PoisFile } from './mapFiles.js';
 import type { MapSources } from './mapSources.js';
 import { placePlants, PLANT_COLLIDERS, type Plant } from './plants.js';
+import { benchBox, FURNITURE_COLLIDERS, placeFurniture, type Furniture } from './furniture.js';
 import { networkRailColliders, RAIL_RADIUS, type SegmentCollider } from './rails.js';
 import { buildRoadNetwork, nearestRoad, type RoadHit, type RoadNetwork } from './roadNetwork.js';
 import { AXIS_SNAP, snapYaw } from './routeToTrack.js';
@@ -75,6 +76,8 @@ export interface MapData {
     structures: readonly MapStructure[];
     buildings: readonly BuildingLot[];
     plants: readonly Plant[];
+    // Street lights, signals, hydrants, benches and trash cans (furniture.ts)
+    furniture: readonly Furniture[];
     // Fences (looks and colliders): the arena's, with the gap of its gate,
     // and round the Party's zone (party: a collider in the Party world only,
     // left out where a building's wall closes the zone)
@@ -111,12 +114,13 @@ export const FENCE_PIECE = 16;
 // Arena fence: this far inside the lot's outline
 export const ARENA_FENCE_INSET = 0.5;
 // Landmark kinds and the kit piece that stands for them (A23, A41). Kinds
-// without a piece have no collider (a square, a beach, a harbour basin);
-// the quay cranes wait for their model (M4).
+// without a piece have no collider (a square, a beach, a harbour basin, the
+// lookout's lot); a quay crane collides with its caisson.
 export const LANDMARK_PIECES: Partial<Record<Landmark['kind'], KitPieceId>> = {
     diner: 'landmark_diner',
     gasStation: 'landmark_gas_station',
     lighthouse: 'landmark_lighthouse',
+    crane: 'landmark_quay_crane',
     waterTower: 'landmark_water_tower',
     lifeguardTower: 'lifeguard_tower',
     lightMast: 'arena_floodlight',
@@ -372,10 +376,12 @@ export function createMapData(sources: MapSources, hf: Heightfield): MapData {
     const buildingIndex = new BoxIndex();
     for (const lot of buildings) buildingIndex.add(placementBox(lot));
     const plants = placePlants({ net, hf, areas: net.areas, boundary: map.boundary, buildings: buildingIndex, reserved });
+    const furniture = placeFurniture({ net, hf, areas: net.areas, boundary: map.boundary, buildings: buildingIndex, reserved, plants });
 
     // The colliders, in a fixed order (it decides the order of the
     // collision response): rails, the border, the arena fence, landmarks
-    // and containers, the ramps' edge walls, buildings, plants
+    // and containers, the ramps' edge walls, buildings, plants, street
+    // furniture
     const colliders: ColliderInput[] = [...networkRailColliders(net), ...boundaryFence(map.boundary, hf)];
     for (const line of arena.lines) {
         for (let i = 1; i < line.length; i++) segmentChain(line[i - 1], line[i], 8, Infinity, colliders as SegmentCollider[]);
@@ -391,6 +397,10 @@ export function createMapData(sources: MapSources, hf: Heightfield): MapData {
     for (const plant of plants) {
         const shape = PLANT_COLLIDERS[plant.kind];
         colliders.push({ kind: 'circle', x: plant.x, z: plant.z, r: toMillimetre(shape.r * plant.size), top: shape.top === Infinity ? Infinity : toMillimetre(shape.top * plant.size) });
+    }
+    for (const piece of furniture) {
+        if (piece.kind === 'bench') colliders.push(boxCollider(benchBox(piece), FURNITURE_COLLIDERS.bench.top));
+        else colliders.push({ kind: 'circle', x: piece.x, z: piece.z, r: FURNITURE_COLLIDERS[piece.kind].r, top: FURNITURE_COLLIDERS[piece.kind].top });
     }
 
     const spec = hf.spec;
@@ -445,7 +455,7 @@ export function createMapData(sources: MapSources, hf: Heightfield): MapData {
 
     return {
         mapId: map.mapId, mapVersion: map.mapVersion, name: map.name,
-        sources, hf, net, ramps, structures, buildings, plants,
+        sources, hf, net, ramps, structures, buildings, plants, furniture,
         fences: [
             ...arena.lines.map((line, i) => ({ id: `arena-fence-${i + 1}`, line })),
             ...partyFence.map((line, i) => ({ id: `party-fence-${i + 1}`, line, party: true }))

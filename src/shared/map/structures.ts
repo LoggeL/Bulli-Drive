@@ -49,6 +49,7 @@ export const KIT_FOOTPRINTS = {
     landmark_diner: { minX: -7.5, maxX: 7.5, minZ: -8, maxZ: 0, height: 6.4 },
     landmark_gas_station: { minX: -6, maxX: 6, minZ: -16, maxZ: 0, height: 6.75 },
     landmark_lighthouse: { minX: -3.4, maxX: 3.4, minZ: -6.8, maxZ: 0, height: 22.91 },
+    landmark_quay_crane: { minX: -4, maxX: 4, minZ: -8, maxZ: 0, height: 23.54 },
     landmark_water_tower: { minX: -4.6, maxX: 4.6, minZ: -9.2, maxZ: 0, height: 21.71 },
     rock_boulder_l: { minX: -2.467, maxX: 3.066, minZ: -2.294, maxZ: 2.01, height: 2.61 },
     rock_boulder_m: { minX: -1.34, maxX: 1.435, minZ: -1.246, maxZ: 1.076, height: 1.49 },

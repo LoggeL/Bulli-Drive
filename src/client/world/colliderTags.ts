@@ -1,11 +1,11 @@
 // Rendered props that stand where a collider is (buildings, landmarks,
-// containers, trees, palms, rocks, the fountain) are registered here. The
-// e2e hook lists them, and a test checks that each one sits on a collider of
-// the map (shared/map/mapData.ts), so the look and the collision of the
-// world cannot drift apart. The world is merged into cells and instanced
-// meshes, so a prop registers the position it is drawn at.
+// containers, trees, palms, rocks, the fountain, street furniture) are
+// registered here. The e2e hook lists them, and a test checks that each one
+// sits on a collider of the map (shared/map/mapData.ts), so the look and the
+// collision of the world cannot drift apart. The world is merged into cells
+// and instanced meshes, so a prop registers the position it is drawn at.
 
-export type ColliderTag = 'building' | 'landmark' | 'container' | 'tree' | 'palm' | 'rock' | 'fountain';
+export type ColliderTag = 'building' | 'landmark' | 'container' | 'tree' | 'palm' | 'rock' | 'fountain' | 'furniture';
 
 export interface TaggedCollider {
     tag: ColliderTag;

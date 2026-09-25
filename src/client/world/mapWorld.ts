@@ -3,6 +3,7 @@ import type { Vec2 } from '../../shared/map/geometry.js';
 import { heightAt } from '../../shared/map/heightfield.js';
 import type { MapData } from '../../shared/map/mapData.js';
 import { PLANT_COLLIDERS } from '../../shared/map/plants.js';
+import type { FurnitureKind } from '../../shared/map/furniture.js';
 import { areaRailLine, railLine } from '../../shared/map/rails.js';
 import type { RailKind } from '../../shared/map/roadSchema.js';
 import { leftNormal, pointAt } from '../../shared/map/spline.js';
@@ -12,12 +13,14 @@ import { Batch, rgb } from './batch.js';
 import { ChunkedInstances, ChunkView, type InstanceSpec } from './chunkedInstances.js';
 import { markColliderAt } from './colliderTags.js';
 import { buildFountain } from './fountain.js';
-import { FINISH, PropBatch } from './furniture.js';
+import { furnitureGeometry } from './streetFurniture.js';
+import { FINISH, PropBatch, type Finish } from './furniture.js';
 import { mergeKit, pieceGeometry, type KitCatalog, type KitInstance } from './kit.js';
 import { cellDistance, cellKey, cellLod, CELL_SIZES, occupiedCells, selectCells, type CellLevel, type CellRef } from './kitCells.js';
 import type { WorldMaterials } from './materials.js';
 import { createPalms, type PalmSpot } from './palms.js';
 import { alongPolyline, polylineLength, postsAlong, railPieces } from './railings.js';
+import { crestSpots } from './viewpoint.js';
 import { createRoads } from './roads.js';
 import { scatterDecor, type DecorSpot } from './scatter.js';
 import { createSea } from './sea.js';
@@ -46,6 +49,9 @@ const FENCE_HEIGHT = 2.4;
 // Wooden railings: posts every 2 m, 1.05 m
 const RAIL_POST_SPACING = 2;
 const RAIL_HEIGHT = 1.05;
+// The lookout's coin telescopes: painted steel, dark lenses
+const TELESCOPE: Finish = { color: rgb(0x2f5d45), rough: 0.42, metal: 0.25 };
+const LENS: Finish = { color: rgb(0x141617), rough: 0.2 };
 
 interface CellMesh {
     ref: CellRef;
@@ -147,6 +153,7 @@ export class MapWorld {
         this.addFences(props);
         this.addRailings(props);
         this.addFountain(props);
+        this.addFurniture(props);
     }
 
     // ---- The kit ----
@@ -572,8 +579,29 @@ export class MapWorld {
                 }
             });
         }
+        this.addTelescopes(batch);
         const mesh = batch.mesh(this.M.furniture, { cast: true, receive: true });
         if (mesh) group.add(mesh);
+    }
+
+    // The lookout's coin telescopes (design 3.3): two on the knoll between
+    // its lot and the bay (the pier), where the view opens (viewpoint.ts,
+    // A66); small props like the sunshades, without a collider
+    private addTelescopes(batch: PropBatch): void {
+        const { landmarks } = this.map.sources.pois;
+        const pier = landmarks.find(landmark => landmark.kind === 'pier');
+        const ground = (x: number, z: number) => heightAt(this.map.hf, x, z);
+        for (const lookout of landmarks) {
+            const area = lookout.kind === 'lookout' && lookout.area ? this.map.net.areas.find(a => a.id === lookout.area) : undefined;
+            if (!area || !pier) continue;
+            let cx = 0, cz = 0;
+            for (const [px, pz] of area.polygon) { cx += px; cz += pz; }
+            const from: Vec2 = [cx / area.polygon.length, cz / area.polygon.length];
+            for (const spot of crestSpots(ground, from, [pier.x, pier.z], 20, 90, 2, 1.8)) {
+                const matrix = new THREE.Matrix4().makeRotationY(spot.yaw).setPosition(spot.x, ground(spot.x, spot.z), spot.z);
+                addTelescope(batch, matrix);
+            }
+        }
     }
 
     private addFountain(group: THREE.Group): void {
@@ -586,6 +614,34 @@ export class MapWorld {
         if (stoneMesh) group.add(stoneMesh);
         for (const mesh of water) group.add(mesh);
         markColliderAt('fountain', fountain.x, fountain.z);
+    }
+
+    // Street lights, signals, hydrants, trash cans and benches at their
+    // colliders (shared/map/furniture.ts): per kind the full model up close
+    // (fewer segments on phones) and a few boxes beyond, each instanced;
+    // only the poles cast shadows, up close (software WebGL: boxes only,
+    // no shadows)
+    private addFurniture(group: THREE.Group): void {
+        const specs = new Map<FurnitureKind, InstanceSpec[]>();
+        for (const piece of this.map.furniture) {
+            markColliderAt('furniture', piece.x, piece.z);
+            const matrix = new THREE.Matrix4().makeRotationY(Math.atan2(piece.ux, piece.uz))
+                .setPosition(piece.x, heightAt(this.map.hf, piece.x, piece.z), piece.z);
+            const list = specs.get(piece.kind);
+            if (list) list.push({ matrix });
+            else specs.set(piece.kind, [{ matrix }]);
+        }
+        const { furniture, furnitureNear } = this.quality.sight;
+        for (const [kind, list] of specs) {
+            const near = new ChunkedInstances(furnitureGeometry(kind, this.tier === 'desktop' ? 'high' : 'low'), this.M.furniture, list, furnitureNear, `furniture-${kind}`);
+            near.mesh.castShadow = this.tier !== 'software' && (kind === 'lamp' || kind === 'signal');
+            const far = new ChunkedInstances(furnitureGeometry(kind, 'far'), this.M.furniture, list, furniture, `furniture-${kind}-far`, furnitureNear);
+            for (const instances of [near, far]) {
+                instances.mesh.receiveShadow = true;
+                this.instanced.push(instances);
+                group.add(instances.mesh);
+            }
+        }
     }
 
     // ---- Per frame ----
@@ -610,6 +666,12 @@ export class MapWorld {
         this.quality = quality;
         this.instanced.forEach(instances => {
             const name = instances.mesh.name;
+            if (name.startsWith('furniture')) {
+                const far = name.endsWith('-far');
+                instances.sight = far ? quality.sight.furniture : quality.sight.furnitureNear;
+                instances.from = far ? quality.sight.furnitureNear : 0;
+                return;
+            }
             instances.sight = name.startsWith('trees') ? quality.sight.trees : name.startsWith('scatter') ? quality.sight.scatter
                 : name.startsWith('rocks') ? quality.sight.rocks : quality.sight.rails;
         });
@@ -624,6 +686,23 @@ export class MapWorld {
             instances: Object.fromEntries(this.instanced.map(i => [i.mesh.name, i.mesh.count])),
             terrainTriangles: this.terrain.triangles()
         };
+    }
+}
+
+// A coin telescope on its post, looking along +z (painted green, the
+// lenses dark, the eyepieces at the back)
+function addTelescope(batch: PropBatch, matrix: THREE.Matrix4): void {
+    const part = (geometry: THREE.BufferGeometry, finish: Finish) => batch.add(geometry.applyMatrix4(matrix), finish);
+    part(new THREE.CylinderGeometry(0.2, 0.24, 0.08, 10).translate(0, 0.04, 0), FINISH.concrete);
+    part(new THREE.CylinderGeometry(0.055, 0.07, 1.05, 8).translate(0, 0.6, 0), TELESCOPE);
+    part(new THREE.BoxGeometry(0.34, 0.12, 0.14).translate(0, 1.15, 0), TELESCOPE);
+    // The housing, tilted a little down towards the view
+    const housing = new THREE.Matrix4().makeRotationX(0.08).setPosition(0, 1.33, 0);
+    part(new THREE.CylinderGeometry(0.15, 0.17, 0.46, 12).rotateX(Math.PI / 2).applyMatrix4(housing), TELESCOPE);
+    part(new THREE.BoxGeometry(0.1, 0.1, 0.12).translate(0, 0.17, -0.05).applyMatrix4(housing), TELESCOPE);
+    for (const x of [-0.07, 0.07]) {
+        part(new THREE.CylinderGeometry(0.06, 0.06, 0.06, 10).rotateX(Math.PI / 2).translate(x, 0, 0.25).applyMatrix4(housing), LENS);
+        part(new THREE.CylinderGeometry(0.035, 0.035, 0.08, 8).rotateX(Math.PI / 2).translate(x, 0.02, -0.27).applyMatrix4(housing), LENS);
     }
 }
 

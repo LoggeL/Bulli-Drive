@@ -20,8 +20,8 @@ vi.mock('../../src/client/world/textures.js', async () => {
 // Look and collision agree (docs/phase-1b-design.md, 6; phase 3 M4): the
 // client builds Bulli Bay's world as the page does (world/mapWorld.ts), and
 // every drawn thing that has a collider in the map's sim world stands on
-// it: one per building, landmark, container, tree, palm and rock, and the
-// fountain. Built in Node without a renderer and without the kit's GLBs
+// it: one per building, landmark, container, tree, palm, rock and piece of
+// street furniture, and the fountain. Built in Node without a renderer and without the kit's GLBs
 // (the kit's pieces are placed from the same placements).
 
 describe('Bulli Bay as the client draws it', () => {
@@ -34,11 +34,12 @@ describe('Bulli Bay as the client draws it', () => {
         props = listTaggedColliders();
     });
 
-    it('draws something on every collider of a building, landmark, plant and the fountain, and nothing more', () => {
+    it('draws something on every collider of a building, landmark, plant, street furniture and the fountain, and nothing more', () => {
         const expected = [
             ...map.buildings.map(lot => ({ tag: 'building', x: lot.x, z: lot.z })),
             ...map.structures.map(s => ({ tag: s.kind === 'container' ? 'container' : 'landmark', x: s.x, z: s.z })),
-            ...map.plants.map(p => ({ tag: p.kind === 'palm' ? 'palm' : p.kind === 'boulder' || p.kind === 'rock' ? 'rock' : 'tree', x: p.x, z: p.z }))
+            ...map.plants.map(p => ({ tag: p.kind === 'palm' ? 'palm' : p.kind === 'boulder' || p.kind === 'rock' ? 'rock' : 'tree', x: p.x, z: p.z })),
+            ...map.furniture.map(p => ({ tag: 'furniture', x: p.x, z: p.z }))
         ];
         const fountain = map.colliders.find((collider): collider is Extract<typeof collider, { kind: 'circle' }> => collider.kind === 'circle' && collider.top === 1.5)!;
         expected.push({ tag: 'fountain', x: fountain.x, z: fountain.z });

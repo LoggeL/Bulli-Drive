@@ -71,8 +71,11 @@ export class ChunkedInstances {
     private readonly start = new Int32Array(CHUNKS * CHUNKS + 1);
     private lastKey = '';
     sight: number;
+    // Instances nearer than this are left out (a near and a far model of
+    // one kind: two ChunkedInstances with adjoining ranges)
+    from: number;
 
-    constructor(geometry: THREE.BufferGeometry, material: THREE.Material, specs: readonly InstanceSpec[], sight: number, name: string) {
+    constructor(geometry: THREE.BufferGeometry, material: THREE.Material, specs: readonly InstanceSpec[], sight: number, name: string, from = 0) {
         const order = specs.map((spec, i) => ({ spec, i, chunk: chunkOf(spec.matrix.elements[12], spec.matrix.elements[14]) }))
             .sort((a, b) => a.chunk - b.chunk || a.i - b.i);
         this.matrices = new Float32Array(specs.length * 16);
@@ -96,27 +99,29 @@ export class ChunkedInstances {
             this.mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
         }
         this.sight = sight;
+        this.from = from;
     }
 
     get total(): number {
         return this.matrices.length / 16;
     }
 
-    /** Packs the instances of the visible chunks within sight around (x, z). */
+    /** Packs the instances of the visible chunks from `from` to `sight` m around (x, z). */
     update(view: ChunkView, viewKey: string, x: number, z: number): void {
         // Repack when the visible chunks change or the camera enters another 8 m cell
-        const key = `${viewKey}:${Math.floor(x / 8)}:${Math.floor(z / 8)}:${this.sight}`;
+        const key = `${viewKey}:${Math.floor(x / 8)}:${Math.floor(z / 8)}:${this.sight}:${this.from}`;
         if (key === this.lastKey) return;
         this.lastKey = key;
         const target = this.mesh.instanceMatrix.array as Float32Array;
         const colors = this.mesh.instanceColor?.array as Float32Array | undefined;
-        const sight2 = this.sight * this.sight;
+        const sight2 = this.sight * this.sight, from2 = this.from * this.from;
         let count = 0;
         for (let c = 0; c < CHUNKS * CHUNKS; c++) {
             if (!view.inFrustum[c] || view.distance[c] > this.sight) continue;
             for (let k = this.start[c]; k < this.start[c + 1]; k++) {
                 const dx = this.positions[k * 2] - x, dz = this.positions[k * 2 + 1] - z;
-                if (dx * dx + dz * dz > sight2) continue;
+                const d2 = dx * dx + dz * dz;
+                if (d2 > sight2 || d2 < from2) continue;
                 target.set(this.matrices.subarray(k * 16, k * 16 + 16), count * 16);
                 if (colors && this.colors) colors.set(this.colors.subarray(k * 3, k * 3 + 3), count * 3);
                 count++;

@@ -17,8 +17,9 @@ export interface WorldQuality {
     detail: WorldDetail;
     terrain: TerrainGridConfig;
     kit: CellDistances;
-    // Sight per instanced kind (m)
-    sight: { trees: number; scatter: number; rocks: number; rails: number };
+    // Sight per instanced kind (m); street furniture has its full model up
+    // to furnitureNear, a few boxes beyond
+    sight: { trees: number; scatter: number; rocks: number; rails: number; furniture: number; furnitureNear: number };
     // Share of the client's scatter that is drawn
     scatter: number;
 }
@@ -28,14 +29,14 @@ export const WORLD_QUALITY: Record<WorldDetail, WorldQuality> = {
         detail: 'high',
         terrain: TERRAIN_GRID.high,
         kit: { lod0: 60, lod1: 180, sight: 4000, hysteresis: 8, shadowReach: 110, nearLod: 0 },
-        sight: { trees: 1200, scatter: 260, rocks: 700, rails: 900 },
+        sight: { trees: 1200, scatter: 260, rocks: 700, rails: 900, furniture: 300, furnitureNear: 70 },
         scatter: 1
     },
     mid: {
         detail: 'mid',
         terrain: TERRAIN_GRID.mid,
         kit: { lod0: 45, lod1: 140, sight: 1600, hysteresis: 8, shadowReach: 90, nearLod: 0 },
-        sight: { trees: 700, scatter: 180, rocks: 450, rails: 500 },
+        sight: { trees: 700, scatter: 180, rocks: 450, rails: 500, furniture: 220, furnitureNear: 50 },
         scatter: 0.75
     },
     low: {
@@ -44,7 +45,7 @@ export const WORLD_QUALITY: Record<WorldDetail, WorldQuality> = {
         // Phones: LOD1 up close (no cornices), LOD2 beyond (design 10); the
         // near cells are the small ones, so fewer pieces cast shadows
         kit: { lod0: 50, lod1: 110, sight: 650, hysteresis: 6, shadowReach: 60, nearLod: 1 },
-        sight: { trees: 500, scatter: 120, rocks: 300, rails: 320 },
+        sight: { trees: 500, scatter: 120, rocks: 300, rails: 320, furniture: 160, furnitureNear: 35 },
         scatter: 0.55
     },
     software: {
@@ -54,7 +55,7 @@ export const WORLD_QUALITY: Record<WorldDetail, WorldQuality> = {
         // cells up to the sight of 220 m (design 10), where a CPU
         // rasterizer pays for every vertex
         kit: { lod0: -1, lod1: 250, sight: 220, hysteresis: 6, shadowReach: 0, nearLod: 2 },
-        sight: { trees: 220, scatter: 60, rocks: 160, rails: 200 },
+        sight: { trees: 220, scatter: 60, rocks: 160, rails: 200, furniture: 90, furnitureNear: 0 },
         scatter: 0.3
     }
 };
