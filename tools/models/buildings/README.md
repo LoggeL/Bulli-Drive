@@ -2,11 +2,11 @@
 
 Procedural Blender kit of the buildings and props of the curated map Bulli Bay (phase 3,
 `docs/phase-3-design.md`), in the realistic look of the G1 world: four building families (Main
-Street in four styles), four landmarks, the pier, guardrails, cliff and rock blocks, beach props
-and the elements of the party arena. Every
-piece is parametric (width or bays, storeys, depth, seed) and exported with three LODs into one
-meshopt GLB per group; all groups share one KTX2 texture atlas. **Not used by the game yet**: the
-chunk builder of phase 3 M4 will place and merge the pieces.
+Street in four styles), five landmarks, the pier, guardrails, cliff and rock blocks, beach props
+and the elements of the party arena. Every piece is parametric (width or bays, storeys, depth,
+seed) and exported with three LODs into one meshopt GLB per group; all groups share one KTX2
+texture atlas. The game loads it since phase 3 M4 (`src/client/world/kit.ts`) and merges the
+pieces per cell and LOD (`kitCells.ts`, `mapWorld.ts`).
 
 ```
 tools/models/buildings/
@@ -100,7 +100,7 @@ parameters plus resolved variant choices).
 | roadside | guardrail segment, end terminals | kind, length, dir | - |
 | rocks | 3 boulders, slab, 2 cliff blocks | size, shape, strata, seed | shape (fractal noise + strata) |
 | beachprops | lifeguard tower, surfboard rack | kind, paint, seed | tower paint, board colours |
-| landmarks | lighthouse (18 m tapered tower, gallery, lantern), water tower (tank on four braced legs), Streamline diner ("BULLI'S DINER" roof sign), 1950s gas station (canopy with "SEASIDE SERVICE" fascia, pumps, office with service bay, pylon sign) | kind, seed | diner tint, tower paint |
+| landmarks | lighthouse (18 m tapered tower, gallery, lantern), water tower (tank on four braced legs), Streamline diner ("BULLI'S DINER" roof sign), 1950s gas station (canopy with "SEASIDE SERVICE" fascia, pumps, office with service bay, pylon sign), quay crane (slewing jib crane on an 8 x 8 m caisson, lattice jib 20 m out over the water at the front) | kind, seed | diner tint, tower paint |
 | arena | K-rail, water barriers (red, white), grandstand, floodlight mast, containers 20 ft (2) and 40 ft | kind, length, rows, height, color, seed | container colour |
 
 The generators accept any parameter values; kit.json is the catalogue that gets exported. To add

@@ -1,6 +1,44 @@
 # Welt-Look: realistisch, ruhig-naturgetreu (Grafik-Schritt G1)
 
-**Stand:** 2026-09-23 · Branch `gfx/g1-realistic`
+**Stand:** 2026-09-25 · Phase 3 M4 (Bulli Bay). Der Abschnitt „Bulli Bay“ beschreibt die heutige Welt; die Abschnitte danach sind das Protokoll des Grafik-Schritts G1 (2026-09-23, Branch `gfx/g1-realistic`) und beschreiben die alte Stadt. Licht, Nebel, Grade, Himmel, Palmen, Bäume, Brunnen, Straßenmöbel und die Texturen gelten weiter, Gebäude, Straßen und Gelände nicht mehr.
+
+## Bulli Bay (Phase 3, M4)
+
+Seit M4 zeichnet der Client die kuratierte Karte (Details und Abweichungen: [`docs/phase-3-design.md`](phase-3-design.md) 9–11 und A59 ff.):
+
+| Bereich | Umsetzung |
+|---|---|
+| Gelände | verschachtelte Ringe um die Kamera (Clipmap, `terrainGrid.ts`), auf der CPU aus `heightAt` gefüllt: jede Ecke liegt auf dem Boden der Sim (4,3 cm Abweichung bei 0,5 m Raster auf dem rauesten befahrbaren Boden, 2,5 cm auf Straßen). Oberflächen aus der gebackenen Schicht als Splat (Sand, nasser Sand, Erde, Kies, Fels, Rasen), Hügel jenseits der Kartendaten |
+| Straßen | Bänder entlang der Kanten mit den Markierungen im Shader (Mittel-, Spur-, Randlinien, Parken, Haltelinien, Zebrastreifen, Stellplätze), Kreuzungsflächen mit runden Ecken, Gehwege und Bordsteine, Plaza-Pflaster; je Belag und 500-m-Block ein Mesh |
+| Meer | eine Ebene bis zum Horizont, Tiefe aus den Höhen (R16UI), Brandung und Flachwasser, weiche Wasserlinie |
+| Gebäude, Landmarken | das Blender-Kit (`public/models/kit`), je Zelle und LOD zusammengeführt: 250-m-Chunks mit LOD2, 125-m-Viertel mit LOD1, 62,5-m-Achtel mit LOD0. Diner, Tankstelle, Leuchtturm, Wasserturm, Rettungstürme, Lichtmasten, Hafenkräne, Pier |
+| Pflanzen, Requisiten | Palmen und Bäume mit Collidern aus `src/shared`, Streuung ohne Collider im Client (Chaparral, Büsche, Blumen, Strandhafer, Sonnenschirme, Volleyballnetze, Paletten, Briefkästen, Ranch-Zäune), alles instanziert und je Chunk gecullt |
+| Straßenmöbel | Laternen, Ampelmasten, Hydranten, Bänke und Mülleimer in Downtown, im Park und um den Plaza-Brunnen, mit Collidern aus `src/shared/map/furniture.ts`; nah das G1-Modell, fern ein paar Boxen |
+| Sonne | aus `map.json`: West-Nordwest über dem Pazifik, 17° hoch |
+| Minimap | Karte genordet, Osten rechts (E2) |
+
+**Detailstufen** (`worldQuality.ts`): high (Desktop), mid (Desktop, dessen GPU selbst bei kleinster Auflösung zu langsam ist), low (Handys), software (CPU-Rasterizer, E2E). Sie regeln Gelände-Ringe, Kit-Zellen, Sichtweiten der Instanzen und die Dichte der Streuung. Auf einem CPU-Rasterizer zeichnet die Seite ohne Multisampling (ein Drittel jedes SwiftShader-Bildes).
+
+**Draw Calls und Dreiecke** (`npm run screenshots`, M5-GPU, einschließlich Schatten-Pass; Budget Desktop ≤ 300 Calls und 1,2 Mio. Dreiecke, Handy ≤ 150 und 500 k):
+
+| Ansicht | Calls (Schatten) | Dreiecke |
+|---|---|---|
+| Main Street (street) | 143 (39) | 1 009 k |
+| Fahrt (drive) | 151 (40) | 1 005 k |
+| Plaza | 91 (26) | 776 k |
+| Promenade | 101 (33) | 873 k |
+| Hafen (harbor) | 111 (30) | 611 k |
+| Arena mit 8 Autos | 104 (35) | 377 k |
+| Ridge-Kehre (ridge) | 52 (16) | 529 k |
+| Aussichtspunkt (lookout) | 102 (9) | 653 k |
+| Überblick (overview) | 107 (10) | 634 k |
+| Rennstart mit Feld (race-start) | 182 (69) | 1 123 k |
+| Mobil hoch (Tier low) | 99 (28) | 406 k |
+| Mobil quer (Tier low) | 126 (28) | 483 k |
+
+Der Render-Test (`tests/e2e-render/phone-tier.spec.ts`) prüft das Handy-Budget an drei festen Punkten und mit sieben fremden Autos.
+
+## Grafik-Schritt G1 (alte Stadt)
 
 Die Spielwelt ist vom Low-Poly-Stil mit Einzel-Meshes auf einen realistischen Look umgestellt. Vorbild ist die Welt-Probe des Prototyps (`gfx/real/world`), mit ruhigerer, naturgetreuer Farbstimmung. Das goldene KI-Zielbild war ausdrücklich nicht die Vorlage. Straßen- und Stadtlayout sowie alle Kollisionen sind unverändert. Geändert hat sich nur die Optik.
 
@@ -86,6 +124,7 @@ Tier low bleibt unter 150 Draw Calls und weit unter 500 k Dreiecken. Der E2E-Tes
 | Pixel-Ratio | ≤ 2 | ≤ 1,5 | ≤ 2 (adaptiv) |
 | Post-Processing | keins | keins | keins |
 | Gelände-Raster | 8 m | 10 m | 16 m |
+| Bulli Bay (M4) | Ringe ab 0,5 m, Kit-LOD0 bis 60 m | Ringe ab 0,5 m, Kit ab LOD1 | Ringe ab 1 m, Kit-LOD2 bis 220 m, kein Multisampling |
 
 Texturen sind auf allen Tiers KTX2 (`src/client/world/textures.ts`, Platzhalter-Texturen, die nach dem Laden gefüllt werden, ohne dass Shader neu kompilieren).
 
@@ -170,6 +209,12 @@ Ein Review der Screenshots und Messungen brachte 20 Befunde. Umgesetzt (Wirkung 
 - `src/client/world/batch.ts`: Geometrie pro Material zusammenführen
 - `src/client/world/vegetation.ts`: Baum- und Buschkarten
 - `src/client/world/palms.ts`: Palmen, Wind, Impostors
-- `src/client/world/furniture.ts`, `streetLayout.ts`: Straßenmöbel und ihre Plätze
-- `src/client/world/fountain.ts`: Plaza-Brunnen und Teichrand
-- `src/client/world/city.ts`, `environment.ts`: Stadt und Gelände
+- `src/client/world/furniture.ts`, `streetFurniture.ts`: Oberflächen der Requisiten, Modelle der Straßenmöbel (Plätze: `src/shared/map/furniture.ts`)
+- `src/client/world/fountain.ts`: Plaza-Brunnen
+- `src/client/world/mapScene.ts`, `mapWorld.ts`: die Welt der Karte (seit Phase 3 M4)
+- `src/client/world/terrain.ts`, `terrainGrid.ts`, `terrainSplat.ts`: Gelände
+- `src/client/world/roads.ts`, `roadGeometry.ts`: Straßen, Gehwege, Markierungen
+- `src/client/world/sea.ts`: Meer
+- `src/client/world/kit.ts`, `kitCells.ts`: Gebäude-Kit
+- `src/client/world/chunkedInstances.ts`, `scatter.ts`, `railings.ts`, `viewpoint.ts`: Instanzen je Chunk, Streuung, Geländer, Fernrohre
+- `src/client/world/worldQuality.ts`: Detailstufen

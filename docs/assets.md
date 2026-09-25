@@ -45,9 +45,9 @@ Alle Dateien von [polyhaven.com](https://polyhaven.com), Lizenz [CC0 1.0](https:
 | `asphalt_clean` | [Clean Asphalt](https://polyhaven.com/a/clean_asphalt) | Dimitrios Savva | 2,1 m | nicht im Spiel, nur Boden der Blender-Look-dev-Renders (`publish: []`) |
 | `sidewalk` | [Concrete Floor 03](https://polyhaven.com/a/concrete_floor_03) | Rob Tuytel, Matterfield | 2,5 m | 512 |
 | `stucco` | [White Stucco](https://polyhaven.com/a/white_stucco) | Amal Kumar | 2,0 m | 512 (per Vertex-Farbe getönt) |
-| `roof_tiles` | [Clay Roof Tiles 02](https://polyhaven.com/a/clay_roof_tiles_02) | Amal Kumar | 2,5 m | 512 |
+| `roof_tiles` | [Clay Roof Tiles 02](https://polyhaven.com/a/clay_roof_tiles_02) | Amal Kumar | 2,5 m | nicht mehr einzeln ausgeliefert (seit Phase 3 M4 nur im Kit-Atlas, Abschnitt 7) |
 | `roof_gravel` | [Tarred Gravel](https://polyhaven.com/a/tarred_gravel) | Dimitrios Savva | 2,2 m | 256 |
-| `grass` | [Leafy Grass](https://polyhaven.com/a/leafy_grass) | Charlotte Baglioni | 2,0 m | 512 |
+| `grass` | [Leafy Grass](https://polyhaven.com/a/leafy_grass) | Charlotte Baglioni | 2,0 m | Albedo 512 (Rasen der Gärten und des Parks; Normal- und ARM-Map seit Phase 3 M4 nicht mehr ausgeliefert) |
 | `grass_dry` | [Withered Grass](https://polyhaven.com/a/withered_grass) | Charlotte Baglioni | 2,0 m | 512 |
 | `sand` | [Aerial Beach 01](https://polyhaven.com/a/aerial_beach_01) | Rob Tuytel | 30 m | 256 |
 | HDRI | [Victoria Sunset](https://polyhaven.com/a/victoria_sunset) | Greg Zaal | – | 1k `.hdr` (IBL, Reflexionen) |
@@ -65,16 +65,14 @@ Die Sonnenhöhe beider HDRIs liegt bei 4–6°. Das DirectionalLight des Spiels 
 
 | Datei (`public/textures/generated/`) | Inhalt | Prompt(s) |
 |---|---|---|
-| `facade_albedo_tint`, `facade_arm`, `facade_emissive` | Fassaden-Atlas, 4 Geschoss-Bänder, Alpha = Tönungsmaske für den Stuck | `facade_atlas` |
-| `storefront_atlas`, `storefront_emissive` | Ladenfronten Diner, Surfshop, Tankstelle; Neon/Innenlicht | `diner_front`, `surfshop_front_v2`, `gas_station_front_v2` |
-| `rock_albedo`, `rock_normal` | Klippenfels | `rock_cliff` |
+| `rock_albedo` | Klippenfels (Gelände-Shader; auch Quelle der Fels-Region im Kit-Atlas) | `rock_cliff` |
 | `palm_trunk`, `palm_trunk_normal`, `palm_fronds`, `fan_fronds` | Palmen (Stamm kachelbar, Wedel freigestellt) | `palm_trunk_v2`, `palm_fronds`, `fan_fronds` |
 | `tree_cards` (+ `tree_cards.json`), `shrubs` | Baum-Karten (Eiche, Zypresse), Büsche | `tree_cards`, `shrub_card` |
 | `world_noise` | kachelbares Makro-Rauschen (prozedural erzeugt, keine KI) | – |
 | `tools/models/src/license_plate_bulli_512.png` | Nummernschild „BULLI“ | `license_plate` |
 | `tools/models/src/license_plate_{beetle,pickup,sport,jeep}_512.png` | Nummernschilder „KAEFER“, „PICKUP“, „356 B“, „THING“ | `license_plate` mit ersetztem Kennzeichen; Zuschnitt `tools/textures/generated/prep/plates.py` |
 
-Nicht mehr ausgeliefert (G1-Nacharbeit): der Straßenschilder-Atlas (`street_signs`, die Schilder in `city.ts` sind prozedural) und der Diner-Innenraum (`diner_interior`). Beide wurden nie geladen. Prompts und Prep-Schritte bleiben in `tools/textures/generated/`, die Rohbilder im Quellen-Archiv.
+Nicht mehr ausgeliefert (G1-Nacharbeit): der Straßenschilder-Atlas (`street_signs`) und der Diner-Innenraum (`diner_interior`); beide wurden nie geladen. Seit Phase 3 M4 (Bulli Bay statt der alten Stadt) außerdem der Fassaden-Atlas (`facade_albedo_tint`, `facade_arm`, `facade_emissive`), die Ladenfronten (`storefront_atlas`, `storefront_emissive`) und `rock_normal`: Die Gebäude kommen aus dem Kit (Abschnitt 7). Prompts und Prep-Schritte bleiben in `tools/textures/generated/`, die Rohbilder im Quellen-Archiv.
 
 Die KTX2-Dateien sind die kanonischen Kopien. Die Rohbilder und aufbereiteten Quellen (55 Dateien, 71 MB) sind nicht im Repo, sondern in einem Tar-Archiv außerhalb davon; `tools/textures/generated/sources.json` listet jede Datei mit SHA-256, `sources.mjs unpack` stellt den Arbeitsbaum für die Prep-Skripte wieder her (siehe `tools/textures/README.md`).
 
@@ -96,16 +94,16 @@ Die KTX2-Dateien sind die kanonischen Kopien. Die Rohbilder und aufbereiteten Qu
 | LOD1 | 8 000 Dreiecke, 10 Primitives, 160 KB | 7 965, 9, 111 KB |
 | LOD2 | 2 000 Dreiecke, 4 Primitives, 48 KB | 1 960, 4, 24 KB |
 | alle LODs eines Autos | 560 KB | 341 KB |
-| `public/models` + `public/textures` | 30 MB | 9,6 MB |
+| `public/models` + `public/textures` | 30 MB | 10,4 MB (mit dem Gebäude-Kit, ohne die Texturen der alten Stadt) |
 | Mobile Tier low (iPhone 12/13), ganzes Bild | ≤ 150 Draw Calls inkl. Schatten, ≤ 500k Dreiecke, KTX2 Pflicht, kein Post | Straßenansicht quer mit T1: 119 Calls, 237k Dreiecke |
 
 Grenzwerte pro LOD stehen maschinenlesbar in `tools/models/budgets.json` und werden beim Packen und im Unit-Test geprüft.
 
 ## 7. Gebäude-Kit (Phase 3, Schritt „building-kit“)
 
-Werkzeug, Konventionen und Budgets: [`tools/models/buildings/README.md`](../tools/models/buildings/README.md). Das Kit ist noch nicht ins Spiel eingebaut; der Chunk-Builder (Phase 3, M4) wird es laden.
+Werkzeug, Konventionen und Budgets: [`tools/models/buildings/README.md`](../tools/models/buildings/README.md). Seit Phase 3 M4 im Spiel: `src/client/world/kit.ts` lädt alle Gruppen und den Atlas, `kitCells.ts` und `mapWorld.ts` führen die Teile je Zelle und LOD zusammen.
 
-**Geometrie:** vollständig prozedural in Blender 5.2 aus `tools/models/buildings/pieces/*.py` und `lib/bd_kit.py`, keine fremden Meshes. Vier Gebäudefamilien (Downtown-Geschäftshaus in vier Stilen: Backstein, Putz, Mission Revival, Art déco; Spanish-Revival-Wohnhaus, Strandhaus/Surfshop, Industrie- und Hafenhalle), vier Landmarken (Leuchtturm, Wasserturm, Diner, Tankstelle), Pier-Segmente, Leitplanke mit Endstücken, Felsen und Klippenblöcke, Rettungsturm und Surfbrett-Ständer, Party-Arena (K-Rail, Wasserbarrieren, Tribüne, Flutlichtmast, Container 20 und 40 Fuß).
+**Geometrie:** vollständig prozedural in Blender 5.2 aus `tools/models/buildings/pieces/*.py` und `lib/bd_kit.py`, keine fremden Meshes. Vier Gebäudefamilien (Downtown-Geschäftshaus in vier Stilen: Backstein, Putz, Mission Revival, Art déco; Spanish-Revival-Wohnhaus, Strandhaus/Surfshop, Industrie- und Hafenhalle), fünf Landmarken (Leuchtturm, Wasserturm, Diner, Tankstelle, Hafenkran auf Senkkasten), Pier-Segmente, Leitplanke mit Endstücken, Felsen und Klippenblöcke, Rettungsturm und Surfbrett-Ständer, Party-Arena (K-Rail, Wasserbarrieren, Tribüne, Flutlichtmast, Container 20 und 40 Fuß).
 
 **Gemeinsamer Atlas** `public/models/kit/kit_atlas_{albedo,normal,arm,emissive}.ktx2` (Layout `tools/models/buildings/atlas.json`, gebaut von `make_atlas.py`, kodiert mit `tools/lib/ktx2.mjs`):
 

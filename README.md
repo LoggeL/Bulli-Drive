@@ -1,17 +1,18 @@
 # Bulli Drive
 
-A multiplayer 3D driving game featuring a chibi-style VW Bulli. Cruise a sun-soaked
-city, collect coins and powerups, and shoot it out with other drivers.
+A multiplayer 3D driving game featuring a VW Bulli. Cruise Bulli Bay, a sun-soaked
+California coast town, race on its roads, collect coins and powerups, and shoot it out
+with other drivers.
 
-![Screenshot](docs/screenshot.png)
+![Screenshot: Main Street in Bulli Bay](docs/screenshot.jpg)
 
 ## Features
 - **Multiplayer:** The server simulates every car at 60 Hz; each client predicts its own car, so driving and bumping into each other feel immediate. Party (combat) and Free Roam rooms of up to 32 players.
-- **Racing:** Race rooms with a lobby, a countdown with start lights and a launch boost, the Downtown Loop (3 laps) and the Hill Sprint (three ramps up to a lookout), real bumping with ghost rules against griefing, slipstream, server bots that fill the grid to six, results and a rematch vote. The time trial races your best run (or the track record) as a ghost car.
+- **Racing:** Race rooms with a lobby, a countdown with start lights and a launch boost, six tracks on Bulli Bay (Downtown Loop, Coast Sprint, Ridge Climb, Harbor Circuit, Dune Rally, Grand Tour), real bumping with ghost rules against griefing, slipstream, server bots that fill the grid to six, results and a rematch vote. The time trial races your best run (or the track record) as a ghost car.
 - **Combat:** Shoot projectiles at other players, score kills, climb the scoreboard.
 - **Powerups & coins:** Turbo, Mega, Super Jump, Shield, Magnet and Ghost powerups plus collectible coins, shared across all players.
 - **3D Graphics:** Built with Three.js.
-- **Sunset city:** A deterministic, connected road grid with marked crossings, palm-lined streets, a tiled fountain plaza, landscaped park, and a heading-up radar that keeps your Bulli centered.
+- **Bulli Bay:** A curated 2 × 2 km map: beach, pier and promenade in the west, a downtown grid with Main Street and a fountain plaza, Seaview Heights on the slope, the harbour with the Party zone, a ridge road up to a lookout, ranch land, cliffs. Roads from hand-made splines on a baked heightfield, buildings from a Blender kit, street furniture, and a north-up radar.
 
 ## Getting Started
 
@@ -96,7 +97,7 @@ drift, boost and car contact, see
 [docs/phase-1a-design.md](docs/phase-1a-design.md)) without any flag.
 
 - `?sandbox=1` opens the offline test pad of the v2 physics instead of the
-  city (always v2, no server connection needed). See below.
+  map (always v2, no server connection needed). See below.
 - `?tune=1` together with `?sandbox=1` adds the live tuning panel with
   telemetry. It is loaded on demand. Online the server drives every car with
   the default tuning, so the game only shows a hint there.
@@ -207,7 +208,8 @@ index.html            Vite entry (HUD markup, loading and splash screens)
 src/client/           Browser game (three.js)
   main.ts             Bootstrap, render loop, chase camera
   entities/Bulli.ts   Cars: model, powerup looks, shooting, nametags
-  world/              City, terrain, coins, powerups, projectiles
+  world/              The map's world (terrain, roads, sea, building kit,
+                      plants, street furniture), coins, powerups, projectiles
   network/            WebSocket, handshake, room state and events
   net/                The own car's prediction (NetDriver) and the remote cars
   controls/           Keyboard and touch (joystick, action buttons)
@@ -222,7 +224,8 @@ src/client/           Browser game (three.js)
 src/server/           Express + ws game server: handshake, sessions, rooms that
                       simulate at 60 Hz (rooms/), Party rules, tick scheduler
 src/shared/           Code for both sides: protocol schemas (valibot), constants,
-                      seeded RNG, city/world generation, terrain height, the v2
+                      seeded RNG, the curated map (map/, maps/: roads,
+                      heightfield, placement, colliders), the v2
                       driving sim (sim/) and its collision world and sandbox
                       layout (world/), the netcode (net/: binary codec, clock,
                       lead control, prediction with the contact set, render

@@ -215,8 +215,9 @@ Verbindliche Spezifikation, Entscheidungen und Testplan: [`phase-2-design.md`](p
   - [x] Karte als Daten (Splines, Plätze, Zonen, POIs, Strecken), Heightfield-Bake, Validierung, worldviewer mit Spline-Editor, Gebäude-Kit (M1)
   - [x] Sim und Server auf Bulli Bay (M3): Heightfield als Boden, Oberflächen mit Griff und Rollwiderstand, Wasser-Reset, Leitplanken, Gebäude, Bäume und Landmarken als Collider (`segment`, `obox`), Reset auf die nächste Straße, Spawns je Modus aus `pois.json`, die Party in der Arena, die Phase-2-Strecken portiert, Protokoll v4
   - [x] Strecken und Party-Zone (Server-Teil von M5): alle sechs Strecken im Rennbetrieb (Downtown Loop, Coast Sprint, Ridge Climb, Harbor Circuit, Dune Rally, Grand Tour), Bots fahren jede Strecke im vollen Feld durch (Integrationstest), Zeitfahr-Ghosts alter Strecken verworfen; die Party in Cannery Lot und den Hafenhöfen rundherum, Free Roam auf der ganzen Karte
-  - [ ] Client-Rendering der Karte (M4: Terrain, Ribbons, Chunks, Gebäude, Props, Meer); bis dahin zeichnet der Client noch die alte Stadt
-  - [ ] Minimap, alte Stadt löschen, Release (M5)
+  - [x] Client-Rendering der Karte (M4): Gelände als Clipmap auf dem Boden der Sim, Straßen-Ribbons mit Markierungs-Shader, Gehwege und Bordsteine, Meer mit Brandung, Gebäude, Landmarken, Hafenkräne und Pier aus dem Kit (je Zelle und LOD gemergt), Straßenmöbel mit Collidern, Streuung und Requisiten je Zone, Party-Zaun, Detailstufen high/mid/low/software; Budgets gemessen (Desktop bis 182 Draw Calls, Handy bis 126), E2E-Suite wieder unter dem Stand von main (A59–A70)
+  - [x] Minimap genordet, alte Stadt gelöscht (Client-Teil von M5, A69)
+  - [ ] Release (M5): CI grün, Merge, Live-Prüfung; offen aus M4: der Aussichtspunkt liegt im Einschnitt (A66)
 
 **Phase 4 – Open-World-Multiplayer und Persistenz (3–4 Wochen)**
 - **Deliverables:**
