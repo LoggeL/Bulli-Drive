@@ -23,7 +23,7 @@ def jersey(spec, lod):
     L = float(spec.get("length", 3.81))
     prof = [(-0.305, 0.0), (0.305, 0.0), (0.305, 0.075), (0.23, 0.33), (0.12, 0.81), (-0.12, 0.81), (-0.23, 0.33),
             (-0.305, 0.075)]
-    conc = tile("concrete", lin("#D2CCC0")).scaled([1.0, 1.0, 2.0][lod])
+    conc = tile("concrete", lin("#D2CCC0"))
     # closed profile: repeat the first point so every side gets a face
     prism(k, [(0.0, 0, 0), (L, 0, 0)], prof + [prof[0]], conc)
     if lod == 0:
@@ -157,7 +157,7 @@ def container(spec, lod):
     L = float(spec.get("length", 6.06))
     Wc, Hc = 2.44, 2.59
     tint = lin(r.pick(CONTAINER))
-    side = tile("container", tint).scaled([1.0, 1.0, 2.0][lod])
+    side = tile("container", tint)
     frame = pal("steel_dark", mul(tint, 1.0))
     x0, x1, y0, y1 = 0.0, L, -Wc / 2, Wc / 2
     t = 0.12        # frame rails
@@ -167,7 +167,7 @@ def container(spec, lod):
     rect(k, (x0, y1 - t, t), (0, -1, 0), (0, 0, 1), Wc - 2 * t, Hc - 2 * t, side, 0.0, 0.0)
     rect(k, (x0 + t, y0 + t, Hc), (1, 0, 0), (0, 1, 0), L - 2 * t, Wc - 2 * t, side.with_tint(mul(tint, 0.9)), 0.0, 0.0)
     # doors: two leaves with vertical ribs, locking bars
-    door = tile("container", mul(tint, 0.95)).scaled([1.0, 1.0, 2.0][lod])
+    door = tile("container", mul(tint, 0.95))
     rect(k, (x1, y0 + t, t), (0, 1, 0), (0, 0, 1), Wc - 2 * t, Hc - 2 * t, door, 0.0, 0.0)
     # frame: corner posts, top and bottom rails
     for (cx, cy) in ((x0, y0), (x1, y0), (x1, y1), (x0, y1)):

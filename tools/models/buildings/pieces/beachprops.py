@@ -21,7 +21,7 @@ def tower(spec, lod):
     r = Rng(spec.get("seed", 1))
     k = K()
     paint = lin(spec["paint"]) if "paint" in spec else lin(r.pick(TOWER_PAINT))
-    siding = tile("siding", paint).scaled([1.0, 1.0, 2.0][lod])
+    siding = tile("siding", paint)
     trim = pal("trim_white")
     wood = pal("wood_grey", lin("#D7D0C4"))
     fz = 2.1                                   # platform height

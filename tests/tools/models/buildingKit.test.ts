@@ -310,6 +310,27 @@ describe('building kit atlas (tools/models/buildings/atlas.json)', () => {
 describe('building kit (public/models/kit)', () => {
     const regions = atlasRegions();
 
+    it('builds Main Street mostly in the California styles, with many different shop signs', () => {
+        // Review finding 11: red brick and sash windows read as the East Coast; a California
+        // beach town's downtown is stucco, Mission Revival and Art Deco, with brick on a few
+        // older blocks. And three signs repeated along 1.7 km of street front were too few.
+        const main = Object.values(kit.groups).filter(g => g.module === 'downtown').flatMap(g => g.pieces);
+        const styles = main.map(p => p.style as string);
+        expect(styles.filter(s => s === 'brick').length / styles.length).toBeLessThanOrEqual(0.25);
+        for (const style of ['stucco', 'mission', 'deco']) expect(styles.filter(s => s === style).length, style).toBeGreaterThanOrEqual(2);
+        const signs = new Set<string>();
+        for (const [g, spec] of Object.entries(kit.groups)) {
+            if (spec.module !== 'downtown') continue;
+            const { json } = readGlb(path.join(KIT_DIR, `kit_${g}.glb`));
+            for (const n of json.nodes) {
+                const shops = (n.extras?.params as { shops?: string[] } | undefined)?.shops ?? [];
+                for (const s of shops) if (s !== 'entrance') signs.add(s);
+            }
+        }
+        expect(signs.size).toBeGreaterThanOrEqual(10);
+        for (const s of signs) expect(atlas.decals, s).toHaveProperty(s);
+    });
+
     it('has exactly the files of the manifest', () => {
         const listed = [
             'manifest.json',
@@ -396,7 +417,10 @@ describe('building kit (public/models/kit)', () => {
                         expect(tris[i], `${id} lod${l.lod}`).toBeLessThanOrEqual(cat.lods[String(l.lod)].maxTriangles);
                         if (i > 0) expect(tris[i], `${id} lod${l.lod} vs lod${p.lods[i - 1].lod}`).toBeLessThanOrEqual(tris[i - 1]);
                     });
-                    expect(tris[tris.length - 1], `${id} coarsest LOD`).toBeLessThanOrEqual(tris[0] * budgets.lod2MaxFractionOfLod0);
+                    // the coarsest LOD at most half of LOD0, unless LOD0 already fits the coarsest LOD's
+                    // budget (a small landmark gains nothing from a still coarser copy)
+                    const coarsest = cat.lods[String(p.lods[p.lods.length - 1].lod)].maxTriangles;
+                    if (tris[0] > coarsest) expect(tris[tris.length - 1], `${id} coarsest LOD`).toBeLessThanOrEqual(tris[0] * budgets.lod2MaxFractionOfLod0);
                     const listed = manifest.groups[group].pieces[id].lods.map((l: { triangles: number }) => l.triangles);
                     expect(tris, `${id} manifest`).toEqual(listed);
                 }
@@ -445,6 +469,58 @@ describe('building kit (public/models/kit)', () => {
                 }
             });
 
+            it('keeps the texel density of every tiled material equal across its LODs', () => {
+                // A coarser LOD may drop cuts and details but not stretch the texture: brick twice
+                // as coarse at LOD2 shows as a jump when the LOD switches (review finding 11).
+                // Density = sqrt(UV area / surface area) per triangle, area-weighted median per
+                // tile region, LOD0 against every coarser LOD of the same piece.
+                const tiles = regions.filter(r => r.name in atlas.tiles);
+                const density = (l: LodGeometry) => {
+                    const per = new Map<string, { d: number; w: number }[]>();
+                    for (const [a, b, c] of l.triangles) {
+                        const [pa, pb, pc] = [l.positions[a], l.positions[b], l.positions[c]];
+                        const e1 = [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]];
+                        const e2 = [pc[0] - pa[0], pc[1] - pa[1], pc[2] - pa[2]];
+                        const cr = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+                        const area = Math.sqrt(cr[0] * cr[0] + cr[1] * cr[1] + cr[2] * cr[2]) / 2;
+                        if (area < 1e-3) continue;
+                        const [ua, ub, uc] = [l.uvs[a], l.uvs[b], l.uvs[c]];
+                        const uvArea = Math.abs((ub[0] - ua[0]) * (uc[1] - ua[1]) - (uc[0] - ua[0]) * (ub[1] - ua[1])) / 2;
+                        const r = tiles.find(t => [ua, ub, uc].every(uv => uv[0] >= t.u0 - 1e-4 && uv[0] <= t.u1 + 1e-4 && uv[1] >= t.v0 - 1e-4 && uv[1] <= t.v1 + 1e-4));
+                        if (!r) continue;
+                        const list = per.get(r.name) ?? [];
+                        list.push({ d: Math.sqrt(uvArea / area), w: area });
+                        per.set(r.name, list);
+                    }
+                    const out = new Map<string, { median: number; area: number }>();
+                    for (const [name, list] of per) {
+                        list.sort((x, y) => x.d - y.d);
+                        const total = list.reduce((s, x) => s + x.w, 0);
+                        let acc = 0;
+                        const mid = list.find(x => (acc += x.w) >= total / 2)!;
+                        out.set(name, { median: mid.d, area: total });
+                    }
+                    return out;
+                };
+                let compared = 0;
+                let tiled = 0;
+                for (const [id, p] of pieces) {
+                    const base = density(p.lods[0]);
+                    if ([...base.values()].some(d => d.area >= 4)) tiled++;
+                    for (const l of p.lods.slice(1)) {
+                        for (const [name, d] of density(l)) {
+                            const ref = base.get(name);
+                            // a material with only a sliver of surface (a trim, a cap) has no stable median
+                            if (!ref || ref.area < 4 || d.area < 4) continue;
+                            compared++;
+                            expect(d.median / ref.median, `${id} lod${l.lod} ${name}`).toBeCloseTo(1, 1);
+                        }
+                    }
+                }
+                // groups built from palette colours only (the guardrails) have nothing to compare
+                if (tiled > 0) expect(compared).toBeGreaterThanOrEqual(tiled);
+            });
+
             it('winds every triangle towards its normals and carries tint x AO colours', () => {
                 for (const [id, p] of pieces) {
                     for (const l of p.lods) {
@@ -487,11 +563,17 @@ describe('building kit (public/models/kit)', () => {
                 }
             });
 
-            if (group === 'downtown' || group === 'industrial' || group === 'spanish' || group === 'beach') {
+            if (['downtown', 'downtown_revival', 'industrial', 'spanish', 'beach', 'landmarks'].includes(group)) {
                 it('matches the street frontage of its parameters', () => {
                     for (const p of spec.pieces) {
                         const f = pieces.get(p.id)!.extras.footprint as { minX: number; maxX: number; maxZ: number };
-                        const expected = group === 'downtown' ? (p.bays as number) * BAY_DOWNTOWN
+                        if (group === 'landmarks') {
+                            // own lots: centred on the street side, which is the lot line
+                            expect(f.maxX + f.minX, `${p.id} centred on the lot`).toBeCloseTo(0, 3);
+                            expect(f.maxZ, `${p.id} front on the lot line`).toBeCloseTo(0, 3);
+                            continue;
+                        }
+                        const expected = spec.module === 'downtown' ? (p.bays as number) * BAY_DOWNTOWN
                             : group === 'industrial' ? (p.bays as number) * BAY_INDUSTRIAL : (p.width as number);
                         expect(f.maxX - f.minX, p.id).toBeCloseTo(expected, 3);
                         expect(f.maxX + f.minX, `${p.id} centred on the lot`).toBeCloseTo(0, 3);

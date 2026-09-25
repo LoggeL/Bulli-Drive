@@ -7,8 +7,8 @@
    "width": 2048,
    "height": 2048,
    "encoding": "etc1s",
-   "bytes": 761439,
-   "hash": "bea2f9addd87"
+   "bytes": 756490,
+   "hash": "44ac6b07d999"
   },
   "normal": {
    "file": "kit_atlas_normal.ktx2",
@@ -25,8 +25,8 @@
    "width": 1024,
    "height": 1024,
    "encoding": "etc1s",
-   "bytes": 68129,
-   "hash": "044502eed2ca"
+   "bytes": 68507,
+   "hash": "691ffbb4dc5d"
   },
   "emissive": {
    "file": "kit_atlas_emissive.ktx2",
@@ -41,8 +41,8 @@
  "groups": {
   "arena": {
    "file": "kit_arena.glb",
-   "bytes": 90288,
-   "hash": "35566e7ac24d",
+   "bytes": 92588,
+   "hash": "b61588234198",
    "pieces": {
     "arena_container_20": {
      "category": "prop",
@@ -66,7 +66,7 @@
       },
       {
        "lod": 2,
-       "triangles": 112,
+       "triangles": 148,
        "primitives": 1
       }
      ]
@@ -93,7 +93,7 @@
       },
       {
        "lod": 2,
-       "triangles": 112,
+       "triangles": 148,
        "primitives": 1
       }
      ]
@@ -120,7 +120,7 @@
       },
       {
        "lod": 2,
-       "triangles": 124,
+       "triangles": 196,
        "primitives": 1
       }
      ]
@@ -201,7 +201,7 @@
       },
       {
        "lod": 2,
-       "triangles": 28,
+       "triangles": 44,
        "primitives": 1
       }
      ]
@@ -264,8 +264,8 @@
   },
   "beach": {
    "file": "kit_beach.glb",
-   "bytes": 151908,
-   "hash": "943fac756754",
+   "bytes": 157508,
+   "hash": "5e1d9ba7a8f3",
    "pieces": {
     "beach_w8_f1": {
      "category": "building",
@@ -289,7 +289,7 @@
       },
       {
        "lod": 2,
-       "triangles": 146,
+       "triangles": 230,
        "primitives": 1
       }
      ]
@@ -316,7 +316,7 @@
       },
       {
        "lod": 2,
-       "triangles": 136,
+       "triangles": 186,
        "primitives": 1
       }
      ]
@@ -343,7 +343,7 @@
       },
       {
        "lod": 2,
-       "triangles": 174,
+       "triangles": 260,
        "primitives": 1
       }
      ]
@@ -370,7 +370,7 @@
       },
       {
        "lod": 2,
-       "triangles": 167,
+       "triangles": 275,
        "primitives": 1
       }
      ]
@@ -379,8 +379,8 @@
   },
   "beachprops": {
    "file": "kit_beachprops.glb",
-   "bytes": 48692,
-   "hash": "7a9a0e23bb9c",
+   "bytes": 48700,
+   "hash": "3588d2a7b50b",
    "pieces": {
     "lifeguard_tower": {
      "category": "landmark",
@@ -440,9 +440,36 @@
   },
   "downtown": {
    "file": "kit_downtown.glb",
-   "bytes": 377448,
-   "hash": "a3457560ad04",
+   "bytes": 423556,
+   "hash": "586a29e655ae",
    "pieces": {
+    "downtown_b3_f1_a": {
+     "category": "building",
+     "footprint": {
+      "minX": -6,
+      "maxX": 6,
+      "minZ": -14,
+      "maxZ": 0
+     },
+     "height": 5.5,
+     "lods": [
+      {
+       "lod": 0,
+       "triangles": 832,
+       "primitives": 1
+      },
+      {
+       "lod": 1,
+       "triangles": 672,
+       "primitives": 1
+      },
+      {
+       "lod": 2,
+       "triangles": 390,
+       "primitives": 1
+      }
+     ]
+    },
     "downtown_b3_f2_a": {
      "category": "building",
      "footprint": {
@@ -455,17 +482,17 @@
      "lods": [
       {
        "lod": 0,
-       "triangles": 1146,
+       "triangles": 1140,
        "primitives": 1
       },
       {
        "lod": 1,
-       "triangles": 858,
+       "triangles": 832,
        "primitives": 1
       },
       {
        "lod": 2,
-       "triangles": 262,
+       "triangles": 456,
        "primitives": 1
       }
      ]
@@ -482,17 +509,17 @@
      "lods": [
       {
        "lod": 0,
-       "triangles": 1656,
+       "triangles": 1548,
        "primitives": 1
       },
       {
        "lod": 1,
-       "triangles": 1012,
+       "triangles": 972,
        "primitives": 1
       },
       {
        "lod": 2,
-       "triangles": 312,
+       "triangles": 546,
        "primitives": 1
       }
      ]
@@ -509,17 +536,17 @@
      "lods": [
       {
        "lod": 0,
-       "triangles": 1734,
+       "triangles": 1316,
        "primitives": 1
       },
       {
        "lod": 1,
-       "triangles": 1160,
+       "triangles": 1086,
        "primitives": 1
       },
       {
        "lod": 2,
-       "triangles": 296,
+       "triangles": 580,
        "primitives": 1
       }
      ]
@@ -536,17 +563,17 @@
      "lods": [
       {
        "lod": 0,
-       "triangles": 2078,
+       "triangles": 1728,
        "primitives": 1
       },
       {
        "lod": 1,
-       "triangles": 1318,
+       "triangles": 1270,
        "primitives": 1
       },
       {
        "lod": 2,
-       "triangles": 346,
+       "triangles": 706,
        "primitives": 1
       }
      ]
@@ -563,17 +590,17 @@
      "lods": [
       {
        "lod": 0,
-       "triangles": 1784,
+       "triangles": 1962,
        "primitives": 1
       },
       {
        "lod": 1,
-       "triangles": 1340,
+       "triangles": 1394,
        "primitives": 1
       },
       {
        "lod": 2,
-       "triangles": 414,
+       "triangles": 780,
        "primitives": 1
       }
      ]
@@ -590,17 +617,213 @@
      "lods": [
       {
        "lod": 0,
-       "triangles": 3116,
+       "triangles": 3104,
        "primitives": 1
       },
       {
        "lod": 1,
-       "triangles": 2162,
+       "triangles": 2116,
        "primitives": 1
       },
       {
        "lod": 2,
-       "triangles": 532,
+       "triangles": 940,
+       "primitives": 1
+      }
+     ]
+    }
+   }
+  },
+  "downtown_revival": {
+   "file": "kit_downtown_revival.glb",
+   "bytes": 409436,
+   "hash": "fc978b0b24f8",
+   "pieces": {
+    "revival_b2_f1_mission": {
+     "category": "building",
+     "footprint": {
+      "minX": -4,
+      "maxX": 4,
+      "minZ": -12,
+      "maxZ": 0
+     },
+     "height": 6.38,
+     "lods": [
+      {
+       "lod": 0,
+       "triangles": 1124,
+       "primitives": 1
+      },
+      {
+       "lod": 1,
+       "triangles": 836,
+       "primitives": 1
+      },
+      {
+       "lod": 2,
+       "triangles": 304,
+       "primitives": 1
+      }
+     ]
+    },
+    "revival_b3_f1_deco": {
+     "category": "building",
+     "footprint": {
+      "minX": -6,
+      "maxX": 6,
+      "minZ": -14,
+      "maxZ": 0
+     },
+     "height": 6.68,
+     "lods": [
+      {
+       "lod": 0,
+       "triangles": 984,
+       "primitives": 1
+      },
+      {
+       "lod": 1,
+       "triangles": 890,
+       "primitives": 1
+      },
+      {
+       "lod": 2,
+       "triangles": 568,
+       "primitives": 1
+      }
+     ]
+    },
+    "revival_b3_f2_mission": {
+     "category": "building",
+     "footprint": {
+      "minX": -6,
+      "maxX": 6,
+      "minZ": -14,
+      "maxZ": 0
+     },
+     "height": 10.28,
+     "lods": [
+      {
+       "lod": 0,
+       "triangles": 1644,
+       "primitives": 1
+      },
+      {
+       "lod": 1,
+       "triangles": 1250,
+       "primitives": 1
+      },
+      {
+       "lod": 2,
+       "triangles": 540,
+       "primitives": 1
+      }
+     ]
+    },
+    "revival_b3_f3_deco": {
+     "category": "building",
+     "footprint": {
+      "minX": -6,
+      "maxX": 6,
+      "minZ": -16,
+      "maxZ": 0
+     },
+     "height": 13.69,
+     "lods": [
+      {
+       "lod": 0,
+       "triangles": 1434,
+       "primitives": 1
+      },
+      {
+       "lod": 1,
+       "triangles": 1228,
+       "primitives": 1
+      },
+      {
+       "lod": 2,
+       "triangles": 730,
+       "primitives": 1
+      }
+     ]
+    },
+    "revival_b4_f1_mission": {
+     "category": "building",
+     "footprint": {
+      "minX": -8,
+      "maxX": 8,
+      "minZ": -16,
+      "maxZ": 0
+     },
+     "height": 6.78,
+     "lods": [
+      {
+       "lod": 0,
+       "triangles": 1306,
+       "primitives": 1
+      },
+      {
+       "lod": 1,
+       "triangles": 1084,
+       "primitives": 1
+      },
+      {
+       "lod": 2,
+       "triangles": 528,
+       "primitives": 1
+      }
+     ]
+    },
+    "revival_b4_f2_deco": {
+     "category": "building",
+     "footprint": {
+      "minX": -8,
+      "maxX": 8,
+      "minZ": -16,
+      "maxZ": 0
+     },
+     "height": 10.56,
+     "lods": [
+      {
+       "lod": 0,
+       "triangles": 1682,
+       "primitives": 1
+      },
+      {
+       "lod": 1,
+       "triangles": 1458,
+       "primitives": 1
+      },
+      {
+       "lod": 2,
+       "triangles": 822,
+       "primitives": 1
+      }
+     ]
+    },
+    "revival_b5_f2_deco_corner": {
+     "category": "building",
+     "footprint": {
+      "minX": -10,
+      "maxX": 10,
+      "minZ": -18,
+      "maxZ": 0
+     },
+     "height": 10.19,
+     "lods": [
+      {
+       "lod": 0,
+       "triangles": 2016,
+       "primitives": 1
+      },
+      {
+       "lod": 1,
+       "triangles": 1790,
+       "primitives": 1
+      },
+      {
+       "lod": 2,
+       "triangles": 984,
        "primitives": 1
       }
      ]
@@ -609,8 +832,8 @@
   },
   "industrial": {
    "file": "kit_industrial.glb",
-   "bytes": 168164,
-   "hash": "96d4ce00c4c5",
+   "bytes": 186344,
+   "hash": "b53e3831f9e6",
    "pieces": {
     "industrial_b4_d24": {
      "category": "building",
@@ -634,7 +857,7 @@
       },
       {
        "lod": 2,
-       "triangles": 369,
+       "triangles": 687,
        "primitives": 1
       }
      ]
@@ -661,7 +884,7 @@
       },
       {
        "lod": 2,
-       "triangles": 453,
+       "triangles": 929,
        "primitives": 1
       }
      ]
@@ -688,7 +911,122 @@
       },
       {
        "lod": 2,
-       "triangles": 491,
+       "triangles": 939,
+       "primitives": 1
+      }
+     ]
+    }
+   }
+  },
+  "landmarks": {
+   "file": "kit_landmarks.glb",
+   "bytes": 92248,
+   "hash": "70ec3be08fb5",
+   "pieces": {
+    "landmark_diner": {
+     "category": "landmark",
+     "footprint": {
+      "minX": -7.5,
+      "maxX": 7.5,
+      "minZ": -8,
+      "maxZ": 0
+     },
+     "height": 6.4,
+     "lods": [
+      {
+       "lod": 0,
+       "triangles": 482,
+       "primitives": 1
+      },
+      {
+       "lod": 1,
+       "triangles": 400,
+       "primitives": 1
+      },
+      {
+       "lod": 2,
+       "triangles": 160,
+       "primitives": 1
+      }
+     ]
+    },
+    "landmark_gas_station": {
+     "category": "landmark",
+     "footprint": {
+      "minX": -6,
+      "maxX": 6,
+      "minZ": -16,
+      "maxZ": 0
+     },
+     "height": 6.75,
+     "lods": [
+      {
+       "lod": 0,
+       "triangles": 292,
+       "primitives": 1
+      },
+      {
+       "lod": 1,
+       "triangles": 292,
+       "primitives": 1
+      },
+      {
+       "lod": 2,
+       "triangles": 216,
+       "primitives": 1
+      }
+     ]
+    },
+    "landmark_lighthouse": {
+     "category": "landmark",
+     "footprint": {
+      "minX": -3.4,
+      "maxX": 3.4,
+      "minZ": -6.8,
+      "maxZ": 0
+     },
+     "height": 22.91,
+     "lods": [
+      {
+       "lod": 0,
+       "triangles": 826,
+       "primitives": 1
+      },
+      {
+       "lod": 1,
+       "triangles": 384,
+       "primitives": 1
+      },
+      {
+       "lod": 2,
+       "triangles": 278,
+       "primitives": 1
+      }
+     ]
+    },
+    "landmark_water_tower": {
+     "category": "landmark",
+     "footprint": {
+      "minX": -4.6,
+      "maxX": 4.6,
+      "minZ": -9.2,
+      "maxZ": 0
+     },
+     "height": 21.71,
+     "lods": [
+      {
+       "lod": 0,
+       "triangles": 1110,
+       "primitives": 1
+      },
+      {
+       "lod": 1,
+       "triangles": 378,
+       "primitives": 1
+      },
+      {
+       "lod": 2,
+       "triangles": 198,
        "primitives": 1
       }
      ]
@@ -697,8 +1035,8 @@
   },
   "pier": {
    "file": "kit_pier.glb",
-   "bytes": 98576,
-   "hash": "b9eee286f4b8",
+   "bytes": 99136,
+   "hash": "b249d96e97c8",
    "pieces": {
     "pier_end": {
      "category": "landmark",
@@ -722,7 +1060,7 @@
       },
       {
        "lod": 2,
-       "triangles": 128,
+       "triangles": 144,
        "primitives": 1
       }
      ]
@@ -749,7 +1087,7 @@
       },
       {
        "lod": 2,
-       "triangles": 118,
+       "triangles": 134,
        "primitives": 1
       }
      ]
@@ -776,7 +1114,7 @@
       },
       {
        "lod": 2,
-       "triangles": 118,
+       "triangles": 134,
        "primitives": 1
       }
      ]
@@ -873,8 +1211,8 @@
   },
   "rocks": {
    "file": "kit_rocks.glb",
-   "bytes": 287528,
-   "hash": "df8358a4bb5d",
+   "bytes": 285724,
+   "hash": "154f35a9c9de",
    "pieces": {
     "cliff_block": {
      "category": "landmark",
@@ -898,7 +1236,7 @@
       },
       {
        "lod": 2,
-       "triangles": 264,
+       "triangles": 284,
        "primitives": 1
       }
      ]
@@ -925,7 +1263,7 @@
       },
       {
        "lod": 2,
-       "triangles": 264,
+       "triangles": 156,
        "primitives": 1
       }
      ]
@@ -1042,8 +1380,8 @@
   },
   "spanish": {
    "file": "kit_spanish.glb",
-   "bytes": 222312,
-   "hash": "0de47907d774",
+   "bytes": 230276,
+   "hash": "ecfbc1799fbd",
    "pieces": {
     "spanish_w11_f1_rect": {
      "category": "building",
@@ -1067,7 +1405,7 @@
       },
       {
        "lod": 2,
-       "triangles": 176,
+       "triangles": 264,
        "primitives": 1
       }
      ]
@@ -1094,7 +1432,7 @@
       },
       {
        "lod": 2,
-       "triangles": 206,
+       "triangles": 310,
        "primitives": 1
       }
      ]
@@ -1121,7 +1459,7 @@
       },
       {
        "lod": 2,
-       "triangles": 199,
+       "triangles": 279,
        "primitives": 1
       }
      ]
@@ -1148,7 +1486,7 @@
       },
       {
        "lod": 2,
-       "triangles": 161,
+       "triangles": 235,
        "primitives": 1
       }
      ]
@@ -1175,7 +1513,7 @@
       },
       {
        "lod": 2,
-       "triangles": 253,
+       "triangles": 389,
        "primitives": 1
       }
      ]
@@ -1185,7 +1523,7 @@
  },
  "_doc": "Written by tools/models/buildings/build-kit.mjs. One GLB per kit group; every piece is a node with extras (footprint in three.js axes, height, LOD distances, params) and one mesh child per LOD. The material kit_atlas references the KTX2 atlas files next to the GLBs (glTF convention, no flipY). Not loaded by the game yet (phase 3, M4).",
  "totals": {
-  "glbBytes": 1482948,
-  "atlasBytes": 1035906
+  "glbBytes": 2063548,
+  "atlasBytes": 1031335
  }
 }

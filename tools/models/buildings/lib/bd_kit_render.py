@@ -1,9 +1,12 @@
 # Eevee look-dev renders of the building kit (review only, not shipped).
 #
-# Same light as the car look-dev (tools/models/lib/bd_lookdev.py): the Victoria Sunset HDRI with
-# its sun clamped out (tools/models/lib/make_env.py) plus a sun lamp, here higher (28 deg) and
-# warmer so facades read like the game's afternoon. Grounds are the game's Poly Haven textures
-# (asphalt, sidewalk, sand, grass) from tools/textures/.cache.
+# Light: a physical sky (Blender Sky Texture, multiple scattering) over a coastal California
+# afternoon: sea level, clear air with light marine haze (aerosol 1.2), no landscape in the
+# background, so the stills judge the kit and not a foreign skyline; plus a warm sun lamp aimed
+# like the sky's sun (28 deg unless a render asks otherwise). BD_KIT_SKY=victoria switches back to
+# the Victoria Sunset HDRI of the car look-dev (tools/models/lib/make_env.py, sun clamped out).
+# Grounds are the game's Poly Haven textures (asphalt, sidewalk, sand, grass) from
+# tools/textures/.cache.
 import bpy, math, os, json, time
 from mathutils import Vector
 
@@ -47,7 +50,8 @@ def setup(resolution=(1600, 900), samples=64):
     except Exception:
         pass
     vs.exposure = -0.2
-    info = json.load(open(ENV))["victoria_sunset_2k"] if os.path.exists(ENV) else None
+    sky_kind = os.environ.get("BD_KIT_SKY", "sky")
+    info = json.load(open(ENV))["victoria_sunset_2k"] if sky_kind == "victoria" and os.path.exists(ENV) else None
     w = bpy.data.worlds.new("sky")
     scene.world = w
     try:
@@ -69,6 +73,17 @@ def setup(resolution=(1600, 900), samples=64):
         nt.links.new(mp.outputs["Vector"], env.inputs["Vector"])
         nt.links.new(env.outputs["Color"], bg.inputs["Color"])
         bg.inputs["Strength"].default_value = 1.2
+    elif sky_kind == "sky":
+        sky = nt.nodes.new("ShaderNodeTexSky")
+        sky.sky_type = "MULTIPLE_SCATTERING"
+        sky.sun_disc = False              # the sun lamp casts the shadows
+        sky.altitude = 30.0
+        sky.air_density = 1.0
+        sky.aerosol_density = 1.2         # light marine haze of the coast
+        sky.ozone_density = 1.0
+        nt.links.new(sky.outputs["Color"], bg.inputs["Color"])
+        bg.inputs["Strength"].default_value = float(os.environ.get("BD_KIT_SKY_STRENGTH", "0.22"))
+        mp = sky                          # aim_sun turns the sky's sun with the lamp
     else:
         bg.inputs["Color"].default_value = (0.55, 0.65, 0.8, 1)
     sd = bpy.data.lights.new("sun", "SUN")
@@ -86,7 +101,11 @@ def aim_sun(so, mp, info, azimuth_deg, elevation_deg=28.0):
     el = math.radians(elevation_deg)
     d = Vector((math.sin(az) * math.cos(el), -math.cos(az) * math.cos(el), math.sin(el)))
     so.rotation_euler = (-d).to_track_quat("-Z", "Y").to_euler()
-    if mp is not None and info:
+    if mp is not None and mp.bl_idname == "ShaderNodeTexSky":
+        mp.sun_elevation = el
+        # sky texture: rotation 0 = sun towards +Y, counter-clockwise; the lamp's light comes from d
+        mp.sun_rotation = math.atan2(-d.x, d.y) % (2 * math.pi)
+    elif mp is not None and info:
         az0 = math.atan2(info["sun_dir_blender"][1], info["sun_dir_blender"][0])
         mp.inputs["Rotation"].default_value = (0, 0, az0 - math.atan2(d.y, d.x))
 

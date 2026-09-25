@@ -18,7 +18,7 @@ def build(spec, lod):
     Wd = float(spec["width"])
     depth = float(spec.get("pile_depth", 14.0))
     kind = spec.get("kind", "plain")
-    sc = [1.0, 1.0, 2.0][lod]
+    sc = 1.0    # one texel density on every LOD: coarse LODs lose cuts, not texels
     hw = Wd / 2
     deck = tile("deck", lin("#E4DDD2")).scaled(sc)
     timber = pal("wood_grey", mul(WHITE, 0.95))

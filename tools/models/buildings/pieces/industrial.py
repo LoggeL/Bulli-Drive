@@ -42,7 +42,7 @@ def build(spec, lod):
     dock = p["dock"]
     yb = DOCK if dock else 0.0
     y1 = yb + D
-    sc = [1.0, 1.0, 2.0][lod]
+    sc = 1.0    # one texel density on every LOD: coarse LODs lose cuts, not texels
     clad = tile("corrugated", p["clad"]).scaled(sc).jittered(0.08 if lod < 2 else 0.0)
     conc = tile("concrete", lin("#C9C3B8")).scaled(sc)
     roof_m = tile("corrugated", p["roof"]).scaled(sc).jittered(0.06 if lod < 2 else 0.0)

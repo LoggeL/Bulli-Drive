@@ -1,12 +1,19 @@
-# Downtown commercial block (Main Street, 1920s-60s California): 2-3 storeys, shop fronts in
-# every bay of the ground floor with sign boards and canvas awnings, brick or tinted stucco
-# upper floors with double-hung windows, belt course, cornice and parapet, flat gravel roof with
-# air conditioning units. Built in 4 m bays; party walls are plain (the lots form a closed row),
-# a corner building (`corner`: true) repeats the upper windows on its +X side.
+# Downtown commercial block (Main Street of a 1920s-60s California beach town): 1-3 storeys,
+# shop fronts in every bay of the ground floor with sign boards and canvas awnings, a flat gravel
+# roof with air conditioning units behind a parapet. Four styles (`style`):
+#   brick    brick upper floors, double-hung windows, cornice (the few older blocks),
+#   stucco   tinted stucco, moulded window surrounds, cornice,
+#   mission  Mission / Spanish Colonial Revival: lime-white stucco, arched upper windows and
+#            door, a clay tile pent roof (visor) along the parapet, a curved central parapet,
+#   deco     Art Deco / Streamline Moderne: pastel stucco, pilaster fins at the bay lines that
+#            rise above a stepped central parapet, three speed lines under the coping.
+# Built in 4 m bays; party walls are plain (the lots form a closed row), a corner building
+# (`corner`: true) repeats the upper windows on its +X side.
 #
-# Params (kit.json): bays (3-6), floors (2-3), depth (m), seed, corner (optional).
+# Params (kit.json): bays (2-6), floors (1-3), depth (m), seed, style, corner (optional).
+import math
 from bd_kit import (K, Opening, tile, pal, decal, wall, box, prism, rect, lin, mul, Rng, WHITE, beam,
-                    quad3, tri3, cylinder)
+                    quad3, tri3, cylinder, plane_poly, UP)
 from mathutils import Vector
 
 BAY = 4.0
@@ -19,8 +26,16 @@ SHOP_H = 3.3
 SIGN_H = 0.62
 WIN_W, WIN_H, SILL = 1.0, 1.7, 0.9
 
+STYLES = ("brick", "stucco", "mission", "deco")
 STUCCO_TINTS = ["#F1E2CA", "#E8CFA8", "#EDC8B0", "#D3DCC6", "#CFD9DD", "#F2EDE3", "#E3BF96", "#DDB9A6"]
-SHOPS = [("shop_bakery", "sign_bakery"), ("shop_hardware", "sign_hardware"), ("shop_books", "sign_books")]
+MISSION_TINTS = ["#F3ECDF", "#EFE4CF", "#F2E2CB", "#EAE0CF"]           # lime-washed whites, creams
+DECO_TINTS = ["#F2E7DA", "#EDD5CC", "#D8E6DC", "#EADFC6", "#DAE4EA"]   # pastels
+DECO_ACCENTS = ["#7FA8A2", "#C98A72", "#93AABD", "#BFA77E"]
+# (shop front, sign): the four fronts of kit_storefronts carry 13 trades (fronts without lettering)
+SHOPS = [("shop_bakery", "sign_bakery"), ("shop_hardware", "sign_hardware"), ("shop_books", "sign_books"),
+         ("shop_bakery", "sign_coffee"), ("shop_bakery", "sign_taqueria"), ("shop_bakery", "sign_icecream"),
+         ("shop_hardware", "sign_cycles"), ("shop_books", "sign_realty"), ("shop_surf", "sign_tackle"),
+         ("shop_surf", "sign_surf"), ("shop_bakery", "sign_diner")]
 AWNINGS = ["awning_red", "awning_green", "awning_blue", "awning_tan"]
 
 
@@ -28,33 +43,41 @@ def plan(spec):
     """variant choices of one building (deterministic from the seed)"""
     r = Rng(spec["seed"])
     bays = spec["bays"]
-    brick = r.chance(0.55)
-    tint = lin(r.pick(STUCCO_TINTS))
+    style = spec.get("style", "brick")
+    if style not in STYLES:
+        raise ValueError("downtown style %s" % style)
+    brick = style == "brick"
+    tint = lin(r.pick({"mission": MISSION_TINTS, "deco": DECO_TINTS}.get(style, STUCCO_TINTS)))
     # shops: 1 or 2 bays each
     shops = []
     b = 0
     # a street door to the upper floors takes one bay of the wider buildings
     entrance = int(r.next() * bays) if (bays >= 4 and spec["floors"] >= 2 and r.chance(0.6)) else -1
     last = None
+    last_front = None
     while b < bays:
         if b == entrance:
             shops.append({"bay0": b, "bays": 1, "entrance": True})
             b += 1
             continue
         span = 2 if (bays - b >= 2 and b + 1 != entrance and r.chance(0.45)) else 1
-        kind = r.pick([s_ for s_ in SHOPS if s_ != last])      # neighbours differ
-        last = kind
+        # neighbours differ in front and sign
+        kind = r.pick([s_ for s_ in SHOPS if s_[0] != last_front and s_[1] != last])
+        last_front, last = kind
         shops.append({"bay0": b, "bays": span, "front": kind[0], "sign": kind[1],
                       "awning": r.pick(AWNINGS) if r.chance(0.7) else None})
         b += span
     return {
+        "style": style,
         "brick": brick,
         "tint": tint,
-        "trim_tint": lin("#E9DFCB") if brick else mul(tint, 1.04),
-        "window": r.pick(["win_sash", "win_sash", "win_blind"]),
-        "surrounds": (not brick) and r.chance(0.75),
+        "trim_tint": lin("#E9DFCB") if brick else mul(tint, 0.96 if style == "mission" else 1.04),
+        "accent": lin(r.pick(DECO_ACCENTS)),
+        "window": {"mission": "win_arched", "deco": r.pick(["win_blind", "win_casement"])}.get(
+            style, r.pick(["win_sash", "win_sash", "win_blind"])),
+        "surrounds": style == "stucco" and r.chance(0.75),
         "pair": r.chance(0.7),
-        "cornice": r.pick(["deep", "flat", "deep"]),
+        "cornice": r.pick(["deep", "flat", "deep"]) if style in ("brick", "stucco") else None,
         "shops": shops,
         "ac": 1 + int(r.next() * 3),
         "ac_seed": r.next(),
@@ -74,18 +97,24 @@ def build(spec, lod):
     H = height(spec)
     roof_z = H - PARAPET
     x0, x1 = -W / 2, W / 2
-    sc = [1.0, 1.0, 2.0][lod]
+    sc = 1.0    # one texel density on every LOD: coarse LODs lose cuts, not texels
     wall_mat = (tile("brick", mul(WHITE, 0.97)) if p["brick"] else tile("stucco", p["tint"])).scaled(sc)
     trim = tile("concrete", p["trim_tint"]).scaled(sc) if p["brick"] else tile("stucco", p["trim_tint"]).scaled(sc)
     depth_shop = [0.32, 0.18, 0.0][lod]
     depth_win = [0.16, 0.1, 0.0][lod]
+    style = p["style"]
+    arched = style == "mission"
+    segs = [10, 6, 4][lod]            # arch segments
 
     # --- front wall with shop fronts and windows
     front = []
     for s in p["shops"]:
         if s.get("entrance"):
             u = s["bay0"] * BAY + BAY / 2
-            front.append(Opening(u - 0.55, u + 0.55, 0.12, 2.45, decal("door_panel"), depth_shop))
+            if arched:
+                front.append(Opening(u - 0.6, u + 0.6, 0.12, 2.6, decal("door_arched"), depth_shop, arch=True))
+            else:
+                front.append(Opening(u - 0.55, u + 0.55, 0.12, 2.45, decal("door_panel"), depth_shop))
             continue
         for b in range(s["bay0"], s["bay0"] + s["bays"]):
             u = b * BAY + (BAY - SHOP_W) / 2
@@ -98,19 +127,20 @@ def build(spec, lod):
             cx = b * BAY + BAY / 2
             centres = [cx - 0.95, cx + 0.95] if p["pair"] else [cx]
             w_ = WIN_W if p["pair"] else 1.3
+            h_ = WIN_H + (0.2 if arched else 0.0)
             for c in centres:
-                upper_windows.append((c - w_ / 2, c + w_ / 2, z + SILL, z + SILL + WIN_H))
+                upper_windows.append((c - w_ / 2, c + w_ / 2, z + SILL, z + SILL + h_))
     for (u0, u1, v0, v1) in upper_windows:
-        front.append(Opening(u0, u1, v0, v1, win, depth_win))
-    wall(k, (x0, 0, 0), (1, 0, 0), W, H, wall_mat, front, s0=0.0, v_base=-FOUNDATION)
+        front.append(Opening(u0, u1, v0, v1, win, depth_win, arch=arched))
+    wall(k, (x0, 0, 0), (1, 0, 0), W, H, wall_mat, front, s0=0.0, v_base=-FOUNDATION, arch_segs=segs)
     # side (party) walls and the rear wall
     side_open = []
     if spec.get("corner") and lod < 2:
         for f in range(1, floors):
             z = GROUND + UPPER * (f - 1)
             for c in [1.2 + i * 2.6 for i in range(int((D - 1.5) // 2.6))]:
-                side_open.append(Opening(c, c + WIN_W, z + SILL, z + SILL + WIN_H, win, depth_win))
-    wall(k, (x1, 0, 0), (0, 1, 0), D, H, wall_mat, side_open, s0=W, v_base=-FOUNDATION)
+                side_open.append(Opening(c, c + WIN_W, z + SILL, z + SILL + WIN_H, win, depth_win, arch=arched))
+    wall(k, (x1, 0, 0), (0, 1, 0), D, H, wall_mat, side_open, s0=W, v_base=-FOUNDATION, arch_segs=segs)
     wall(k, (x0, D, 0), (0, -1, 0), D, H, wall_mat, [], s0=2 * W + D, v_base=-FOUNDATION)
     rear = []
     if lod < 2:
@@ -149,7 +179,8 @@ def build(spec, lod):
         if s.get("entrance"):
             if lod < 2:
                 u = x0 + s["bay0"] * BAY + BAY / 2
-                box(k, (u - 0.75, -0.12, 2.45), (u + 0.75, 0.0, 2.75), trim, "yxXzZ")            # door head
+                if not arched:
+                    box(k, (u - 0.75, -0.12, 2.45), (u + 0.75, 0.0, 2.75), trim, "yxXzZ")        # door head
                 box(k, (u - 0.8, -0.3, -0.2), (u + 0.8, 0.0, 0.12), tile("concrete").scaled(sc), "yxXZ")  # step
             continue
         u0 = s["bay0"] * BAY
@@ -169,12 +200,13 @@ def build(spec, lod):
     if lod == 0:
         for (u0, u1, v0, v1) in upper_windows:
             box(k, (x0 + u0 - 0.1, -0.08, v0 - 0.09), (x0 + u1 + 0.1, 0.0, v0), trim, "yxXzZ")        # sill
-            box(k, (x0 + u0 - 0.08, -0.04, v1), (x0 + u1 + 0.08, 0.0, v1 + 0.22), trim, "yxXzZ")     # lintel
+            if style in ("brick", "stucco"):
+                box(k, (x0 + u0 - 0.08, -0.04, v1), (x0 + u1 + 0.08, 0.0, v1 + 0.22), trim, "yxXzZ")  # lintel
             if p["surrounds"]:
                 # flat moulded surround (jambs) of the stucco fronts
                 box(k, (x0 + u0 - 0.1, -0.035, v0), (x0 + u0, 0.0, v1), trim, "yxXZ")
                 box(k, (x0 + u1, -0.035, v0), (x0 + u1 + 0.1, 0.0, v1), trim, "yxXZ")
-        # cornice
+    if lod == 0 and p["cornice"]:
         if p["cornice"] == "deep":
             prof = [(0, 0.6), (-0.42, 0.6), (-0.42, 0.5), (-0.32, 0.46), (-0.3, 0.32), (-0.18, 0.28),
                     (-0.12, 0.14), (-0.06, 0.1), (-0.06, 0.0), (0, 0)]
@@ -184,8 +216,12 @@ def build(spec, lod):
         prism(k, [(x0 - 0.02, 0, zc), (x1 + 0.02, 0, zc)], [(w, h) for (w, h) in prof], trim)
         # frieze band under the cornice
         box(k, (x0, -0.03, zc - 0.35), (x1, 0.0, zc - 0.2), trim, "yzZ")
-    elif lod == 1:
+    elif lod == 1 and p["cornice"]:
         box(k, (x0 - 0.02, -0.3, H - 0.95), (x1 + 0.02, 0.0, H - 0.5), trim, "yxXzZ")
+    if style == "mission":
+        mission_top(k, x0, x1, H, W, wall_mat, trim, lod)
+    elif style == "deco":
+        deco_top(k, x0, x1, H, W, spec["bays"], wall_mat, tile("stucco", p["accent"]), lod)
 
     # --- roof top units
     if lod < 2:
@@ -197,7 +233,86 @@ def build(spec, lod):
         if lod == 0:
             box(k, (x1 - 3.2, D - 3.0, roof_z), (x1 - 2.2, D - 2.0, roof_z + 0.6), pal("galvanized"), "xXyYZ")
     return k, {"footprint": [x0, x1, 0.0, D], "height": H + 0.1, "overhang": 1.45, "foundation": FOUNDATION,
-               "params": {"brick": p["brick"], "shops": [s.get("front", "entrance") for s in p["shops"]]}}
+               "params": {"style": style, "shops": [s.get("sign", "entrance") for s in p["shops"]]}}
+
+
+PANEL_T = 0.3       # parapet thickness (the roof deck starts behind it)
+VISOR_OUT, VISOR_PITCH = 0.75, 24.0
+
+
+def mission_top(k, x0, x1, H, W, wall_mat, trim, lod):
+    """Mission Revival parapet: a clay tile pent roof (visor) along the whole front just under the
+    coping, and a curved panel (circular arc on short shoulders) over the middle of the front."""
+    roof = tile("roof_tiles", mul(WHITE, 0.95))
+    zt = H - 0.12
+    drop = VISOR_OUT * math.tan(math.radians(VISOR_PITCH))
+    xa, xb = x0 + 0.02, x1 - 0.02
+    tl, tr = Vector((xa, 0.0, zt)), Vector((xb, 0.0, zt))
+    el, er = Vector((xa, -VISOR_OUT, zt - drop)), Vector((xb, -VISOR_OUT, zt - drop))
+    th = Vector((0, 0, -0.1))
+    quad3(k, el, er, tr, tl, roof)                               # tiles, s along the eave, t up
+    quad3(k, el + th, er + th, er, el, trim)                     # fascia
+    if lod < 2:
+        quad3(k, el + th, tl + th, tr + th, er + th, trim)       # soffit
+        quad3(k, tl, tl + th, el + th, el, trim)                 # end cheeks
+        quad3(k, tr, er, er + th, tr + th, trim)
+    # curved centre panel standing on the parapet
+    cx = (x0 + x1) / 2
+    half = min(W / 2 - 0.8, max(1.6, 0.23 * W))
+    sh, crown = 0.35, (0.9 if W < 10 else 1.3)
+    sag = crown - sh
+    R = (half * half + sag * sag) / (2 * sag)
+    zc = H + crown - R
+    n = [12, 8, 4][lod]
+    a0 = math.asin(half / R)
+    arc = [(cx + R * math.sin(a0 - 2 * a0 * i / n), zc + R * math.cos(a0 - 2 * a0 * i / n)) for i in range(n + 1)]
+    outline = [(cx - half, H), (cx + half, H)] + arc             # CCW seen from the street
+    plane_poly(k, (x0, 0, 0), (1, 0, 0), UP, [(x - x0, z) for x, z in outline], wall_mat)
+    plane_poly(k, (x0, PANEL_T, 0), (-1, 0, 0), UP, [(x0 - x, z) for x, z in reversed(outline)], wall_mat)
+    T = Vector((0, PANEL_T, 0))
+    for i in range(1, len(outline)):
+        p_ = Vector((outline[i][0], 0.0, outline[i][1]))
+        q_ = Vector((outline[(i + 1) % len(outline)][0], 0.0, outline[(i + 1) % len(outline)][1]))
+        if i == len(outline) - 1:
+            q_ = Vector((outline[0][0], 0.0, outline[0][1]))
+        quad3(k, p_, p_ + T, q_ + T, q_, wall_mat)
+    if lod < 2:
+        # coping along the arc
+        for i in range(len(arc) - 1):
+            a_ = Vector((arc[i][0], PANEL_T / 2, arc[i][1] + 0.04))
+            b_ = Vector((arc[i + 1][0], PANEL_T / 2, arc[i + 1][1] + 0.04))
+            beam(k, a_, b_, PANEL_T + 0.1, 0.08, trim, faces="yYzZ")
+
+
+def deco_top(k, x0, x1, H, W, bays, wall_mat, accent, lod):
+    """Art Deco / Streamline front: a stepped central parapet, pilaster fins at the bay lines that
+    rise above it, three speed lines under the coping."""
+    cx = (x0 + x1) / 2
+    cap = tile("concrete", lin("#CFC8BA"))
+    steps = [(min(W / 2 - 0.8, 3.0), 0.6)]
+    if W >= 10:
+        steps.append((min(steps[0][0] - 0.8, 1.6), 1.2))
+    for half, rise in steps:
+        box(k, (cx - half, 0.0, H), (cx + half, PANEL_T, H + rise), wall_mat, "yYxXZ")
+        box(k, (cx - half - 0.05, -0.05, H + rise), (cx + half + 0.05, PANEL_T + 0.05, H + rise + 0.08), cap,
+            "yYxXZ")
+    for b in range(bays + 1):
+        u = x0 + b * BAY
+        ua, ub = max(x0, u - 0.15), min(x1, u + 0.15)
+        top = H + 0.45
+        for half, rise in steps:
+            if cx - half - 0.01 <= u <= cx + half + 0.01:
+                top = H + rise + 0.45
+        # below the coping the fin stands on the wall; above it, it reaches back over the parapet
+        if lod < 2:
+            box(k, (ua, -0.25, GROUND), (ub, 0.0, H), accent, "yxXz")
+            box(k, (ua, -0.25, H), (ub, PANEL_T, top), accent, "yYxXZ")
+        else:
+            box(k, (ua, -0.25, H - 0.6), (ub, PANEL_T, top), accent, "yxXzZ")     # far: the silhouette
+    if lod < 2:
+        for i in range(3):
+            z = H - 0.34 - 0.16 * i
+            box(k, (x0, -0.04, z), (x1, 0.0, z + 0.06), accent, "yzZ")
 
 
 def awning(k, xa, xb, z_top, fabric, lod):
@@ -234,6 +349,7 @@ def render(objs, R, out_dir, tag):
     """review stills: a Main Street row, a front view, an aerial view and the three LODs"""
     import os
     so, mp, info = R.setup()
+    name = "revival" if next(iter(objs)).startswith("revival") else "downtown"
     R.street_ground(-80, 90)
     R.aim_sun(so, mp, info, -40, 30)
     x = -52.0
@@ -247,7 +363,7 @@ def render(objs, R, out_dir, tag):
         W = round(widths[pid] / BAY) * BAY
         R.place(objs[pid][0], pid + "_r", (x + W / 2, 0, 0.15))
         x += W
-    R.shoot(os.path.join(out_dir, "downtown_street_%s.png" % tag), (-30, -12.5, 1.7), (2, 0, 5.5), lens=24)
-    R.shoot(os.path.join(out_dir, "downtown_front_%s.png" % tag), (4, -30, 5.0), (4, 0, 5.5), lens=32)
-    R.shoot(os.path.join(out_dir, "downtown_aerial_%s.png" % tag), (-40, -48, 34), (0, 8, 0), lens=30)
-    R.shoot(os.path.join(out_dir, "downtown_close_%s.png" % tag), (-38, -5.5, 1.6), (-44, 0, 3.4), lens=28)
+    R.shoot(os.path.join(out_dir, "%s_street_%s.png" % (name, tag)), (-30, -12.5, 1.7), (2, 0, 5.5), lens=24)
+    R.shoot(os.path.join(out_dir, "%s_front_%s.png" % (name, tag)), (4, -30, 5.0), (4, 0, 5.5), lens=32)
+    R.shoot(os.path.join(out_dir, "%s_aerial_%s.png" % (name, tag)), (-40, -48, 34), (0, 8, 0), lens=30)
+    R.shoot(os.path.join(out_dir, "%s_close_%s.png" % (name, tag)), (-38, -5.5, 1.6), (-44, 0, 3.4), lens=28)

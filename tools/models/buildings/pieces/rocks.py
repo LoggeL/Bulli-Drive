@@ -19,7 +19,7 @@ def base_mesh(shape, lod, big=True):
         bmesh.ops.create_icosphere(bm, subdivisions=([4, 3, 2] if big else [3, 2, 1])[lod], radius=1.0)
     else:
         bmesh.ops.create_cube(bm, size=2.0)
-        cuts = [9, 4, 2][lod]
+        cuts = [9, 4, 1][lod]
         bmesh.ops.subdivide_edges(bm, edges=bm.edges[:], cuts=cuts, use_grid_fill=True)
         # round the box a little so the displacement has something to hold on to
         for v in bm.verts:
@@ -91,7 +91,7 @@ def build(spec, lod):
                 v.co[a] = lo0[a] + (v.co[a] - lo[a]) * (hi0[a] - lo0[a]) / max(1e-6, hi[a] - lo[a])
     bm.normal_update()
     k = K()
-    mat = tile("rock", tint).scaled([1.0, 1.0, 1.5][lod] * (1.0 if max(size) < 6 else 1.6))
+    mat = tile("rock", tint).scaled(1.0 if max(size) < 6 else 1.6)
     for f in bm.faces:
         nrm = f.normal
         axis = max(range(3), key=lambda i: abs(nrm[i]))

@@ -48,7 +48,7 @@ def build(spec, lod):
     yb = WING if L else 0.0              # front of the main block
     y1 = yb + D
     ze = eave_z(spec)
-    sc = [1.0, 1.0, 2.0][lod]
+    sc = 1.0    # one texel density on every LOD: coarse LODs lose cuts, not texels
     stucco = tile("stucco", p["tint"]).scaled(sc)
     plinth = tile("stucco", mul(p["tint"], 0.78)).scaled(sc)
     roof = tile("roof_tiles", p["roof_tint"]).scaled(sc)

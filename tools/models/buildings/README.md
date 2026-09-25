@@ -1,8 +1,9 @@
 # Building kit (tools/models/buildings)
 
 Procedural Blender kit of the buildings and props of the curated map Bulli Bay (phase 3,
-`docs/phase-3-design.md`), in the realistic look of the G1 world: four building families, the
-pier, guardrails, cliff and rock blocks, beach props and the elements of the party arena. Every
+`docs/phase-3-design.md`), in the realistic look of the G1 world: four building families (Main
+Street in four styles), four landmarks, the pier, guardrails, cliff and rock blocks, beach props
+and the elements of the party arena. Every
 piece is parametric (width or bays, storeys, depth, seed) and exported with three LODs into one
 meshopt GLB per group; all groups share one KTX2 texture atlas. **Not used by the game yet**: the
 chunk builder of phase 3 M4 will place and merge the pieces.
@@ -18,9 +19,10 @@ tools/models/buildings/
   preview.mjs       renders the packed kit with three.js (GLTFLoader + KTX2 + meshopt) in Chromium
   lib/bd_kit.py     atlas UVs, mesh accumulator, walls with openings, roofs, solids, AO, export
   lib/bd_kit_render.py   Eevee look-dev scenes for the review stills
-  pieces/           one module per group: downtown, spanish, beach, industrial, pier, roadside,
-                    rocks, beachprops, arena (build(spec, lod) and render(...))
-  src/              AI sheets of the atlas (shop fronts, windows and doors, shop signs)
+  pieces/           one module per family: downtown (groups downtown and downtown_revival),
+                    spanish, beach, industrial, pier, roadside, rocks, beachprops, landmarks,
+                    arena (build(spec, lod) and render(...))
+  src/              AI sheets of the atlas (shop fronts, windows and doors, two sheets of signs)
 ```
 
 ## Running it
@@ -80,8 +82,8 @@ parameters plus resolved variant choices).
 - **Atlas tiles without wrap sampling**: tiling materials (stucco, brick, lap siding, corrugated
   sheet, roof tiles, deck planks, rock, gravel, concrete, roll-up shutter, container side, awning
   canvas) are square regions with wrapped padding; the geometry is cut at every texture period, so
-  each face samples inside its region (tested per triangle). Coarse LODs double the period (fewer
-  cuts). Decals (shop fronts, windows, doors, signs) map one element per opening; palette cells
+  each face samples inside its region (tested per triangle). Every LOD keeps the same period, so a
+  LOD switch never changes the texel density (tested per tile region). Decals (shop fronts, windows, doors, signs) map one element per opening; palette cells
   give flat PBR colours to small parts (frames, metals, lamps, paint).
 - Seeds pick variants with an integer xorshift (`bd_kit.Rng`), never Python's `random`.
 
@@ -89,7 +91,8 @@ parameters plus resolved variant choices).
 
 | Group | Pieces | Parameters | What varies per seed |
 |---|---|---|---|
-| downtown | 6 (3-6 bays, 2-3 storeys, one corner building) | bays, floors, depth, corner | brick or tinted stucco, shops per 1-2 bays (bakery, hardware, books) with sign boards, awnings (4 canvas colours), a street door to the upper floors, window type (6/6 sash, 1/1 with blind), paired or single windows, cornice, moulded window surrounds, roof units |
+| downtown | 7 (3-6 bays, 1-3 storeys, one corner building): 2 brick, 5 stucco | bays, floors, depth, style, corner | style `brick` (older blocks: brick, sash windows, cornice) or `stucco` (tinted stucco, moulded surrounds, cornice); shops per 1-2 bays with sign boards (4 fronts, 11 trades: bakery, hardware, books, coffee, taqueria, ice cream, cycles, realty, tackle, surf, diner; neighbours differ), awnings (4 canvas colours), a street door to the upper floors, window type, paired or single windows, roof units |
+| downtown_revival | 7 (2-5 bays, 1-3 storeys, one corner building): 3 mission, 4 deco | as downtown | style `mission` (Mission / Spanish Colonial Revival: lime-white stucco, arched windows and door, clay tile pent roof along the parapet, curved central parapet) or `deco` (Art Deco / Streamline: pastel stucco, accent-coloured pilaster fins at the bay lines rising above a stepped central parapet, three speed lines) |
 | spanish | 5 (10-16 m, 1-2 storeys, rectangle or L) | width, depth, floors, plan, garage | stucco tint, gable or hip roof, wing side, garage side, grilles, balcony |
 | beach | 4 (8-11 m, 1-2 storeys, house or surf/fish shop) | width, depth, floors, shop | siding and roof colours, gable to the street or along it, window type, steps side, shop sign |
 | industrial | 3 (24-48 m, 7-10 m eaves) | bays, depth, eave, dock | cladding and roof colours, sign (cannery / fish co.), side door, loading dock |
@@ -97,6 +100,7 @@ parameters plus resolved variant choices).
 | roadside | guardrail segment, end terminals | kind, length, dir | - |
 | rocks | 3 boulders, slab, 2 cliff blocks | size, shape, strata, seed | shape (fractal noise + strata) |
 | beachprops | lifeguard tower, surfboard rack | kind, paint, seed | tower paint, board colours |
+| landmarks | lighthouse (18 m tapered tower, gallery, lantern), water tower (tank on four braced legs), Streamline diner ("BULLI'S DINER" roof sign), 1950s gas station (canopy with "SEASIDE SERVICE" fascia, pumps, office with service bay, pylon sign) | kind, seed | diner tint, tower paint |
 | arena | K-rail, water barriers (red, white), grandstand, floodlight mast, containers 20 ft (2) and 40 ft | kind, length, rows, height, color, seed | container colour |
 
 The generators accept any parameter values; kit.json is the catalogue that gets exported. To add
@@ -107,20 +111,45 @@ run `npm test`.
 
 | Category | LOD0 | LOD1 | LOD2 | Switch distances |
 |---|---|---|---|---|
-| building | 4 000 | 2 500 | 600 | 60 / 180 m |
+| building | 4 000 | 2 500 | 1 000 | 60 / 180 m |
 | landmark | 3 000 | 1 500 | 400 | 80 / 250 m |
 | prop | 1 600 | 800 | 300 | 35 / 110 m |
 
 LOD0 has recessed openings, sills, lintels, pilasters, cornices, awnings, grilles, rafter tails,
 roof units, gutters and railings; LOD1 keeps the massing, shallow openings, awnings and signs;
 LOD2 is the massing with flush openings on the atlas (design section 10, "Kisten mit Atlas").
-One primitive per LOD, the coarsest LOD at most half of LOD0, at most 420 KB per group GLB and
-1.8 MB for all groups, the atlas at most 1.7 MB with at least 80 px/m on every tile. Scenarios:
-a Main Street view with 8/16/24 downtown buildings at LOD0/1/2 stays under 90 000 triangles, the
-harbour with 3 halls per LOD under 15 000 (shares of the 500k tier low frame budget).
+Every LOD keeps the texel density of LOD0 (a coarser texture period made brick twice as coarse
+at LOD2, visible when the LOD switches); the cuts at the texture periods therefore stay, which is
+why the LOD2 budget of a building is 1 000 triangles and the coarsest LOD may keep 60 % of LOD0
+(the plain halls: their LOD0 has few details to drop). Pieces whose LOD0 already fits the
+coarsest LOD's budget (small landmarks and props) are exempt from the fraction. One primitive per
+LOD, at most 440 KB per group GLB and 2.4 MB for all groups, the atlas at most 1.7 MB with at
+least 80 px/m on every tile. Scenarios: a Main Street view with 8/16/24 buildings of one downtown
+group at LOD0/1/2 stays under 90 000 triangles (today 81 000 and 68 000), the harbour with 3 halls
+per LOD under 15 000 (shares of the 500k tier low frame budget).
 
-Today: all groups 1.48 MB, the atlas 1.04 MB; the largest pieces are the corner building
-(3 116 / 2 162 / 532 triangles) and the L-shaped two-storey house (1 965 / 1 127 / 253).
+Today: 11 groups, 52 pieces, all groups 2.06 MB, the atlas 1.03 MB; the largest pieces are the
+brick corner building (3 104 / 2 116 / 940 triangles) and the deco corner building
+(2 016 / 1 790 / 984).
+
+**Per-piece LODs and chunk merging.** The chunk builder (M4) merges the kit pieces of a 250 m
+chunk into one mesh; after the merge a piece can no longer switch its own LOD. Until the three.js
+upgrade (M2) brings `BatchedMesh` with per-instance LODs, the builder merges per LOD level into
+sub-cells of 62.5 m (16 per chunk) and switches the sub-cell as a whole at the category
+distances; the per-piece distances in the extras are the input for that. Decided in the design
+(A41).
+
+**Signs.** 14 sign boards (two AI sheets) share the sign column of the atlas in slots of
+256 x 63 px (about 66 px/m on a 3.8 m board, half of the six 512 px signs before; readable from
+the street, soft from the sidewalk). Two slots are free. A sign per instance (UV swap by the
+chunk builder) would lift the repetition further; today every piece carries its own shops.
+
+**Vegetation (next group, not built yet).** Palms (Mexican fan and Canary Island date), Monterey
+cypress, coast live oak and chaparral shrubs need alpha-tested foliage cards: a second material
+`kit_foliage` (alpha test, double-sided) with its own atlas of frond and leaf cards (the G1 palm
+fronds in `tools/textures/.cache/gen-work/world/tex` are a start) and trunks on the kit atlas. The
+single-material rule of the kit holds per material, so a chunk costs two draw calls. Planned as
+the next kit step together with the scatter of design section 11.2.
 
 ## Tests
 
@@ -134,7 +163,9 @@ never black, the atlas layout (inside, no overlap, texel density) and the KTX2 h
 
 ## Review renders
 
-`--render=<dir> --tag=<t>` writes Eevee stills per group (`<group>_<view>_<t>.png`) with the
-Victoria Sunset HDRI (sun clamped out) and a sun lamp; `preview.mjs` renders the packed files the
+`--render=<dir> --tag=<t>` writes Eevee stills per group (`<group>_<view>_<t>.png`) under a
+physical sky (Blender Sky Texture, multiple scattering, sea level, light marine haze, no landscape
+in the background) and a warm sun lamp; the Victoria Sunset HDRI of the earlier rounds put Lion's
+Head (Cape Town) behind every still and is still available with `BD_KIT_SKY=victoria`; `preview.mjs` renders the packed files the
 way the game will load them. Every family went through at least two rounds of changes on these
 renders (see docs/assets.md, "Gebäude-Kit").

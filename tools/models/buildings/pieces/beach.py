@@ -41,7 +41,7 @@ def build(spec, lod):
     y1 = yb + D
     g = 3.5 if shop else STOREY          # ground storey (the shop front needs 3.3 m)
     ze = floor + g + STOREY * (floors - 1)
-    sc = [1.0, 1.0, 2.0][lod]
+    sc = 1.0    # one texel density on every LOD: coarse LODs lose cuts, not texels
     siding = tile("siding", p["siding"]).scaled(sc)
     trim = pal("trim_white")
     roof_m = tile("corrugated", p["roof"]).scaled(sc)   # ribs (texture v) run down the slope

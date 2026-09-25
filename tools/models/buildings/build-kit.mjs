@@ -187,6 +187,11 @@ function checkGroup(group, s) {
             if (l.triangles > b.maxTriangles) errors.push(`${id} lod${l.lod}: ${l.triangles} triangles > ${b.maxTriangles}`);
             if (l.primitives > BUDGETS.maxPrimitivesPerLod) errors.push(`${id} lod${l.lod}: ${l.primitives} primitives`);
         }
+        // the coarsest LOD at most a fraction of LOD0, unless LOD0 already fits the coarsest LOD's budget
+        const first = p.lods[0], last = p.lods[p.lods.length - 1];
+        if (first.triangles > cat.lods[String(last.lod)].maxTriangles && last.triangles > first.triangles * BUDGETS.lod2MaxFractionOfLod0) {
+            errors.push(`${id} lod${last.lod}: ${last.triangles} triangles > ${BUDGETS.lod2MaxFractionOfLod0} x lod${first.lod}`);
+        }
     }
     return errors;
 }

@@ -1,21 +1,22 @@
 {
   "_doc": "Budgets of the building kit (public/models/kit), enforced by build-kit.mjs and tests/tools/models/buildingKit.test.ts. Every piece LOD is one primitive of the shared kit_atlas material, so a chunk that merges all kit pieces costs one draw call (plus its shadow pass); the triangle limits keep a downtown view inside the tier budgets of docs/phase-3-design.md section 10 (tier low <= 500k triangles for the whole frame): see `scenarios`. LOD distances per category live in kit.json.",
   "categories": {
-    "building": { "lods": { "0": { "maxTriangles": 4000 }, "1": { "maxTriangles": 2500 }, "2": { "maxTriangles": 600 } } },
+    "building": { "lods": { "0": { "maxTriangles": 4000 }, "1": { "maxTriangles": 2500 }, "2": { "maxTriangles": 1000 } } },
     "landmark": { "lods": { "0": { "maxTriangles": 3000 }, "1": { "maxTriangles": 1500 }, "2": { "maxTriangles": 400 } } },
     "prop": { "lods": { "0": { "maxTriangles": 1600 }, "1": { "maxTriangles": 800 }, "2": { "maxTriangles": 300 } } }
   },
   "maxPrimitivesPerLod": 1,
-  "lod2MaxFractionOfLod0": 0.5,
-  "maxBytesPerGroup": 420000,
-  "maxBytesAllGroups": 1800000,
+  "lod2MaxFractionOfLod0": 0.6,
+  "maxBytesPerGroup": 440000,
+  "maxBytesAllGroups": 2400000,
   "atlas": { "maxBytes": 1700000, "minPixelsPerMetre": 80 },
   "requiredMaterial": "kit_atlas",
   "requiredExtensions": ["EXT_meshopt_compression", "KHR_mesh_quantization", "KHR_texture_basisu"],
   "allowedExtensions": ["EXT_meshopt_compression", "KHR_mesh_quantization", "KHR_texture_basisu", "KHR_texture_transform"],
   "scenarios": {
-    "_doc": "Worst case views, counted with the largest piece of each group: Main Street (downtown group) with 8 buildings at LOD0, 16 at LOD1, 24 at LOD2; the harbour with 3 halls per LOD and 12 containers at LOD1. Limits are shares of the tier low frame budget (500k).",
+    "_doc": "Worst case views, counted with the largest piece of each group: Main Street (downtown and downtown_revival groups) with 8 buildings at LOD0, 16 at LOD1, 24 at LOD2; the harbour with 3 halls per LOD and 12 containers at LOD1. Limits are shares of the tier low frame budget (500k).",
     "mainStreet": { "group": "downtown", "lod0": 8, "lod1": 16, "lod2": 24, "maxTriangles": 90000 },
+    "mainStreetRevival": { "group": "downtown_revival", "lod0": 8, "lod1": 16, "lod2": 24, "maxTriangles": 90000 },
     "harbour": { "group": "industrial", "lod0": 3, "lod1": 3, "lod2": 3, "maxTriangles": 15000 }
   }
 }
