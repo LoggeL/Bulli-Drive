@@ -247,6 +247,23 @@ describe('projection', () => {
         expect([out.x, out.z, out.s]).toEqual([0, 50, 50]);
     });
 
+    it('takes the first leg ahead of the expectation on an open line, never one behind', () => {
+        // Up x = 0 (s 0..100), across (100..120), down x = 20 (120..220).
+        // The point (9.5 | 50) is 9.5 m from the up leg (s = 50) and 10.5 m
+        // from the down leg (s = 170): the nearest leg is behind an
+        // expectation of 60, so ahead takes the down leg
+        const hairpin = polylineFromPoints([{ x: 0, z: 0 }, { x: 0, z: 100 }, { x: 20, z: 100 }, { x: 20, z: 0 }], false);
+        const out = createProjection();
+        projectGlobal(hairpin, 9.5, 50, out, 60, true);
+        expect([out.x, out.z, out.s]).toEqual([20, 50, 170]);
+        // Without ahead the expectation takes the leg 10 m back
+        projectGlobal(hairpin, 9.5, 50, out, 60);
+        expect([out.x, out.z, out.s]).toEqual([0, 50, 50]);
+        // From 40 the up leg itself lies 10 m ahead
+        projectGlobal(hairpin, 9.5, 50, out, 40, true);
+        expect([out.x, out.z, out.s]).toEqual([0, 50, 50]);
+    });
+
     it('never wraps the window of an open line round to its other end', () => {
         const out = createProjection();
         // At the bottom of the right leg, hint at the very start of the left

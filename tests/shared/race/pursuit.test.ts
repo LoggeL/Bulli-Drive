@@ -95,12 +95,13 @@ describe('StuckWatch', () => {
 
     it('counts a standstill as stuck when the driver means to move, whatever its pedal', () => {
         const s = createVehicleState();
-        // A light throttle (behind a car that stands): not stuck by the pedal ...
+        // A light throttle (behind a car that stands), up to the threshold of
+        // 100 itself: not stuck by the pedal ...
         const byPedal = new StuckWatch();
         for (let t = 0; t < 2 * STUCK_TICKS; t++) {
             const o = input();
             expect(byPedal.override(o)).toBe('drive');
-            o.throttle = 89;
+            o.throttle = 100;
             byPedal.watch(s, 0, o);
         }
         // ... but stuck for a driver that means to move (a race bot)

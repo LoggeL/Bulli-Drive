@@ -162,4 +162,20 @@ describe('track list', () => {
         expect(isTrackId('monaco')).toBe(false);
         expect(isTrackId(3)).toBe(false);
     });
+
+    // tracks.json edited by hand (or a road renamed in the worldviewer):
+    // the server must not start with a track it cannot build
+    const withRoutes = (routes: typeof map.sources.tracks.tracks) =>
+        ({ ...map, sources: { ...map.sources, tracks: { ...map.sources.tracks, tracks: routes } } });
+
+    it('refuses a map whose tracks.json lacks a route of TRACK_IDS', () => {
+        const routes = map.sources.tracks.tracks.filter(route => route.id !== 'dune-rally');
+        expect(() => mapTracks(withRoutes(routes))).toThrow('tracks.json has no route for dune-rally');
+    });
+
+    it('refuses a route over a road the network does not have', () => {
+        const routes = map.sources.tracks.tracks.map(route =>
+            route.id === 'coast-sprint' ? { ...route, route: [...route.route, 'no-such-road'] } : route);
+        expect(() => mapTracks(withRoutes(routes))).toThrow(/^track coast-sprint:\n {2}\S/);
+    });
 });
