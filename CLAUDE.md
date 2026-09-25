@@ -28,6 +28,7 @@ Gemessen wird die Wanduhr des jeweiligen Befehls bzw. CI-Jobs. Wird ein Ziel üb
 | Integration (Bots, echter Server-Prozess) | `npm run test:bots` | < 3 min | < 5 min |
 | E2E (Playwright, Desktop + Mobile) | `npm run test:e2e` | < 5 min inkl. Build | < 5 min, ein Job ohne Shards |
 | Render-Messungen (Playwright) | `npm run test:e2e:render` | < 3 min | < 5 min |
+| Engine-Gleichheit der Karte (Playwright, WebKit + Chromium) | `npm run test:engines` | < 1 min | < 3 min |
 | Mutationstests (Stryker) | `npm run test:mutation` | Minuten je Datei (inkrementell) | wöchentlich, nie blockierend |
 
 - Wanduhr-Schranken (Millisekunden, fps) gehören nicht in die Unit-Tests: Sie laufen parallel auf geteilten Runnern. Solche Messungen laufen als eigene Skripte, die nur loggen oder warnen: `npm run perf:sim` (Sim-Kosten, Ziel < 2 ms pro Tick bei 32 Autos), `npm run perf:baseline` (Browser).
