@@ -9,7 +9,14 @@
     { "role": "roof_gravel", "id": "tarred_gravel", "maps": { "albedo": 256, "normal": 256, "arm": 256 } },
     { "role": "grass", "id": "leafy_grass", "maps": { "albedo": 512, "normal": 512, "arm": 512 } },
     { "role": "grass_dry", "id": "withered_grass", "maps": { "albedo": 512, "normal": 512, "arm": 512 } },
-    { "role": "sand", "id": "aerial_beach_01", "maps": { "albedo": 256, "normal": 256, "arm": 256 } }
+    { "role": "sand", "id": "aerial_beach_01", "maps": { "albedo": 256, "normal": 256, "arm": 256 } },
+    { "role": "kit_brick", "id": "large_red_bricks", "maps": { "albedo": 0, "normal": 0, "arm": 0 }, "publish": [], "note": "building kit atlas source only (tools/models/buildings/make_atlas.py)" },
+    { "role": "kit_siding", "id": "white_planks_clean", "maps": { "albedo": 0, "normal": 0, "arm": 0 }, "publish": [], "note": "building kit atlas source only (tools/models/buildings/make_atlas.py)" },
+    { "role": "kit_corrugated", "id": "corrugated_iron_02", "maps": { "albedo": 0, "normal": 0, "arm": 0 }, "publish": [], "note": "building kit atlas source only (tools/models/buildings/make_atlas.py)" },
+    { "role": "kit_deck", "id": "wood_planks_grey", "maps": { "albedo": 0, "normal": 0, "arm": 0 }, "publish": [], "note": "building kit atlas source only (tools/models/buildings/make_atlas.py)" },
+    { "role": "kit_concrete", "id": "concrete_wall_008", "maps": { "albedo": 0, "normal": 0, "arm": 0 }, "publish": [], "note": "building kit atlas source only (tools/models/buildings/make_atlas.py)" },
+    { "role": "kit_shutter", "id": "painted_metal_shutter", "maps": { "albedo": 0, "normal": 0, "arm": 0 }, "publish": [], "note": "building kit atlas source only (tools/models/buildings/make_atlas.py)" },
+    { "role": "kit_container", "id": "container_side", "maps": { "albedo": 0, "normal": 0, "arm": 0 }, "publish": [], "note": "building kit atlas source only (tools/models/buildings/make_atlas.py)" }
   ],
   "hdri": [
     { "id": "victoria_sunset", "resolutions": ["1k", "2k"], "publish": "1k" },

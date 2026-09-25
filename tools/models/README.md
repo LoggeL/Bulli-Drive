@@ -1,5 +1,8 @@
 # Car models (tools/models)
 
+(The building kit of the phase 3 map lives in [`buildings/`](buildings/README.md): its own
+Blender scripts, atlas and budgets, output in `public/models/kit`.)
+
 The cars are built procedurally in Blender (no hand modelling, no downloaded
 meshes), packed for the web and committed to `public/models`. The game loads
 them with `src/client/assets/ModelCache.ts` and keeps its procedural box cars

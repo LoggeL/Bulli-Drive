@@ -28,7 +28,12 @@ node tools/textures/build.mjs --force    # re-encode everything
 - `public/textures/pbr/<material>_<albedo|normal|arm>.ktx2`: asphalt,
   sidewalk, stucco, roof_tiles, roof_gravel, grass, grass_dry, sand. Real
   tile size per material in the manifest (`tileMeters`). `asphalt_clean` is
-  fetched for the Blender look-dev only (`"publish": []`).
+  fetched for the Blender look-dev only (`"publish": []`), the `kit_*` roles
+  (brick, lap siding, corrugated iron, deck planks, concrete, roll-up shutter,
+  container side) only as sources of the building kit atlas
+  (`tools/models/buildings`, which encodes it next to its GLBs in
+  `public/models/kit`). The kit's AI sheets were made with `generated/gen.sh`
+  from `prompts/kit_*.txt`; they are committed in `tools/models/buildings/src`.
 - `public/textures/generated/*.ktx2` (+ the tree card sidecar with the atlas
   rects, which `tests/client/worldTextures.test.ts` holds against
   `TREE_UV` in `vegetation.ts`): facade bands with a tint mask in alpha,

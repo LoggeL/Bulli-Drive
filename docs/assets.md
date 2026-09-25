@@ -15,8 +15,10 @@ Dieses Dokument listet jede Binärdatei unter `public/models` und `public/textur
 | HDRIs (`public/textures/hdri`) | Poly Haven | CC0 1.0 | Radiance `.hdr`, 1k | 2,7 MB |
 | Referenzen (`tools/models/ref`) | KI-generierte Blaupausen, Maße aus Sekundärquellen | nur Arbeitsmaterial, nicht im Spiel | JPG + JSON | 1,5 MB |
 | Nummernschild-Decals (`tools/models/src`) | KI-generiert, eigene Nachbearbeitung | wie oben | PNG 512×256, 5 Stück | 1,2 MB |
+| Gebäude-Kit (`public/models/kit`, Phase 3, noch nicht im Spiel) | eigene prozedurale Blender-Skripte (`tools/models/buildings`), Atlas aus Poly-Haven-Texturen, KI-Bögen und der G1-Felstextur | Geometrie eigenes Werk; Atlas gemischt (siehe Abschnitt 7) | 9 GLBs (meshopt, 3 LODs je Teil, 40 Teile) + 4 KTX2 | 2,5 MB (GLBs 1,48 MB, Atlas 1,04 MB) |
+| Quellbögen des Kits (`tools/models/buildings/src`) | KI-generiert (Codex-imagegen) | Nutzungsrechte beim Projekt, **kein** CC0 | JPG, 3 Stück | 1,3 MB |
 
-Summe der neuen Binär-Assets: rund 12,4 MB, davon 9,6 MB ausgeliefert (Stand Schritt „vier Autos“; vorher 10,3 / 8,6 MB) (Obergrenze laut Plan ~30 MB). Ein Unit-Test (`tests/client/modelBudgets.test.ts`) hält `public/models` + `public/textures` unter 30 MB.
+Summe der neuen Binär-Assets: rund 16,2 MB, davon 12,1 MB ausgeliefert (Stand Schritt „building-kit“: das Kit liegt schon in `public/models/kit` und damit im Build, wird aber erst mit Phase 3 M4 geladen); vorher rund 12,4 MB, davon 9,6 MB ausgeliefert (Stand Schritt „vier Autos“; vorher 10,3 / 8,6 MB) (Obergrenze laut Plan ~30 MB). Ein Unit-Test (`tests/client/modelBudgets.test.ts`) hält `public/models` + `public/textures` unter 30 MB.
 
 Quelltexturen in voller Auflösung liegen nicht im Repo. `npm --prefix tools run textures:fetch` lädt sie reproduzierbar (MD5-geprüft) nach `tools/textures/.cache`.
 
@@ -98,3 +100,41 @@ Die KTX2-Dateien sind die kanonischen Kopien. Die Rohbilder und aufbereiteten Qu
 | Mobile Tier low (iPhone 12/13), ganzes Bild | ≤ 150 Draw Calls inkl. Schatten, ≤ 500k Dreiecke, KTX2 Pflicht, kein Post | Straßenansicht quer mit T1: 119 Calls, 237k Dreiecke |
 
 Grenzwerte pro LOD stehen maschinenlesbar in `tools/models/budgets.json` und werden beim Packen und im Unit-Test geprüft.
+
+## 7. Gebäude-Kit (Phase 3, Schritt „building-kit“)
+
+Werkzeug, Konventionen und Budgets: [`tools/models/buildings/README.md`](../tools/models/buildings/README.md). Das Kit ist noch nicht ins Spiel eingebaut; der Chunk-Builder (Phase 3, M4) wird es laden.
+
+**Geometrie:** vollständig prozedural in Blender 5.2 aus `tools/models/buildings/pieces/*.py` und `lib/bd_kit.py`, keine fremden Meshes. Vier Gebäudefamilien (Downtown-Geschäftshaus, Spanish-Revival-Wohnhaus, Strandhaus/Surfshop, Industrie- und Hafenhalle), Pier-Segmente, Leitplanke mit Endstücken, Felsen und Klippenblöcke, Rettungsturm und Surfbrett-Ständer, Party-Arena (K-Rail, Wasserbarrieren, Tribüne, Flutlichtmast, Container 20 und 40 Fuß).
+
+**Gemeinsamer Atlas** `public/models/kit/kit_atlas_{albedo,normal,arm,emissive}.ktx2` (Layout `tools/models/buildings/atlas.json`, gebaut von `make_atlas.py`, kodiert mit `tools/lib/ktx2.mjs`):
+
+| Region | Quelle | Autoren | Lizenz |
+|---|---|---|---|
+| Putz (`stucco`), Dachziegel (`roof_tiles`), Dachkies (`gravel`) | Poly Haven White Stucco, Clay Roof Tiles 02, Tarred Gravel (dieselben Quellen wie G1) | Amal Kumar; Amal Kumar; Dimitrios Savva | CC0 1.0 |
+| Ziegel (`brick`) | [Large Red Bricks](https://polyhaven.com/a/large_red_bricks) | Rob Tuytel | CC0 1.0 |
+| Stülpschalung (`siding`, gedreht) | [White Planks Clean](https://polyhaven.com/a/white_planks_clean) | Rob Tuytel | CC0 1.0 |
+| Wellblech (`corrugated`) | [Corrugated Iron 02](https://polyhaven.com/a/corrugated_iron_02) | Jenelle van Heerden, Sergej Majboroda | CC0 1.0 |
+| Pier- und Veranda-Dielen (`deck`) | [Wood Planks Grey](https://polyhaven.com/a/wood_planks_grey) | Rob Tuytel | CC0 1.0 |
+| Beton (`concrete`) | [Concrete Wall 008](https://polyhaven.com/a/concrete_wall_008) | Dario Barresi, Charlotte Baglioni | CC0 1.0 |
+| Rolltor (`shutter`) | [Painted Metal Shutter](https://polyhaven.com/a/painted_metal_shutter) | Dario Barresi, Rico Cilliers, Charlotte Baglioni | CC0 1.0 |
+| Container-Wand (`container`) | [Container Side](https://polyhaven.com/a/container_side) | Dimitrios Savva | CC0 1.0 |
+| Fels (`rock`) | G1-Klippenfels `rock_cliff` (KI, Abschnitt 4) | – | wie Abschnitt 4 |
+| Ladenfronten (Bäckerei, Eisenwaren, Buchladen, Surfshop) | KI-Bogen `kit_storefronts` | – | Nutzungsrechte beim Projekt, kein CC0 |
+| Fenster und Türen (Schiebefenster, Rollo-Fenster, Flügelfenster, Bogenfenster, Bogentür, Kassettentür, Stahltür, Fabrikfenster) | KI-Bogen `kit_windows_doors` | – | wie oben |
+| Ladenschilder „SEAVIEW BOOKS“, „BAY HARDWARE“, „SUNSET BAKERY“, „DRIFTWOOD SURF“, „HARBOR FISH CO.“, „BULLI BAY CANNERY“ | KI-Bogen `kit_signs` | – | wie oben; alle Namen erfunden, keine Marken |
+| Markisenstoffe, Farbpalette (32 PBR-Zellen) | prozedural in `make_atlas.py` | – | eigenes Werk |
+
+Die Poly-Haven-Quellen holt `npm --prefix tools run textures:fetch` (Rollen `kit_*` in `tools/textures/textures.json`, `"publish": []`, also nicht nach `public/textures`). Die KI-Bögen entstanden mit Codex-imagegen (`tools/textures/generated/gen.sh`, Prompts wörtlich in `tools/textures/generated/prompts/kit_*.txt`) und liegen als JPG in `tools/models/buildings/src`; die Zuschnitte stehen in `atlas.json`. Die Schilder „MARINA SUPPLY“ und „COAST DRUG“ des Bogens werden nicht genutzt.
+
+**Pipeline-Entscheidungen des Kits:**
+
+1. **Ein Material, ein Atlas für alle Teile.** Jedes LOD ist genau ein Primitive des Materials `kit_atlas`; ein Chunk, der alle Kit-Teile zusammenführt, kostet einen Draw Call (plus Schatten). Varianten (Putz-, Schalungs-, Blech- und Containerfarben) stecken in `COLOR_0` (Tönung × gebackene AO × leichte Bodenverschmutzung).
+2. **Kacheln ohne Wrap-Sampler:** Die Geometrie wird an jeder Texturperiode geschnitten, jede Fläche sampelt innerhalb ihrer Atlas-Region (Unit-Test je Dreieck). So lassen sich Teile beliebig zusammenführen, und die Mip-Stufen bluten nur über die gewrappten Ränder (32 px auf 2048).
+3. **Atlas neben den GLBs, per URI referenziert** (glTF `images[].uri` + `KHR_texture_basisu`, gltfpack `-tr`), nicht in `public/textures`: der Test `worldTextures.test.ts` verlangt dort nur Texturen, die der Client heute anfordert. glTF-Konvention (kein flipY) wie bei den Auto-Texturen.
+4. **Deterministisch:** Atlas, Blender-Build und Packen erzeugen bei gleichen Quellen dieselben Bytes; das Manifest trägt Hashes, die der Unit-Test prüft.
+
+**Budgets** (`tools/models/buildings/budgets.json`, geprüft beim Packen und in `tests/tools/models/buildingKit.test.ts`): Dreiecke je LOD nach Kategorie (Gebäude 4 000 / 2 500 / 600, Landmarken 3 000 / 1 500 / 400, Props 1 600 / 800 / 300), ein Primitive je LOD, gröbstes LOD höchstens halb so viele Dreiecke wie LOD0, höchstens 420 KB je Gruppen-GLB und 1,8 MB für alle, Atlas höchstens 1,7 MB und mindestens 80 px/m je Kachel, Szenario Main Street (8/16/24 Gebäude in LOD0/1/2) unter 90 000 Dreiecken.
+
+**Review-Renderings:** Eevee-Stills je Familie in mehreren Runden (Downtown v1–v3, Spanish/Strand/Halle v1, v3, v4, Props v1–v3) und three.js-Stills der gepackten Dateien (`preview.mjs`), außerhalb des Repos abgelegt. Geändert wurde dabei unter anderem: Schilder vor die Pilaster, keine gleichen Nachbarläden, Eingangstür zu den Obergeschossen, Fensterfaschen, Bodenverschmutzung, Pier-Verstrebungen in der Jochebene und hellere Dielen, Leitplanken-Distanzstücke am abgesenkten Ende, kräftigere Felsschichten, echte Surfbrett-Umrisse, Aluminium-Flutlichtköpfe, Bogen-Faschen am Spanish-Revival-Haus, Regenrinnen am Strandhaus, Lichtbänder und Blechbahnen-Variation an den Hallen, breitere Ränder der kleinen Kacheln gegen Mip-Bluten und eine AO je Vertex statt je Ecke (vorher zeichnete sie das Schnittraster auf den Dächern nach).
+
