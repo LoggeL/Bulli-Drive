@@ -64,15 +64,101 @@ describe('placeFurniture on a straight street', () => {
     it('keeps clear of buildings, plants and reserved places', () => {
         const ctx = context(net);
         // A building reaching to 0.3 m of the first northern light (its
-        // post 0.2 m and 0.2 m clearance), a palm at the second, a reserved
-        // place at the third
+        // post 0.2 m and 0.2 m clearance), a palm of size 2 (trunk 0.7 m)
+        // 1.4 m from the second (clearance 0.2 + 0.7 + 0.6 = 1.5 m), a
+        // reserved place at the third
         ctx.buildings.add({ x: -68, z: -8.9, hw: 3, hd: 3, ux: 0, uz: 1 });
         const pieces = placeFurniture({
             ...ctx,
-            plants: [{ kind: 'palm', x: -32, z: -6.5, size: 1, seed: 0 }],
+            plants: [{ kind: 'palm', x: -32, z: -7, size: 2, seed: 0 }],
             reserved: [{ x: 4, z: -5.6, hw: 1, hd: 1, ux: 0, uz: 1 }]
         });
         expect(where(pieces, 'lamp').filter(l => l[1] === -5.6).map(l => l[0])).toEqual([40, 76]);
+    });
+
+    it('keeps a bench its whole length clear of a building', () => {
+        // The northern bench at (-50, -7.45) is 2 m long: a building 1.1 m
+        // behind its middle is inside its 1.0 + 0.2 m; the lights and the
+        // bench at x = 22 stay
+        const ctx = context(net);
+        ctx.buildings.add({ x: -50, z: -10.55, hw: 2, hd: 2, ux: 0, uz: 1 });
+        expect(where(placeFurniture(ctx), 'bench').filter(b => b[1] < 0).map(b => b[0])).toEqual([22]);
+    });
+
+    it('stays off other carriageways, out of the lots and inside the map', () => {
+        // A second road 9.4 m north (z = -9.4, 10 m wide): its carriageway
+        // from -14.4 to -4.4 covers the northern lights (-5.6) and benches
+        // (-7.45); a lot over x 30..50 on the south side; the map ends at
+        // x = 60
+        const two = buildRoadNetwork(network(
+            [node('w', -90, 0), node('e', 90, 0), node('w2', -90, -9.4), node('e2', 90, -9.4)],
+            [edge('main', 'w', 'e'), edge('north', 'w2', 'e2')],
+            {
+                profiles: { road: { ...PROFILE, sidewalk: { left: 3, right: 0 } } },
+                areas: [{ id: 'lot', surface: 'asphalt', curb: false, polygon: [[30, 3], [50, 3], [50, 12], [30, 12]], connects: [] }]
+            }
+        ));
+        const boundary: [number, number][] = [[-100, -100], [60, -100], [60, 100], [-100, 100]];
+        const pieces = placeFurniture({ ...context(two), boundary }).filter(p => p.z > -8 && p.z < 8);
+        // main's left (north) side is under the other road; its right side
+        // has no sidewalk: nothing is left near main
+        expect(pieces).toEqual([]);
+        // The same with sidewalks on main's right: lights at -68, -32, 4 and
+        // the hydrant at 83 would stand south; 40 is in the lot, 76 and 83
+        // beyond the border
+        const south = buildRoadNetwork(network(
+            [node('w', -90, 0), node('e', 90, 0)], [edge('main', 'w', 'e')],
+            {
+                profiles: { road: { ...PROFILE, sidewalk: { left: 0, right: 3 } } },
+                areas: [{ id: 'lot', surface: 'asphalt', curb: false, polygon: [[30, 3], [50, 3], [50, 12], [30, 12]], connects: [] }]
+            }
+        ));
+        expect(where(placeFurniture({ ...context(south), boundary }), 'lamp').map(l => l[0])).toEqual([-68, -32, 4]);
+    });
+
+    it('keeps its own pieces apart: a light next to another street\'s bench is left out', () => {
+        // A second street 14.55 m north, from x = -72: its southern lights
+        // at x = -50 and 22 (s = 22 and 94) would stand 1.5 m from the
+        // benches of main's north side (light 0.2 + bench 1.0 + 0.6 = 1.8 m)
+        const two = buildRoadNetwork(network(
+            [node('w', -90, 0), node('e', 90, 0), node('w2', -72, -14.55), node('e2', 90, -14.55)],
+            [edge('a-main', 'w', 'e'), edge('b-north', 'w2', 'e2')],
+            { profiles: { road: { ...PROFILE, sidewalk: { left: 3, right: 3 } } } }
+        ));
+        const pieces = placeFurniture(context(two));
+        const northernBenches = where(pieces, 'bench').filter(b => b[1] === -7.45).map(b => b[0]);
+        expect(northernBenches).toEqual([-50, 22]);
+        // b-north's lights on its south side (z = -14.55 + 5.6 = -8.95)
+        expect(where(pieces, 'lamp').filter(l => l[1] === -8.95).map(l => l[0])).toEqual([-14, 58]);
+    });
+
+    it('furnishes paved roads with a sidewalk of 1.5 m and more, and blocks of 12 m and more', () => {
+        const road = (profile: Partial<typeof PROFILE>, length = 180) => buildRoadNetwork(network(
+            [node('w', -length / 2, 0), node('e', length / 2, 0)], [edge('main', 'w', 'e')],
+            { profiles: { road: { ...PROFILE, ...profile } } }
+        ));
+        // Dirt with sidewalks: nothing
+        expect(placeFurniture(context(road({ surface: 'dirt', sidewalk: { left: 3, right: 3 } })))).toEqual([]);
+        // 1.5 m on the left: the lights there (no hydrant: that is on the right)
+        expect(where(placeFurniture(context(road({ sidewalk: { left: 1.5, right: 1.4 } }))), 'lamp')).toHaveLength(5);
+        expect(placeFurniture(context(road({ sidewalk: { left: 1.4, right: 1.4 } })))).toEqual([]);
+        // Benches stay 2 m inside their block: on a 116 m road (block 4 to
+        // 112) the second bench (s = 112) is left out, the first stands at
+        // s = 40, x = -58 + 40 = -18, on both sides
+        expect(where(placeFurniture(context(road({ sidewalk: { left: 3, right: 3 } }, 116))), 'bench').map(b => b[0])).toEqual([-18, -18]);
+        // A block of 19 - 8 = 11 m (a 19 m road, dead ends: 4 m off each):
+        // nothing; 20 m (12 m): its hydrant at 16 - 3 = 13, x = 3
+        expect(placeFurniture(context(road({ sidewalk: { left: 2, right: 2 } }, 19)))).toEqual([]);
+        expect(where(placeFurniture(context(road({ sidewalk: { left: 2, right: 2 } }, 20))), 'hydrant')).toEqual([[3, 5.6, 0, -1]]);
+    });
+
+    it('turns a hydrant on a north-south street towards the road', () => {
+        // Southwards along +z: left of the travel is +x, the right sidewalk
+        // is west (x = -5.6); the hydrant faces east (+x)
+        const ns = buildRoadNetwork(network([node('n', 0, -90), node('s', 0, 90)], [edge('main', 'n', 's')], {
+            profiles: { road: { ...PROFILE, sidewalk: { left: 2, right: 2 } } }
+        }));
+        expect(where(placeFurniture(context(ns)), 'hydrant')).toEqual([[-5.6, 83, 1, 0]]);
     });
 });
 
@@ -147,6 +233,56 @@ describe('placeFurniture at a signalled junction', () => {
             // cs, leaving c southwards: traffic comes north on its right (east)
             [5.6, 8, 0, -1]
         ]);
+    });
+
+    it('leaves out an approach without lanes towards the junction or without a sidewalk on its right', () => {
+        // wc one-way against its direction (lanes [0, 1]): no pole on its
+        // south side; ce without a sidewalk on its left (1 m on the right):
+        // no pole for its westbound lanes; a 1 m sidewalk is enough
+        const net = buildRoadNetwork(network(
+            [node('w', -90, 0), node('e', 90, 0), node('n', 0, -90), junction],
+            [edge('wc', 'w', 'c', [], { profile: 'against' }), edge('ce', 'c', 'e', [], { profile: 'bare' }), edge('nc', 'n', 'c', [], { profile: 'narrow' })],
+            { profiles: {
+                road: { ...PROFILE, sidewalk: { left: 2, right: 2 } },
+                against: { ...PROFILE, lanes: [0, 1], sidewalk: { left: 2, right: 2 } },
+                bare: { ...PROFILE, sidewalk: { left: 0, right: 2 } },
+                narrow: { ...PROFILE, sidewalk: { left: 1.5, right: 1 } }
+            } }
+        ));
+        expect(where(placeFurniture(context(net)), 'signal')).toEqual([[-5.6, -8, 0, 1]]);
+    });
+
+    it('stands no signal at a junction without settings, and none at an unsignalled one', () => {
+        const plain = (junctionSettings?: object) => buildRoadNetwork(network(
+            [node('w', -90, 0), node('e', 90, 0), node('c', 0, 0, 'junction', junctionSettings ? { junction: junctionSettings } : {})],
+            [edge('wc', 'w', 'c'), edge('ce', 'c', 'e')],
+            { profiles: { road: { ...PROFILE, sidewalk: { left: 2, right: 2 } } } }
+        ));
+        expect(where(placeFurniture(context(plain())), 'signal')).toEqual([]);
+        expect(where(placeFurniture(context(plain({ shape: 'auto', control: 'stop', crosswalks: true }))), 'signal')).toEqual([]);
+    });
+
+    it('lists the signalled junctions by id, then the edges by id', () => {
+        // Nodes and edges given out of order: b (x 60) before a (x -60),
+        // edge zz before ab and bz
+        const signal = { junction: { shape: 'auto' as const, control: 'signal' as const, crosswalks: true } };
+        const net = buildRoadNetwork(network(
+            [node('b', 60, 0, 'junction', signal), node('a', -60, 0, 'junction', signal), node('w', -90, 0), node('e', 90, 0), node('n1', -60, -90), node('n2', 60, -90)],
+            [edge('zz', 'w', 'a'), edge('ab', 'a', 'b'), edge('bz', 'b', 'e'), edge('na', 'n1', 'a'), edge('nb', 'n2', 'b')],
+            { profiles: { road: { ...PROFILE, sidewalk: { left: 2, right: 2 } } } }
+        ));
+        const pieces = placeFurniture(context(net));
+        // The first signals stand at a (x < 0), the last at b
+        const signals = pieces.filter(p => p.kind === 'signal');
+        expect(signals[0].x).toBeLessThan(0);
+        expect(signals.at(-1)!.x).toBeGreaterThan(0);
+        // The hydrants in the order ab, bz, na, nb, zz, each 3 m before its
+        // block's end on the right: a and b clear 7 + 4 = 11 m, dead ends
+        // 4 m. ab (120 m): 109 - 3 = 106, x = 46; bz (30 m): 26 - 3 = 23,
+        // x = 83; na, nb (90 m south): 79 - 3 = 76, z = -14, west of them;
+        // zz (30 m): 19 - 3 = 16, x = -74
+        const hydrants = where(pieces, 'hydrant').map(h => [h[0], h[1]]);
+        expect(hydrants).toEqual([[46, 5.6], [83, 5.6], [-65.6, -14], [54.4, -14], [-74, 5.6]]);
     });
 
     it('leaves out the approach without lanes towards the junction (a one-way road away from it)', () => {

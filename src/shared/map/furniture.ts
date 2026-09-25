@@ -94,8 +94,8 @@ function fits(ctx: FurnitureContext, placed: readonly Furniture[], kind: Furnitu
     const r = furnitureRadius(kind);
     if (!pointInPolygon(ctx.boundary, x, z)) return false;
     if (!FURNITURE_ZONES.includes(zoneAt(ctx.hf, x, z))) return false;
+    // Off every carriageway and every lot or square (isOnRoad includes the areas)
     if (isOnRoad(ctx.net, x, z)) return false;
-    for (const area of ctx.areas) if (pointInPolygon(area.polygon, x, z)) return false;
     if (ctx.buildings.contains(x, z, r + CLEAR_BUILDING)) return false;
     for (const box of ctx.reserved) if (boxContains(box, x, z, r)) return false;
     for (const plant of ctx.plants) {
@@ -143,10 +143,10 @@ const byId = (a: { id: string }, b: { id: string }) => (a.id < b.id ? -1 : a.id 
 function clearAfter(net: RoadNetwork, node: number): number {
     const data = net.nodes[node];
     const trim = junctionRadius(net, data);
+    // (0 at joints and ends: no surplus there)
     let half = 0;
     for (const end of data.ends) half = Math.max(half, net.edges[end.edge].halfWidth);
-    const standard = data.def.kind === 'junction' ? half + JUNCTION_TRIM_EXTRA : 0;
-    return trim + 4 + Math.max(0, trim - standard);
+    return trim + 4 + Math.max(0, trim - (half + JUNCTION_TRIM_EXTRA));
 }
 
 function furnished(edge: RoadEdgeData): boolean {
