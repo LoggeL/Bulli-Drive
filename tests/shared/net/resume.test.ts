@@ -32,7 +32,10 @@ describe('resume after a lost connection', () => {
         client.sendJson({ type: 'ready' });
         watcher.sendJson({ type: 'ready' });
         run(server, [client, watcher], 400);
-        client.sendJson({ type: 'debugPlace', x: 300, z: 300, yaw: 0.3 });
+        // In the arena, inside the Party's zone (a place beyond it would be
+        // pushed onto its border) and away from the watcher's slot: a bump
+        // with another car is the one thing the prediction cannot know
+        client.sendJson({ type: 'debugPlace', x: -200, z: 640, yaw: 0.3 });
         run(server, [client, watcher], 200);
         client.script = tick => input(255, Math.round(Math.sin(tick / 40) * 60));
         run(server, [client, watcher], 3000);

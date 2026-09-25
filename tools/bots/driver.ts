@@ -2,7 +2,9 @@
 // 14 M3): pure pursuit along a route. In Free Roam the route runs over the
 // map's road network from junction to junction (straight on more often
 // than a turn, back only out of a dead end), in the right-hand lane; in the
-// Party it wanders from point to point across the arena. The bot steers
+// Party it wanders from point to point across the arena. In the harbour
+// yards round the arena (the rest of the Party's zone) no arena target has
+// a clear way, and the freest way out leads along their roads and alleys. The bot steers
 // towards a point 12 m + 0.4 s · v ahead, cruises at 20-35 m/s (the arena:
 // 12-20) and slows for the bends ahead. Mode ram chases the nearest car
 // instead for a few seconds (and gives up once it had to back off). In

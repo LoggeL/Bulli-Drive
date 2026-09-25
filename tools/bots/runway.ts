@@ -101,7 +101,7 @@ export function longestRunway(map: MapData, lanes?: number[]): Runway {
  */
 export function arenaRunway(map: MapData): Runway {
     const world = map.partyWorld;
-    const { minX, maxX, minZ, maxZ } = world.border;
+    const { minX, maxX, minZ, maxZ } = map.arenaBounds;
     // Clear of the fence on the border (a capsule of 0.15 m) and its clearance
     const x0 = minX + RUNWAY_CLEARANCE + 1;
     const end = maxX - RUNWAY_CLEARANCE - 1;

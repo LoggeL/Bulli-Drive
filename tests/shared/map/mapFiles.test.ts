@@ -79,6 +79,20 @@ describe('pois.json', () => {
             expect(parsed.errors.some(e => e.startsWith('arena.ramps.0.height'))).toBe(true);
         }
     });
+
+    it('takes a Party zone as a non-empty rectangle, and harbour slots only in the groups it knows', () => {
+        const zone = { ...clone(POIS), party: { zone: { minX: -10, minZ: 0, maxX: 10, maxZ: 20 }, coins: [[0, 5]], powerups: [] } };
+        expect(parsePoisFile(zone).ok).toBe(true);
+        const empty = { ...clone(POIS), party: { zone: { minX: 10, minZ: 0, maxX: 10, maxZ: 20 }, coins: [], powerups: [] } };
+        const parsed = parsePoisFile(empty);
+        expect(parsed.ok).toBe(false);
+        if (!parsed.ok) expect(parsed.errors.some(e => e.startsWith('party.zone') && e.includes('empty'))).toBe(true);
+        const slots = clone(POIS) as unknown as { spawns: { party: { group?: string }[] } };
+        slots.spawns.party[0].group = 'harbor';
+        expect(parsePoisFile(slots).ok).toBe(true);
+        slots.spawns.party[0].group = 'pier';
+        expect(parsePoisFile(slots).ok).toBe(false);
+    });
 });
 
 const TRACKS: TracksFile = {

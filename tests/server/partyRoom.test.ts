@@ -649,7 +649,7 @@ describe('what the room tells about the Party', () => {
         const carol = fakeSession('Carol');
         lobby.join(carol, 'party');
         const state = carol.transport.of('roomState').at(-1)!;
-        expect(state.items!.coins).toHaveLength(30);
+        expect(state.items!.coins).toHaveLength(30 + 21);
         expect(state.items!.coins.find(c => c.id === coin.id)).toEqual({ id: coin.id, collected: true });
         expect(state.items!.coins).toEqual(room.coins.map(c => ({ id: c.id, collected: c.collected })));
         expect(state.items!.powerups.find(p => p.id === powerup.id)).toEqual({ id: powerup.id, collected: true });

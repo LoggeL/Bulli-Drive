@@ -83,6 +83,11 @@ export const FREE_ROAM_SLOTS_PER_GROUP = 4;
 export const PARTY_SPAWNS = 16;
 export const ARENA_COINS = 30;
 export const ARENA_POWERUPS = 25;
+// The Party's zone beyond the arena, the harbour yards (A54): spawns and
+// items on their roads
+export const HARBOR_SPAWNS = 8;
+export const HARBOR_COINS = 21;
+export const HARBOR_POWERUPS = 8;
 export const ARENA_CONTAINERS = 12;
 export const CONTAINER_LENGTH = 12.2;
 export const CONTAINER_WIDTH = 2.44;
@@ -817,14 +822,35 @@ export function checkPois(net: RoadNetwork, hf: Heightfield, map: MapFile, pois:
     for (const [x, z] of arena) { cx += x; cz += z; }
     cx /= arena.length; cz /= arena.length;
     const party = pois.spawns.party;
-    if (party.length !== PARTY_SPAWNS) findings.push(finding(check, `${party.length} party spawns, the design has ${PARTY_SPAWNS}`));
+    const rim = party.filter(pose => (pose.group ?? 'arena') === 'arena');
+    const harbor = party.filter(pose => pose.group === 'harbor');
+    if (rim.length !== PARTY_SPAWNS) findings.push(finding(check, `${rim.length} party spawns in the arena, the design has ${PARTY_SPAWNS}`));
     party.forEach((pose, i) => {
+        if (pose.group === 'harbor') return;
         if (!inArena(pose.x, pose.z, PARTY_RIM_CLEARANCE)) findings.push(finding(check, `party spawn ${i + 1} is not inside the arena`, pose));
         if (angleDiff(pose.yaw, Math.atan2(cx - pose.x, cz - pose.z)) > PARTY_YAW_TOLERANCE) {
             findings.push(finding(check, `party spawn ${i + 1} does not face the arena's middle`, pose));
         }
     });
     tooClose(party, 'party spawns');
+
+    // The Party's zone: the arena and the harbour yards round it (A54)
+    const zone = pois.party?.zone;
+    const inZone = (x: number, z: number, margin: number) =>
+        !!zone && x >= zone.minX + margin && x <= zone.maxX - margin && z >= zone.minZ + margin && z <= zone.maxZ - margin;
+    if (zone) {
+        if (arena.some(([x, z]) => !inZone(x, z, 0))) findings.push(finding(check, 'the party zone does not contain the arena'));
+        const corners: Vec2[] = [[zone.minX, zone.minZ], [zone.minX, zone.maxZ], [zone.maxX, zone.maxZ], [zone.maxX, zone.minZ]];
+        if (corners.some(([x, z]) => !pointInPolygon(map.boundary, x, z))) findings.push(finding(check, 'the party zone reaches beyond the boundary'));
+        if (harbor.length !== HARBOR_SPAWNS) findings.push(finding(check, `${harbor.length} party spawns in the harbour yards, the design has ${HARBOR_SPAWNS}`));
+    } else if (harbor.length > 0) {
+        findings.push(finding(check, 'harbour spawns without a party zone'));
+    }
+    party.forEach((pose, i) => {
+        if (pose.group !== 'harbor') return;
+        if (!inZone(pose.x, pose.z, PARTY_RIM_CLEARANCE)) findings.push(finding(check, `party spawn ${i + 1} is not inside the party zone`, pose));
+        spawnOk(`party spawn ${i + 1} (harbor)`, pose);
+    });
     const { containers, ramps, coins, powerups } = pois.arena;
     if (containers.length !== ARENA_CONTAINERS) findings.push(finding(check, `${containers.length} containers, the design has ${ARENA_CONTAINERS}`));
     containers.forEach((c, i) => {
@@ -850,6 +876,18 @@ export function checkPois(net: RoadNetwork, hf: Heightfield, map: MapFile, pois:
     };
     items(coins, 'coin', ARENA_COINS);
     items(powerups, 'power-up', ARENA_POWERUPS);
+    // The yards' items: in the zone, on its roads (so never in a building), off the arena
+    const yardItems = (list: readonly (readonly [number, number])[], label: string, count: number) => {
+        if (list.length !== count) findings.push(finding(check, `${list.length} ${label} points in the harbour yards, the design has ${count}`));
+        list.forEach(([x, z], i) => {
+            if (!inZone(x, z, 1) || pointInPolygon(arena, x, z)) findings.push(finding(check, `harbour ${label} point ${i + 1} is not in the yards`, { x, z }));
+            else if (roadSurfaceAt(net, x, z) === null) findings.push(finding(check, `harbour ${label} point ${i + 1} is not on a road`, { x, z }));
+        });
+    };
+    if (pois.party) {
+        yardItems(pois.party.coins, 'coin', HARBOR_COINS);
+        yardItems(pois.party.powerups, 'power-up', HARBOR_POWERUPS);
+    }
     party.forEach((pose, i) => {
         if (blocked(pose.x, pose.z)) findings.push(finding(check, `party spawn ${i + 1} is inside or next to a container or ramp`, pose));
     });

@@ -51,6 +51,13 @@ export interface SpawnSlot {
     yaw: number;
 }
 
+export interface Rect {
+    minX: number;
+    minZ: number;
+    maxX: number;
+    maxZ: number;
+}
+
 export interface MapItems {
     powerups: PowerupData[];
     coins: CoinData[];
@@ -68,10 +75,17 @@ export interface MapData {
     structures: readonly MapStructure[];
     buildings: readonly BuildingLot[];
     plants: readonly Plant[];
-    // Fences (looks and colliders): the arena's, with the gap of its gate
-    fences: readonly { id: string; line: readonly Vec2[] }[];
-    // The arena's gate across that gap (a collider in the Party world only)
+    // Fences (looks and colliders): the arena's, with the gap of its gate,
+    // and round the Party's zone (party: a collider in the Party world only,
+    // left out where a building's wall closes the zone)
+    fences: readonly { id: string; line: readonly Vec2[]; party?: boolean }[];
+    // The arena's gate across that gap (a collider in the Party world when
+    // the Party has no zone beyond the arena, else open)
     arenaGate: SegmentCollider;
+    // The arena's fence rectangle, and the Party's zone: the border of its
+    // world (the arena's rectangle without a zone in pois.json)
+    arenaBounds: Rect;
+    partyZone: Rect;
     colliders: readonly ColliderInput[];
     // The ground of every sim world on the map (heightfield, surfaces, water)
     ground: GroundModel;
@@ -199,6 +213,37 @@ export function arenaFence(area: RoadArea, gate: PoisFile['arena']['gate']): {
     const gapB: Vec2 = [centre[0] + dx * half, centre[1] + dz * half];
     const line: Vec2[] = [gapB, b, ring[(best + 2) % 4], ring[(best + 3) % 4], a, gapA];
     return { lines: [line], gate: segment(gapA, gapB, Infinity), border: { minX: x0, maxX: x1, minZ: z0, maxZ: z1 } };
+}
+
+// The Party zone's fence is laid in steps of this length; a step whose
+// middle lies in a building is left out
+export const ZONE_FENCE_STEP = 1;
+
+/**
+ * The fence round the Party's zone (12, A54): the rectangle's sides from
+ * corner to corner, without the stretches inside a wall (a building or
+ * landmark on the line closes the zone there itself; a fence through it
+ * would only show). Returns the pieces as two-point lines.
+ */
+export function zoneFence(zone: Rect, walls: BoxIndex): Vec2[][] {
+    const corners: Vec2[] = [[zone.minX, zone.minZ], [zone.minX, zone.maxZ], [zone.maxX, zone.maxZ], [zone.maxX, zone.minZ]];
+    const lines: Vec2[][] = [];
+    for (let i = 0; i < 4; i++) {
+        const a = corners[i], b = corners[(i + 1) % 4];
+        const length = Math.abs(b[0] - a[0]) + Math.abs(b[1] - a[1]);
+        const n = Math.max(1, Math.round(length / ZONE_FENCE_STEP));
+        const at = (k: number): Vec2 => [a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n];
+        let start = -1;
+        for (let k = 0; k <= n; k++) {
+            const open = k < n && !walls.contains(a[0] + (b[0] - a[0]) * (k + 0.5) / n, a[1] + (b[1] - a[1]) * (k + 0.5) / n);
+            if (open && start < 0) start = k;
+            if (!open && start >= 0) {
+                lines.push([at(start), at(k)]);
+                start = -1;
+            }
+        }
+    }
+    return lines;
 }
 
 /** The pieces and placements of the landmarks that have a model (and the fountain's basin). */
@@ -363,33 +408,51 @@ export function createMapData(sources: MapSources, hf: Heightfield): MapData {
     const rampDefs: RampDef[] = ramps.map(({ x, z, yaw, width, length, height }) => ({ x, z, yaw, width, length, height }));
     const simWorld = createSimWorld(model, colliders, rampDefs);
     simWorld.resetPose = roadResetPose(net);
-    // The Party stays in the arena behind its closed gate; a reset there
-    // leaves the car where it is. The world border is the fence's rectangle,
+    // The Party's world: its zone fenced (the arena's gate open), or without
+    // a zone the arena behind its closed gate; a reset there leaves the car
+    // where it is. The world border is the zone's (the fence's) rectangle,
     // so a Party ghost (no world colliders) cannot leave either.
-    const partyWorld = createSimWorld(model, [...colliders, arena.gate], rampDefs);
-    partyWorld.border = arena.border;
+    const partyZone: Rect = pois.party?.zone ?? arena.border;
+    const walls = new BoxIndex();
+    for (const lot of buildings) walls.add(placementBox(lot));
+    for (const structure of structures) if (structure.kind !== 'container') walls.add(placementBox(structure));
+    const partyFence = pois.party ? zoneFence(partyZone, walls) : [];
+    const partyColliders: SegmentCollider[] = [];
+    for (const [a, b] of partyFence) segmentChain(a, b, 8, Infinity, partyColliders);
+    if (!pois.party) partyColliders.push(arena.gate);
+    const partyWorld = createSimWorld(model, [...colliders, ...partyColliders], rampDefs);
+    partyWorld.border = partyZone;
 
+    // The arena's items first, then the yards' (ids in that order, power-up
+    // types in turn over all of them)
+    const coinPoints = [...pois.arena.coins, ...(pois.party?.coins ?? [])];
+    const powerupPoints = [...pois.arena.powerups, ...(pois.party?.powerups ?? [])];
     const items: MapItems = {
-        powerups: pois.arena.powerups.map(([x, z], id) => {
+        powerups: powerupPoints.map(([x, z], id) => {
             const type = POWERUP_TYPES[id % POWERUP_TYPES.length];
             return { id, x, z, type: type.type, color: type.color, label: type.label, collected: false };
         }),
-        coins: pois.arena.coins.map(([x, z], id) => ({ id, x, z, collected: false }))
+        coins: coinPoints.map(([x, z], id) => ({ id, x, z, collected: false }))
     };
     const spawns = {
         freeRoam: pois.spawns.freeRoam.map(({ group, x, z, yaw }) => ({ group, x, z, yaw })),
-        party: pois.spawns.party.map(({ x, z, yaw }) => ({ group: 'arena', x, z, yaw }))
+        party: pois.spawns.party.map(({ group, x, z, yaw }) => ({ group: group ?? 'arena', x, z, yaw }))
     };
     const worldHash = fnv1a(canonicalStringify({
         mapId: map.mapId, mapVersion: map.mapVersion, terrain: heightfieldHash(hf),
-        colliders, gate: arena.gate, ramps: rampDefs, items, spawns
+        colliders, gate: arena.gate, party: { zone: partyZone, colliders: partyColliders }, ramps: rampDefs, items, spawns
     }));
 
     return {
         mapId: map.mapId, mapVersion: map.mapVersion, name: map.name,
         sources, hf, net, ramps, structures, buildings, plants,
-        fences: arena.lines.map((line, i) => ({ id: `arena-fence-${i + 1}`, line })),
+        fences: [
+            ...arena.lines.map((line, i) => ({ id: `arena-fence-${i + 1}`, line })),
+            ...partyFence.map((line, i) => ({ id: `party-fence-${i + 1}`, line, party: true }))
+        ],
         arenaGate: arena.gate,
+        arenaBounds: arena.border,
+        partyZone,
         colliders, ground: model, simWorld, partyWorld, items, spawns, worldHash
     };
 }

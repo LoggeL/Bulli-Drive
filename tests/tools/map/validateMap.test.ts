@@ -478,13 +478,58 @@ describe('checkPois', () => {
         ]);
     });
 
+    // The harbour yards of the Party (A54): here the road along z = 0 north of the lot
+    function withYards(pois: PoisFile): PoisFile {
+        const coins: [number, number][] = [];
+        const powerups: [number, number][] = [];
+        for (let k = 0; k < 21; k++) coins.push([-12 + k * 10, 1]);
+        for (let k = 0; k < 8; k++) powerups.push([-7 + k * 25, -1]);
+        const harbor = Array.from({ length: 8 }, (_, k) => ({ group: 'harbor' as const, x: -10 + k * 25, z: 0, yaw: Math.PI / 2 }));
+        return {
+            ...pois,
+            spawns: { ...pois.spawns, party: [...pois.spawns.party, ...harbor] },
+            party: { zone: { minX: -20, minZ: -15, maxX: 200, maxZ: 150 }, coins, powerups }
+        };
+    }
+
+    it('accepts a Party zone round the arena with spawns and items on its road', () => {
+        expect(checkPois(poiNetwork(), FLAT, POI_MAP, withYards(validPois()))).toEqual([]);
+    });
+
+    it('reports a zone that leaves out the arena or the boundary, and yard spawns and items off the zone, the road or in the arena', () => {
+        const pois = withYards(validPois());
+        pois.party!.zone = { minX: -20, minZ: -15, maxX: 250, maxZ: 130 };
+        // Within 3 m of the shrunk zone's edge (z 130), and off the road; a coin
+        // in the arena and one beside the road
+        pois.spawns.party[16] = { ...pois.spawns.party[16], z: 128 };
+        pois.party!.coins[0] = [100, 80];
+        pois.party!.coins[1] = [-2, 12];
+        pois.party!.powerups.pop();
+        expect(messages(checkPois(poiNetwork(), FLAT, POI_MAP, pois))).toEqual([
+            'the party zone does not contain the arena',
+            'the party zone reaches beyond the boundary',
+            'party spawn 17 is not inside the party zone',
+            'party spawn 17 (harbor) is not on a road or area',
+            'harbour coin point 1 is not in the yards',
+            'harbour coin point 2 is not on a road',
+            '7 power-up points in the harbour yards, the design has 8'
+        ]);
+        // Yard spawns need the zone
+        const lost = validPois();
+        lost.spawns.party.push({ group: 'harbor', x: 0, z: 0, yaw: 0 });
+        expect(messages(checkPois(poiNetwork(), FLAT, POI_MAP, lost))).toEqual([
+            'harbour spawns without a party zone',
+            'party spawn 17 is not inside the party zone'
+        ]);
+    });
+
     it('reports party spawns outside the arena or looking away from its middle', () => {
         const pois = validPois();
         pois.spawns.party[0] = { ...pois.spawns.party[0], z: 21 };
         pois.spawns.party[1] = { ...pois.spawns.party[1], yaw: pois.spawns.party[1].yaw + Math.PI };
         pois.spawns.party.pop();
         expect(messages(checkPois(poiNetwork(), FLAT, POI_MAP, pois))).toEqual([
-            '15 party spawns, the design has 16',
+            '15 party spawns in the arena, the design has 16',
             'party spawn 1 is not inside the arena',
             'party spawn 2 does not face the arena\'s middle'
         ]);

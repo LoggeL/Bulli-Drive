@@ -71,10 +71,12 @@ describe('the map\'s spawn slots', () => {
     const map = mapFor();
     const inArea = (x: number, z: number) => map.net.areas.some(area => pointInPolygon(area.polygon, x, z));
 
-    it('are 16 for Free Roam in four places and 16 round the arena', () => {
+    it('are 16 for Free Roam in four places, 16 round the arena and 8 in the harbour yards', () => {
         expect(map.spawns.freeRoam).toHaveLength(16);
         expect(new Set(map.spawns.freeRoam.map(s => s.group))).toEqual(new Set(['plaza', 'diner', 'beach', 'lookout']));
-        expect(map.spawns.party).toHaveLength(16);
+        expect(map.spawns.party.filter(s => s.group === 'arena')).toHaveLength(16);
+        expect(map.spawns.party.filter(s => s.group === 'harbor')).toHaveLength(8);
+        expect(map.spawns.party).toHaveLength(24);
     });
 
     it('stand on a road or an area, above the water, and a car there touches no collider', () => {
@@ -91,8 +93,13 @@ describe('the map\'s spawn slots', () => {
         }
     });
 
-    it('keep the arena\'s slots behind its closed gate: inside the arena', () => {
+    it('keep the Party\'s slots in its zone: the arena\'s inside the arena, the yards\' on their roads outside it', () => {
         const arena = map.net.areas.find(area => area.id === map.sources.pois.arena.area)!;
-        for (const s of map.spawns.party) expect(pointInPolygon(arena.polygon, s.x, s.z)).toBe(true);
+        const zone = map.partyZone;
+        for (const s of map.spawns.party) {
+            expect(pointInPolygon(arena.polygon, s.x, s.z), `${s.group} ${s.x} ${s.z}`).toBe(s.group === 'arena');
+            if (s.group === 'harbor') expect(roadSurfaceIdAt(map.net, s.x, s.z)).toBeGreaterThanOrEqual(0);
+            expect(s.x > zone.minX + 3 && s.x < zone.maxX - 3 && s.z > zone.minZ + 3 && s.z < zone.maxZ - 3, `${s.x} ${s.z}`).toBe(true);
+        }
     });
 });

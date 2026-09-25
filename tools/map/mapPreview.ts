@@ -89,6 +89,7 @@ export function previewData(mapId: string) {
         spawns: pois.spawns.freeRoam.map(s => ({ x: s.x, z: s.z, yaw: s.yaw })),
         party: pois.spawns.party.map(s => ({ x: s.x, z: s.z, yaw: s.yaw })),
         arena: pois.arena,
+        partyZone: pois.party ?? null,
         findings: validation.findings.filter(f => f.severity === 'error').length,
         km: validation.roads.km,
         tracksCount: tracks.tracks.length
@@ -222,8 +223,16 @@ function draw(data: PreviewData, size: number): Promise<string> {
                 ctx.fillStyle = '#f1c40f'; ctx.fill();
                 ctx.strokeStyle = '#111'; ctx.lineWidth = 1.2; ctx.stroke();
             }
-            for (const [x, z] of data.arena.coins) { ctx.fillStyle = '#ffd700'; ctx.beginPath(); ctx.arc(X(x), Z(z), 1.8, 0, 7); ctx.fill(); }
-            for (const [x, z] of data.arena.powerups) { ctx.fillStyle = '#3fa9ff'; ctx.beginPath(); ctx.arc(X(x), Z(z), 1.8, 0, 7); ctx.fill(); }
+            const yard = data.partyZone;
+            for (const [x, z] of [...data.arena.coins, ...(yard?.coins ?? [])]) { ctx.fillStyle = '#ffd700'; ctx.beginPath(); ctx.arc(X(x), Z(z), 1.8, 0, 7); ctx.fill(); }
+            for (const [x, z] of [...data.arena.powerups, ...(yard?.powerups ?? [])]) { ctx.fillStyle = '#3fa9ff'; ctx.beginPath(); ctx.arc(X(x), Z(z), 1.8, 0, 7); ctx.fill(); }
+            // The Party's zone (the arena and the harbour yards), dashed
+            if (yard) {
+                const zone = yard.zone;
+                ctx.strokeStyle = '#c0392b'; ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
+                ctx.strokeRect(X(zone.minX), Z(zone.minZ), X(zone.maxX) - X(zone.minX), Z(zone.maxZ) - Z(zone.minZ));
+                ctx.setLineDash([]);
+            }
             // Tracks
             for (const track of data.tracks) {
                 ctx.strokeStyle = track.color;
@@ -380,6 +389,7 @@ function draw(data: PreviewData, size: number): Promise<string> {
             };
             legendLine('#555', [], 'Leitplanke / Geländer', 1.5);
             legendLine('rgba(200,30,30,0.8)', [12, 6], 'Kartengrenze');
+            legendLine('#c0392b', [3, 3], 'Party-Zone (Arena und Hafen)', 1.5);
             legendLine('#888', [6, 4], 'Zonen');
             legendLine('#fff', [], 'Start / Ziel (weiß), Gates (Farbe)', 3);
             ctx.fillStyle = '#c0392b'; ctx.fillRect(lx, ly - 4, 26, 8);

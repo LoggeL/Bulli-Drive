@@ -37,8 +37,10 @@ describe('map data', () => {
         const map = mapFor();
         expect(map.mapId).toBe('bulli-bay');
         expect(map.mapVersion).toBe(map.sources.map.mapVersion);
-        expect(map.items.coins.map(c => [c.x, c.z])).toEqual(map.sources.pois.arena.coins);
-        expect(map.items.powerups.map(p => [p.x, p.z])).toEqual(map.sources.pois.arena.powerups);
+        // The arena's, then the harbour yards' round it
+        const { arena, party } = map.sources.pois;
+        expect(map.items.coins.map(c => [c.x, c.z])).toEqual([...arena.coins, ...party!.coins]);
+        expect(map.items.powerups.map(p => [p.x, p.z])).toEqual([...arena.powerups, ...party!.powerups]);
     });
 
     it('gives every Party room its own items and never touches the map', () => {
@@ -49,8 +51,8 @@ describe('map data', () => {
         expect(party2.coins[0].collected).toBe(false);
         expect(party2.powerups[3].collected).toBe(false);
         expect(mapFor().items.coins.some(c => c.collected) || mapFor().items.powerups.some(p => p.collected)).toBe(false);
-        expect(party2.coins).toHaveLength(30);
-        expect(party2.powerups).toHaveLength(25);
+        expect(party2.coins).toHaveLength(30 + 21);
+        expect(party2.powerups).toHaveLength(25 + 8);
         party2.dispose();
     });
 });
@@ -177,8 +179,8 @@ describe('joining', () => {
         expect(state.room).toEqual({ id: 'party-1', kind: 'party', index: 1 });
         expect(state.world).toEqual({ mapId: 'bulli-bay', mapVersion: map.mapVersion, worldHash: map.worldHash });
         expect(state.members).toEqual([expect.objectContaining({ id: alice.id, slot: 0, name: 'Alice', ready: false })]);
-        expect(state.items!.coins).toHaveLength(30);
-        expect(state.items!.powerups).toHaveLength(25);
+        expect(state.items!.coins).toHaveLength(30 + 21);
+        expect(state.items!.powerups).toHaveLength(25 + 8);
         expect(state.health[alice.id]).toBe(100);
         // The world itself is not sent (the client builds it from the same files)
         expect(JSON.stringify(state).length).toBeLessThan(4000);
@@ -310,8 +312,8 @@ describe('switching rooms', () => {
         expect(alice.room?.id).toBe('party-1');
         expect(party.partyState(alice.id)!.score).toBe(0);
         const state = alice.transport.of('roomState').at(-1)!;
-        expect(state.items!.powerups).toHaveLength(25);
-        expect(state.items!.coins).toHaveLength(30);
+        expect(state.items!.powerups).toHaveLength(25 + 8);
+        expect(state.items!.coins).toHaveLength(30 + 21);
         expect(state.scoreboard.map(e => e.name)).toEqual(['Alice']);
     });
 

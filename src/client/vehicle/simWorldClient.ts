@@ -7,8 +7,9 @@ import { state } from '../state.js';
 // The static collision world of the v2 sim: the map's own, built from the
 // same sources and terrain as the server's (shared/map/mapData.ts,
 // docs/phase-3-design.md, 14 M3), never from what the client happened to
-// render. Free Roam drives in the map's world, the Party in the arena's
-// (its gate closed), a race room in its race world (map + track).
+// render. Free Roam drives in the map's world, the Party in its zone's
+// (the arena and the harbour yards, fenced), a race room in its race world
+// (map + track).
 
 let mapData: MapData | null = null;
 let roomWorld: SimWorld | null = null;
@@ -25,7 +26,7 @@ export function setGameMapWorld(map: MapData): void {
     state.groundHeight = map.simWorld.terrainHeight;
 }
 
-/** The world of a room kind (the Party: the arena); also the current world from now on. */
+/** The world of a room kind (the Party: its zone); also the current world from now on. */
 export function roomSimWorld(kind: RoomKind): SimWorld {
     roomWorld = mapData ? (kind === 'party' ? mapData.partyWorld : mapData.simWorld) : currentSimWorld();
     return roomWorld;

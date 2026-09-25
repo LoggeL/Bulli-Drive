@@ -51,6 +51,26 @@ describe('RoadDriver', () => {
         expect(driver.resets).toBeLessThanOrEqual(1);
     });
 
+    it('wanders the harbour yards round the arena from a yard slot, and stays in the Party\'s zone', () => {
+        const zone = map.partyZone;
+        const slots = map.spawns.party.filter(s => s.group === 'harbor');
+        for (const [i, slot] of [slots[0], slots[3], slots[6]].entries()) {
+            const car = createSimCar('bot', 'beetle');
+            spawnVehicle(car.state, map.partyWorld, slot.x, slot.z, slot.yaw);
+            const driver = new RoadDriver(mulberry32(7 + i));
+            driver.setMap(map, true);
+            for (let t = 0; t < 60 * 30; t++) {
+                driver.drive(car.state, car.params, car.input);
+                stepWorld([car], map.partyWorld);
+                const { x, z } = car.state;
+                expect(x > zone.minX && x < zone.maxX && z > zone.minZ && z < zone.maxZ, `${x} ${z}`).toBe(true);
+            }
+            // Along the roads and alleys (the freest way out, as no arena
+            // target has a clear way): 360-600 m measured from every yard slot
+            expect(driver.distance, `slot ${i}`).toBeGreaterThan(250);
+        }
+    });
+
     it('wanders across the arena in the Party and stays behind its fence', () => {
         const arena = map.net.areas.find(a => a.id === map.sources.pois.arena.area)!;
         const car = createSimCar('bot', 'beetle');

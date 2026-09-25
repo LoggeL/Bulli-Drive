@@ -3,7 +3,7 @@
 //
 //   map.json     header: map version, name, drivable boundary
 //   zones.json   zone polygons (the bake rasterises them, table 11.1)
-//   pois.json    landmarks, spawns per mode, the party arena's contents
+//   pois.json    landmarks, spawns per mode, the party arena's contents and zone
 //   tracks.json  race routes over the road network (trackRoute.ts)
 //
 // Like roads.json they are edited by hand, so unknown keys are rejected.
@@ -62,6 +62,14 @@ export const LANDMARK_KINDS = [
 ] as const;
 
 const Pose = v.strictObject({ x: Finite, z: Finite, yaw: Finite });
+// A Party spawn slot: at the arena's rim (group arena, the default) or in
+// the harbour yards round it (group harbor)
+const PartySlot = v.strictObject({ x: Finite, z: Finite, yaw: Finite, group: v.optional(v.picklist(['arena', 'harbor'])) });
+// An axis-aligned rectangle (m)
+const Rect = v.pipe(
+    v.strictObject({ minX: Finite, minZ: Finite, maxX: Finite, maxZ: Finite }),
+    v.check(r => r.maxX > r.minX && r.maxZ > r.minZ, 'the rectangle is empty')
+);
 
 // A free-roam spawn slot; `group` names the place (plaza, diner, ...). The
 // server hands out the groups in turn (3.5).
@@ -95,8 +103,9 @@ export const PoisFileSchema = v.strictObject({
     spawns: v.strictObject({
         // Groups of slots at the places of 3.5
         freeRoam: v.pipe(v.array(SpawnSlot), v.minLength(1)),
-        // Slots at the arena's rim looking to the middle (12)
-        party: v.pipe(v.array(Pose), v.minLength(1))
+        // Slots at the arena's rim looking to the middle (12), and on the
+        // roads of the harbour yards round it
+        party: v.pipe(v.array(PartySlot), v.minLength(1))
     }),
     // Jump ramps of the whole map (free roam and party; a race world adds
     // its track's ramps): the sim's RampDef with an ID and a look
@@ -118,7 +127,16 @@ export const PoisFileSchema = v.strictObject({
         // Fixed coin and power-up points (replacing the random ones)
         coins: v.array(Point),
         powerups: v.array(Point)
-    })
+    }),
+    // The Party's zone (12, A54): the arena and the harbour yards round it,
+    // fenced in the Party world only (the arena's gate stands open there),
+    // with more coins and power-ups on the yards' roads. Without it the
+    // Party stays in the arena behind its closed gate.
+    party: v.optional(v.strictObject({
+        zone: Rect,
+        coins: v.array(Point),
+        powerups: v.array(Point)
+    }))
 });
 
 // A station on an edge: s is the arc length from the edge's `from` node,

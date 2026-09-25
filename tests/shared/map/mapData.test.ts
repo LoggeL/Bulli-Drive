@@ -4,7 +4,7 @@ import { LOT_RULES, placeBuildings } from '../../../src/shared/map/buildings.js'
 import { pointInPolygon, type Vec2 } from '../../../src/shared/map/geometry.js';
 import { heightAt, zoneAt, type GridSpec, type Heightfield } from '../../../src/shared/map/heightfield.js';
 import {
-    arenaFence, boundaryFence, createMapData, FENCE_PIECE, heightfieldHash, LANDMARK_PIECES, roadResetPose
+    arenaFence, boundaryFence, createMapData, FENCE_PIECE, heightfieldHash, LANDMARK_PIECES, roadResetPose, zoneFence
 } from '../../../src/shared/map/mapData.js';
 import { PLANT_COLLIDERS, plantFits } from '../../../src/shared/map/plants.js';
 import { networkRailColliders } from '../../../src/shared/map/rails.js';
@@ -167,6 +167,30 @@ describe('arenaFence', () => {
     });
 });
 
+describe('zoneFence', () => {
+    it('runs round the rectangle and leaves out the stretches inside a wall, to the metre', () => {
+        const none = new BoxIndex();
+        // Corner to corner, counter-clockwise from (minX, minZ)
+        expect(zoneFence({ minX: 0, minZ: 0, maxX: 100, maxZ: 50 }, none)).toEqual([
+            [[0, 0], [0, 50]], [[0, 50], [100, 50]], [[100, 50], [100, 0]], [[100, 0], [0, 0]]
+        ]);
+        // A 20 × 10 m building across the side z = 50 from x = 40 to 60: the
+        // fence stops at its walls; steps have their middle at x + 0.5
+        const walls = new BoxIndex();
+        walls.add({ x: 50, z: 50, hw: 10, hd: 5, ux: 0, uz: 1 });
+        const lines = zoneFence({ minX: 0, minZ: 0, maxX: 100, maxZ: 50 }, walls);
+        expect(lines).toEqual([
+            [[0, 0], [0, 50]], [[0, 50], [40, 50]], [[60, 50], [100, 50]], [[100, 50], [100, 0]], [[100, 0], [0, 0]]
+        ]);
+        // A wall over a corner takes the ends of both sides
+        const corner = new BoxIndex();
+        corner.add({ x: 100, z: 0, hw: 5.5, hd: 3.5, ux: 0, uz: 1 });
+        expect(zoneFence({ minX: 0, minZ: 0, maxX: 100, maxZ: 50 }, corner)).toEqual([
+            [[0, 0], [0, 50]], [[0, 50], [100, 50]], [[100, 50], [100, 4]], [[94, 0], [0, 0]]
+        ]);
+    });
+});
+
 describe('boundaryFence', () => {
     it('fences the boundary in pieces of at most 16 m, except over the sea', () => {
         // The sea west of x = -50
@@ -311,28 +335,58 @@ describe('Bulli Bay', () => {
         }
     });
 
-    it('fences the Party in: the gate is shut there, and a Party ghost stops at the arena\'s border', () => {
-        expect(map.partyWorld.colliders).toHaveLength(map.colliders.length + 1);
-        expect(map.simWorld.colliders).toHaveLength(map.colliders.length);
+    it('fences the Party\'s zone round the arena and the harbour yards, the gate open, and a Party ghost stops at its border', () => {
+        const zone = map.partyZone;
+        expect(zone).toEqual(map.sources.pois.party!.zone);
         const arena = map.net.areas.find(a => a.id === map.sources.pois.arena.area)!;
-        // Through the gate northwards at full throttle, as a ghost (no world colliders)
-        const gate = map.sources.pois.arena.gate;
-        const car = createSimCar('ghost', 'sport');
-        spawnVehicle(car.state, map.partyWorld, gate.x, gate.z + 20, Math.PI);
-        car.mods.ghost = true;
-        for (let t = 0; t < 180; t++) {
+        for (const [x, z] of arena.polygon) expect(x >= zone.minX && x <= zone.maxX && z >= zone.minZ && z <= zone.maxZ).toBe(true);
+        // The map's colliders, then the zone's fence (no gate)
+        const extra = map.partyWorld.colliders.slice(map.colliders.length);
+        expect(map.partyWorld.colliders.slice(0, map.colliders.length).map(c => c.kind)).toEqual(map.colliders.map(c => c.kind));
+        expect(extra.length).toBeGreaterThan(80);
+        const gate = map.arenaGate;
+        expect(extra.some(c => c.kind === 'segment' && c.ax === gate.ax && c.az === gate.az && c.bx === gate.bx && c.bz === gate.bz)).toBe(false);
+        // Every fence piece on the zone's outline, none inside a building
+        const buildings = new BoxIndex();
+        for (const lot of map.buildings) buildings.add(placementBox(lot));
+        for (const c of extra) {
+            if (c.kind !== 'segment') throw new Error('the fence is capsules');
+            const onSide = (c.ax === c.bx && (c.ax === zone.minX || c.ax === zone.maxX)) || (c.az === c.bz && (c.az === zone.minZ || c.az === zone.maxZ));
+            expect(onSide, `${c.ax} ${c.az} ${c.bx} ${c.bz}`).toBe(true);
+            expect(buildings.contains((c.ax + c.bx) / 2, (c.az + c.bz) / 2)).toBe(false);
+        }
+        expect(map.fences.filter(f => f.party).length).toBeGreaterThan(4);
+
+        // Out through the open gate northwards onto Cannery Lane, to the
+        // fence across it at the zone's northern side
+        const car = createSimCar('party', 'sport');
+        const g = map.sources.pois.arena.gate;
+        spawnVehicle(car.state, map.partyWorld, g.x, g.z + 20, Math.PI);
+        let minZ = Infinity;
+        for (let t = 0; t < 300; t++) {
             car.input.throttle = 255;
             stepWorld([car], map.partyWorld);
-            expect(pointInPolygon(arena.polygon, car.state.x, car.state.z)).toBe(true);
+            minZ = Math.min(minZ, car.state.z);
         }
-        // Free Roam drives out of the open gate
+        expect(minZ).toBeLessThan(g.z - 5);
+        expect(minZ).toBeGreaterThan(zone.minZ);
+        // Free Roam drives on up Cannery Lane
         const roamer = createSimCar('roamer', 'sport');
-        spawnVehicle(roamer.state, map.simWorld, gate.x, gate.z + 20, Math.PI);
-        for (let t = 0; t < 180; t++) {
+        spawnVehicle(roamer.state, map.simWorld, g.x, g.z + 20, Math.PI);
+        for (let t = 0; t < 300; t++) {
             roamer.input.throttle = 255;
             stepWorld([roamer], map.simWorld);
         }
-        expect(roamer.state.z).toBeLessThan(gate.z - 5);
+        expect(roamer.state.z).toBeLessThan(zone.minZ - 20);
+        // A Party ghost (no world colliders) north up Dock Street: stopped by the border
+        const ghost = createSimCar('ghost', 'sport');
+        spawnVehicle(ghost.state, map.partyWorld, -322, 560, Math.PI);
+        ghost.mods.ghost = true;
+        for (let t = 0; t < 300; t++) {
+            ghost.input.throttle = 255;
+            stepWorld([ghost], map.partyWorld);
+            expect(ghost.state.z).toBeGreaterThan(zone.minZ);
+        }
     });
 
     it('reads the surface and the water level of its heightfield', () => {
