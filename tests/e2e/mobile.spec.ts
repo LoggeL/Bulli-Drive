@@ -1,6 +1,6 @@
 import type { CDPSession, Page } from '@playwright/test';
 import {
-    test, expect, openGame, joinFromSplash, snapshot, netState, distance, placeOnClearRunway, v2
+    test, expect, FLOW_DRAW_FPS, openGame, joinFromSplash, snapshot, netState, distance, placeOnClearRunway, v2
 } from './fixtures.js';
 
 // Runs in the "mobile" project: iPhone 13 with touch. The critical path on
@@ -55,7 +55,7 @@ test('touch on a phone: splash, Free Roam, stick and buttons, room chip and a lo
     const { page } = player;
 
     // ---- Splash screen: touch controls, big enough options ----
-    await openGame(player);
+    await openGame(player, FLOW_DRAW_FPS);
     const preview = page.locator('.preview-touch');
     await expect(preview).toBeVisible();
     for (const label of ['STICK', 'AUTO', 'DRIFT', 'BOOST']) await expect(preview).toContainText(label);

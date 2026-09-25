@@ -5,7 +5,7 @@ import { createProjection, pointAt } from '../../src/shared/race/geometry.js';
 import { createCourse } from '../../src/shared/race/progress.js';
 import { racingLine } from '../../src/shared/race/racingLine.js';
 import { trackDef } from '../../src/shared/race/tracks/index.js';
-import { test, expect, openGame, joinFromSplash, debugCall } from './fixtures.js';
+import { test, expect, FLOW_DRAW_FPS, openGame, joinFromSplash, debugCall } from './fixtures.js';
 
 // The race on a phone (docs/phase-2-design.md, 20.3), the one E2E test of
 // phase 2, in the "mobile" project (touch; the keyboard drives the same
@@ -39,7 +39,7 @@ test('a race on the phone: splash, lobby, countdown, over the finish line, resul
     const { page } = player;
 
     // ---- Splash: RACE ----
-    await openGame(player);
+    await openGame(player, FLOW_DRAW_FPS);
     const raceOption = page.locator('.mode-option[data-room="race"]');
     expect((await raceOption.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     const id = await joinFromSplash(player, 'E2E Racer', 'race');
