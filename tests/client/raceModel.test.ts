@@ -3,13 +3,16 @@ import {
     arrowDegrees, BANNER_MS, countdownAt, RaceModel, RESULTS_DELAY_MS, SPLIT_MS, type GhostMessage, type ResultsMessage
 } from '../../src/client/race/raceModel.js';
 import type { MemberInfo, RaceStateBody } from '../../src/shared/protocol.js';
+import { oldTrack } from './raceTracks.js';
 
 // What the client shows of a race (src/client/race/raceModel.ts,
 // docs/phase-2-design.md 17.2): countdown and launch window, position, lap,
 // running time, split, banners, the next-gate arrow, lobby and results.
 // Expected values by hand from the rules: 60 ticks per second, lights at
 // S - 180 / - 120 / - 60, the launch window the 20 ticks before S, times as
-// m:ss.mmm of round(ticks · 1000 / 60).
+// m:ss.mmm of round(ticks · 1000 / 60). The geometry is that of the phase 2
+// tracks (raceTracks.ts), measured by hand; the model takes the tracks it
+// is given.
 
 const S = 1000;
 
@@ -23,7 +26,7 @@ function raceState(patch: Partial<RaceStateBody> = {}): RaceStateBody {
 }
 
 function model(patch: Partial<RaceStateBody> = {}): RaceModel {
-    const m = new RaceModel();
+    const m = new RaceModel(oldTrack);
     m.selfId = 'me';
     m.setState(raceState(patch));
     return m;

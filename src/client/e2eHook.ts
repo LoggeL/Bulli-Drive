@@ -4,7 +4,7 @@ import { focusLightingOn, lightingTier, whenSkyReady } from './render/lighting.j
 import { textureStats, whenWorldTexturesLoaded } from './world/textures.js';
 import { frameStats } from './render/frameStats.js';
 import { models } from './assets/gameModels.js';
-import { getTerrainHeight } from './world/environment.js';
+import { groundHeight } from './world/environment.js';
 import { palmStats, setPalmImpostorDistance, updatePalms, whenPalmImpostorsReady } from './world/palms.js';
 import { getKTX2Loader } from './assets/gltfLoader.js';
 import type { ModelCacheSnapshot } from './assets/ModelCache.js';
@@ -205,7 +205,7 @@ const spawnedModels: THREE.Object3D[] = [];
 function spawnModel(id: string, lod: number, x: number, z: number, yaw = 0): boolean {
     const root = models.instantiate(id, lod);
     if (!root || !state.scene) return false;
-    root.position.set(x, getTerrainHeight(x, z), z);
+    root.position.set(x, groundHeight(x, z), z);
     root.rotation.y = yaw;
     state.scene.add(root);
     spawnedModels.push(root);
@@ -231,7 +231,7 @@ export interface SpawnCarOptions {
 function spawnCar(carType: CarType, color: number, x: number, z: number, yaw = 0, options: SpawnCarOptions = {}): CarInfo | null {
     if (!state.scene) return null;
     const model = new CarModel(color, carType);
-    model.group.position.set(x, getTerrainHeight(x, z), z);
+    model.group.position.set(x, groundHeight(x, z), z);
     model.group.rotation.y = yaw;
     model.gltf?.setSurfboard(options.surfboard ?? false);
     state.scene.add(model.group);

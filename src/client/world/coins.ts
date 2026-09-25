@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { state } from '../state.js';
-import { getTerrainHeight } from './environment.js';
+import { groundHeight } from './environment.js';
 import { playCollectSound } from '../effects/sounds.js';
 import { spawnParticles } from '../effects/particles.js';
 import { MAGNET_RANGE } from '../../shared/constants.js';
@@ -41,7 +41,7 @@ export function createCoinsFromServer(coinsData: CoinData[]) {
 
 export function createCoin(id: number, x: number, z: number) {
     const coin = new THREE.Mesh(coinGeo, coinMat);
-    const baseY = getTerrainHeight(x, z) + 2.0;
+    const baseY = groundHeight(x, z) + 2.0;
     coin.position.set(x, baseY, z);
     coin.castShadow = true;
     (coin as any).coinId = id;
@@ -150,7 +150,7 @@ export function animateCoins(time: number) {
                 coin.position.x += (carPos.x - coin.position.x) * pull;
                 coin.position.z += (carPos.z - coin.position.z) * pull;
                 // Update base Y for new position
-                const newBaseY = getTerrainHeight(coin.position.x, coin.position.z) + 2.0;
+                const newBaseY = groundHeight(coin.position.x, coin.position.z) + 2.0;
                 coinBaseY.set(coin, newBaseY);
             }
         }

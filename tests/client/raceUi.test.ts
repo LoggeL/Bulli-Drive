@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { HudView, LobbyView, ResultsView } from '../../src/client/race/raceModel.js';
 import { initRaceUi, renderHud, renderLobby, renderResults, type RaceActions } from '../../src/client/race/raceUi.js';
+import { setGameMap } from '../../src/client/map/gameMap.js';
+import { mapFor } from '../../src/server/maps.js';
 
 // The race HUD and sheets in the page (src/client/race/raceUi.ts,
 // docs/phase-2-design.md 17.2) on the real markup of index.html: what the
@@ -13,6 +15,8 @@ import { initRaceUi, renderHud, renderLobby, renderResults, type RaceActions } f
 
 const INDEX = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../index.html');
 const calls: unknown[][] = [];
+// The lobby draws the track's map: the map the game would have loaded
+setGameMap(mapFor());
 const byId = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
 const actions: RaceActions = {

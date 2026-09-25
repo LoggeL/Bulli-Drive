@@ -31,11 +31,14 @@ function settled(page: Page): Promise<WorldInfo> {
 }
 
 // The chase camera on the middle road looking north (the screenshot "street")
+// of the old city, which the page still draws until the Bulli Bay renderer
+// replaces it (phase 3, M4). In Free Roam: the Party's world keeps a car in
+// the arena, far from the old city's streets.
 const STREET = { x: roadLineCenter(2, 'x'), z: -60 };
 
 test('the phone tier stays within 150 draw calls including shadows', async ({ openPlayer }) => {
     const player = await openPlayer('world-low');
-    await joinGame(player, 'E2E World Low', '&tier=low');
+    await joinGame(player, 'E2E World Low', '&tier=low', 'freeroam');
     const { page } = player;
 
     const info = await settled(page);

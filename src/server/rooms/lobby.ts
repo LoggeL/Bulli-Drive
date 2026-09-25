@@ -2,7 +2,7 @@ import { DEFAULT_ROOM_KIND, type RoomKind } from '../../shared/protocol.js';
 import { replayRun } from '../../shared/race/replay.js';
 import { RACE_ROOM_MAX_MEMBERS } from '../../shared/race/rules.js';
 import type { TrackId } from '../../shared/race/types.js';
-import type { MapData } from '../../shared/world/mapData.js';
+import type { MapData } from '../../shared/map/mapData.js';
 import { MemoryGhostStore, ReplayBudget, type GhostStore } from '../race/ghostStore.js';
 import type { Session } from '../session.js';
 import { FreeRoamRoom } from './FreeRoamRoom.js';

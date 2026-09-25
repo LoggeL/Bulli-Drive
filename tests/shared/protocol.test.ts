@@ -4,7 +4,8 @@ import {
     ClientMessage, HelloSchema, InputPacketSchema, isRoomKind, parseClientMessage, PROTOCOL_VERSION
 } from '../../src/shared/protocol.js';
 
-// Protocol v3 (docs/phase-1b-design.md, 3; docs/phase-2-design.md, 16): the
+// Protocol v4 (docs/phase-1b-design.md, 3; docs/phase-2-design.md, 16;
+// docs/phase-3-design.md, M3): the
 // JSON messages of the client and the schema of the decoded binary input
 // packet.
 
@@ -58,8 +59,8 @@ const REAL_CLIENT_MESSAGES: Record<string, ClientMessage> = {
 };
 
 describe('PROTOCOL_VERSION', () => {
-    it('is 3 since the race mode changed the snapshot (draft, race bits)', () => {
-        expect(PROTOCOL_VERSION).toBe(3);
+    it('is 4 since Bulli Bay changed the world reference (a map ID) and the self block (water counter)', () => {
+        expect(PROTOCOL_VERSION).toBe(4);
     });
 });
 

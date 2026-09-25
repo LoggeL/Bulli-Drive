@@ -17,8 +17,11 @@ export const state = {
     audioCtx: null as AudioContext | null,
     ws: null as WebSocket | null,
     // Static colliders of the world (vehicle/simWorldClient.ts)
-    worldColliders: [] as ColliderInput[],
+    worldColliders: [] as readonly ColliderInput[],
+    // The old city's rendered terrain (world/environment.ts) and the sandbox's ground
     terrainConfig: null as TerrainConfig | null,
+    // The sim's ground once the map is loaded (world/environment.ts groundHeight)
+    groundHeight: null as ((x: number, z: number) => number) | null,
     myId: null as string | null,
     // The room the server put this client in (null offline and in the sandbox)
     room: null as RoomInfo | null,

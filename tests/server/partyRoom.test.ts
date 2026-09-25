@@ -35,9 +35,19 @@ function player(name: string): Session & { transport: import('./helpers.js').Fak
     return session;
 }
 
-function put(session: Session, x: number, z: number, yaw = 0, speed = 0): void {
+// A free lane through the arena, heading east (+x) at z = 537.5: between
+// the rows of items at z = 530 and 545 (7.5 m from each, beyond every
+// pickup radius), clear of the containers and ramps. lane(d) is d m along
+// it, from x = -230 at d = 0 up to x = -100 at d = 130.
+const LANE_Z = 537.5;
+const LANE_YAW = Math.PI / 2;
+function lane(d: number): [number, number] {
+    return [-230 + d, LANE_Z];
+}
+
+function put(session: Session, x: number, z: number, yaw = LANE_YAW, speed = 0): void {
     const s = session.member!.car!.state;
-    placeVehicle(s, room.map.simWorld, x, z, yaw);
+    placeVehicle(s, room.map.partyWorld, x, z, yaw);
     s.vx = Math.sin(yaw) * speed;
     s.vz = Math.cos(yaw) * speed;
 }
@@ -190,7 +200,7 @@ describe('items', () => {
             { type: 'pickup', kind: 'coin', itemId: coin.id, playerId: alice.id }
         ]);
         expect(alice.transport.of('scoreboard').at(-1)!.scoreboard[0].score).toBe(10);
-        put(alice, 58, -80);
+        put(alice, ...lane(0));
         steps(room, COIN_RESET_TICKS);
         expect(coin.collected).toBe(false);
         expect(alice.transport.events('itemReset')).toEqual([{ type: 'itemReset', kind: 'coin', itemId: coin.id }]);
@@ -238,7 +248,7 @@ describe('items', () => {
         put(alice, other.x, other.z);
         run(1);
         expect(partyOf(alice).powerups.size).toEqual({ start: T + 1, end: room.tick + 1 + POWERUP_TICKS.size });
-        put(alice, 58, -60);
+        put(alice, ...lane(20));
         steps(room, POWERUP_TICKS.size + 1);
         expect(alice.member!.car!.mods.mega).toBe(false);
     });
@@ -248,8 +258,8 @@ describe('shooting', () => {
     function duel() {
         const shooter = player('Shooter');
         const target = player('Target');
-        put(shooter, 58, -80);
-        put(target, 58, -70);
+        put(shooter, ...lane(0));
+        put(target, ...lane(10));
         return { shooter, target };
     }
 
@@ -282,8 +292,9 @@ describe('shooting', () => {
         shoot(() => { state.respawnShield = false; state.powerups.shield = { start: 0, end: room.tick + 1000 }; });
         shoot(() => { state.powerups.shield = { start: 0, end: 0 }; state.powerups.ghost = { start: 0, end: room.tick + 1000 }; });
         shoot(() => { state.powerups.ghost = { start: 0, end: 0 }; target.member!.idle = true; });
-        shoot(() => put(target, 58, 90));
-        shoot(() => { put(target, 58, -70); shooter.member!.idle = true; });
+        // Across the arena, 180 m away: out of the 150 m range
+        shoot(() => put(target, -90, 650));
+        shoot(() => { put(target, ...lane(10)); shooter.member!.idle = true; });
         expect(state.health).toBe(100);
         shoot(() => { /* both fine again */ });
         expect(state.health).toBe(75);
@@ -346,8 +357,8 @@ describe('Mega ram', () => {
         // Mega grows over a few ticks
         run(60);
         partyOf(victim).respawnShield = false;
-        put(ram, 58, -80, 0, 25);
-        put(victim, 58, -72);
+        put(ram, ...lane(0), LANE_YAW, 25);
+        put(victim, ...lane(8));
         let hitAt = -1;
         for (let i = 0; i < 60 && hitAt < 0; i++) {
             feed(room, ram, { throttle: 255 });
@@ -378,8 +389,8 @@ describe('Mega ram', () => {
         partyOf(victim).respawnShield = false;
         // The Mega car stands (and keeps sending inputs, so it is not idle);
         // the victim rolls into it at 10 m/s, a hard contact for the victim
-        put(mega, 58, -72);
-        put(victim, 58, -80, 0, 10);
+        put(mega, ...lane(8));
+        put(victim, ...lane(0), LANE_YAW, 10);
         let contact = 0;
         for (let i = 0; i < 40; i++) {
             run(1);
@@ -398,8 +409,8 @@ describe('Mega ram', () => {
         run(60);
         partyOf(victim).respawnShield = true;
         partyOf(victim).spawnTick = room.tick;
-        put(ram, 58, -80, 0, 25);
-        put(victim, 58, -72);
+        put(ram, ...lane(0), LANE_YAW, 25);
+        put(victim, ...lane(8));
         for (let i = 0; i < 40; i++) {
             feed(room, ram, { throttle: 255 });
             run(1, [ram]);
@@ -410,9 +421,9 @@ describe('Mega ram', () => {
 
 describe('spawn points', () => {
     it('never puts a car where it would pick up a coin or a powerup', () => {
-        // Cars spawn at random spots on the roads, where the items lie too.
-        // 150 spawns in a row (fixed seed), each one a new player
-        const { coins, powerups } = room.map.world;
+        // Cars spawn at the arena's slots, where items may lie too. 150
+        // spawns in a row, each one a new player, round every slot
+        const { coins, powerups } = room.map.items;
         let nearest = Infinity;
         for (let i = 0; i < 150; i++) {
             const session = fakeSession(`Spawner ${i}`);
@@ -460,7 +471,7 @@ describe('respawn shield', () => {
         lobby.join(bob, 'party');
         ready(lobby, bob);
         steps(room, 1);
-        put(bob, 58, -80, 0, 0);
+        put(bob, ...lane(0), LANE_YAW, 0);
         let movedAt = -1;
         for (let i = 0; i < RESPAWN_SHIELD_DRIVE_TICKS + 60; i++) {
             feed(room, bob, { throttle: 255 });
@@ -518,9 +529,10 @@ describe('idle and lag ghost', () => {
     it('holds a hidden or frozen car to its stop: full throttle neither moves it nor collects', () => {
         for (const flag of [INPUT_HIDDEN, INPUT_FROZEN]) {
             const alice = player(`Ghost ${flag}`);
-            // On the road, a coin 10 m ahead
-            const coin = room.coins.find(c => !c.collected)!;
-            put(alice, coin.x, coin.z - 10);
+            // In the arena, a coin 10 m ahead and no other coin near the car
+            const coin = room.coins.find(c => !c.collected && c.z - 10 > 525
+                && room.coins.every(o => o === c || Math.hypot(o.x - c.x, o.z - (c.z - 10)) > 6))!;
+            put(alice, coin.x, coin.z - 10, 0);
             for (let i = 0; i < 240; i++) {
                 feed(room, alice, { throttle: 255 }, flag);
                 steps(room, 1);
@@ -554,8 +566,8 @@ describe('idle and lag ghost', () => {
     it('keeps the ghost while the car still overlaps another one', () => {
         const alice = player('Alice');
         const bob = player('Bob');
-        put(alice, 58, -80);
-        put(bob, 58, -79);
+        put(alice, ...lane(0));
+        put(bob, ...lane(1));
         for (let i = 0; i < 3; i++) {
             feed(room, alice, {}, INPUT_FROZEN);
             feed(room, bob, {});
@@ -605,8 +617,8 @@ describe('contact events', () => {
         const alice = player('Alice');
         const bob = player('Bob');
         run(1);
-        put(alice, 58, -80, 0, 20);
-        put(bob, 58, -74);
+        put(alice, ...lane(0), LANE_YAW, 20);
+        put(bob, ...lane(6));
         for (let i = 0; i < 30; i++) {
             feed(room, alice, { throttle: 255 });
             feed(room, bob, {});
@@ -616,7 +628,8 @@ describe('contact events', () => {
         expect(contacts.length).toBeGreaterThanOrEqual(1);
         expect(contacts[0]).toEqual(expect.objectContaining({ a: alice.id, b: bob.id }));
         expect(contacts[0].dv).toBeGreaterThanOrEqual(3);
-        expect(bob.member!.car!.state.vz).toBeGreaterThan(3);
+        // Pushed along the lane (+x)
+        expect(bob.member!.car!.state.vx).toBeGreaterThan(3);
     });
 });
 
@@ -695,7 +708,7 @@ describe('powerup items and kills', () => {
         steps(room, 1);
         expect(item.collected).toBe(true);
         const pickedAt = room.tick;
-        put(alice, 58, -80);
+        put(alice, ...lane(0));
         steps(room, 1199);
         expect(room.tick).toBe(pickedAt + 1199);
         expect(item.collected).toBe(true);
@@ -735,8 +748,8 @@ describe('powerup items and kills', () => {
     it('takes the powerups of a killed car', () => {
         const shooter = player('Shooter');
         const target = player('Target');
-        put(shooter, 58, -80);
-        put(target, 58, -70);
+        put(shooter, ...lane(0));
+        put(target, ...lane(10));
         partyOf(target).health = 25;
         partyOf(target).powerups.speed = { start: 0, end: room.tick + 1000 };
         handleClientMessage(lobby, shooter, { type: 'shoot', targetId: target.id }, 0);

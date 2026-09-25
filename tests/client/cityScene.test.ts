@@ -5,7 +5,9 @@ import { createCity } from '../../src/client/world/city.js';
 import { createEnvironment } from '../../src/client/world/environment.js';
 import { listTaggedColliders, type TaggedCollider } from '../../src/client/world/colliderTags.js';
 import type { ColliderInput } from '../../src/shared/world/colliders.js';
-import { createMapData } from '../../src/shared/world/mapData.js';
+import { DEFAULT_TERRAIN_CONFIG } from '../../src/shared/constants.js';
+import { buildWorldColliders } from '../../src/shared/world/colliderGen.js';
+import { generateWorld } from '../../src/shared/world/worldGen.js';
 
 // The world textures load through the KTX2 transcoder of the client build
 // (here: blank placeholders)
@@ -19,9 +21,11 @@ vi.mock('../../src/client/world/textures.js', async () => {
 });
 
 // Look and collision agree (docs/phase-1b-design.md, 6): the client builds
-// the city and the scenery from the server's world exactly as the page does
+// the old city and its scenery exactly as the page does
 // (network/websocket.ts), and every rendered prop that collides stands on
-// one of the shared colliders - one prop per collider, of a matching kind.
+// one of the city's colliders - one prop per collider, of a matching kind.
+// The sim drives on Bulli Bay since phase 3 (M3); the city is still drawn
+// until the Bulli Bay renderer replaces it (M4), and so is this test.
 // The collider list itself is golden-locked in tests/shared/colliderGen.test.ts.
 // The scene is built in Node without a renderer (as for the software tier).
 
@@ -33,7 +37,8 @@ const TAG_KIND: Record<TaggedCollider['tag'], ColliderInput['kind']> = {
 };
 
 describe('rendered props and colliders', () => {
-    const map = createMapData();
+    const world = generateWorld();
+    const map = { terrain: DEFAULT_TERRAIN_CONFIG, world, colliders: buildWorldColliders(world) };
     let props: TaggedCollider[] = [];
 
     beforeAll(() => {

@@ -2,38 +2,56 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { rates } from '../../tools/bots/bot.js';
 import { BotSwarm, fetchHealth } from '../../tools/bots/swarm.js';
 import { parseNetsimFlag } from '../../src/shared/net/netsim.js';
-import { HILL_SPRINT } from '../../src/shared/race/tracks/index.js';
+import { trackDef } from '../../src/shared/race/tracks/index.js';
+import { mapFor } from '../../src/server/maps.js';
 import { startServer, type ServerProcess } from './serverProcess.js';
+
+const HILL_SPRINT = trackDef(mapFor(), 'hill-sprint');
 
 // The race over real WebSockets (docs/phase-2-design.md, 20.2): four
 // WebSocket bots in a race room behind the netsim of the exit criterion,
 // the server fills the field with two bots of its own. Two of the
 // WebSocket bots bump into each other after the start ghost, one sends
 // inputs from the future and malformed packets in the countdown. The race
-// ends with the same, correct result for everyone. Then a time trial: a
-// run, a reload within the grace time, and the ghost of that run at the
-// next countdown.
+// ends with the same, correct result for everyone. Beside it a time trial:
+// a run, a reload within the grace time, and the ghost of that run at the
+// next countdown. On Bulli Bay the Ridge Climb takes about a minute (the
+// phase 2 Hill Sprint half that), so both run at the same time, each in
+// its own room of the one server (the integration job stays in its budget,
+// CLAUDE.md).
 
 const NETSIM = parseNetsimFlag('150,30,3')!;
 const GRACE_MS = 5000;
 
 let server: ServerProcess;
-let swarm: BotSwarm | null = null;
+let failed = false;
 
 beforeAll(async () => {
     server = await startServer({ GRACE_MS: String(GRACE_MS) });
 });
 
-afterEach(async (context) => {
-    await swarm?.stop();
-    swarm = null;
-    if (context.task.result?.state === 'fail') console.log(`Server output:\n${server.output()}`);
-    expect(server.problems(), 'errors in the server log').toEqual([]);
+afterEach(context => {
+    if (context.task.result?.state === 'fail') failed = true;
 });
 
 afterAll(async () => {
+    if (failed) console.log(`Server output:\n${server.output()}`);
+    // An error the server caught and logged fails the run, even when the
+    // bots saw nothing of it
+    const problems = server.problems();
     await server?.stop();
+    expect(problems, 'errors in the server log').toEqual([]);
 });
+
+// A swarm for one test, stopped however the test ends
+async function withSwarm(options: ConstructorParameters<typeof BotSwarm>[0], run: (s: BotSwarm) => Promise<void>): Promise<void> {
+    const s = new BotSwarm(options);
+    try {
+        await run(s);
+    } finally {
+        await s.stop();
+    }
+}
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -41,18 +59,16 @@ function errorsOf(s: BotSwarm): string[] {
     return s.bots.flatMap(bot => bot.stats.errors.map(e => `${bot.name}: ${e}`));
 }
 
-describe('a race of 4 WebSocket bots and 2 server bots behind netsim 150/30/3', () => {
-    it('runs from the lobby to the results with a bump, shrugs off a manipulating client and ranks everyone alike', async () => {
+describe('a race of 4 WebSocket bots and 2 server bots behind netsim 150/30/3, and a time trial', () => {
+    it.concurrent('runs from the lobby to the results with a bump, shrugs off a manipulating client and ranks everyone alike', () => withSwarm({
+        url: server.url,
+        mix: [{ mode: 'race', count: 4 }],
+        netsim: NETSIM,
+        namePrefix: 'Racer',
+        staggerMs: 150,
         // Join order = grid order in the first race: B on the pole, A behind it
-        swarm = new BotSwarm({
-            url: server.url,
-            mix: [{ mode: 'race', count: 4 }],
-            netsim: NETSIM,
-            namePrefix: 'Racer',
-            staggerMs: 150,
-            bot: { track: 'hill-sprint', serverBotLevel: 'hard', driverLevel: 'medium', carType: 'sport' }
-        });
-        const s = swarm;
+        bot: { track: 'hill-sprint', serverBotLevel: 'hard', driverLevel: 'medium', carType: 'sport' }
+    }, async s => {
         const [b, a, c, d] = s.bots;
         let aBumped = false;
 
@@ -128,7 +144,7 @@ describe('a race of 4 WebSocket bots and 2 server bots behind netsim 150/30/3', 
 
         const window = s.bots.map(bot => bot.sample());
         await s.waitFor(() => aBumped && b.stats.contacts.some(k => k.other === a.playerId), 15_000, 'the bump');
-        await s.waitFor(() => s.bots.every(bot => bot.raceMessages('raceResults').length > 0), 90_000, 'the results');
+        await s.waitFor(() => s.bots.every(bot => bot.raceMessages('raceResults').length > 0), 150_000, 'the results');
         const downlink = s.bots.map((bot, i) => rates(window[i], bot.sample()).bytesInPerSec);
 
         const results = s.bots.map(bot => bot.raceMessages('raceResults').at(-1)!);
@@ -149,8 +165,11 @@ describe('a race of 4 WebSocket bots and 2 server bots behind netsim 150/30/3', 
         expect(entries.slice(finished.length).every(e => e.bot && e.status === 'dnf')).toBe(true);
         const times = finished.map(e => e.finishTicks!);
         expect(times).toEqual([...times].sort((x, y) => x - y));
-        expect(times[0] / 60).toBeGreaterThan(20);
-        expect(times.at(-1)! / 60).toBeLessThan(60);
+        // The Ridge Climb: 56-65 s estimated from the fastest to the slowest
+        // class (docs/phase-3-design.md, 4), bots driving their share of it,
+        // A and B 5 s late after the bump
+        expect(times[0] / 60).toBeGreaterThan(45);
+        expect(times.at(-1)! / 60).toBeLessThan(110);
         // Every bot saw the same finishes with the same positions, and the
         // last race status lists the result's order
         for (const bot of s.bots) {
@@ -167,21 +186,17 @@ describe('a race of 4 WebSocket bots and 2 server bots behind netsim 150/30/3', 
         expect(health!.tickP99Ms).toBeGreaterThan(0);
         expect(health!.tickP99Ms).toBeLessThan(4);
         expect(errorsOf(s)).toEqual([]);
-    });
-});
+    }), 200_000);
 
-describe('time trial', () => {
-    it('keeps a finished run and sends it as the ghost after a reload', async () => {
-        swarm = new BotSwarm({
-            url: server.url,
-            mix: [{ mode: 'timetrial', count: 1 }],
-            namePrefix: 'Trial',
-            bot: { track: 'hill-sprint', driverLevel: 'hard', carType: 'bulli' }
-        });
-        const s = swarm;
+    it.concurrent('keeps a finished time trial run and sends it as the ghost after a reload', () => withSwarm({
+        url: server.url,
+        mix: [{ mode: 'timetrial', count: 1 }],
+        namePrefix: 'Trial',
+        bot: { track: 'hill-sprint', driverLevel: 'hard', carType: 'bulli' }
+    }, async s => {
         const [t] = s.bots;
         await s.start();
-        await s.waitFor(() => t.raceMessages('raceResults').length > 0, 60_000, 'the run');
+        await s.waitFor(() => t.raceMessages('raceResults').length > 0, 150_000, 'the run');
         const run = t.raceMessages('raceResults')[0];
         const own = run.entries[0];
         expect(own).toMatchObject({ id: t.playerId, status: 'finished', pos: 1 });
@@ -198,5 +213,5 @@ describe('time trial', () => {
         expect(t.stats.welcomes.at(-1)!.playerId).toBe(t.stats.welcomes[0].playerId);
         await sleep(50);
         expect(errorsOf(s)).toEqual([]);
-    });
+    }), 200_000);
 });

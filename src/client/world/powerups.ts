@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { state } from '../state.js';
 import type { PowerupData } from '../../shared/protocol.js';
-import { getTerrainHeight } from './environment.js';
+import { groundHeight } from './environment.js';
 import { showInteractionPrompt } from '../ui/hud.js';
 import { POWERUP_DURATIONS_MS } from '../../shared/constants.js';
 
@@ -21,7 +21,7 @@ export function createPowerupMarker(p: PowerupData) {
         emissiveIntensity: 0.5
     });
     const marker = new THREE.Mesh(geo, mat);
-    const baseY = getTerrainHeight(p.x, p.z) + 1.5;
+    const baseY = groundHeight(p.x, p.z) + 1.5;
     marker.position.set(p.x, baseY, p.z);
 
     // Add floating icon - different shapes per type

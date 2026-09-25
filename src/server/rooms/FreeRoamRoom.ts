@@ -1,4 +1,4 @@
-import type { MapData } from '../../shared/world/mapData.js';
+import type { MapData } from '../../shared/map/mapData.js';
 import { Room } from './Room.js';
 
 // Free Roam (docs/phase-1b-design.md, 2.2): the same map, driving, jumping,

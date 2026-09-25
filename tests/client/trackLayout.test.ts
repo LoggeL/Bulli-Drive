@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { barrierPieces, chevronPosts, delineatorPosts, gateEnds, ribbonEdges } from '../../src/client/race/trackLayout.js';
 import { fitFrame, mapHeading, toMap } from '../../src/client/race/trackMap.js';
 import { BARRIER_DEPTH, CHEVRON_POST_RADIUS, trackColliders } from '../../src/shared/race/raceWorld.js';
-import { TRACKS } from '../../src/shared/race/tracks/index.js';
+import { mapTracks } from '../../src/shared/race/tracks/index.js';
+import { mapFor } from '../../src/server/maps.js';
+
+const TRACKS = mapTracks(mapFor());
 
 // Placement of the track dressing (src/client/race/trackLayout.ts) and the
 // track map frame (trackMap.ts), docs/phase-2-design.md 17.3 and 17.4.
@@ -33,21 +36,29 @@ describe('barrierPieces', () => {
         expect(pieces.map(p => p.red)).toEqual([true, false, true, false, true, false]);
     });
 
-    it('stands inside the collider box of every barrier row of both tracks', () => {
+    it('stands inside the collider box of every barrier row of both tracks, axis-aligned or turned', () => {
+        let turned = 0;
         for (const track of Object.values(TRACKS)) {
-            const boxes = trackColliders(track).filter(c => c.kind === 'box');
+            const boxes = trackColliders(track).filter(c => c.kind === 'box' || c.kind === 'obox');
             const rows = track.hints.filter(h => h.kind === 'barrier');
             expect(boxes).toHaveLength(rows.length);
             rows.forEach((row, i) => {
-                const box = boxes[i] as Extract<typeof boxes[number], { kind: 'box' }>;
+                const box = boxes[i];
+                if (box.kind !== 'box' && box.kind !== 'obox') throw new Error('not a box');
                 // The depth of the box is the barrier's
                 expect(Math.min(box.hw, box.hd) * 2).toBeCloseTo(BARRIER_DEPTH, 12);
+                // Local axes of the box: x (uz, -ux), z (ux, uz); an axis-aligned box has u = (0, 1)
+                const ux = box.kind === 'obox' ? box.ux : 0, uz = box.kind === 'obox' ? box.uz : 1;
+                if (box.kind === 'obox') turned++;
                 for (const piece of barrierPieces(row)) {
-                    expect(Math.abs(piece.x - box.x)).toBeLessThanOrEqual(box.hw);
-                    expect(Math.abs(piece.z - box.z)).toBeLessThanOrEqual(box.hd);
+                    const dx = piece.x - box.x, dz = piece.z - box.z;
+                    expect(Math.abs(dx * uz - dz * ux)).toBeLessThanOrEqual(box.hw + 1e-6);
+                    expect(Math.abs(dx * ux + dz * uz)).toBeLessThanOrEqual(box.hd + 1e-6);
                 }
             });
         }
+        // Bulli Bay's diagonals need turned rows
+        expect(turned).toBeGreaterThan(0);
     });
 });
 
@@ -59,7 +70,7 @@ describe('chevronPosts', () => {
             expect(posts.length).toBe(circles.length);
             expect(posts.length).toBeGreaterThan(0);
             for (const post of posts) {
-                const hit = circles.find(c => Math.hypot(c.x - post.x, c.z - post.z) < 1e-9);
+                const hit = circles.find(c => c.kind === 'circle' && Math.hypot(c.x - post.x, c.z - post.z) < 1e-9);
                 expect(hit, `collider under the post at ${post.x}, ${post.z}`).toBeDefined();
                 expect((hit as { r: number }).r).toBe(CHEVRON_POST_RADIUS);
             }

@@ -4,7 +4,7 @@ import { isCarClassId } from '../../shared/sim/vehicleClasses.js';
 import { state } from '../state.js';
 import { CarModel, type CarType } from '../vehicle/CarModel.js';
 import { Nametag } from '../vehicle/Nametag.js';
-import { getTerrainHeight } from '../world/environment.js';
+import { groundHeight } from '../world/environment.js';
 import type { GhostPlayback } from './ghostPlayback.js';
 
 // The time trial ghost on screen (docs/phase-2-design.md, 15.4): a
@@ -39,7 +39,7 @@ export class GhostCar {
     update(t: number, dt: number): void {
         const pose = this.playback.sample(t, this.pose);
         const group = this.model.group;
-        const ground = getTerrainHeight(pose.x, pose.z);
+        const ground = groundHeight(pose.x, pose.z);
         group.position.set(pose.x, ground, pose.z);
         group.rotation.y = pose.yaw;
         this.model.flipGroup.position.y = Math.max(0, pose.y - ground);

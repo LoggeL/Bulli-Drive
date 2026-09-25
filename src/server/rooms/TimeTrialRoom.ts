@@ -4,7 +4,7 @@ import { replayRun, RunRecorder } from '../../shared/race/replay.js';
 import { GHOST_POSE_HZ, TIMETRIAL_PREP_TICKS } from '../../shared/race/rules.js';
 import type { VehicleInput } from '../../shared/sim/types.js';
 import { isCarClassId } from '../../shared/sim/vehicleClasses.js';
-import type { MapData } from '../../shared/world/mapData.js';
+import type { MapData } from '../../shared/map/mapData.js';
 import { ghostKeyString, ReplayBudget, simHash, type GhostKey, type GhostRun, type GhostStore } from '../race/ghostStore.js';
 import { RaceRoom, trackRuntime, type Racer, type RaceRoomOptions } from './RaceRoom.js';
 import type { RoomMember } from './Room.js';

@@ -34,10 +34,22 @@ const PLAYABLE = WORLD_BOUND + 10;
 // Hills beyond the playable area (render only)
 const HILLS = { start: WORLD_BOUND + 40, full: 1350, base: 40, relief: 170 };
 
-// Height of the terrain of the map (flat 0 before the world is built).
+// Height of the old city's rendered terrain (flat 0 before the world is
+// built): the looks of this module and city.ts until the Bulli Bay renderer
+// replaces them (phase 3, M4)
 export function getTerrainHeight(x: number, z: number) {
     if (!state.terrainConfig) return 0;
     return getSharedTerrainHeight(state.terrainConfig, x, z);
+}
+
+/**
+ * The sim's ground under (x, z): the map's heightfield once it is loaded
+ * (network/websocket.ts sets state.groundHeight), else the terrain of
+ * state.terrainConfig (the sandbox). For everything that stands on the
+ * ground the cars drive on: pickups, markers, effects, cars before spawn.
+ */
+export function groundHeight(x: number, z: number) {
+    return state.groundHeight ? state.groundHeight(x, z) : getTerrainHeight(x, z);
 }
 
 // --- Noise (deterministic value noise / fbm of the probe) ------------------------------

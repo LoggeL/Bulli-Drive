@@ -1,7 +1,8 @@
 import { test as base, expect, type BrowserContext, type Page } from '@playwright/test';
 import type { BulliDebugSnapshot, NetDebugSnapshot, V2Snapshot } from '../../src/client/e2eHook.js';
 import type { ColliderInput } from '../../src/shared/world/colliders.js';
-import { longestRunway } from '../../tools/bots/runway.js';
+import { arenaRunway, longestRunway } from '../../tools/bots/runway.js';
+import { mapFor } from '../../src/server/maps.js';
 
 export { expect };
 
@@ -230,12 +231,15 @@ export function distance(a: { x: number; z: number }, b: { x: number; z: number 
 }
 
 /**
- * The server spawns the car at a random spot, facing +z, and some spots face
- * a wall or a planter a few metres ahead. Driving tests start from the longest
- * free stretch of the north-south roads instead, so they do not depend on luck.
- * Returns where the car was put and how much room it has ahead.
+ * The server spawns the car at one of the map's slots, facing wherever the
+ * slot faces. Driving tests start from the longest free straight instead,
+ * so they do not depend on where they spawned: in Free Roam on a
+ * north-south road (heading +z), in the Party across the arena (heading +x,
+ * clear of every pickup). The runway is found in Node on the same map the
+ * page built (its collider list is the page's). Returns where the car was
+ * put, its heading and how much room it has ahead.
  */
-export async function placeOnClearRunway(page: Page, minLength = 120): Promise<{ x: number; z: number; free: number }> {
+export async function placeOnClearRunway(page: Page, minLength = 120): Promise<{ x: number; z: number; yaw: number; free: number }> {
     // Every test drives off the same runway: the cars of the pages an
     // earlier test closed wait there as idle ghosts for the grace time
     // (docs/phase-1b-design.md, 11.1) and have to be gone first
@@ -243,14 +247,16 @@ export async function placeOnClearRunway(page: Page, minLength = 120): Promise<{
     const colliders = await page.evaluate(() => (window as unknown as {
         __bulliDebug: { colliders(): ColliderInput[] };
     }).__bulliDebug.colliders());
-    expect(colliders.length, 'city colliders').toBeGreaterThan(0);
+    const map = mapFor();
+    expect(colliders.length, 'the page\'s map colliders').toBe(map.colliders.length);
 
-    const best = longestRunway(colliders);
-    expect(best.free, 'free runway on a north-south road').toBeGreaterThanOrEqual(minLength);
+    const party = (await snapshot(page)).room?.kind === 'party';
+    const best = party ? arenaRunway(map) : longestRunway(map);
+    expect(best.free, party ? 'free runway across the arena' : 'free runway on a north-south road').toBeGreaterThanOrEqual(minLength);
 
-    await page.evaluate(({ x, z }) => (window as unknown as {
+    await page.evaluate(({ x, z, yaw }) => (window as unknown as {
         __bulliDebug: { placeLocalCar(x: number, z: number, angle: number): void };
-    }).__bulliDebug.placeLocalCar(x, z, 0), best);
+    }).__bulliDebug.placeLocalCar(x, z, yaw), best);
     await expect.poll(async () => distance(best, (await snapshot(page)).local!)).toBeLessThan(0.01);
     return best;
 }

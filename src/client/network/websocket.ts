@@ -11,7 +11,9 @@ import { CLOCK_BURST_INTERVAL_MS, CLOCK_BURST_PINGS, CLOCK_INTERVAL_MS } from '.
 import { closeAction, reconnectDelayMs } from '../../shared/net/reconnect.js';
 import { isPowerupType } from '../../shared/party/rules.js';
 import { resetTuning, tuningIsDefault } from '../../shared/sim/tuning.js';
-import { createMapData, type MapData } from '../../shared/world/mapData.js';
+import type { MapData } from '../../shared/map/mapData.js';
+import { generateWorld, WORLD_SEED } from '../../shared/world/worldGen.js';
+import { gameMap, loadGameMap } from '../map/gameMap.js';
 import { Bulli, type CarType } from '../entities/Bulli.js';
 import { createEnvironment } from '../world/environment.js';
 import { createCity } from '../world/city.js';
@@ -20,7 +22,7 @@ import { clearProjectiles } from '../world/projectiles.js';
 import { DEFAULT_TERRAIN_CONFIG } from '../../shared/constants.js';
 import { clearCoins, confirmCoinPickup, createCoinsFromServer, removeCoinById, resetCoinById } from '../world/coins.js';
 import { updateScoreboardUI } from '../ui/playerList.js';
-import { getTerrainHeight } from '../world/environment.js';
+import { groundHeight } from '../world/environment.js';
 import { playCollisionSound, playHitSound } from '../effects/sounds.js';
 import { spawnExplosion, spawnParticles } from '../effects/particles.js';
 import { addKillfeedEntry, showHitmarker, updateScoreUI } from '../ui/hud.js';
@@ -30,7 +32,7 @@ import { resetMobileControls } from '../controls/mobile.js';
 import { sendToServer, setSocketNetsim } from './socket.js';
 import { createSocketNetsim } from '../net/netsim.js';
 import { hideConnectionOverlay, reconnectingText, showConnectionNotice, showReconnecting } from '../ui/connectionOverlay.js';
-import { setWorldColliders, simWorldFor } from '../vehicle/simWorldClient.js';
+import { roomSimWorld, setGameMapWorld } from '../vehicle/simWorldClient.js';
 import { assistProfileForDevice } from '../vehicle/LocalVehicle.js';
 import { startNetPump } from '../vehicle/v2Driver.js';
 import { preferredRoomKind, setCurrentRoom } from '../ui/roomMenu.js';
@@ -40,6 +42,7 @@ import { applyResumeOutcome, resumeOutcome } from './resumeOutcome.js';
 import { hideRespawnOverlay, showRespawnOverlay } from '../ui/respawnOverlay.js';
 import { clearRemoteViews, forgetRemote, noteSnapshotCars, setRemoteDead } from '../net/remotes.js';
 import { raceClient } from '../race/RaceClient.js';
+import { mapFeaturesGroup } from '../race/TrackDressing.js';
 
 // The connection to the game server on protocol v2 (docs/phase-1b-design.md,
 // 3 and 11): the handshake, the world from the seed, the room state, the
@@ -126,7 +129,15 @@ export function initWebSocket() {
         sendToServer({ type: 'visibility', hidden: document.hidden });
         if (!document.hidden) netDriver.resync(performance.now());
     });
-    connect();
+    // The map first (sources and terrain), then the socket: 'roomState'
+    // needs the map to check the world and to predict
+    const tryLoad = (attempt: number): void => {
+        loadGameMap().then(() => connect()).catch(error => {
+            console.error('Map failed to load', error);
+            window.setTimeout(() => tryLoad(attempt + 1), Math.min(10_000, 1000 * 2 ** attempt));
+        });
+    };
+    tryLoad(0);
 }
 
 function connect() {
@@ -348,30 +359,38 @@ function onSnapshotFrame(buffer: ArrayBuffer) {
     netDriver.onSnapshot(snap, state.bulli?.vehicle ?? null, performance.now());
 }
 
-// The world comes from the seed; the hash proves it is the server's
-function buildWorld(seed: number, worldHash: string): MapData {
-    const built = createMapData(seed, DEFAULT_TERRAIN_CONFIG);
-    if (built.worldHash !== worldHash) {
-        console.warn(`World ${built.worldHash} differs from the server's ${worldHash}`);
-        reloadOnce(WORLD_RELOAD_KEY, worldHash);
+// The map was built from the same sources and terrain before the socket
+// opened (map/gameMap.ts); the hash proves it is the server's
+function checkWorld(built: MapData, world: Extract<ServerMessage, { type: 'roomState' }>['world']): void {
+    if (built.mapId !== world.mapId || built.worldHash !== world.worldHash) {
+        console.warn(`World ${built.mapId} ${built.worldHash} differs from the server's ${world.mapId} ${world.worldHash}`);
+        reloadOnce(WORLD_RELOAD_KEY, world.worldHash);
     }
-    return built;
 }
 
 // A room: the first after joining or another after a switch
 // (docs/phase-1b-design.md, 9): same map, so the scene stays; players,
 // items and the car start over.
 function enterRoom(data: Extract<ServerMessage, { type: 'roomState' }>) {
-    if (!map || map.seed !== data.world.seed) {
-        map = buildWorld(data.world.seed, data.world.worldHash);
-        state.terrainConfig = map.terrain;
+    if (!map) {
+        map = gameMap();
+        if (!map) throw new Error('roomState before the map was loaded');
+        checkWorld(map, data.world);
+        setGameMapWorld(map);
+        const ramps = mapFeaturesGroup(map);
+        if (ramps) state.scene.add(ramps);
         if (!environmentInitialized) {
-            createEnvironment(map.world.trees);
-            createCity(map.world.city);
-            initMinimap(map.world.city);
+            // The looks are still the old city's until the Bulli Bay renderer
+            // (phase 3, M4) replaces them; the sim already drives on Bulli Bay
+            const legacy = generateWorld(WORLD_SEED);
+            state.terrainConfig = DEFAULT_TERRAIN_CONFIG;
+            createEnvironment(legacy.trees);
+            createCity(legacy.city);
+            initMinimap(legacy.city);
             environmentInitialized = true;
         }
-        setWorldColliders(map.world);
+    } else {
+        checkWorld(map, data.world);
     }
 
     for (const id of Object.keys(state.remotePlayers)) removeRemotePlayer(id);
@@ -385,9 +404,9 @@ function enterRoom(data: Extract<ServerMessage, { type: 'roomState' }>) {
     if (data.items) {
         const collectedPowerups = new Set(data.items.powerups.filter(p => p.collected).map(p => p.id));
         const collectedCoins = new Set(data.items.coins.filter(c => c.collected).map(c => c.id));
-        state.worldPowerups = map.world.powerups.map(p => ({ ...p, collected: collectedPowerups.has(p.id) }));
+        state.worldPowerups = map.items.powerups.map(p => ({ ...p, collected: collectedPowerups.has(p.id) }));
         state.worldPowerups.forEach(p => createPowerupMarker(p));
-        state.serverCoins = map.world.coins.map(c => ({ ...c, collected: collectedCoins.has(c.id) }));
+        state.serverCoins = map.items.coins.map(c => ({ ...c, collected: collectedCoins.has(c.id) }));
         createCoinsFromServer(state.serverCoins);
     } else {
         state.worldPowerups = [];
@@ -404,7 +423,7 @@ function enterRoom(data: Extract<ServerMessage, { type: 'roomState' }>) {
 
     // A race room brings its race world (map + track) along
     raceClient.enterRoom(data.room, data.race, map, state.myId ?? '');
-    const world = simWorldFor(state.terrainConfig ?? DEFAULT_TERRAIN_CONFIG, state.worldColliders);
+    const world = roomSimWorld(data.room.kind);
     const car = state.bulli?.vehicle?.car ?? placeholderCar(state.myId ?? 'local', state.myCarType);
     netDriver.enterRoom(world, party, data.members, car, state.myId ?? '');
     raceClient.bindPrediction();
@@ -506,7 +525,7 @@ function handleEvent(event: GameEvent) {
         case 'contact': {
             // Own bumps sound from the prediction already
             if (event.a === me || event.b === me) return;
-            const y = getTerrainHeight(event.x, event.z) + 1.2;
+            const y = groundHeight(event.x, event.z) + 1.2;
             spawnParticles(event.x, y, event.z, 0xFFB347, Math.min(12, Math.floor(event.dv)), 0.3, 2.0, 0.5);
             return;
         }
@@ -627,7 +646,7 @@ function respawnLocalCar(health: number) {
 function placeLocalCarVisual(x: number, z: number, yaw: number) {
     const car = state.bulli;
     if (!car) return;
-    car.group.position.set(x, getTerrainHeight(x, z), z);
+    car.group.position.set(x, groundHeight(x, z), z);
     car.angle = yaw;
     car.group.rotation.y = yaw;
     if (car.vehicle && !netDriver.prediction?.spawned) car.vehicle.place(x, z, yaw);
@@ -652,7 +671,7 @@ export function createLocalPlayer(color: number, name: string, spawn: { x: numbe
     const savedCarType = localStorage.getItem('bulli-car-type') || 'bulli';
     state.myCarType = savedCarType;
     state.bulli = new Bulli(color, true, savedCarType as CarType);
-    state.bulli.group.position.set(spawn.x, getTerrainHeight(spawn.x, spawn.z), spawn.z);
+    state.bulli.group.position.set(spawn.x, groundHeight(spawn.x, spawn.z), spawn.z);
     state.bulli.angle = spawn.yaw ?? 0;
     state.bulli.group.rotation.y = spawn.yaw ?? 0;
     state.cameraSnapPending = true;

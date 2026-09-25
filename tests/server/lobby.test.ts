@@ -5,8 +5,6 @@ import { RoomManager } from '../../src/server/rooms/lobby.js';
 import { PartyRoom } from '../../src/server/rooms/PartyRoom.js';
 import type { RaceRoom } from '../../src/server/rooms/RaceRoom.js';
 import { SLOT_REUSE_DELAY_MS } from '../../src/server/rooms/Room.js';
-import { generateWorld } from '../../src/shared/world/worldGen.js';
-import { sha256, stableStringify } from '../helpers.js';
 import { fakeClock, fakeSession, ready, steps } from './helpers.js';
 
 // Rooms, instances, joining, leaving and switching
@@ -35,10 +33,12 @@ describe('map data', () => {
         expect(party2.map).toBe(lobby.get('party-1')!.map);
     });
 
-    it('holds the golden world the server always generated', () => {
+    it('is Bulli Bay, the map of map.json, with the Party\'s fixed items from pois.json', () => {
         const map = mapFor();
-        expect(sha256(stableStringify(map.world))).toBe('e2255cf50f1dbf97a3ecc33e9a47e1eaaddfbf5b6ff7590293080627723cbe20');
-        expect(stableStringify(map.world)).toBe(stableStringify(generateWorld()));
+        expect(map.mapId).toBe('bulli-bay');
+        expect(map.mapVersion).toBe(map.sources.map.mapVersion);
+        expect(map.items.coins.map(c => [c.x, c.z])).toEqual(map.sources.pois.arena.coins);
+        expect(map.items.powerups.map(p => [p.x, p.z])).toEqual(map.sources.pois.arena.powerups);
     });
 
     it('gives every Party room its own items and never touches the map', () => {
@@ -48,7 +48,7 @@ describe('map data', () => {
         party1.powerups[3].collected = true;
         expect(party2.coins[0].collected).toBe(false);
         expect(party2.powerups[3].collected).toBe(false);
-        expect(mapFor().world.coins.some(c => c.collected) || mapFor().world.powerups.some(p => p.collected)).toBe(false);
+        expect(mapFor().items.coins.some(c => c.collected) || mapFor().items.powerups.some(p => p.collected)).toBe(false);
         expect(party2.coins).toHaveLength(30);
         expect(party2.powerups).toHaveLength(25);
         party2.dispose();
@@ -169,18 +169,18 @@ describe('instances', () => {
 });
 
 describe('joining', () => {
-    it('sends the room state: world by seed and hash, members with slots, items', () => {
+    it('sends the room state: the map by ID, version and hash, members with slots, items', () => {
         const alice = fakeSession('Alice');
         lobby.join(alice, 'party');
         const [state] = alice.transport.of('roomState');
         const map = mapFor();
         expect(state.room).toEqual({ id: 'party-1', kind: 'party', index: 1 });
-        expect(state.world).toEqual({ seed: map.seed, mapVersion: map.mapVersion, worldHash: map.worldHash });
+        expect(state.world).toEqual({ mapId: 'bulli-bay', mapVersion: map.mapVersion, worldHash: map.worldHash });
         expect(state.members).toEqual([expect.objectContaining({ id: alice.id, slot: 0, name: 'Alice', ready: false })]);
         expect(state.items!.coins).toHaveLength(30);
         expect(state.items!.powerups).toHaveLength(25);
         expect(state.health[alice.id]).toBe(100);
-        // The world itself is not sent (the client builds it from the seed)
+        // The world itself is not sent (the client builds it from the same files)
         expect(JSON.stringify(state).length).toBeLessThan(4000);
     });
 

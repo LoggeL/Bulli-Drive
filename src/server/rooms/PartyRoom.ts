@@ -7,10 +7,11 @@ import {
     isPowerupType, ramDamage, shotDamage
 } from '../../shared/party/rules.js';
 import { spawnVehicle } from '../../shared/sim/vehicle.js';
-import type { MapData } from '../../shared/world/mapData.js';
+import type { MapData, SpawnSlot } from '../../shared/map/mapData.js';
+import type { SimWorld } from '../../shared/world/colliders.js';
 import { clearPowerups, createPartyState, powerupActive, type PartyMemberState } from '../party/state.js';
 import { Room, type LeaveReason, type RoomMember, type RoomMessage } from './Room.js';
-import { randomSpawnPose, type SpawnKeepOut } from './spawn.js';
+import { slotSpawn, type SpawnKeepOut } from './spawn.js';
 
 // The Party (docs/phase-1b-design.md, 2.2 and 5.5): coins, powerups,
 // shooting, the Mega ram, HP and the scoreboard, the default room. Every
@@ -49,8 +50,8 @@ export class PartyRoom extends Room {
     constructor(index: number, map: MapData, now: () => number = Date.now) {
         super('party', index, map, now);
         // Fresh copies: collecting in one room leaves the others untouched
-        this.powerups = map.world.powerups.map(p => ({ ...p, collected: false }));
-        this.coins = map.world.coins.map(c => ({ ...c, collected: false }));
+        this.powerups = map.items.powerups.map(p => ({ ...p, collected: false }));
+        this.coins = map.items.coins.map(c => ({ ...c, collected: false }));
         this.powerupItems = this.powerups.map(data => ({ data, resetTick: -1 }));
         this.coinItems = this.coins.map(data => ({ data, resetTick: -1 }));
         // Every item, collected or not: a car standing on the spot of a
@@ -63,6 +64,15 @@ export class PartyRoom extends Room {
 
     protected spawnKeepOut(): readonly SpawnKeepOut[] {
         return this.keepOut;
+    }
+
+    // The arena behind its closed gate (docs/phase-3-design.md, 12)
+    protected get world(): SimWorld {
+        return this.map.partyWorld;
+    }
+
+    protected spawnSlots(): readonly SpawnSlot[] {
+        return this.map.spawns.party;
     }
 
     partyState(id: string): PartyMemberState | undefined {
@@ -272,8 +282,8 @@ export class PartyRoom extends Room {
 
     // Back at a free spot of this room, whole and without powerups
     private respawn(m: RoomMember, state: PartyMemberState, tick: number): void {
-        const pose = randomSpawnPose(this.map.world.city, this.carPositions(m), this.spawnKeepOut());
-        spawnVehicle(m.car!.state, this.map.simWorld, pose.x, pose.z, pose.yaw);
+        const pose = slotSpawn(this.spawnSlots(), this.spawnTurn++, this.carPositions(m), this.spawnKeepOut());
+        spawnVehicle(m.car!.state, this.world, pose.x, pose.z, pose.yaw);
         m.alive = true;
         m.spawnTick = tick;
         this.resetForSpawn(state, tick);

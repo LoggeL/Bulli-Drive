@@ -6,9 +6,9 @@ import { launchResult, type LaunchResult } from '../../shared/race/launch.js';
 import { createCourse, createRaceProgress, lapFor, nextGateIndex, trackLine, type Course, type RaceProgress } from '../../shared/race/progress.js';
 import { COUNTDOWN_PREP_TICKS, COUNTDOWN_TICKS, LAUNCH_WINDOW_TICKS, TIMETRIAL_PREP_TICKS } from '../../shared/race/rules.js';
 import { formatRaceTime, formatSplit } from '../../shared/race/timing.js';
-import { TRACKS } from '../../shared/race/tracks/index.js';
-import type { RacePhase, TrackDef } from '../../shared/race/types.js';
+import type { RacePhase, TrackDef, TrackId } from '../../shared/race/types.js';
 import { SIM_HZ } from '../../shared/sim/constants.js';
+import { gameTrack } from '../map/gameMap.js';
 
 // What the client knows and shows of a race (docs/phase-2-design.md, 17):
 // the race state, the 5 Hz standings, the results, the own events and the
@@ -163,6 +163,9 @@ function seconds(ticks: number): number {
 }
 
 export class RaceModel {
+    // The tracks by ID: the loaded map's (the tests give their own)
+    constructor(private readonly trackOf: (id: TrackId) => TrackDef = gameTrack) {}
+
     selfId = '';
     state: RaceStateBody | null = null;
     // Race order from the last raceStatus
@@ -183,7 +186,7 @@ export class RaceModel {
     private teleport = true;
 
     get track(): TrackDef | null {
-        return this.state ? TRACKS[this.state.trackId] : null;
+        return this.state ? this.trackOf(this.state.trackId) : null;
     }
 
     get course(): Course | null {
@@ -416,7 +419,7 @@ export class RaceModel {
         const state = this.state;
         const results = this.results;
         if (!state || !results || state.phase !== 'results' || nowMs - this.finishAtMs < RESULTS_DELAY_MS) return null;
-        const track = TRACKS[results.trackId];
+        const track = this.trackOf(results.trackId);
         const rows = results.entries.map((e: RaceResultEntry): ResultRow => ({
             pos: e.pos,
             name: e.name,

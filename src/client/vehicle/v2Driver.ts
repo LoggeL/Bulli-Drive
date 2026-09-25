@@ -12,7 +12,7 @@ import { LocalVehicle } from './LocalVehicle.js';
 import { netDriver } from '../net/netDriver.js';
 import { POWERUP_TYPE_IDS } from '../../shared/party/rules.js';
 import { TICK_RATE } from '../../shared/net/constants.js';
-import { simWorldFor } from './simWorldClient.js';
+import { currentSimWorld } from './simWorldClient.js';
 
 // The frame of the local car on the v2 physics (docs/phase-1a-design.md,
 // 12.3): gamepad poll, fixed-step ticks, pose, sounds and particles from
@@ -49,7 +49,7 @@ inputManager.onAction = (action) => {
 
 export function driveLocalCar(car: Bulli, dt: number): void {
     // The sandbox brings its own world (game/hooks.ts)
-    const world = gameHooks.world ?? simWorldFor(state.terrainConfig ?? DEFAULT_TERRAIN_CONFIG, state.worldColliders);
+    const world = gameHooks.world ?? currentSimWorld();
     const online = !gameHooks.world && netDriver.prediction !== null;
     if (!car.vehicle) {
         car.vehicle = LocalVehicle.forHost(car, world);

@@ -1,10 +1,6 @@
-import { DEFAULT_TERRAIN_CONFIG } from '../shared/constants.js';
-import type { TerrainConfig } from '../shared/protocol.js';
 import { GRACE_MS } from '../shared/net/constants.js';
 
 export const PORT = Number(process.env.PORT) || 8000;
-
-export const TERRAIN_CONFIG: TerrainConfig = DEFAULT_TERRAIN_CONFIG;
 
 // Server-only tuning (gameplay constants live in src/shared/constants.ts,
 // netcode constants in src/shared/net/constants.ts)

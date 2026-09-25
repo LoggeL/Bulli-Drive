@@ -40,15 +40,15 @@ import { raceGhostFloor, raceInputFilter, racePhaseAt } from '../../src/shared/r
 import { LineDriver, type TrafficCar } from '../../src/shared/race/lineDriver.js';
 import { createCourse, createRaceProgress, trackLine, type Course, type RaceProgress } from '../../src/shared/race/progress.js';
 import { createRaceWorld } from '../../src/shared/race/raceWorld.js';
-import { TRACKS } from '../../src/shared/race/tracks/index.js';
+import { trackDef } from '../../src/shared/race/tracks/index.js';
 import type { BotLevel, RacePhase, TrackId } from '../../src/shared/race/types.js';
 import type { SimWorld } from '../../src/shared/world/colliders.js';
 import {
     createVehicleInput, type CarClassId, type SimCar, type VehicleInput, type VehicleParams, type VehicleState
 } from '../../src/shared/sim/types.js';
 import { createSimCar } from '../../src/shared/sim/vehicle.js';
-import { cityRoadGrid } from '../../src/shared/world/cityGen.js';
-import { createMapData, type MapData } from '../../src/shared/world/mapData.js';
+import type { MapData } from '../../src/shared/map/mapData.js';
+import { mapFor } from '../../src/server/maps.js';
 import { RoadDriver, type ChaseTarget } from './driver.js';
 
 export const BOT_MODES = ['drive', 'ram', 'idle', 'reconnect', 'hop', 'flood', 'manual', 'race', 'timetrial'] as const;
@@ -161,14 +161,6 @@ export interface BotStats {
     errors: string[];
 }
 
-let sharedMap: MapData | null = null;
-
-// The map of a seed, built once per process and shared by every bot
-function mapFor(seed: number): MapData {
-    if (!sharedMap || sharedMap.seed !== seed) sharedMap = createMapData(seed);
-    return sharedMap;
-}
-
 // WebSocket frame header the payload travels in (server to client, unmasked)
 function frameOverhead(bytes: number): number {
     return bytes < 126 ? 2 : bytes < 65536 ? 4 : 10;
@@ -248,7 +240,7 @@ export class Bot {
         };
         this.connId = randomConnId(this.random);
         this.net = new NetClient(bytes => this.sendBinary(bytes));
-        this.driver = new RoadDriver(cityRoadGrid(), this.random);
+        this.driver = new RoadDriver(this.random);
         this.stats = {
             counters: {
                 at: 0, bytesIn: 0, bytesInText: 0, bytesInBinary: 0, bytesOut: 0,
@@ -558,7 +550,7 @@ export class Bot {
     private raceWorld(track: TrackId): SimWorld {
         let world = this.raceWorlds.get(track);
         if (!world) {
-            world = createRaceWorld(this.map!, TRACKS[track]);
+            world = createRaceWorld(this.map!, trackDef(this.map!, track));
             this.raceWorlds.set(track, world);
         }
         return world;
@@ -575,7 +567,7 @@ export class Bot {
             p.filterInput = (tick, input) => { raceInputFilter(this.phaseAt(tick), tick, this.race.state?.startTick ?? null, input); };
             p.ghostFloor = (tick, car) => { raceGhostFloor(this.phaseAt(tick), tick, this.race.state?.startTick ?? null, car); };
         }
-        if (!before || before.trackId !== state.trackId) this.raceCourse = createCourse(TRACKS[state.trackId]);
+        if ((!before || before.trackId !== state.trackId) && this.map) this.raceCourse = createCourse(trackDef(this.map, state.trackId), undefined, this.map.simWorld.surfaceAt);
         if (state.phase === 'countdown' && state.startTick !== null && this.raceDriverFor !== state.startTick) {
             this.raceDriverFor = state.startTick;
             this.raceDriver = null;
@@ -626,7 +618,8 @@ export class Bot {
     }
 
     private onRoomState(msg: Extract<ServerMessage, { type: 'roomState' }>, now: number): void {
-        const map = mapFor(msg.world.seed);
+        // The same map files as the server's, built once per process
+        const map = mapFor(msg.world.mapId);
         if (map.worldHash !== msg.world.worldHash) this.error(`world ${map.worldHash} differs from the server's ${msg.world.worldHash}`);
         const id = this.playerId ?? '';
         const car = this.car ?? (this.car = createSimCar(id, this.options.carType));
@@ -635,7 +628,8 @@ export class Bot {
         this.slot = self?.slot ?? -1;
         this.stats.rooms.push({ at: now, room: msg.room, slot: this.slot, resumed: !!msg.resume });
         this.map = map;
-        this.net.enterRoom(map.simWorld, msg.room.kind === 'party', msg.members, car, id);
+        const party = msg.room.kind === 'party';
+        this.net.enterRoom(party ? map.partyWorld : map.simWorld, party, msg.members, car, id);
         this.race.state = null;
         this.raceConfigSent = false;
         if (msg.race) this.onRaceState(msg.race);
@@ -646,7 +640,7 @@ export class Bot {
         this.pingsSent = 0;
         this.nextPingAt = now;
         this.inRoom = true;
-        this.driver.restart();
+        this.driver.setMap(map, party);
         this.dead = !!msg.resume && !msg.resume.alive && !!self?.ready && msg.room.kind === 'party';
         // Past the (imaginary) splash screen: drive. A resumed car goes on
         // as it is; the server ignores a second 'ready'

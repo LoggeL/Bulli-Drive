@@ -131,10 +131,16 @@ test('loads, joins, drives and survives a lost WebGL context on the desktop', as
     expect((await snapshot(page)).myId).toBe(myId);
 
     // ---- A lost WebGL context (GPU reset) ----
-    // A fixed view of the street with the car at rest
-    await debugCall(page, 'placeLocalCar', runway.x, runway.z, 0);
+    // A fixed view along the runway with the car at rest: from behind it,
+    // 4 m to its right, 14 m back (forward f, left l of the runway's heading)
+    await debugCall(page, 'placeLocalCar', runway.x, runway.z, runway.yaw);
     await expect.poll(async () => Math.abs((await v2(page)).u), { timeout: 20_000 }).toBeLessThan(0.05);
-    await debugCall(page, 'setCameraOverride', { position: [runway.x - 4, 6, runway.z - 14], lookAt: [runway.x + 2, 2, runway.z + 20], fov: 55 });
+    const f = [Math.sin(runway.yaw), Math.cos(runway.yaw)], l = [f[1], -f[0]];
+    await debugCall(page, 'setCameraOverride', {
+        position: [runway.x - 4 * l[0] - 14 * f[0], 6, runway.z - 4 * l[1] - 14 * f[1]],
+        lookAt: [runway.x + 2 * l[0] + 20 * f[0], 2, runway.z + 2 * l[1] + 20 * f[1]],
+        fov: 55
+    });
     await waitFrames(page, 3);
     const colorBefore = await meanColor(page);
 
