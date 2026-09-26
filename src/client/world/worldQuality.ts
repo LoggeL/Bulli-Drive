@@ -44,7 +44,7 @@ export const WORLD_QUALITY: Record<WorldDetail, WorldQuality> = {
         terrain: TERRAIN_GRID.low,
         // Phones: LOD1 up close (no cornices), LOD2 beyond (design 10); the
         // near cells are the small ones, so fewer pieces cast shadows
-        kit: { lod0: 50, lod1: 110, sight: 650, hysteresis: 6, shadowReach: 60, nearLod: 1 },
+        kit: { lod0: 50, lod1: 110, sight: 650, hysteresis: 6, shadowReach: 60, nearLod: 1, midLod: 2 },
         sight: { trees: 500, scatter: 120, rocks: 300, rails: 320, furniture: 160, furnitureNear: 35 },
         scatter: 0.55
     },

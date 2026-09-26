@@ -35,6 +35,8 @@ describe('cells', () => {
         expect([cellLod(0), cellLod(1), cellLod(2)]).toEqual([2, 1, 0]);
         expect([cellLod(0, 1), cellLod(1, 1), cellLod(2, 1)]).toEqual([2, 1, 1]);
         expect([cellLod(0, 2), cellLod(1, 2), cellLod(2, 2)]).toEqual([2, 2, 2]);
+        // The phones: LOD1 only in the near 62.5 m cells, LOD2 from the 125 m cells on
+        expect([cellLod(0, 1, 2), cellLod(1, 1, 2), cellLod(2, 1, 2)]).toEqual([2, 2, 1]);
     });
 });
 

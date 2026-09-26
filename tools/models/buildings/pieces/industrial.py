@@ -5,7 +5,7 @@
 # optional loading dock along the front.
 #
 # Params (kit.json): bays (4-8, 6 m each, along the street), depth (m), eave (m), seed,
-# dock (optional bool).
+# dock (optional bool), sign (optional decal).
 import math
 from bd_kit import (K, Opening, tile, pal, decal, wall, box, rect, lin, Rng, UP, cylinder, gable_roof, plane_poly,
                     quad3, band)
@@ -25,7 +25,8 @@ def plan(spec):
     return {
         "clad": lin(r.pick(CLAD)),
         "roof": lin(r.pick(ROOF)),
-        "sign": r.pick(["sign_cannery", "sign_fish"]),
+        # kit.json may fix the sign (the cannery landmark); drawn anyway so the other choices stay
+        "sign": spec.get("sign", r.pick(["sign_cannery", "sign_fish"])),
         "doors": 2 if spec["bays"] >= 6 else 1,
         "side_door": r.chance(0.6),
         "dock": spec.get("dock", r.chance(0.4)),

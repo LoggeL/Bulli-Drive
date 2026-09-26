@@ -15,8 +15,8 @@ export type CellLevel = 0 | 1 | 2;
 // The LOD a level's meshes are merged from; the finer cells may use a
 // coarser one (phones: LOD1 up close, design 10 "ohne Gesimse"; software
 // WebGL: LOD2 everywhere, "Kisten mit Atlas")
-export function cellLod(level: CellLevel, nearLod = 0): number {
-    return Math.max(2 - level, nearLod);
+export function cellLod(level: CellLevel, nearLod = 0, midLod = 1): number {
+    return level === 1 ? Math.max(midLod, nearLod) : Math.max(2 - level, nearLod);
 }
 
 export interface CellRef {
@@ -55,6 +55,8 @@ export interface CellDistances {
     shadowReach: number;
     // The finest LOD any cell uses
     nearLod: number;
+    // The LOD of the 125 m cells (default 1)
+    midLod?: number;
 }
 
 /** Which cells hold pieces: keys of all three levels for the pieces' positions. */

@@ -141,6 +141,39 @@
         }
       ]
     },
+    "downtown_corners": {
+      "module": "downtown",
+      "category": "building",
+      "pieces": [
+        {
+          "id": "downtown_b3_f2_corner",
+          "bays": 3,
+          "floors": 2,
+          "depth": 14,
+          "seed": 11,
+          "style": "brick",
+          "corner": true
+        },
+        {
+          "id": "downtown_b4_f3_corner",
+          "bays": 4,
+          "floors": 3,
+          "depth": 18,
+          "seed": 41,
+          "style": "stucco",
+          "corner": true
+        },
+        {
+          "id": "revival_b3_f2_mission_corner",
+          "bays": 3,
+          "floors": 2,
+          "depth": 14,
+          "seed": 97,
+          "style": "mission",
+          "corner": true
+        }
+      ]
+    },
     "spanish": {
       "module": "spanish",
       "category": "building",
@@ -212,7 +245,8 @@
           "depth": 10,
           "floors": 1,
           "shop": true,
-          "seed": 7
+          "seed": 7,
+          "sign": "sign_surf"
         },
         {
           "id": "beach_w11_f2_shop",
@@ -233,7 +267,8 @@
           "bays": 4,
           "depth": 24,
           "eave": 7.0,
-          "seed": 2
+          "seed": 2,
+          "sign": "sign_hardware"
         },
         {
           "id": "industrial_b6_d30_dock",
@@ -248,7 +283,16 @@
           "bays": 8,
           "depth": 36,
           "eave": 10.0,
-          "seed": 27
+          "seed": 27,
+          "sign": "sign_fish"
+        },
+        {
+          "id": "industrial_b8_d36_cannery",
+          "bays": 8,
+          "depth": 36,
+          "eave": 10.0,
+          "seed": 27,
+          "sign": "sign_cannery"
         }
       ]
     },

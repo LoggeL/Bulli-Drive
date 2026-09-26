@@ -3,7 +3,7 @@
 # roof (ridge along the street or gable to the street), a front porch deck with posts, railing,
 # steps and a shed roof. The shop variant puts the surf shop front and a sign board on it.
 #
-# Params (kit.json): width (m), depth (m), floors (1-2), shop (bool), seed.
+# Params (kit.json): width (m), depth (m), floors (1-2), shop (bool), seed, sign (optional decal).
 import math
 from bd_kit import (K, Opening, tile, pal, decal, wall, box, rect, lin, mul, Rng, WHITE, UP, beam,
                     gable_roof, gable_end, plane_poly, quad3)
@@ -17,6 +17,10 @@ SIDING = ["#CFE3D8", "#F0E3AE", "#C6DAE6", "#F1ECE1", "#EDC3B0", "#D9E6C9", "#B9
 ROOFS = ["#A4614B", "#A7ABA8", "#76A3A0", "#B8B1A2"]
 
 
+def sign_of(spec, drawn):
+    return spec.get("sign", drawn)
+
+
 def plan(spec):
     r = Rng(spec["seed"])
     return {
@@ -25,7 +29,9 @@ def plan(spec):
         "front_gable": r.chance(0.55),
         "window": r.pick(["win_sash", "win_blind"]),
         "steps_left": r.chance(0.5),
-        "sign": r.pick(["sign_surf", "sign_fish"]) if spec.get("shop") else None,
+        # kit.json may fix the sign (a landmark has its own name); the pick is drawn anyway so
+        # the other choices stay the same
+        "sign": sign_of(spec, r.pick(["sign_surf", "sign_fish"])) if spec.get("shop") else None,
     }
 
 

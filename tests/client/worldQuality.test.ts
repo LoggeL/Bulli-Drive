@@ -26,8 +26,10 @@ describe('detail levels', () => {
             const tris = (q: typeof a) => 8 * q.terrain.half ** 2 + (q.terrain.levels - 1) * 6 * q.terrain.half ** 2;
             expect(tris(b)).toBeLessThan(tris(a));
         }
-        // Phones: no LOD0 (design 10: without cornices); software: LOD2 only
+        // Phones: no LOD0 (design 10: without cornices), LOD2 beyond the near
+        // cells; software: LOD2 only
         expect(WORLD_QUALITY.low.kit.nearLod).toBe(1);
+        expect(WORLD_QUALITY.low.kit.midLod).toBe(2);
         expect(WORLD_QUALITY.software.kit.nearLod).toBe(2);
     });
 });

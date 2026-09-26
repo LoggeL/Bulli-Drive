@@ -8,7 +8,8 @@
 #   deco     Art Deco / Streamline Moderne: pastel stucco, pilaster fins at the bay lines that
 #            rise above a stepped central parapet, three speed lines under the coping.
 # Built in 4 m bays; party walls are plain (the lots form a closed row), a corner building
-# (`corner`: true) repeats the upper windows on its +X side.
+# (`corner`: true) turns its front round both corners: a shop window at the front of each side
+# and the upper windows along both sides (the map puts it at either end of a row).
 #
 # Params (kit.json): bays (2-6), floors (1-3), depth (m), seed, style, corner (optional).
 import math
@@ -133,15 +134,28 @@ def build(spec, lod):
     for (u0, u1, v0, v1) in upper_windows:
         front.append(Opening(u0, u1, v0, v1, win, depth_win, arch=arched))
     wall(k, (x0, 0, 0), (1, 0, 0), W, H, wall_mat, front, s0=0.0, v_base=-FOUNDATION, arch_segs=segs)
-    # side (party) walls and the rear wall
-    side_open = []
-    if spec.get("corner") and lod < 2:
+    # side (party) walls and the rear wall; a corner building's sides get a shop window at the
+    # front (the front of the shop next to that corner) and the upper windows, measured from the
+    # front on both sides. Only LOD0 (the desktop up close): LOD1 is what the phones draw near, and
+    # the corners at every row's end would put a Main Street view over the phone tier's triangle
+    # budget (docs/phase-3-design.md 10).
+    def side_openings(shop, east):
+        out = []
+        if not (spec.get("corner") and lod == 0):
+            return out
+        if lod == 0:
+            front_of = shop.get("front") or next(s_["front"] for s_ in p["shops"] if s_.get("front"))
+            out.append((0.45, 0.45 + SHOP_W, 0.02, SHOP_H, decal(front_of), depth_shop, False))
         for f in range(1, floors):
             z = GROUND + UPPER * (f - 1)
             for c in [1.2 + i * 2.6 for i in range(int((D - 1.5) // 2.6))]:
-                side_open.append(Opening(c, c + WIN_W, z + SILL, z + SILL + WIN_H, win, depth_win, arch=arched))
-    wall(k, (x1, 0, 0), (0, 1, 0), D, H, wall_mat, side_open, s0=W, v_base=-FOUNDATION, arch_segs=segs)
-    wall(k, (x0, D, 0), (0, -1, 0), D, H, wall_mat, [], s0=2 * W + D, v_base=-FOUNDATION)
+                out.append((c, c + WIN_W, z + SILL, z + SILL + WIN_H, win, depth_win, arched))
+        return out
+    # +X side: runs from the front (u from the front); -X side: from the back (u = D - ...)
+    east = [Opening(a, b, v0, v1, d, dp, arch=ar) for (a, b, v0, v1, d, dp, ar) in side_openings(p["shops"][-1], True)]
+    west = [Opening(D - b, D - a, v0, v1, d, dp, arch=ar) for (a, b, v0, v1, d, dp, ar) in side_openings(p["shops"][0], False)]
+    wall(k, (x1, 0, 0), (0, 1, 0), D, H, wall_mat, east, s0=W, v_base=-FOUNDATION, arch_segs=segs)
+    wall(k, (x0, D, 0), (0, -1, 0), D, H, wall_mat, west, s0=2 * W + D, v_base=-FOUNDATION, arch_segs=segs)
     rear = []
     if lod < 2:
         rear.append(Opening(W - 2.4, W - 1.4, 0.0, 2.2, decal("door_steel"), 0.08))

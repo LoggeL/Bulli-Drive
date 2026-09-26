@@ -31,6 +31,9 @@ export interface BuildingLot extends Placement {
 
 export interface LotRule {
     pieces: readonly KitPieceId[];
+    // Pieces for the ends of a closed row (front round both corners): the
+    // first and last lot of a row at a junction, a road's end or a gap
+    corners?: readonly KitPieceId[];
     // Distance of the front from the sidewalk's outer edge (m)
     setback: number;
     // Gap to the next lot along the road (m), drawn from [gapMin, gapMax]
@@ -39,9 +42,9 @@ export interface LotRule {
 }
 
 // Table 11.1 with the kit's pieces (A23, A25). Downtown: closed rows of the
-// four street styles; residential: detached Spanish Revival houses;
-// industrial: halls; beach: shacks along the promenade with wide gaps, so
-// the beach stays reachable from the road.
+// four street styles, a corner building at each end; residential: detached
+// Spanish Revival houses; industrial: halls; beach: shacks along the
+// promenade with wide gaps, so the beach stays reachable from the road.
 export const LOT_RULES: Readonly<Partial<Record<number, LotRule>>> = {
     [ZONE.downtown]: {
         pieces: [
@@ -49,6 +52,10 @@ export const LOT_RULES: Readonly<Partial<Record<number, LotRule>>> = {
             'downtown_b5_f2_a', 'downtown_b6_f3_corner', 'revival_b2_f1_mission', 'revival_b3_f1_deco',
             'revival_b3_f2_mission', 'revival_b3_f3_deco', 'revival_b4_f1_mission', 'revival_b4_f2_deco',
             'revival_b5_f2_deco_corner'
+        ],
+        corners: [
+            'downtown_b6_f3_corner', 'revival_b5_f2_deco_corner', 'downtown_b4_f3_corner', 'downtown_b3_f2_corner',
+            'revival_b3_f2_mission_corner'
         ],
         setback: 0.3, gapMin: 0, gapMax: 0
     },
@@ -74,6 +81,9 @@ export const LOT_MAX_RELIEF = 2.5;
 export const LOT_MIN_ABOVE_WATER = 0.5;
 // After a dropped lot the next try starts this much further along (m)
 export const LOT_RETRY_STEP = 2;
+// The first lot of a row moves back towards the dropped try before it in
+// halving steps, down to this (m): a row starts right behind the corner
+export const LOT_SNAP = 0.25;
 // Sample spacing over a lot's footprint (m): the heightfield's grid
 const LOT_SAMPLE_STEP = 2;
 // Lots next to each other may touch; boxes overlapping by less than this
@@ -131,50 +141,177 @@ export function lotFits(ctx: LotContext, box: OBox, zone: number): boolean {
     return true;
 }
 
+const pieceWidth = (piece: KitPieceId) => KIT_FOOTPRINTS[piece].maxX - KIT_FOOTPRINTS[piece].minX;
+
+// The pieces of a pool narrow enough for `room` m, widest first (ties by id)
+function fitting(pool: readonly KitPieceId[], room: number): KitPieceId[] {
+    return pool.filter(piece => pieceWidth(piece) <= room + 1e-9)
+        .sort((a, b) => pieceWidth(b) - pieceWidth(a) || (a < b ? -1 : a > b ? 1 : 0));
+}
+
+interface SideRow {
+    ctx: LotContext;
+    edge: RoadEdgeData;
+    side: 'left' | 'right';
+    sign: number;
+    sidewalk: number;
+    index: BoxIndex;
+}
+
+// The zone behind the road `ahead` m along from s
+function zoneBehind(row: SideRow, s: number): number {
+    const { edge, sign, sidewalk } = row;
+    const probe = pointAt(edge.samples, Math.min(edge.length, Math.max(0, s)));
+    const [pnx, pnz] = leftNormal(probe.tx, probe.tz);
+    const reach = edge.halfWidth + sidewalk + ZONE_PROBE;
+    return zoneAt(row.ctx.hf, probe.x + pnx * sign * reach, probe.z + pnz * sign * reach);
+}
+
+// The lot of `piece` from station s to s + its width, if it may stand there
+function tryLot(row: SideRow, piece: KitPieceId, s: number, rule: LotRule, zone: number, index: number): BuildingLot | null {
+    const { edge, sign, sidewalk, side } = row;
+    const width = pieceWidth(piece);
+    if (s < 0 || s + width > edge.length) return null;
+    const p = pointAt(edge.samples, s + width / 2);
+    const [nx, nz] = leftNormal(p.tx, p.tz);
+    // Front centre of the building at the sidewalk's edge plus the
+    // setback, its front facing the road
+    const d = edge.halfWidth + sidewalk + rule.setback;
+    const lot: BuildingLot = {
+        piece,
+        x: toMillimetre(p.x + nx * sign * d),
+        z: toMillimetre(p.z + nz * sign * d),
+        ux: toMicro(-nx * sign),
+        uz: toMicro(-nz * sign),
+        edge: edge.id, side, index, zone
+    };
+    const box = placementBox(lot);
+    return lotFits(row.ctx, box, zone) && !row.index.overlaps(box, -LOT_TOUCH) ? lot : null;
+}
+
+// A row that starts after a dropped try at `before` moves back towards it:
+// halving the step while the lot still fits, down to LOT_SNAP
+function snapBack(row: SideRow, piece: KitPieceId, before: number, s: number, rule: LotRule, zone: number, index: number): { lot: BuildingLot; s: number } | null {
+    let lo = before, hi = s, best: BuildingLot | null = null;
+    while (hi - lo > LOT_SNAP) {
+        const mid = (lo + hi) / 2;
+        const lot = tryLot(row, piece, mid, rule, zone, index);
+        if (lot) { best = lot; hi = mid; } else lo = mid;
+    }
+    return best ? { lot: best, s: hi } : null;
+}
+
+// The narrowest piece of a rule
+function minWidth(rule: LotRule): number {
+    return Math.min(...rule.pieces.map(pieceWidth));
+}
+
+// The row's last lot at the far end: `piece` ending as close to the edge's
+// end as it fits, scanning back in LOT_RETRY_STEP and then moving forward
+// towards the dropped try in halving steps; null where it fits nowhere
+// within the zone
+function cornerFromEnd(row: SideRow, piece: KitPieceId, rule: LotRule, zone: number): { lot: BuildingLot; s: number } | null {
+    const width = pieceWidth(piece);
+    for (let e = row.edge.length, k = 0; e - width >= 0; e -= LOT_RETRY_STEP, k++) {
+        if (zoneBehind(row, e - 4) !== zone) return null;
+        let lot = tryLot(row, piece, e - width, rule, zone, -1);
+        if (!lot) continue;
+        let lo = e - width;
+        if (k > 0) {
+            let hi = lo + LOT_RETRY_STEP;
+            while (hi - lo > LOT_SNAP) {
+                const mid = (lo + hi) / 2;
+                const next = tryLot(row, piece, mid, rule, zone, -1);
+                if (next) { lot = next; lo = mid; } else hi = mid;
+            }
+        }
+        return { lot, s: lo };
+    }
+    return null;
+}
+
+function place(row: SideRow, lot: BuildingLot, out: BuildingLot[]): void {
+    row.index.add(placementBox(lot));
+    out.push(lot);
+}
+
+// Whether a node ends the rows along its roads (a junction or a dead end;
+// through a joint the road and its rows go on)
+function rowEnd(net: RoadNetwork, node: number): boolean {
+    return net.nodes[node].def.kind !== 'joint';
+}
+
 function sideLots(ctx: LotContext, edge: RoadEdgeData, side: 'left' | 'right', index: BoxIndex, out: BuildingLot[]): void {
     const sign = side === 'left' ? 1 : -1;
-    const sidewalk = edge.profile.sidewalk[side];
+    const row: SideRow = { ctx, edge, side, sign, sidewalk: edge.profile.sidewalk[side], index };
     const edgeHash = hashMix(hashString(edge.id), sign > 0 ? 1 : 2);
-    let s = 0, attempt = 0;
-    while (s < edge.length) {
+    let attempt = 0;
+    // The row's last lot first, at the far end: a corner piece where the
+    // road ends at a junction (or dead end), as close to it as it fits
+    let limit = edge.length;
+    const endZone = zoneBehind(row, edge.length - 4);
+    const endRule = LOT_RULES[endZone];
+    if (endRule?.corners && rowEnd(ctx.net, edge.to)) {
+        const h = hashMix(edgeHash, 0x7fffffff);
+        const hashed = endRule.corners[h % endRule.corners.length];
+        // The drawn corner piece, else the narrower ones (a short block)
+        const candidates = [hashed, ...fitting(endRule.corners, pieceWidth(hashed) - 1)];
+        for (const piece of candidates) {
+            const end = cornerFromEnd(row, piece, endRule, endZone);
+            if (!end) continue;
+            place(row, end.lot, out);
+            limit = end.s;
+            break;
+        }
+    }
+    // Then from the start: a corner piece first after a junction or a gap,
+    // then the zone's pieces; where the next one does not fit before the
+    // last lot, the widest one that does
+    let s = 0;
+    let rowStart = rowEnd(ctx.net, edge.from);
+    let dropped = false;
+    while (s < limit) {
         const h = hashMix(edgeHash, attempt);
         attempt++;
         // The zone behind the road at the lot's start
-        const probe = pointAt(edge.samples, Math.min(edge.length, s + 4));
-        const [pnx, pnz] = leftNormal(probe.tx, probe.tz);
-        const reach = edge.halfWidth + sidewalk + ZONE_PROBE;
-        const zone = zoneAt(ctx.hf, probe.x + pnx * sign * reach, probe.z + pnz * sign * reach);
+        const zone = zoneBehind(row, Math.min(edge.length, s + 4));
         const rule = LOT_RULES[zone];
         if (!rule) {
             s += LOT_RETRY_STEP;
+            rowStart = dropped = true;
             continue;
         }
-        const piece = rule.pieces[h % rule.pieces.length];
-        const f = KIT_FOOTPRINTS[piece];
-        const width = f.maxX - f.minX;
-        const centre = s + width / 2;
-        if (centre + width / 2 > edge.length) break;
-        const p = pointAt(edge.samples, centre);
-        const [nx, nz] = leftNormal(p.tx, p.tz);
-        // Front centre of the building at the sidewalk's edge plus the
-        // setback, its front facing the road
-        const d = edge.halfWidth + sidewalk + rule.setback;
-        const lot: BuildingLot = {
-            piece,
-            x: toMillimetre(p.x + nx * sign * d),
-            z: toMillimetre(p.z + nz * sign * d),
-            ux: toMicro(-nx * sign),
-            uz: toMicro(-nz * sign),
-            edge: edge.id, side, index: attempt - 1, zone
-        };
-        const box = placementBox(lot);
-        if (lotFits(ctx, box, zone) && !index.overlaps(box, -LOT_TOUCH)) {
-            index.add(box);
-            out.push(lot);
+        const pool = rowStart && rule.corners ? rule.corners : rule.pieces;
+        let piece = pool[h % pool.length];
+        const room = limit - s;
+        if (pieceWidth(piece) > room) {
+            // The widest piece that fits before the limit, a corner piece
+            // first where the row starts or ends here
+            const narrower = rule.corners && (rowStart || limit === edge.length)
+                ? [...fitting(rule.corners, room), ...fitting(rule.pieces, room)]
+                : fitting(rule.pieces, room);
+            if (!narrower.length) break;
+            piece = narrower[0];
+        } else if (rule.corners && !rowStart && limit === edge.length && rowEnd(ctx.net, edge.to) && room - pieceWidth(piece) < minWidth(rule)) {
+            // The row's last lot without an end corner: one if it fits
+            piece = fitting(rule.corners, room)[0] ?? piece;
+        }
+        const width = pieceWidth(piece);
+        let lot = tryLot(row, piece, s, rule, zone, attempt - 1);
+        let start = s;
+        // A row's first lot after a dropped try moves up to the corner
+        if (lot && dropped) {
+            const snapped = snapBack(row, piece, s - LOT_RETRY_STEP, s, rule, zone, attempt - 1);
+            if (snapped) { lot = snapped.lot; start = snapped.s; }
+        }
+        if (lot) {
+            place(row, lot, out);
+            rowStart = dropped = false;
             const gap = rule.gapMin + (rule.gapMax - rule.gapMin) * hashUnit(hashMix(h, 7));
-            s += width + gap;
+            s = start + width + gap;
         } else {
             s += LOT_RETRY_STEP;
+            rowStart = dropped = true;
         }
     }
 }
