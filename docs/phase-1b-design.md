@@ -196,6 +196,8 @@ Ein Snapshot pro Empfänger und Snapshot-Tick. Der Kompaktteil (alle Autos) wird
 - Bits u8: `grounded`, `boosting`, `wasGhost`
 - `mods` u8 (Turbo, Mega, Super-Jump, Ghost, Schild) und der **tatsächlich verwendete** Input des Ticks T_s (4 B)
 
+*(Seit Protokoll v5, phase-1a-design.md 26.4: ohne `flipAngle`, `flipRate`, `jumpCooldown`, `prevButtons` und Super-Jump, dafür `susp`; im Compact-Record steht die Federung statt des Flip-Winkels.)*
+
 Der Codec-Test iteriert über alle Schlüssel von `createVehicleState()`. Kommt in der Sim ein Feld dazu, schlägt er fehl, bis es im Self-Block steht.
 
 **Kompakt-Datensatz pro Auto (32 B), für alle anderen lebenden Autos:**

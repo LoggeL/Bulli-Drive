@@ -25,6 +25,10 @@ export interface RemotePose {
     yaw: number;
     // Speed along the heading (m/s), for wheels and sound
     speed: number;
+    // Vertical speed (m/s) and suspension (m, + = extended) of the body,
+    // for its look (the client's vehicle/bodyMotion.ts)
+    vy: number;
+    susp: number;
     // The newest sample at or before the render time (flags, input, scale ...)
     car: CompactCar | null;
     // Past the newest sample (extrapolated or held)
@@ -42,7 +46,7 @@ function hermite(p0: number, m0: number, p1: number, m1: number, s: number): num
 }
 
 export function createRemotePose(): RemotePose {
-    return { x: 0, y: 0, z: 0, yaw: 0, speed: 0, car: null, extrapolated: false };
+    return { x: 0, y: 0, z: 0, yaw: 0, speed: 0, vy: 0, susp: 0, car: null, extrapolated: false };
 }
 
 export class RemoteTrack {
@@ -115,6 +119,8 @@ export class RemoteTrack {
             out.z = c.z + c.vz * ahead;
             out.yaw = wrapAngle(c.yaw + c.yawRate * ahead);
             out.speed = c.vx * Math.sin(c.yaw) + c.vz * Math.cos(c.yaw);
+            out.vy = c.vy;
+            out.susp = c.susp;
             out.car = c;
             out.extrapolated = r > newest.tick;
             return true;
@@ -126,6 +132,8 @@ export class RemoteTrack {
             const c = a.car;
             out.x = c.x; out.y = c.y; out.z = c.z; out.yaw = c.yaw;
             out.speed = c.vx * Math.sin(c.yaw) + c.vz * Math.cos(c.yaw);
+            out.vy = c.vy;
+            out.susp = c.susp;
             out.car = c;
             out.extrapolated = false;
             return true;
@@ -136,12 +144,20 @@ export class RemoteTrack {
         const ca = a.car, cb = b.car;
         out.x = hermite(ca.x, ca.vx * h, cb.x, cb.vx * h, s);
         out.z = hermite(ca.z, ca.vz * h, cb.z, cb.vz * h, s);
-        out.y = hermite(ca.y, ca.vy * h, cb.y, cb.vy * h, s);
+        // vy is the body's vertical speed (on its springs), y the underside at
+        // the wheels: on the ground the secant is y's tangent, vy only in the
+        // air (docs/phase-1a-design.md, 26.9)
+        const dy = cb.y - ca.y;
+        const ma = (ca.flags & CAR_GROUNDED) !== 0 ? dy : ca.vy * h;
+        const mb = (cb.flags & CAR_GROUNDED) !== 0 ? dy : cb.vy * h;
+        out.y = hermite(ca.y, ma, cb.y, mb, s);
         const yawB = ca.yaw + wrapAngle(cb.yaw - ca.yaw);
         out.yaw = wrapAngle(hermite(ca.yaw, ca.yawRate * h, yawB, cb.yawRate * h, s));
         const ua = ca.vx * Math.sin(ca.yaw) + ca.vz * Math.cos(ca.yaw);
         const ub = cb.vx * Math.sin(cb.yaw) + cb.vz * Math.cos(cb.yaw);
         out.speed = ua + (ub - ua) * s;
+        out.vy = ca.vy + (cb.vy - ca.vy) * s;
+        out.susp = ca.susp + (cb.susp - ca.susp) * s;
         out.car = s < 1 ? ca : cb;
         out.extrapolated = false;
         return true;

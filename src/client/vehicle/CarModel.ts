@@ -3,6 +3,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { models, whenModelsReady } from '../assets/gameModels.js';
 import { carPaintColor } from '../assets/carMaterials.js';
 import { lightingTier } from '../render/lighting.js';
+import type { BodyMotion } from './bodyMotion.js';
 import { GltfCarBody, PHONE_REMOTE_LOD_DISTANCES, type GltfCarBodyOptions } from './GltfCarBody.js';
 
 // Three.js model of one car: the body (the packed GLB model where one exists,
@@ -176,10 +177,15 @@ export function liveCarModels(): ReadonlySet<CarModel> {
 }
 
 export class CarModel {
-    // group carries position, yaw, slope tilt and the Mega scale; flipGroup
-    // carries the body with the jump height and the flip rotation
+    // group carries position (on the ground), yaw, the ground tilt and the
+    // Mega scale; bodyGroup carries the body with its height over the
+    // ground (flight, suspension) and its own pitch and roll (setBodyPose)
     readonly group: THREE.Group;
-    readonly flipGroup: THREE.Group;
+    readonly bodyGroup: THREE.Group;
+    // Height of the wheels over the ground (m): the contact shadow fades
+    airHeight = 0;
+    // Wheels below their rest spot on the body (m, the suspension)
+    private _wheelDrop = 0;
     readonly carType: CarType;
     readonly colorCode: number;
     readonly local: boolean;
@@ -223,8 +229,8 @@ export class CarModel {
     constructor(colorCode: number, carType: CarType, options: { local?: boolean } = {}) {
         this.local = options.local ?? false;
         this.group = new THREE.Group();
-        this.flipGroup = new THREE.Group();
-        this.group.add(this.flipGroup);
+        this.bodyGroup = new THREE.Group();
+        this.group.add(this.bodyGroup);
         this.colorCode = colorCode;
         this.carType = carType;
 
@@ -269,6 +275,23 @@ export class CarModel {
     }
 
     /**
+     * The body's pose of this frame (vehicle/bodyMotion.ts): the ground
+     * tilt on the group, height, pitch and roll on the body, the wheels on
+     * the ground. scale: the Mega scale of the group.
+     */
+    setBodyPose(motion: BodyMotion, scale: number): void {
+        const s = scale > 0 ? scale : 1;
+        this.group.rotation.order = 'YXZ';
+        this.group.rotation.x = motion.groundPitch;
+        this.group.rotation.z = motion.groundRoll;
+        this.bodyGroup.position.y = motion.bodyY / s;
+        this.bodyGroup.rotation.x = motion.bodyPitch;
+        this.bodyGroup.rotation.z = motion.bodyRoll;
+        this._wheelDrop = motion.wheelDrop / s;
+        this.airHeight = motion.airHeight;
+    }
+
+    /**
      * The drive state of this frame from the simulation: forward speed
      * (m/s), road wheel angle (rad, + = left) and whether the brake is on.
      * Cars without it (remote players) derive it from their motion.
@@ -288,7 +311,7 @@ export class CarModel {
 
     private applyGhost(active: boolean): void {
         if (active) {
-            this.flipGroup.traverse((child) => {
+            this.bodyGroup.traverse((child) => {
                 const mesh = child as THREE.Mesh;
                 if (!mesh.isMesh || mesh === this.shieldMesh) return;
 
@@ -364,7 +387,7 @@ export class CarModel {
 
     /** Per frame (updateCarModels): drive look, LOD, wheels, lamps. */
     updateFrame(dt: number, now: number, cameraPosition: THREE.Vector3 | null): void {
-        if (this._disposed || !this.flipGroup.visible) {
+        if (this._disposed || !this.bodyGroup.visible) {
             this._driveSet = false;
             return;
         }
@@ -395,8 +418,9 @@ export class CarModel {
         if (gltf) {
             if (cameraPosition) this.selectLod(cameraPosition);
             gltf.roll(rolled, steer);
+            gltf.setWheelDrop(this._wheelDrop);
             gltf.applyWheels();
-            gltf.setLamps(this._brakeLight, blinkLeft, blinkRight, this.flipGroup);
+            gltf.setLamps(this._brakeLight, blinkLeft, blinkRight, this.bodyGroup);
         } else {
             const spin = rolled / this.wheelRadius;
             for (let i = 0; i < this.wheels.length; i++) {
@@ -404,6 +428,7 @@ export class CarModel {
                 wheel.rotation.order = 'YXZ';
                 wheel.rotation.x = (wheel.rotation.x + spin) % (Math.PI * 2);
                 if (i < 2) wheel.rotation.y = steer;
+                wheel.position.y = this.wheelRadius - this._wheelDrop;
             }
             if (this._taillight) this._taillight.emissiveIntensity = 0.35 + this._brakeLight * 2.6;
         }
@@ -468,7 +493,7 @@ export class CarModel {
             : {};
         const body = new GltfCarBody(this.carType, this.colorCode, options);
         this.gltf = body;
-        this.flipGroup.add(body.root);
+        this.bodyGroup.add(body.root);
         this._body = [body.root];
         this.addShield(body.size);
     }
@@ -504,7 +529,7 @@ export class CarModel {
     buildCar() {
         const m = createCarMaterials(this.colorCode);
         this._taillight = m.taillight;
-        const before = new Set(this.flipGroup.children);
+        const before = new Set(this.bodyGroup.children);
 
         switch (this.carType) {
             case 'pickup': this.buildPickup(m); break;
@@ -513,7 +538,7 @@ export class CarModel {
             case 'jeep': this.buildJeep(m); break;
             default: this.buildBulli(m); break;
         }
-        this._body = this.flipGroup.children.filter(child => !before.has(child));
+        this._body = this.bodyGroup.children.filter(child => !before.has(child));
         for (const object of this._body) this.own(object);
         this.addShield(null);
     }
@@ -558,7 +583,7 @@ export class CarModel {
         // An opacity-zero mesh still writes depth unless disabled above. Keep it
         // out of the render list entirely until a shield effect needs it.
         this.shieldMesh.visible = false;
-        this.flipGroup.add(this.shieldMesh);
+        this.bodyGroup.add(this.shieldMesh);
         this._ownedGeometries.add(shieldGeo);
         this._ownedMaterials.add(shieldMat);
     }
@@ -567,7 +592,7 @@ export class CarModel {
         const mesh = new THREE.Mesh(geometry, material);
         mesh.castShadow = shadow;
         mesh.receiveShadow = shadow;
-        this.flipGroup.add(mesh);
+        this.bodyGroup.add(mesh);
         return mesh;
     }
 
@@ -788,7 +813,7 @@ export class CarModel {
         positions.forEach(p => {
             const w = wheelGroup.clone();
             w.position.set(p.x, wheelRadius, p.z);
-            this.flipGroup.add(w);
+            this.bodyGroup.add(w);
             this.wheels.push(w);
         });
     }

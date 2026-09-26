@@ -284,7 +284,13 @@ export class LineDriver {
         const at = pointAt(line, hit.s + ld, this.ahead);
         this.target.x = at.x + this.offset * at.tz;
         this.target.z = at.z - this.offset * at.tx;
-        const steer = pursuitSteer(s, p, u, this.target.x, this.target.z, ld);
+        let steer = pursuitSteer(s, p, u, this.target.x, this.target.z, ld);
+        // Facing against the line with the target behind (spun, or backed
+        // off the wrong way): full lock towards it, where the pursuit arc
+        // would drive on straight, away from the course
+        const dx = this.target.x - s.x, dz = this.target.z - s.z;
+        const fx = Math.sin(s.yaw), fz = Math.cos(s.yaw);
+        if (fx * hit.tx + fz * hit.tz < 0 && dx * fx + dz * fz < 0) steer = dx * fz - dz * fx > 0 ? 127 : -127;
 
         // Pedals like the road bots
         let throttle: number, brake: number;

@@ -7,7 +7,6 @@ import type { VehicleModifiers, VehicleParams } from './types.js';
 
 export const TURBO_TOP_SPEED = 1.3;
 export const TURBO_ACCEL = 1.5;
-export const SUPER_JUMP_SPEED = 20;       // 10 m apex, 2.0 s flight
 export const MEGA_CONTACT_MASS = 3;
 export const MEGA_MASS_RATIO_CAP = 3.5;
 export const SHIELD_CONTACT_MASS = 2;
@@ -33,7 +32,6 @@ export function applyModifiers(base: VehicleParams, mods: VehicleModifiers, scal
         out.topSpeed += DRAFT_TOP_ADD * draft;
         out.accel *= 1 + DRAFT_ACCEL * draft;
     }
-    if (mods.superJump) out.jumpSpeed = SUPER_JUMP_SPEED;
     out.colliderRadius = base.colliderRadius * scale;
     out.colliderOffset = base.colliderOffset * scale;
     if (mods.mega) {

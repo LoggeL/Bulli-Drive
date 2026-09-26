@@ -16,7 +16,8 @@ import { restoreTuningAfterEach } from './helpers.js';
 // between platforms (goldenCompare.ts, scripts/sim-golden-drift.ts).
 //
 // The scenarios only see the values their scripts reach (no off-road yet,
-// jumps by button only for the jeep, a few thresholds), so the shipped
+// flights only over the jeep's bump and the beetle's ramp, a few
+// thresholds), so the shipped
 // tuning itself is a golden as well: every value of SIM_TUNING, the classes
 // and the assist profiles. Any change to one of them needs UPDATE_GOLDEN=1.
 

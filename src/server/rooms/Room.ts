@@ -13,7 +13,7 @@ import type {
     ServerMessage
 } from '../../shared/protocol.js';
 import {
-    CAR_GHOST, CAR_IDLE, CAR_LAGGY, CAR_MEGA, CAR_SHIELD, CAR_SUPER_JUMP, CAR_TURBO,
+    CAR_GHOST, CAR_IDLE, CAR_LAGGY, CAR_MEGA, CAR_SHIELD, CAR_TURBO,
     COMPACT_BYTES, INPUT_FROZEN, INPUT_HIDDEN, SELF_BLOCK_BYTES, SNAPSHOT_HEADER_BYTES,
     modsToBits, stateFlags, writeCompactCar, writeSelfBlock, writeSnapshotHeader,
     type InputPacket
@@ -94,7 +94,7 @@ export interface RoomMember {
     // After idle: keeps the contact ghost while overlapping another car
     ghostHold: boolean;
     pendingSpawn: boolean;
-    pendingPlace: SpawnPose | null;
+    pendingPlace: (SpawnPose & { speed: number }) | null;
     carDirty: boolean;
     // A setCar is waiting to be shown to the room: car changes reach the
     // others at most once per CAR_CHANGE_INTERVAL_MS, the latest one wins
@@ -116,6 +116,9 @@ interface QueuedEvent {
     near?: { x: number; z: number };
     exclude?: string;
 }
+
+// The fastest an e2e placement (debugPlace) may start a car (m/s)
+const DEBUG_PLACE_MAX_SPEED = 60;
 
 // Room-wide options (server/index.ts sets them from the environment)
 export const roomOptions = {
@@ -367,7 +370,9 @@ export abstract class Room {
                 return;
             case 'debugPlace':
                 // Kept until the car exists (a test may place it right after ready)
-                if (roomOptions.allowDebugPlace) member.pendingPlace = { x: msg.x, z: msg.z, yaw: msg.yaw };
+                if (roomOptions.allowDebugPlace) {
+                    member.pendingPlace = { x: msg.x, z: msg.z, yaw: msg.yaw, speed: Math.max(0, Math.min(DEBUG_PLACE_MAX_SPEED, msg.speed ?? 0)) };
+                }
                 return;
             default: return this.onGameMessage(member, msg);
         }
@@ -577,8 +582,10 @@ export abstract class Room {
             if (m.pendingPlace && m.car) {
                 const place = m.pendingPlace;
                 m.pendingPlace = null;
-                placeVehicle(m.car.state, this.world, place.x, place.z, place.yaw);
-                m.car.state.flipAngle = 0;
+                const s = m.car.state;
+                placeVehicle(s, this.world, place.x, place.z, place.yaw);
+                s.vx = Math.sin(place.yaw) * place.speed;
+                s.vz = Math.cos(place.yaw) * place.speed;
                 this.onPlaced(m, T);
             }
         }
@@ -686,7 +693,7 @@ export abstract class Room {
         const car = m.car!;
         const mods = car.mods;
         return stateFlags(car.state)
-            | (mods.turbo ? CAR_TURBO : 0) | (mods.mega ? CAR_MEGA : 0) | (mods.superJump ? CAR_SUPER_JUMP : 0)
+            | (mods.turbo ? CAR_TURBO : 0) | (mods.mega ? CAR_MEGA : 0)
             | (mods.ghost ? CAR_GHOST : 0) | (mods.shield ? CAR_SHIELD : 0)
             | (m.idle ? CAR_IDLE : 0) | (m.laggy ? CAR_LAGGY : 0);
     }

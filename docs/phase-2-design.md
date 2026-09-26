@@ -50,7 +50,7 @@ Phase 2 baut **keine neue Physik**. Sie ergänzt die Sim um drei klar abgegrenzt
 | E1 | `gridSize` 4 → 6 für den Downtown Loop (Plan: „ggf.“)? | **Bleibt 4.** | Eine größere Stadt ändert Weltgenerierung, Goldens, Spawns, Props und die Grafik-Messungen. Die Map wird in Phase 3 ohnehin ersetzt. Die Runde mit 750 m reicht für 3 Runden in rund 90 s. |
 | E2 | Wo liegen die Rampen des Hill Sprint? | **In der Karte** (`MapData`, alle Modi), `MAP_VERSION` 2 → 3 | Free-Roam- und Party-Spieler sollen die Sprünge auch nutzen. Rampen liegen außerhalb der Stadt, Spawns treffen sie nie. |
 | E3 | Streckenbegrenzungen (Absperrungen, Pfeiltafeln) | **Collider nur in der Renn-Welt** (`raceWorld` = Karte + Strecke) | Sperrt Seitenstraßen im Rennen, ohne Free Roam und Party zu verbauen. Client und Server bauen dieselbe Renn-Welt aus shared-Daten. |
-| E4 | Sprung im Rennen | **Aus** (`BTN_JUMP` wird gefiltert, Button ausgeblendet) | Empfehlung aus Plan 8.4. Die Rampen übernehmen die Rolle. |
+| E4 | Sprung im Rennen | **Aus** (`BTN_JUMP` wird gefiltert, Button ausgeblendet) *(Überholt: Den Sprung gibt es seit phase-1a-design.md 26 nirgends mehr.)* | Empfehlung aus Plan 8.4. Die Rampen übernehmen die Rolle. |
 | E5 | Feldgröße und Bots | Rennen **bis 8 Autos**, Bots füllen auf **6** auf, ab 6 Menschen ohne Bots | Plan 8.1 (bis 8 pro Rennen). Ein Feld von 6 fühlt sich voll an und bleibt auf dem Handy flüssig. |
 | E6 | Zeitfahren | **Eigener Room-Typ `timetrial`**, eine private Instanz pro Spieler, ganzer Lauf (Sprint oder 3 Runden) | Keine Wechselwirkung mit anderen Autos. Nur dann ist der Lauf aus den Inputs allein nachsimulierbar (Ghost). |
 | E7 | Wie spielt der Client den Ghost ab? | **Pose-Spur vom Server** (20 Hz, quantisiert), die der Server aus dem Input-Stream **nachsimuliert** | Browser und Node rechnen nicht bitgleich (1b, Plan 6). Über 90 s würde ein im Browser simulierter Ghost auseinanderlaufen. Der Server simuliert deterministisch und liefert die Spur. |
@@ -77,7 +77,7 @@ src/shared/race/                 # neu, rein (kein three, kein DOM), Stryker-Gru
   progress.ts       # RaceProgress je Auto: passed, lap, Restweg, Falschfahrer, verpasstes Gate
   standings.ts      # Positionsberechnung (Sortierschlüssel, Abschnitt 9)
   launch.ts         # Launch-Ergebnis aus den Roh-Inputs des Countdowns
-  inputFilter.ts    # raceInputFilter (Freeze, Sprung aus) und raceGhostFloor (Start-Ghost)
+  inputFilter.ts    # raceInputFilter (Freeze, Sprung aus *(Sprung überholt durch phase-1a-design.md 26)*) und raceGhostFloor (Start-Ghost)
   raceWorld.ts      # createRaceWorld(map, track): Karte + Strecken-Collider + resetPose + slipstream
   lineDriver.ts     # Bot-Fahrer: Pure Pursuit entlang der Ideallinie, Schwierigkeitsstufen
   pursuit.ts        # aus tools/bots/driver.ts herausgelöst: steerForAngle, wrapAngle, forwardSpeed, Stuck-Logik
@@ -478,9 +478,9 @@ Alle Fälle nutzen die bestehende Mechanik: `applyContactGhostFloor(car)` pro Ti
 raceInputFilter(phase, t, startTick, input):
     wenn phase ∈ {lobby, countdown} oder t < startTick:
         input.throttle = 0; input.brake = 0            // kein Bremsen im Stand: sonst Rückwärtsgang nach 8 Ticks
-        input.buttons &= BTN_HANDBRAKE                  // Handbremse erlaubt (Optik), kein Boost, Reset, Sprung
+        input.buttons &= BTN_HANDBRAKE                  // Handbremse erlaubt (Optik), kein Boost, Reset (Sprung: überholt, phase-1a 26)
     sonst:
-        input.buttons &= ~BTN_JUMP                      // E4
+        input.buttons &= ~BTN_JUMP                      // E4 (überholt durch phase-1a-design.md 26: kein BTN_JUMP mehr)
 ```
 
 Das Lenkrad bleibt frei (die Räder drehen sichtbar). Die Prediction wendet genau denselben Filter an. Sonst würde sie im Countdown losfahren und der Server zurückholen.
@@ -585,7 +585,7 @@ export interface GhostRun {
 `replayRun(track, run): {finishTicks, gateTicks, poses}` baut eine frische Renn-Welt mit einem Auto, setzt es auf Startplatz 0 (`spawnVehicle`) und spielt die Inputs Tick für Tick ab. Dabei laufen dieselben Funktionen wie im Room: `raceInputFilter`, Launch, `stepWorld` und der Gate-Test. Weil der Server im selben Prozess mit demselben Code rechnet, ist das Ergebnis bitgleich.
 
 - Beim `submit` prüft der Server `replay.finishTicks === run.finishTicks` (exakt). Weicht es ab, ist das ein Bug (der Room hat Zustand, den der Replay nicht kennt), und der Lauf wird verworfen und geloggt. In Phase 4 prüft dieselbe Funktion eingereichte Läufe.
-- Nebenbei entsteht die **Pose-Spur**: alle 3 Ticks (20 Hz) `x, z` (i24, 1/4096 m), `y` (i16, 1 cm), `yaw` (u16), `flipAngle` (u8), zusammen 13 B pro Probe. Für 90 s sind das rund 23 kB, als Base64 in JSON rund 31 kB. Sie wird einmal pro Ghost berechnet und beim Ghost im Speicher gehalten.
+- Nebenbei entsteht die **Pose-Spur**: alle 3 Ticks (20 Hz) `x, z` (i24, 1/4096 m), `y` (i16, 1 cm), `yaw` (u16), `flipAngle` (u8) *(überholt durch phase-1a-design.md 26.4: Reservebyte, immer 0)*, zusammen 13 B pro Probe. Für 90 s sind das rund 23 kB, als Base64 in JSON rund 31 kB. Sie wird einmal pro Ghost berechnet und beim Ghost im Speicher gehalten.
 
 ### 15.3 Speicher (`server/race/ghostStore.ts`)
 
@@ -803,7 +803,7 @@ Erwartungswerte kommen aus Handrechnung, Geometrie, Physik oder als gekennzeichn
 | `progress.test.ts`, `standings.test.ts` | Reihenfolge-Tabellen: im Ziel vor fahrend, mehr `passed` vor weniger, weniger Restweg vor mehr, DNF und left hinten, Gleichstand nach Slot; Runde aus `passed` (Rundkurs und Sprint, Grenzfälle `passed` = 0, 1, n, n + 1); `gapAhead` | Hand-Szenarien |
 | `wrongWay.test.ts` | Ein 59 Ticks langes Gegenfahren löst nicht aus, 60 Ticks lösen aus; das Ende braucht 30 Ticks; Rückschritt 25 m ohne Wenden löst aus; unter 4 m/s nie | Regeldefinition (Grenzwerte) |
 | `launch.test.ts` | Flanke bei S − 20 → perfect, bei S − 21 → early, kein Gas bei S → normal, Flanke bei S → perfect, zwischendurch losgelassen → neue Flanke zählt | Regeldefinition |
-| `inputFilter.test.ts` | Im Countdown bleibt ein Auto 240 Ticks mit Gas und Bremse gedrückt stehen (auch kein Rückwärtsgang); Handbremse bleibt, Sprung im Rennen weg; Start-Ghost genau 180 Ticks | Physik (Stillstand) und Regel |
+| `inputFilter.test.ts` | Im Countdown bleibt ein Auto 240 Ticks mit Gas und Bremse gedrückt stehen (auch kein Rückwärtsgang); Handbremse bleibt, Sprung im Rennen weg *(überholt durch phase-1a-design.md 26)*; Start-Ghost genau 180 Ticks | Physik (Stillstand) und Regel |
 | `slipstream.test.ts` | Ziel-Geometrie (Kegelgrenzen, Kurs 21° → 0); Ratenbegrenzung; zwei Autos gleicher Klasse auf einer Geraden: der Hintermann (15 m) erreicht mehr als vtop + 2 m/s, allein genau vtop (± 0,01); ohne `world.slipstream` ändert sich nichts; **alle bestehenden Goldens bleiben bitgleich** | Physik und Regressions-Lock |
 | `modifiers.test.ts` (erweitert) | launch ×1,6, bogged ×0,5 auf `accel`, draft auf `topSpeed` | Definition |
 | `rampBase.test.ts` | Rampe auf schiefem Testgelände: Fläche an der Hinterkante = Gelände; Kantenwand-`top` = Rampenhöhe über dem Gelände an der Wand; ebene Sandbox unverändert | Handrechnung |
@@ -984,7 +984,7 @@ Jeder Schritt ist ein Commit (oder wenige), nach dem das Spiel spielbar bleibt. 
 | Runde (17.2) | eigenes `gate`-Event, lokal vorab | nur aus dem **`gate`-Event** des Servers | Das Event kommt eine halbe RTT später. Eine lokale Vorab-Zählung müsste Replays und Korrekturen zurücknehmen; Zeit und Split kommen ohnehin vom Server. |
 | Split im Rennen (17.2) | grün „−0.312“ / rot „+0.418“ | Rennen: **Abstand zum Vordermann** aus `gapAhead`, immer rot „+“, der Führende sieht keinen; grün nur im Zeitfahren gegen die `gateTicks` des Ghosts | Der Server schickt nur `gapAhead`. |
 | Ergebnis-Einblendung | mit `raceResults` | **2 s nach dem eigenen Zieleinlauf** (ohne eigenen Zieleinlauf sofort) | Mit einem Menschen im Rennen beginnt `results` im Tick des Zieleinlaufs; sonst sähe man „FINISH – P2“ und das Auto über der Linie nie. |
-| Touch im Rennen (17.5) | Joystick lenkt nur; BRAKE groß, BOOST, DRIFT, RESET klein; JUMP aus | Joystick lenkt nur (mit Auto-Gas **aus** gibt der Stick nach vorn Gas), **BRAKE im Platz des Schießen-Buttons**, der Sprung-Button zeigt das Reset-Symbol und **setzt gehalten zurück** (ein Tipp springt nicht, E4), HUPE bleibt | Keine neuen Plätze im vermessenen Layout. |
+| Touch im Rennen (17.5) | Joystick lenkt nur; BRAKE groß, BOOST, DRIFT, RESET klein; JUMP aus *(überholt durch phase-1a-design.md 26.4: kein JUMP-Button mehr)* | Joystick lenkt nur (mit Auto-Gas **aus** gibt der Stick nach vorn Gas), **BRAKE im Platz des Schießen-Buttons**, der Sprung-Button zeigt das Reset-Symbol und **setzt gehalten zurück** (ein Tipp springt nicht, E4), HUPE bleibt | Keine neuen Plätze im vermessenen Layout. |
 | GO-Zone (17.5) | Tipp auf die Bildmitte | runder Knopf „TAP ON GREEN“ in der Bildmitte, nur im Countdown mit Auto-Gas, reagiert auf `pointerdown` | Das Fenster ist 1/3 s lang; ein `click` käme erst beim Loslassen. |
 | Ghost-Wiedergabe (15.4) | Hermite aus `interpolation.ts` | Hermite mit **Catmull-Rom-Tangenten** (`ghostPlayback.ts`) | Die Pose-Spur hat keine Geschwindigkeiten. Eine gerade Fahrt mit konstanter Geschwindigkeit wird exakt wiedergegeben (Unit-Test). |
 | Rampen und Hügelstraße (17.4, 5.5) | in allen Modi sichtbar | **nur in Race- und Zeitfahr-Rooms** | Schritt 4 (Rampen in `MapData`, `MAP_VERSION` 3) ist noch offen; außerhalb der Renn-Welt wären sichtbare Rampen ohne Collider. |

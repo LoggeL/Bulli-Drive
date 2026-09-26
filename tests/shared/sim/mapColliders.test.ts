@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MEGA_SCALE } from '../../../src/shared/constants.js';
 import { overlapsColliders, pushOutOfColliders } from '../../../src/shared/sim/collision.js';
-import { BTN_JUMP, DT, V_SAFE } from '../../../src/shared/sim/constants.js';
+import { DT, V_SAFE } from '../../../src/shared/sim/constants.js';
 import { createFlatWorld } from '../../../src/shared/sim/scenarios.js';
 import type { CarClassId, SimCar } from '../../../src/shared/sim/types.js';
 import { CAR_CLASS_IDS } from '../../../src/shared/sim/vehicleClasses.js';
@@ -9,7 +9,7 @@ import { stepVehicle } from '../../../src/shared/sim/world.js';
 import {
     colliderBounds, createSimWorld, SpatialGrid, type Collider, type ColliderInput, type GroundModel, type SimWorld
 } from '../../../src/shared/world/colliders.js';
-import { DEG, drive, spawnCar, speedOf } from './helpers.js';
+import { DEG, drive, launch, spawnCar, speedOf } from './helpers.js';
 
 // The collider shapes of phase 3 (docs/phase-3-design.md, 8.2, E8): the
 // capsule (segment) of guard rails and fences and the turned box (obox) of
@@ -152,14 +152,17 @@ describe('guard rail (segment)', () => {
         expect(speedOf(car)).toBeGreaterThan(47);
     });
 
-    it('lets a jumping car over (top 0.8) but not a car on the ground, and nobody stands on it', () => {
+    it('lets a flying car over (top 0.8) but not a car on the ground, and nobody stands on it', () => {
         const world = createFlatWorld([{ kind: 'segment', ax: -20, az: 15, bx: 20, bz: 15, r: 0.15, top: 0.8 }]);
         const grounded = spawnCar(world, 'a', 'bulli', 0, 0, 0, 20);
         drive(grounded, world, 90, { throttle: 255 });
         expect(grounded.state.z).toBeLessThan(15);
 
         const jumper = spawnCar(world, 'b', 'bulli', 0, 0, 0, 20);
-        drive(jumper, world, 90, tick => ({ throttle: 255, buttons: tick === 20 ? BTN_JUMP : 0 }));
+        drive(jumper, world, 90, tick => {
+            if (tick === 20) launch(jumper, 11);
+            return { throttle: 255 };
+        });
         expect(jumper.state.z).toBeGreaterThan(30);
 
         // Dropped onto the rail from 3 m: lands on the ground beside it, not on top

@@ -24,12 +24,12 @@ const round = (box: Box) => `[${Math.round(box.x)}..${Math.round(box.x + box.wid
 // Touch HUD elements that must never cover each other, with the reset
 // prompt shown: it appears exactly when the player is stuck
 const HUD = [
-    '#btn-drift', '#btn-boost', '#btn-autogas', '#btn-flip', '#btn-shoot', '#btn-honk',
+    '#btn-drift', '#btn-boost', '#btn-autogas', '#btn-reset', '#btn-shoot', '#btn-honk',
     '#joystick-move', '#interaction-prompt', '#drive-meter', '#map-panel', '#score-container', '#player-list'
 ];
 // Touch controls, which must also stay off the car itself (standing on
 // the runway of the driving tests) and clear of the sandbox banner
-const CONTROLS = ['#btn-drift', '#btn-boost', '#btn-autogas', '#btn-flip', '#btn-shoot', '#btn-honk', '#joystick-move'];
+const CONTROLS = ['#btn-drift', '#btn-boost', '#btn-autogas', '#btn-reset', '#btn-shoot', '#btn-honk', '#joystick-move'];
 interface CarBox { left: number; right: number; top: number; bottom: number }
 
 // The car's screen box in CSS pixels, once the camera has caught up with
@@ -100,7 +100,7 @@ test('the Party touch HUD in eight viewports: nothing overlaps, the car stays fr
         // own, longer text
         await page.evaluate(() => {
             const prompt = document.getElementById('interaction-prompt')!;
-            prompt.textContent = 'HOLD JUMP TO RESET';
+            prompt.textContent = 'HOLD RESET BUTTON';
             prompt.style.transition = 'none';
             prompt.classList.remove('hidden');
         });
@@ -137,10 +137,10 @@ test('the Party touch HUD in eight viewports: nothing overlaps, the car stays fr
 
 // The race: the pill instead of the score, BRAKE instead of shooting
 const RACE_HUD = [
-    '#btn-drift', '#btn-boost', '#btn-autogas', '#btn-flip', '#btn-brake', '#btn-honk',
+    '#btn-drift', '#btn-boost', '#btn-autogas', '#btn-reset', '#btn-brake', '#btn-honk',
     '#joystick-move', '#drive-meter', '#map-panel', '#race-hud', '#player-list'
 ];
-const RACE_CONTROLS = ['#btn-drift', '#btn-boost', '#btn-autogas', '#btn-flip', '#btn-brake', '#btn-honk', '#joystick-move'];
+const RACE_CONTROLS = ['#btn-drift', '#btn-boost', '#btn-autogas', '#btn-reset', '#btn-brake', '#btn-honk', '#joystick-move'];
 // Shown for moments (the countdown, a banner, the GO zone before green):
 // never over a control, the pill, the map or the room chip
 const RACE_TRANSIENT = ['#race-countdown', '#race-banner', '#race-go'];

@@ -15,7 +15,10 @@ import {
 // rooms with their messages (JSON, additive).
 // v4 (docs/phase-3-design.md, M3): the map Bulli Bay (roomState.world names
 // the map instead of a seed), the water counter in the self block.
-export const PROTOCOL_VERSION = 4;
+// v5 (docs/phase-1a-design.md, 26): no jump. The suspension in the self
+// block and the compact record (instead of the flip), no jump cooldown,
+// flip, previous buttons or Super Jump bits; the jump button bit is dropped.
+export const PROTOCOL_VERSION = 5;
 
 // ---------- DTOs ----------
 
@@ -148,8 +151,9 @@ export const ClientMessageSchema = v.variant('type', [
     v.object({ type: v.literal('honk') }),
     v.object({ type: v.literal('shoot'), targetId: shortString(64) }),
     v.object({ type: v.literal('visibility'), hidden: v.boolean() }),
-    // E2E only (server started with E2E=1): puts the own car at rest there
-    v.object({ type: v.literal('debugPlace'), x: finiteNumber, z: finiteNumber, yaw: finiteNumber }),
+    // E2E only (server started with E2E=1): puts the own car there, at rest
+    // or rolling straight ahead at speed (m/s, e.g. towards a crest)
+    v.object({ type: v.literal('debugPlace'), x: finiteNumber, z: finiteNumber, yaw: finiteNumber, speed: v.optional(finiteNumber) }),
     // Race lobby (docs/phase-2-design.md, 6.4 and 16.2)
     v.object({ type: v.literal('raceReady'), ready: v.boolean() }),
     v.object({ type: v.literal('raceConfig'), track: v.optional(v.picklist(TRACK_IDS)), botLevel: v.optional(v.picklist(BOT_LEVELS)) }),

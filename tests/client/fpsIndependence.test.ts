@@ -4,7 +4,7 @@ import { gameHooks } from '../../src/client/game/hooks.js';
 import { inputManager, type DriveKey } from '../../src/client/input/InputManager.js';
 import { LocalVehicle, type VehicleHost } from '../../src/client/vehicle/LocalVehicle.js';
 import { mulberry32 } from '../../src/shared/math/rng.js';
-import { DT } from '../../src/shared/sim/constants.js';
+import { BTN_RESET, DT } from '../../src/shared/sim/constants.js';
 import { createDummy, driveDummy } from '../../src/shared/sim/dummies.js';
 import { createFlatWorld } from '../../src/shared/sim/scenarios.js';
 import { copyVehicleState, createVehicleState, type SimCar, type VehicleInput, type VehicleState } from '../../src/shared/sim/types.js';
@@ -29,14 +29,14 @@ const TURBO_SECONDS = 1;
 type KeyStep = { tick: number; down?: DriveKey[]; up?: DriveKey[] };
 
 // Given after the tick with this index, so it reaches the next one: drive
-// into the parked beetle, drift away, a jump tapped within one tick, boost
+// into the parked beetle, drift away, a reset tapped within one tick, boost
 const SCRIPT: KeyStep[] = [
     { tick: 0, down: ['up'] },
     { tick: 150, down: ['left', 'handbrake'] },
     { tick: 185, up: ['handbrake'] },
     { tick: 200, up: ['left'] },
     // Pressed and released between two ticks: the latch keeps it
-    { tick: 210, down: ['jump'], up: ['jump'] },
+    { tick: 210, down: ['reset'], up: ['reset'] },
     { tick: 240, down: ['boost'] },
     { tick: 285, up: ['boost'] }
 ];
@@ -46,7 +46,6 @@ interface Run {
     states: VehicleState[][];
     inputs: VehicleInput[];
     turbo: boolean[];
-    jumps: number;
     dummyIds: string[];
 }
 
@@ -54,13 +53,11 @@ function createHost(): VehicleHost {
     const off = () => ({ active: false, timer: 0 });
     return {
         group: new THREE.Group(),
-        flipGroup: new THREE.Group(),
         carType: 'bulli',
-        powerups: { speed: off(), size: off(), jump: off(), shield: off(), magnet: off(), ghost: off() },
+        powerups: { speed: off(), size: off(), shield: off(), magnet: off(), ghost: off() },
         speed: 0,
         maxSpeed: 0,
         angle: 0,
-        isFlipping: false,
         canRecover: false
     };
 }
@@ -78,7 +75,7 @@ function runWithFrames(frames: number[]): Run {
     // 25 m west of the parked beetle, facing it (+x)
     vehicle.place(beetle.x - 25, beetle.z, Math.PI / 2);
 
-    const run: Run = { states: [], inputs: [], turbo: [], jumps: 0, dummyIds: dummies.map(car => car.id) };
+    const run: Run = { states: [], inputs: [], turbo: [], dummyIds: dummies.map(car => car.id) };
     gameHooks.extraCars.push(...dummies);
     gameHooks.beforeTick.push(() => {
         dummies.forEach((car, index) => driveDummy(car, specs[index]));
@@ -100,7 +97,6 @@ function runWithFrames(frames: number[]): Run {
         now += frame * 1000;
         vehicle.update(frame, host, now);
     }
-    run.jumps = vehicle.jumps;
     return run;
 }
 
@@ -149,12 +145,11 @@ describe('client tick at any frame rate', () => {
             expect(run.states.slice(0, common)).toStrictEqual(reference.states.slice(0, common));
             expect(run.inputs.slice(0, common)).toStrictEqual(reference.inputs.slice(0, common));
             expect(run.turbo.slice(0, common)).toStrictEqual(reference.turbo.slice(0, common));
-            expect(run.jumps).toBe(reference.jumps);
         }
 
         // The script really did what it claims: turbo for one second,
         // the beetle got rammed, the lapping dummies moved, the tapped
-        // jump arrived as exactly one jump, handbrake and boost reached the sim
+        // reset arrived for exactly one tick, handbrake and boost reached the sim
         const turboTicks = reference.turbo.filter(Boolean).length;
         expect(Math.abs(turboTicks - TURBO_SECONDS / DT)).toBeLessThanOrEqual(1);
         const first = reference.states[0];
@@ -163,8 +158,7 @@ describe('client tick at any frame rate', () => {
         expect(Math.hypot(last[beetle].x - first[beetle].x, last[beetle].z - first[beetle].z)).toBeGreaterThan(1);
         const sport = reference.dummyIds.indexOf('dummy-sport') + 1;
         expect(Math.hypot(last[sport].x - first[sport].x, last[sport].z - first[sport].z)).toBeGreaterThan(10);
-        expect(reference.jumps).toBe(1);
-        expect(reference.states.some(tick => !tick[0].grounded)).toBe(true);
+        expect(reference.inputs.map(input => input.buttons & BTN_RESET).filter(Boolean)).toEqual([BTN_RESET]);
         expect(reference.inputs.some(input => input.buttons !== 0)).toBe(true);
     });
 

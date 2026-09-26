@@ -110,7 +110,7 @@ export class Prediction {
     // Own car state after tick C - 1 (render interpolation)
     readonly prev = createVehicleState();
     readonly remotes = new Map<number, PredictedRemote>();
-    modsFor: ModsProvider = (_tick, mods) => { mods.turbo = mods.mega = mods.superJump = mods.ghost = mods.shield = false; };
+    modsFor: ModsProvider = (_tick, mods) => { mods.turbo = mods.mega = mods.ghost = mods.shield = false; };
     // Race rules the server applies too (docs/phase-2-design.md, 17.1): the
     // freeze of the countdown on the own input (the history keeps the raw
     // one), and the start ghost on the own car and the contact set

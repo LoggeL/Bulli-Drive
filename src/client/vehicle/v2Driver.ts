@@ -1,6 +1,6 @@
 import { DEFAULT_TERRAIN_CONFIG } from '../../shared/constants.js';
 import type { Bulli } from '../entities/Bulli.js';
-import { playCollisionSound, playJumpSound } from '../effects/sounds.js';
+import { playCollisionSound } from '../effects/sounds.js';
 import { spawnParticles } from '../effects/particles.js';
 import { gameHooks } from '../game/hooks.js';
 import { createPadState, findStandardPad, readPad } from '../input/gamepad.js';
@@ -125,7 +125,6 @@ function showPowerupWindows(car: Bulli): void {
 function playEventEffects(vehicle: LocalVehicle): void {
     const ev = vehicle.events;
     const s = vehicle.car.state;
-    if (ev.jumped) playJumpSound();
     if (ev.wallImpact > WALL_SOUND_FROM) {
         playCollisionSound(ev.wallImpact / 30);
         const y = vehicle.world.groundHeight(ev.wallX, ev.wallZ) + 1.2;
@@ -142,7 +141,7 @@ function playEventEffects(vehicle: LocalVehicle): void {
     }
     if (ev.reset) state.cameraSnapPending = true;
     if (vehicle.hintChanged && vehicle.resetHint) {
-        showInteractionPrompt(inputManager.touchUi ? 'HOLD JUMP TO RESET' : 'HOLD R TO RESET');
+        showInteractionPrompt(inputManager.touchUi ? 'HOLD RESET BUTTON' : 'HOLD R TO RESET');
     }
     // Tyre smoke from both rear wheels while drifting
     if (s.driftTicks > 0 && s.grounded) {

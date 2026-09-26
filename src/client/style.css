@@ -1292,12 +1292,12 @@ canvas {
     box-shadow: 0 0 25px rgba(232, 69, 69, 0.5);
 }
 
-.control-btn.action.flip {
+.control-btn.action.reset {
     background: rgba(43, 122, 155, 0.25);
     border-color: rgba(43, 122, 155, 0.4);
 }
 
-.control-btn.action.flip:active, .control-btn.action.flip.active {
+.control-btn.action.reset:active, .control-btn.action.reset.active {
     background: rgba(43, 122, 155, 0.6);
     box-shadow: 0 0 25px rgba(43, 122, 155, 0.5);
 }
@@ -1885,7 +1885,7 @@ canvas {
     border: 3px solid rgba(255, 217, 117, 0.85);
 }
 
-.control-btn.action.flip {
+.control-btn.action.reset {
     left: 0;
     bottom: 103px;
     width: 60px;
@@ -2039,7 +2039,7 @@ canvas {
         height: 50px;
     }
 
-    .control-btn.action.flip {
+    .control-btn.action.reset {
         bottom: 78px;
         width: 50px;
         height: 50px;
@@ -2101,7 +2101,7 @@ canvas {
         height: 52px;
     }
 
-    .control-btn.action.flip {
+    .control-btn.action.reset {
         left: auto;
         right: 0;
         bottom: 160px;
@@ -2154,7 +2154,7 @@ canvas {
         height: 49px;
     }
 
-    .control-btn.action.flip {
+    .control-btn.action.reset {
         bottom: 78px;
         width: 48px;
         height: 48px;
@@ -2744,7 +2744,7 @@ canvas {
 
 /* Touch: the reset and powerup prompt moves above the drive buttons, which
    stand where it was at the bottom centre. On one line: it shows exactly
-   when the player is stuck ("HOLD JUMP TO RESET"). The body prefix puts
+   when the player is stuck ("HOLD RESET BUTTON"). The body prefix puts
    these above the base and touch rules of #interaction-prompt */
 @media (max-width: 768px), (pointer: coarse) {
     body #interaction-prompt {
@@ -3552,11 +3552,6 @@ body.race-counting #drive-meter {
     font-size: 0.85rem;
     z-index: 110;
     pointer-events: auto;
-}
-
-/* No jump in a race (E4) */
-body.room-race .hint-row.jump-hint {
-    display: none;
 }
 
 /* Spectators have no car to drive; with a sheet up the car stands */

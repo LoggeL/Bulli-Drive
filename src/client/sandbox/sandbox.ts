@@ -12,6 +12,7 @@ import { gameHooks } from '../game/hooks.js';
 import { createLocalPlayer, removeLoader } from '../network/websocket.js';
 import { state } from '../state.js';
 import { CarModel } from '../vehicle/CarModel.js';
+import { BodyMotion } from '../vehicle/bodyMotion.js';
 import type { LocalVehicle } from '../vehicle/LocalVehicle.js';
 import { Nametag } from '../vehicle/Nametag.js';
 
@@ -31,7 +32,6 @@ const PLAYER_COLOR = 0xD32F2F;
 // Cones fall over when a car's centre comes this close (m)
 const CONE_HIT_RADIUS = 1.9;
 const CONE_FALL_RATE = 8;
-const TWO_PI = Math.PI * 2;
 
 interface Dummy {
     spec: DummySpec;
@@ -40,6 +40,8 @@ interface Dummy {
     prev: VehicleState;
     model: CarModel;
     tag: Nametag;
+    // Body height, pitch, roll and wheels on screen
+    body: BodyMotion;
 }
 
 interface Cone {
@@ -170,7 +172,8 @@ function createDummies(): void {
         const dummy: Dummy = {
             spec, car, model,
             prev: copyVehicleState(createVehicleState(), car.state),
-            tag: new Nametag(`DUMMY ${spec.classId.toUpperCase()}`)
+            tag: new Nametag(`DUMMY ${spec.classId.toUpperCase()}`),
+            body: new BodyMotion()
         };
         dummies.push(dummy);
     });
@@ -183,6 +186,7 @@ export function resetSandbox(): void {
     for (const dummy of dummies) {
         resetDummy(dummy.car, dummy.spec, world);
         copyVehicleState(dummy.prev, dummy.car.state);
+        dummy.body.reset();
     }
     for (const cone of cones) {
         cone.fall = cone.fallX = cone.fallZ = 0;
@@ -219,13 +223,25 @@ function renderDummies(dt: number, alpha: number): void {
         const z = p.z + (s.z - p.z) * alpha;
         const ground = world.groundHeight(x, z);
         const group = dummy.model.group;
+        const yaw = p.yaw + (s.yaw - p.yaw) * alpha;
+        const scale = p.scale + (s.scale - p.scale) * alpha;
         group.position.set(x, ground, z);
-        group.rotation.y = p.yaw + (s.yaw - p.yaw) * alpha;
-        group.scale.setScalar(p.scale + (s.scale - p.scale) * alpha);
-        dummy.model.flipGroup.position.y = Math.max(0, p.y + (s.y - p.y) * alpha - ground);
-        const flip = s.flipAngle > 0 && p.flipAngle <= s.flipAngle ? p.flipAngle + (s.flipAngle - p.flipAngle) * alpha : 0;
-        dummy.model.flipGroup.rotation.x = flip % TWO_PI;
+        group.rotation.order = 'YXZ';
+        group.rotation.y = yaw;
+        group.scale.setScalar(scale);
         const u = s.vx * Math.sin(s.yaw) + s.vz * Math.cos(s.yaw);
+        dummy.body.update(dt, {
+            x, z, yaw,
+            airHeight: p.y + (s.y - p.y) * alpha - ground,
+            grounded: s.grounded,
+            susp: p.susp + (s.susp - p.susp) * alpha,
+            vy: s.vy,
+            speed: u,
+            horizontalSpeed: Math.hypot(s.vx, s.vz),
+            loadX: s.loadX,
+            yawRate: s.yawRate
+        }, world.groundHeight);
+        dummy.model.setBodyPose(dummy.body, scale);
         dummy.model.setDriveState(u, s.steerAngle, dummy.car.input.brake > 20 && u > 0.5);
         if (state.camera) dummy.tag.update(group.position, state.camera, dummy.model.nametagHeight * group.scale.y);
         knockCones(x, z, s.vx, s.vz);

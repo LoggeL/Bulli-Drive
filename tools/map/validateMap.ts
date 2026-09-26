@@ -502,9 +502,9 @@ export function rampLip(hf: Heightfield, ramp: RampDef): number {
 }
 
 // Flight after a ramp at speed v (m/s) over level ground: the car leaves
-// along the ramp's slope and falls with the sim's G_AIR from the lip
+// along the ramp's slope and falls with the sim's GRAVITY from the lip
 export function rampFlight(ramp: RampDef, lip: number, v: number): { time: number; distance: number } {
-    const g = SIM_TUNING_DEFAULTS.G_AIR;
+    const g = SIM_TUNING_DEFAULTS.GRAVITY;
     const slope = ramp.height / ramp.length;
     const vy = v * slope / Math.sqrt(1 + slope * slope);
     const vh = v / Math.sqrt(1 + slope * slope);

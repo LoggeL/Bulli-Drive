@@ -2,7 +2,7 @@
 // Server and client prediction apply exactly these rules, or the prediction
 // would drive off in the countdown and be pulled back.
 
-import { BTN_HANDBRAKE, BTN_JUMP } from '../sim/constants.js';
+import { BTN_HANDBRAKE } from '../sim/constants.js';
 import { applyContactGhostFloor } from '../sim/inputs.js';
 import type { SimCar, VehicleInput } from '../sim/types.js';
 import { START_GHOST_TICKS } from './rules.js';
@@ -28,10 +28,11 @@ export function raceFrozen(phase: RacePhase, tick: number, startTick: number | n
 /**
  * Frozen: no throttle and no brake (a brake held at a standstill would
  * start reversing after 8 ticks), of the buttons only the handbrake (looks
- * only; no boost, reset or jump). No steering either, unlike the spec's
+ * only; no boost or reset). No steering either, unlike the spec's
  * 12.1: the sim's tyres push a standing car with the wheels turned, it
  * creeps about 1.5 m in a 4 s countdown (docs/phase-2-design.md, 25).
- * Racing: everything but the jump (E4).
+ * Racing: the input as it is (the jump the spec left out, E4, is gone
+ * from the sim altogether, docs/phase-1a-design.md 26).
  */
 export function raceInputFilter(phase: RacePhase, tick: number, startTick: number | null, input: VehicleInput): VehicleInput {
     if (raceFrozen(phase, tick, startTick)) {
@@ -39,8 +40,6 @@ export function raceInputFilter(phase: RacePhase, tick: number, startTick: numbe
         input.throttle = 0;
         input.brake = 0;
         input.buttons &= BTN_HANDBRAKE;
-    } else {
-        input.buttons &= ~BTN_JUMP;
     }
     return input;
 }

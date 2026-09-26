@@ -1,15 +1,14 @@
-// Binary frames of protocol v3 (docs/phase-1b-design.md, 3.3 and 3.4, and
-// docs/phase-2-design.md, 16.1):
+// Binary frames of protocol v5 (docs/phase-1b-design.md, 3.3 and 3.4,
+// docs/phase-2-design.md, 16.1, and docs/phase-1a-design.md, 26):
 // the input uplink and the snapshot downlink. Everything else is JSON.
 // DataView, little endian. The first byte is the frame kind.
 
-import { SIM_TUNING } from '../sim/constants.js';
 import { createVehicleState, type VehicleInput, type VehicleModifiers, type VehicleState } from '../sim/types.js';
 import { INPUT_MAX_PER_PACKET } from './constants.js';
 import {
-    HEIGHT_STEP, LOAD_STEP, POS_STEP, SPEED_STEP, STEER_STEP, YAW_RATE_STEP,
-    quantByte, quantFlip, quantHeight, quantLoad, quantPos, quantScale, quantSpeed, quantSteer,
-    quantUnit, quantYaw, quantYawRate, unquantFlip, unquantYaw
+    HEIGHT_STEP, LOAD_STEP, POS_STEP, SPEED_STEP, STEER_STEP, SUSP_STEP, YAW_RATE_STEP,
+    quantByte, quantHeight, quantLoad, quantPos, quantScale, quantSpeed, quantSteer,
+    quantSusp, quantUnit, quantYaw, quantYawRate, unquantYaw
 } from './quant.js';
 
 export const FRAME_INPUT = 0x01;
@@ -96,13 +95,13 @@ export const CAR_BOOSTING = 1 << 1;
 export const CAR_DRIFTING = 1 << 2;
 export const CAR_TURBO = 1 << 3;
 export const CAR_MEGA = 1 << 4;
-export const CAR_SUPER_JUMP = 1 << 5;
+// 1 << 5 was Super Jump, 1 << 11 a running flip (both gone with the jump,
+// protocol v5, docs/phase-1a-design.md 26)
 export const CAR_GHOST = 1 << 6;
 export const CAR_SHIELD = 1 << 7;           // shield powerup
 export const CAR_RESPAWN_SHIELD = 1 << 8;
 export const CAR_IDLE = 1 << 9;
 export const CAR_LAGGY = 1 << 10;
-export const CAR_FLIPPING = 1 << 11;
 export const CAR_WAS_GHOST = 1 << 12;
 export const CAR_GHOST_EXIT = 1 << 13;
 // Race (protocol v3, docs/phase-2-design.md 16.1): contact ghost by a race
@@ -115,14 +114,14 @@ export const DRAFTING_FLAG_FROM = 0.3;
 // VehicleModifiers as bits (self block)
 export const MOD_TURBO = 1;
 export const MOD_MEGA = 2;
-export const MOD_SUPER_JUMP = 4;
+// 4 was Super Jump (protocol v5)
 export const MOD_GHOST = 8;
 export const MOD_SHIELD = 16;
 export const MOD_LAUNCH = 32;
 export const MOD_BOGGED = 64;
 
 export function modsToBits(mods: VehicleModifiers): number {
-    return (mods.turbo ? MOD_TURBO : 0) | (mods.mega ? MOD_MEGA : 0) | (mods.superJump ? MOD_SUPER_JUMP : 0)
+    return (mods.turbo ? MOD_TURBO : 0) | (mods.mega ? MOD_MEGA : 0)
         | (mods.ghost ? MOD_GHOST : 0) | (mods.shield ? MOD_SHIELD : 0)
         | (mods.launch ? MOD_LAUNCH : 0) | (mods.bogged ? MOD_BOGGED : 0);
 }
@@ -130,7 +129,6 @@ export function modsToBits(mods: VehicleModifiers): number {
 export function bitsToMods(bits: number, out: VehicleModifiers): VehicleModifiers {
     out.turbo = (bits & MOD_TURBO) !== 0;
     out.mega = (bits & MOD_MEGA) !== 0;
-    out.superJump = (bits & MOD_SUPER_JUMP) !== 0;
     out.ghost = (bits & MOD_GHOST) !== 0;
     out.shield = (bits & MOD_SHIELD) !== 0;
     out.launch = (bits & MOD_LAUNCH) !== 0;
@@ -143,7 +141,6 @@ export function bitsToMods(bits: number, out: VehicleModifiers): VehicleModifier
 export function flagsToMods(flags: number, out: VehicleModifiers): VehicleModifiers {
     out.turbo = (flags & CAR_TURBO) !== 0;
     out.mega = (flags & CAR_MEGA) !== 0;
-    out.superJump = (flags & CAR_SUPER_JUMP) !== 0;
     out.ghost = (flags & CAR_GHOST) !== 0;
     out.shield = (flags & (CAR_SHIELD | CAR_RESPAWN_SHIELD)) !== 0;
     out.launch = false;
@@ -154,7 +151,7 @@ export function flagsToMods(flags: number, out: VehicleModifiers): VehicleModifi
 // The flags that follow from the car state itself (the room adds the rest)
 export function stateFlags(s: VehicleState): number {
     return (s.grounded ? CAR_GROUNDED : 0) | (s.boosting ? CAR_BOOSTING : 0) | (s.driftTicks > 0 ? CAR_DRIFTING : 0)
-        | (s.flipAngle > 0 ? CAR_FLIPPING : 0) | (s.wasGhost ? CAR_WAS_GHOST : 0) | (s.ghostExit > 0 ? CAR_GHOST_EXIT : 0)
+        | (s.wasGhost ? CAR_WAS_GHOST : 0) | (s.ghostExit > 0 ? CAR_GHOST_EXIT : 0)
         | (s.draft > DRAFTING_FLAG_FROM ? CAR_DRAFTING : 0);
 }
 
@@ -175,9 +172,9 @@ export interface SnapshotHeader {
 
 const SELF_F64 = [
     'x', 'y', 'z', 'yaw', 'vx', 'vy', 'vz', 'yawRate', 'steerAngle', 'loadX', 'rearGrip', 'betaPrev',
-    'boostMeter', 'flipAngle', 'flipRate', 'scale', 'draft'
+    'boostMeter', 'susp', 'scale', 'draft'
 ] as const satisfies readonly (keyof VehicleState)[];
-const SELF_U8 = ['airTicks', 'driftLowTicks', 'wallTicks', 'jumpCooldown', 'resetHold', 'reverseHold', 'ghostExit', 'prevButtons', 'waterTicks'] as const satisfies readonly (keyof VehicleState)[];
+const SELF_U8 = ['airTicks', 'driftLowTicks', 'wallTicks', 'resetHold', 'reverseHold', 'ghostExit', 'waterTicks'] as const satisfies readonly (keyof VehicleState)[];
 const SELF_U16 = ['driftTicks', 'ghostTicks'] as const satisfies readonly (keyof VehicleState)[];
 const SELF_BOOL = ['grounded', 'boosting', 'wasGhost'] as const satisfies readonly (keyof VehicleState)[];
 
@@ -259,7 +256,7 @@ export interface CompactCar {
     steerAngle: number;
     input: VehicleInput;
     scale: number;
-    flipAngle: number;
+    susp: number;
     boostMeter: number;
     rearGrip: number;
     loadX: number;
@@ -289,7 +286,7 @@ export function writeCompactCar(view: DataView, at: number, slot: number, flags:
     view.setInt8(at + 21, quantSteer(s.steerAngle));
     writeInput(view, at + 22, input);
     view.setUint8(at + 26, quantScale(s.scale));
-    view.setUint8(at + 27, quantFlip(s.flipAngle));
+    view.setInt8(at + 27, quantSusp(s.susp));
     view.setUint8(at + 28, quantUnit(s.boostMeter));
     view.setUint8(at + 29, quantUnit(s.rearGrip));
     view.setInt8(at + 30, quantLoad(s.loadX));
@@ -312,7 +309,7 @@ function readCompactCar(view: DataView, at: number): CompactCar {
         steerAngle: view.getInt8(at + 21) * STEER_STEP,
         input: readInput(view, at + 22),
         scale: 1 + view.getUint8(at + 26) / 100,
-        flipAngle: unquantFlip(view.getUint8(at + 27)),
+        susp: view.getInt8(at + 27) * SUSP_STEP,
         boostMeter: view.getUint8(at + 28) / 255,
         rearGrip: view.getUint8(at + 29) / 255,
         loadX: view.getInt8(at + 30) * LOAD_STEP,
@@ -360,7 +357,7 @@ export function encodeSnapshot(snapshot: Snapshot): Uint8Array {
         const s = createVehicleState();
         Object.assign(s, {
             x: car.x, y: car.y, z: car.z, yaw: car.yaw, vx: car.vx, vy: car.vy, vz: car.vz,
-            yawRate: car.yawRate, steerAngle: car.steerAngle, scale: car.scale, flipAngle: car.flipAngle,
+            yawRate: car.yawRate, steerAngle: car.steerAngle, scale: car.scale, susp: car.susp,
             boostMeter: car.boostMeter, rearGrip: car.rearGrip, loadX: car.loadX, ghostTicks: car.ghostTicks
         });
         at = writeCompactCar(view, at, car.slot, car.flags, s, car.input);
@@ -404,13 +401,10 @@ export function decodeSnapshot(bytes: Uint8Array): Snapshot | null {
     return snapshot;
 }
 
-// Nominal flip rate of a remote car (one turn in 1.1 s, the standard jump)
-const NOMINAL_FLIP_RATE = Math.PI * 2 / 1.1;
-
 /**
  * A complete VehicleState from a compact record, for extrapolating a remote
  * car in the local prediction (3.4). What the record does not carry is
- * derived or set so the car neither jumps again nor starts a drift boost.
+ * derived or set so the car does not start a drift boost.
  */
 export function decodeRemoteState(car: CompactCar, out: VehicleState): VehicleState {
     out.x = car.x; out.y = car.y; out.z = car.z;
@@ -425,22 +419,19 @@ export function decodeRemoteState(car: CompactCar, out: VehicleState): VehicleSt
     const w = car.vx * fz - car.vz * fx;
     out.betaPrev = u > 1 ? Math.atan2(w, u) : 0;
     out.grounded = (car.flags & CAR_GROUNDED) !== 0;
-    out.airTicks = out.grounded ? 0 : SIM_TUNING.COYOTE_TICKS + 1;
+    out.airTicks = 0;
+    out.susp = car.susp;
     out.boostMeter = car.boostMeter;
     out.boosting = (car.flags & CAR_BOOSTING) !== 0;
     out.driftTicks = (car.flags & CAR_DRIFTING) !== 0 ? 1 : 0;
     out.driftLowTicks = 0;
     out.wallTicks = 255;
-    out.flipAngle = car.flipAngle;
-    out.flipRate = (car.flags & CAR_FLIPPING) !== 0 ? NOMINAL_FLIP_RATE : 0;
-    out.jumpCooldown = 0;
     out.resetHold = 0;
     out.reverseHold = 0;
     out.ghostTicks = car.ghostTicks;
     out.ghostExit = (car.flags & CAR_GHOST_EXIT) !== 0 ? 1 : 0;
     out.wasGhost = (car.flags & CAR_WAS_GHOST) !== 0;
     out.scale = car.scale;
-    out.prevButtons = car.input.buttons;
     // Not in the compact record: a remote car's slipstream starts from 0,
     // its time in the water too
     out.draft = 0;

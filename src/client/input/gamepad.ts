@@ -1,6 +1,6 @@
 // Gamepad with the W3C standard mapping (docs/phase-1a-design.md, 11.2):
 // RT gas, LT brake/reverse (analog), left stick steers; A handbrake, B boost,
-// Y jump, X shoot, LB honk, View/Back held resets. The mapping itself is
+// X shoot, LB honk, View/Back held resets; Y is free. The mapping itself is
 // pure so it can be tested without a browser.
 
 export const PAD_STICK_DEADZONE = 0.12;
@@ -38,7 +38,6 @@ export interface PadState {
     brake: number;      // 0..1
     handbrake: boolean;
     boost: boolean;
-    jump: boolean;
     reset: boolean;
     shoot: boolean;
     honk: boolean;
@@ -47,7 +46,7 @@ export interface PadState {
 export function createPadState(): PadState {
     return {
         steer: 0, throttle: 0, brake: 0,
-        handbrake: false, boost: false, jump: false, reset: false, shoot: false, honk: false
+        handbrake: false, boost: false, reset: false, shoot: false, honk: false
     };
 }
 
@@ -87,7 +86,6 @@ export function readPad(pad: PadLike, out: PadState): PadState {
     out.brake = trigger(pad.buttons[PAD_BUTTON.LT]);
     out.handbrake = pressed(pad, PAD_BUTTON.A);
     out.boost = pressed(pad, PAD_BUTTON.B);
-    out.jump = pressed(pad, PAD_BUTTON.Y);
     out.reset = pressed(pad, PAD_BUTTON.BACK);
     out.shoot = pressed(pad, PAD_BUTTON.X);
     out.honk = pressed(pad, PAD_BUTTON.LB);
@@ -96,7 +94,7 @@ export function readPad(pad: PadLike, out: PadState): PadState {
 
 export function clearPadState(out: PadState): PadState {
     out.steer = out.throttle = out.brake = 0;
-    out.handbrake = out.boost = out.jump = out.reset = out.shoot = out.honk = false;
+    out.handbrake = out.boost = out.reset = out.shoot = out.honk = false;
     return out;
 }
 

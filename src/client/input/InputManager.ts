@@ -1,4 +1,4 @@
-import { BTN_BOOST, BTN_HANDBRAKE, BTN_JUMP, BTN_RESET, SIM_TUNING } from '../../shared/sim/constants.js';
+import { BTN_BOOST, BTN_HANDBRAKE, BTN_RESET } from '../../shared/sim/constants.js';
 import type { VehicleInput } from '../../shared/sim/types.js';
 import { clearPadState, createPadState, type PadState } from './gamepad.js';
 
@@ -7,12 +7,11 @@ import { clearPadState, createPadState, type PadState } from './gamepad.js';
 // and honk stay events outside the sim. No DOM in here - keyboard.ts,
 // mobile.ts and the frame loop feed it - so it can be tested in Node.
 
-export type DriveKey = 'up' | 'down' | 'left' | 'right' | 'handbrake' | 'boost' | 'jump' | 'reset';
+export type DriveKey = 'up' | 'down' | 'left' | 'right' | 'handbrake' | 'boost' | 'reset';
 
 const KEY_BUTTONS: Partial<Record<DriveKey, number>> = {
     handbrake: BTN_HANDBRAKE,
     boost: BTN_BOOST,
-    jump: BTN_JUMP,
     reset: BTN_RESET
 };
 
@@ -86,11 +85,6 @@ export class ButtonLatch {
         this.held &= ~bits;
     }
 
-    // Delivered for exactly one tick, as if pressed and released at once
-    pulse(bits: number): void {
-        this.pressed |= bits;
-    }
-
     // Bits for this tick; clears the latched presses
     sample(): number {
         const bits = this.held | this.pressed;
@@ -115,8 +109,6 @@ export class InputManager {
     private stickY = 0;
     private stickActive = false;
     private readonly touchLatch = new ButtonLatch();
-    private flipHeld = false;
-    private flipHeldTicks = 0;
     // Auto-gas starts with the first touch of the stick after a (re)spawn,
     // so the car does not drive off on its own while the player looks around
     autoGasEnabled = true;
@@ -145,9 +137,9 @@ export class InputManager {
 
     // repeat: a key repeat of the browser. Held keys take it like a new
     // press, so a key still held after releaseKeys (respawn, modal, blur)
-    // drives again at once; jump and reset stay edge-triggered.
+    // drives again at once; reset stays edge-triggered.
     keyDown(key: DriveKey, repeat = false): void {
-        if (repeat && (key === 'jump' || key === 'reset')) return;
+        if (repeat && key === 'reset') return;
         this.keys.add(key);
         const bits = KEY_BUTTONS[key];
         if (bits) this.keyLatch.press(bits);
@@ -176,22 +168,6 @@ export class InputManager {
     touchButton(bits: number, down: boolean): void {
         if (down) this.touchLatch.press(bits);
         else this.touchLatch.release(bits);
-    }
-
-    // The flip button: a short press jumps (on release), holding it for
-    // RESET_HOLD_TICKS resets the car instead
-    flipDown(): void {
-        if (this.flipHeld) return;
-        this.flipHeld = true;
-        this.flipHeldTicks = 0;
-        this.touchLatch.press(BTN_RESET);
-    }
-
-    flipUp(): void {
-        if (!this.flipHeld) return;
-        this.flipHeld = false;
-        this.touchLatch.release(BTN_RESET);
-        if (this.flipHeldTicks < SIM_TUNING.RESET_HOLD_TICKS) this.touchLatch.pulse(BTN_JUMP);
     }
 
     get autoGasActive(): boolean {
@@ -227,8 +203,6 @@ export class InputManager {
     releaseTouch(): void {
         this.stickX = this.stickY = 0;
         this.stickActive = false;
-        this.flipHeld = false;
-        this.flipHeldTicks = 0;
         this.touchLatch.clear();
         this.autoGasArmed = false;
         this.brakeHeld = false;
@@ -242,7 +216,6 @@ export class InputManager {
         if (next !== this.pad) Object.assign(this.pad, next);
         this.syncPadButton(BTN_HANDBRAKE, this.pad.handbrake);
         this.syncPadButton(BTN_BOOST, this.pad.boost);
-        this.syncPadButton(BTN_JUMP, this.pad.jump);
         this.syncPadButton(BTN_RESET, this.pad.reset);
         if (this.pad.shoot && !this.padShoot) this.onAction?.('shoot');
         if (this.pad.honk && !this.padHonk) this.onAction?.('honk');
@@ -285,7 +258,6 @@ export class InputManager {
         out.throttle = quantizeUnit(axes.throttle);
         out.brake = quantizeUnit(axes.brake);
         out.buttons = this.keyLatch.sample() | this.touchLatch.sample() | this.padLatch.sample();
-        if (this.flipHeld) this.flipHeldTicks++;
         this.lastAxes.steer = out.steer / 127;
         this.lastAxes.throttle = out.throttle / 255;
         this.lastAxes.brake = out.brake / 255;

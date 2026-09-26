@@ -8,7 +8,7 @@ import { DT } from '../../../src/shared/sim/constants.js';
 function car(x: number, z: number, yaw: number, vx: number, vz: number, yawRate = 0): CompactCar {
     return {
         slot: 1, flags: CAR_GROUNDED, x, y: 0, z, yaw, vx, vy: 0, vz, yawRate, steerAngle: 0,
-        input: { steer: 0, throttle: 0, brake: 0, buttons: 0 }, scale: 1, flipAngle: 0, boostMeter: 0,
+        input: { steer: 0, throttle: 0, brake: 0, buttons: 0 }, scale: 1, susp: 0, boostMeter: 0,
         rearGrip: 1, loadX: 0, ghostTicks: 0
     };
 }
@@ -28,6 +28,24 @@ describe('RemoteTrack', () => {
         // Constant speed: Hermite is linear
         track.sample(101.5, pose);
         expect(pose.z).toBeCloseTo(0.75, 9);
+    });
+
+    it('blends the suspension and the vertical speed between samples, holds them past the newest', () => {
+        // Landing: the body 2 cm extended and falling 3 m/s at tick 0, 10 cm
+        // compressed and rising 1 m/s three ticks later. Snapshots come at
+        // 20 Hz; without the blend the body would step 12 cm per snapshot.
+        const track = new RemoteTrack();
+        track.push(0, { ...car(0, 0, 0, 0, 30), susp: 0.02, vy: -3 });
+        track.push(3, { ...car(0, 1.5, 0, 0, 30), susp: -0.1, vy: 1 });
+        const pose = createRemotePose();
+        track.sample(1, pose);
+        expect(pose.susp).toBeCloseTo(0.02 - 0.12 / 3, 12);
+        expect(pose.vy).toBeCloseTo(-3 + 4 / 3, 12);
+        track.sample(3, pose);
+        expect(pose.susp).toBeCloseTo(-0.1, 12);
+        track.sample(5, pose);
+        expect(pose.susp).toBeCloseTo(-0.1, 12);
+        expect(pose.vy).toBeCloseTo(1, 12);
     });
 
     it('turns the short way across ±π', () => {
@@ -89,10 +107,11 @@ describe('RemoteTrack', () => {
     it('uses the velocities as tangents, scaled by the time between the samples', () => {
         // From standstill at x = 0 to x = 1 at 40 m/s, 3 ticks (0.05 s)
         // apart: tangents 0 and 40 * 0.05 = 2 m. Hermite at s = 1/2:
-        // p1 * (-2/8 + 3/4) + m1 * (1/8 - 1/4) = 0.5 - 0.25 = 0.25
+        // p1 * (-2/8 + 3/4) + m1 * (1/8 - 1/4) = 0.5 - 0.25 = 0.25. The
+        // same for y in the air (flags 0), with vy as its tangent.
         const track = new RemoteTrack();
-        const a = { ...car(0, 0, Math.PI / 2, 0, 0), y: 0, vy: 0 };
-        const b = { ...car(1, 0, Math.PI / 2, 40, 0), y: 1, vy: 40 };
+        const a = { ...car(0, 0, Math.PI / 2, 0, 0), flags: 0, y: 0, vy: 0 };
+        const b = { ...car(1, 0, Math.PI / 2, 40, 0), flags: 0, y: 1, vy: 40 };
         track.push(30, a);
         track.push(33, b);
         const pose = createRemotePose();
@@ -106,6 +125,48 @@ describe('RemoteTrack', () => {
         expect(pose.car).toBe(a);
         track.sample(33, pose);
         expect(pose.car).toBe(b);
+    });
+
+    it('scales the start tangent by the time between the samples too', () => {
+        // In the air at 20 m/s along x and up, 3 ticks (0.05 s) apart, 1 m
+        // along and up: tangents 20 · 0.05 = 1 at both ends, a straight line
+        const track = new RemoteTrack();
+        track.push(0, { ...car(0, 0, Math.PI / 2, 20, 0), flags: 0, y: 0, vy: 20 });
+        track.push(3, { ...car(1, 0, Math.PI / 2, 20, 0), flags: 0, y: 1, vy: 20 });
+        const pose = createRemotePose();
+        track.sample(1, pose);
+        expect(pose.x).toBeCloseTo(1 / 3, 9);
+        expect(pose.y).toBeCloseTo(1 / 3, 9);
+    });
+
+    it('keeps a grounded car on the ground between samples, whatever its body\'s vertical speed', () => {
+        // vy is the sprung body's speed, y the underside at the wheels
+        // (docs/phase-1a-design.md, 26.9): after a landing the body still
+        // sinks at 8 and 3 m/s while the wheels stand on flat ground at
+        // y = 2. With vy as the tangent (-0.4 and -0.15 m per span) y would
+        // dip 4.9 cm below the ground at s = 1/4; the secant keeps it on it.
+        const track = new RemoteTrack();
+        track.push(0, { ...car(0, 0, 0, 0, 30), y: 2, vy: -8 });
+        track.push(3, { ...car(0, 1.5, 0, 0, 30), y: 2, vy: -3 });
+        const pose = createRemotePose();
+        for (let r = 0; r <= 3; r += 0.25) {
+            track.sample(r, pose);
+            expect(pose.y, `r ${r}`).toBeCloseTo(2, 12);
+        }
+        // On a grade the ground is a straight line between the samples
+        const up = new RemoteTrack();
+        up.push(0, { ...car(0, 0, 0, 0, 30), y: 1, vy: -8 });
+        up.push(3, { ...car(0, 1.5, 0, 0, 30), y: 1.3, vy: 5 });
+        up.sample(1, pose);
+        expect(pose.y).toBeCloseTo(1.1, 12);
+        // Mixed: the take-off sample (grounded) and one in the air (flags 0,
+        // tangent vy·h = 6 m/s · 0.05 s = 0.3): tangents 0.3 and 0.3 over a
+        // rise of 0.3, a straight line again
+        const off = new RemoteTrack();
+        off.push(0, { ...car(0, 0, 0, 0, 30), y: 0, vy: 6 });
+        off.push(3, { ...car(0, 1.5, 0, 0, 30), flags: 0, y: 0.3, vy: 6 });
+        off.sample(2, pose);
+        expect(pose.y).toBeCloseTo(0.2, 12);
     });
 
     it('ignores samples that are not newer than the newest', () => {

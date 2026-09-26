@@ -1,7 +1,8 @@
 // Per-car part of the v2 driving tick (docs/phase-1a-design.md, sections
 // 6.4, 6.6 and 6.7): a single-track (bicycle) model with a normalised tyre
 // curve, longitudinal load transfer and three assists (counter-steer, spin
-// guard, slip-angle damping), plus ground contact, jump, drift and boost.
+// guard, slip-angle damping), plus the vertical motion on a spring-damper
+// suspension (section 26), drift and boost.
 //
 // Conventions: forward f = (sin yaw, cos yaw), left l = (cos yaw, -sin yaw);
 // steer > 0 and yawRate > 0 mean left. u = v·f, w = v·l, β = atan2(w, u).
@@ -11,7 +12,7 @@ import { isPaved, SURFACE_GRIP, SURFACE_ROLL } from '../map/types.js';
 import type { SimWorld } from '../world/colliders.js';
 import { pushOutOfColliders, supportHeight } from './collision.js';
 import { DRAFT_FILL } from '../race/rules.js';
-import { BTN_BOOST, BTN_HANDBRAKE, BTN_JUMP, BTN_RESET, DEG, DT, SIM_TUNING as T, V_ABS, V_SAFE } from './constants.js';
+import { BTN_BOOST, BTN_HANDBRAKE, BTN_RESET, DEG, DT, SIM_TUNING as T, V_ABS, V_SAFE } from './constants.js';
 import { createVehicleParams } from './vehicleClasses.js';
 import { tireCurve } from './tire.js';
 import {
@@ -19,7 +20,6 @@ import {
     type AssistProfile, type CarClassId, type SimCar, type VehicleParams, type VehicleState
 } from './types.js';
 
-const TWO_PI = Math.PI * 2;
 // Half the spacing of the central differences for the ground gradient (m)
 const GRADIENT_STEP = 0.5;
 const COUNTER_STEER_FROM = 5 * DEG;
@@ -33,12 +33,8 @@ const AIR_FILL_AFTER_TICKS = 18;
 const SCALE_RATE = 6;
 const TICK_COUNTER_MAX = 255;
 const DRIFT_TICKS_MAX = 65535;
-// From terrain onto terrain the car takes off with at most the ground's
-// vertical speed ahead plus this (m/s), so a kink in the heightfield (the
-// edge of the city's blend ring) does not launch it; ramps keep their speed
-const TERRAIN_LAUNCH_MARGIN = 2;
 // Water (docs/phase-3-design.md, 7): a car whose underside is this far
-// below the water level is in the water: no drive, no boost, no jump and a
+// below the water level is in the water: no drive, no boost and a
 // strong drag (1/s); after WATER_RESET_TICKS there it is reset onto the
 // road (the racing line in a race). Shallower water drives like sand.
 export const WATER_DEPTH = 0.6;
@@ -132,6 +128,7 @@ export function placeVehicle(s: VehicleState, world: SimWorld, x: number, z: num
     s.y = world.groundHeight(x, z);
     s.grounded = true;
     s.airTicks = 0;
+    s.susp = 0;
 }
 
 const FRESH_STATE = createVehicleState();
@@ -158,21 +155,22 @@ export function resetVehicle(s: VehicleState, p: VehicleParams, world: SimWorld)
     s.loadX = 0;
     s.rearGrip = 1;
     s.betaPrev = 0;
-    s.flipAngle = s.flipRate = 0;
     s.driftTicks = s.driftLowTicks = 0;
     s.boosting = false;
     s.draft = 0;
     s.y = world.groundHeight(s.x, s.z);
     s.grounded = true;
     s.airTicks = 0;
+    s.susp = 0;
     pushOutOfColliders(s, p, world, 8);
     s.y = world.groundHeight(s.x, s.z);
     s.ghostTicks = T.RESET_GHOST_TICKS;
     s.ghostExit = 0;
 }
 
-// Tick steps 0-3: input, jump, tyre forces and integration of the velocity
-// (the position moves in stepWorld's substeps)
+// Tick steps 0-3: input, tyre forces and integration of the horizontal
+// velocity (the position and the vertical motion move in stepWorld's
+// substeps)
 export function integrateForces(car: SimCar, world: SimWorld): void {
     const s = car.state, P = car.params, input = car.input, ev = car.events;
 
@@ -181,8 +179,6 @@ export function integrateForces(car: SimCar, world: SimWorld): void {
     const th = inputAxis(input.throttle, 0, 255) / 255;
     const br = inputAxis(input.brake, 0, 255) / 255;
     const buttons = input.buttons | 0;
-    const pressed = buttons & ~s.prevButtons;
-    s.prevButtons = buttons;
     const handbrake = (buttons & BTN_HANDBRAKE) !== 0;
     s.resetHold = (buttons & BTN_RESET) !== 0 ? Math.min(s.resetHold + 1, T.RESET_HOLD_TICKS + 1) : 0;
     // In the water for a second, or fallen out of the map: the same reset
@@ -210,31 +206,17 @@ export function integrateForces(car: SimCar, world: SimWorld): void {
         ? Math.max(P.handbrakeGrip, s.rearGrip - DT / T.HB_DROP_TIME)
         : Math.min(1, s.rearGrip + DT / T.HB_RECOVER_TIME);
 
-    // 1 Jump (edge-triggered, with coyote time after leaving the ground;
-    // not out of the water)
-    if ((pressed & BTN_JUMP) !== 0 && s.jumpCooldown === 0 && (s.grounded || s.airTicks <= T.COYOTE_TICKS) && !wet) {
-        s.vy = Math.max(s.vy, 0) + P.jumpSpeed;
-        s.grounded = false;
-        s.jumpCooldown = T.JUMP_COOLDOWN;
-        // One full flip over the flight time
-        s.flipRate = TWO_PI / (2 * P.jumpSpeed / T.G_AIR);
-        s.flipAngle = 1e-6;
-        ev.jumped = true;
-    }
-
     if (!s.grounded) {
-        // 3 Air: gravity, gentle yaw control, air drag, half the boost
-        s.vy -= T.G_AIR * DT;
-        s.yawRate += (st * T.AIR_YAW - s.yawRate) * Math.min(1, 3 * DT);
+        // 3 Air (section 26): no tyre forces, so no drive, brake, boost or
+        // steering; air drag. A landing assist eases the yaw rate towards
+        // AIR_ALIGN·β, so the nose turns into the flight direction and the
+        // car lands without a slide. Gravity acts in the substeps
+        // (stepVertical).
+        s.yawRate += (T.AIR_ALIGN * beta - s.yawRate) * Math.min(1, T.AIR_YAW_RESPONSE * DT);
         const speed = Math.sqrt(s.vx * s.vx + s.vz * s.vz);
         const drag = 1 - T.C_AIR * speed * DT;
         s.vx *= drag;
         s.vz *= drag;
-        if (s.boosting) {
-            const push = T.BOOST_ACCEL * 0.5 * DT * clamp((boostTarget(P.topSpeed) - u) / 10, 0, 1);
-            s.vx += fx * push;
-            s.vz += fz * push;
-        }
         clampHorizontalSpeed(s, V_SAFE);
         s.betaPrev = beta;
         s.airTicks = Math.min(s.airTicks + 1, TICK_COUNTER_MAX);
@@ -373,65 +355,116 @@ export function integrateForces(car: SimCar, world: SimWorld): void {
     clampHorizontalSpeed(s, V_SAFE);
 }
 
-// Tick steps 5-6 with the final position: ground and vertical motion,
-// drift, boost and timers
-export function finishTick(car: SimCar, world: SimWorld): void {
-    const s = car.state, P = car.params, ev = car.events;
-
-    // 5 Ground: terrain or ramp, or the top of a low collider the car
-    // stands on or comes down onto (section 7.3)
+// Vertical motion for one substep of dt (section 26), after the car moved
+// in the XZ plane: the body rides on a spring-damper suspension over the
+// ground under the car (terrain, ramp or the top of a low collider it
+// stands on or comes down onto, section 7.3). The wheels stay on the ground
+// while the spring pushes (their force cannot pull), so the car leaves a
+// crest by itself once v²·κ exceeds GRAVITY, and a landing is caught by the
+// spring and the bump stop instead of a snap. s.y is the underside at the
+// wheels: the ground height while they touch it.
+export function stepVertical(car: SimCar, world: SimWorld, dt: number): void {
+    const s = car.state, ev = car.events;
     let hN = world.groundHeight(s.x, s.z);
     const hTop = supportHeight(car, world);
     const onTop = hTop > hN;
     if (onTop) hN = hTop;
-    if (s.grounded) {
-        let yBall = s.y + s.vy * DT - 0.5 * (T.G_AIR + T.STICK) * DT * DT;
-        if (yBall > hN + T.AIR_GAP && !onTop
-            && world.rampAt(s.x, s.z) < 0 && world.rampAt(s.x - s.vx * DT, s.z - s.vz * DT) < 0) {
-            // Terrain onto terrain: keep at most the vertical speed of the
-            // ground ahead, so only a real crest lifts the car
-            const vyAhead = (world.terrainHeight(s.x + s.vx * DT, s.z + s.vz * DT) - hN) / DT;
-            if (s.vy > vyAhead + TERRAIN_LAUNCH_MARGIN) {
-                s.vy = vyAhead + TERRAIN_LAUNCH_MARGIN;
-                yBall = s.y + s.vy * DT - 0.5 * (T.G_AIR + T.STICK) * DT * DT;
-            }
+    const g = T.GRAVITY;
+    const omega = 2 * Math.PI * T.SUSP_FREQ;
+    const k = omega * omega;
+    // The spring's full extension: its force is g at rest (susp = 0) and 0 here
+    const extension = g / k;
+
+    if (!s.grounded) {
+        s.vy -= g * dt;
+        s.y += s.vy * dt;
+        if (s.y > hN) return;
+        // Touch down: the wheels land on the ground, the body is still at the
+        // full extension above them and the spring takes over
+        if (onTop) gradX = gradZ = 0;
+        else groundGradient(world, s.x, s.z);
+        // Vertical speed relative to the surface
+        const impact = gradX * s.vx + gradZ * s.vz - s.vy;
+        if (impact > ev.landedImpact) ev.landedImpact = impact;
+        if (impact > 10) {
+            const keep = 1 - 0.15 * clamp((impact - 10) / 15, 0, 1);
+            s.vx *= keep;
+            s.vz *= keep;
         }
-        if (yBall > hN + T.AIR_GAP) {
-            // Ramp edge or crest: the car takes off with its vertical speed
-            s.grounded = false;
-            s.airTicks = 0;
-            s.y += s.vy * DT - 0.5 * T.G_AIR * DT * DT;
-            s.vy -= T.G_AIR * DT;
-        } else {
-            s.vy = clamp((hN - s.y) / DT, -30, 25);
-            s.y = hN;
-        }
+        s.susp = s.y + extension - hN;
+        s.y = hN;
+        s.grounded = true;
+        s.airTicks = 0;
+        return;
     } else {
-        // vy was integrated in step 3 already
-        s.y += s.vy * DT;
-        if (s.y <= hN) {
-            if (onTop) gradX = gradZ = 0;
-            else groundGradient(world, s.x, s.z);
-            // Vertical speed relative to the surface
-            const impact = -(s.vy - (gradX * s.vx + gradZ * s.vz));
-            ev.landedImpact = impact;
-            s.y = hN;
-            s.grounded = true;
-            s.airTicks = 0;
-            if (impact > 10) {
-                const keep = 1 - 0.15 * clamp((impact - 10) / 15, 0, 1);
-                s.vx *= keep;
-                s.vz *= keep;
-            }
-            s.vy = 0;
-            // The renderer turns the rest of an unfinished flip within 6 frames
-            s.flipAngle = 0;
+        // The body keeps its height while the ground under the wheels changes
+        s.susp += s.y - hN;
+        s.y = hN;
+    }
+
+    // On the ground: vertical speed of the ground under the moving car
+    if (onTop) gradX = gradZ = 0;
+    else groundGradient(world, s.x, s.z);
+    // Bump stop: the body moves with the ground (no bounce)
+    if (s.susp < -T.SUSP_TRAVEL) {
+        s.susp = -T.SUSP_TRAVEL;
+        bumpStop(s);
+    }
+    // Spring and damper per unit mass; the wheels cannot pull the body down
+    const vGround = gradX * s.vx + gradZ * s.vz;
+    const force = g - k * s.susp + 2 * T.SUSP_DAMPING * omega * (vGround - s.vy);
+    const dvy = ((force > 0 ? force : 0) - g) * dt;
+    s.vy += dvy;
+    // On a steep flank the push that speeds the body up (beyond holding it
+    // against gravity) comes from the car's speed along the grade: it takes
+    // (∇h·v̂)·Δvy off the speed, along the travel direction, exactly the
+    // energy the push adds (vy ≈ ∇h·v), so a flank cannot add energy
+    // (26.9). Along the travel only: a sideways share would make a car
+    // crossing a bumpy bank drift down it. Faded in from FLANK_FROM to
+    // FLANK_FULL grade: roads and ramps stay below it and drive as before.
+    if (dvy > 0) {
+        const share = clamp((Math.sqrt(gradX * gradX + gradZ * gradZ) - T.FLANK_FROM) / (T.FLANK_FULL - T.FLANK_FROM), 0, 1);
+        const v2 = s.vx * s.vx + s.vz * s.vz;
+        if (share > 0 && v2 > 1e-6) {
+            const cut = (gradX * s.vx + gradZ * s.vz) / v2 * dvy * share;
+            s.vx -= cut * s.vx;
+            s.vz -= cut * s.vz;
         }
     }
-    if (s.flipAngle > 0) {
-        s.flipAngle += s.flipRate * DT;
-        if (s.flipAngle >= TWO_PI) s.flipAngle = 0;
+    s.susp += s.vy * dt;
+    if (s.susp < -T.SUSP_TRAVEL) {
+        s.susp = -T.SUSP_TRAVEL;
+        bumpStop(s);
+    } else if (s.susp > extension + T.SUSP_LIFT) {
+        // The body rose clearly above the full extension: the wheels leave
+        // the ground. Up to SUSP_LIFT above it they still touch without load
+        // (the spring cannot pull), so a washboard does not cut the drive
+        // and the steering for single ticks (26.9).
+        s.y += s.susp - extension;
+        s.susp = extension;
+        s.grounded = false;
+        s.airTicks = 0;
     }
+}
+
+// The body on its bump stop is hit by the ground under the moving car
+// (gradient in gradX/gradZ): an inelastic push along the ground's normal
+// n = (-∇h, 1) takes away the velocity component into the ground, so the
+// body moves along the surface afterwards (vy = ∇h·v). On a grade s the car
+// keeps 1/(1 + s²) of its speed into the grade and turns the rest upwards
+// (at 100 %: half and half), instead of gaining s·v upwards for free.
+function bumpStop(s: VehicleState): void {
+    const into = gradX * s.vx + gradZ * s.vz - s.vy;
+    if (into <= 0) return;
+    const lambda = into / (1 + gradX * gradX + gradZ * gradZ);
+    s.vy += lambda;
+    s.vx -= gradX * lambda;
+    s.vz -= gradZ * lambda;
+}
+
+// Tick step 6 with the final position: drift, boost and timers
+export function finishTick(car: SimCar): void {
+    const s = car.state, P = car.params, ev = car.events;
 
     // 6 Drift (with hysteresis), boost meter, timers
     const fx = Math.sin(s.yaw), fz = Math.cos(s.yaw);
@@ -474,12 +507,13 @@ export function finishTick(car: SimCar, world: SimWorld): void {
     fill += DRAFT_FILL * s.draft;
     s.boostMeter = Math.min(1, s.boostMeter + fill * DT);
     const wasBoosting = s.boosting;
+    // In the air the boost gives no thrust (26.3): it cannot start there and
+    // drains nothing; one held through a flight carries on after the landing
     s.boosting = (car.input.buttons & BTN_BOOST) !== 0 && u > 0 && s.waterTicks === 0
-        && (wasBoosting ? s.boostMeter > 0 : s.boostMeter >= T.BOOST_MIN);
+        && (wasBoosting ? s.boostMeter > 0 : s.grounded && s.boostMeter >= T.BOOST_MIN);
     ev.boostStarted = s.boosting && !wasBoosting;
-    if (s.boosting) s.boostMeter = Math.max(0, s.boostMeter - T.BOOST_DRAIN * DT);
+    if (s.boosting && s.grounded) s.boostMeter = Math.max(0, s.boostMeter - T.BOOST_DRAIN * DT);
 
-    if (s.jumpCooldown > 0) s.jumpCooldown--;
     if (s.ghostTicks > 0) s.ghostTicks--;
     if (s.ghostExit > 0) s.ghostExit--;
     s.wallTicks = Math.min(TICK_COUNTER_MAX, s.wallTicks + 1);

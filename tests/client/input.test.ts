@@ -5,7 +5,7 @@ import {
 import {
     PAD_BUTTON, createPadState, findStandardPad, padSteer, radialDeadzoneScale, readPad, type PadLike
 } from '../../src/client/input/gamepad.js';
-import { BTN_BOOST, BTN_HANDBRAKE, BTN_JUMP, BTN_RESET, SIM_TUNING } from '../../src/shared/sim/constants.js';
+import { BTN_BOOST, BTN_HANDBRAKE, BTN_RESET } from '../../src/shared/sim/constants.js';
 import { createVehicleInput } from '../../src/shared/sim/types.js';
 
 function pad(overrides: { axes?: number[]; buttons?: Record<number, number> } = {}): PadLike {
@@ -34,9 +34,9 @@ describe('quantisation', () => {
 describe('ButtonLatch', () => {
     it('keeps a press that was released before the tick', () => {
         const latch = new ButtonLatch();
-        latch.press(BTN_JUMP);
-        latch.release(BTN_JUMP);
-        expect(latch.sample()).toBe(BTN_JUMP);
+        latch.press(BTN_RESET);
+        latch.release(BTN_RESET);
+        expect(latch.sample()).toBe(BTN_RESET);
         expect(latch.sample()).toBe(0);
     });
 
@@ -77,24 +77,6 @@ describe('touch', () => {
         input.autoGasEnabled = true;
         input.releaseTouch();
         expect(input.sampleTick(out).throttle).toBe(0);
-    });
-
-    it('jumps on a short press of the flip button and resets on a long one', () => {
-        const input = new InputManager();
-        input.touchUi = true;
-        const out = createVehicleInput();
-        input.flipDown();
-        expect(input.sampleTick(out).buttons).toBe(BTN_RESET);
-        input.flipUp();
-        expect(input.sampleTick(out).buttons).toBe(BTN_JUMP);
-        expect(input.sampleTick(out).buttons).toBe(0);
-
-        input.flipDown();
-        for (let tick = 0; tick < SIM_TUNING.RESET_HOLD_TICKS; tick++) {
-            expect(input.sampleTick(out).buttons).toBe(BTN_RESET);
-        }
-        input.flipUp();
-        expect(input.sampleTick(out).buttons).toBe(0);
     });
 });
 
@@ -211,7 +193,7 @@ describe('InputManager', () => {
         expect(input.sampleTick(out)).toEqual({ steer: 0, throttle: 0, brake: 0, buttons: 0 });
     });
 
-    it('takes key repeats for held keys, but not for jump and reset', () => {
+    it('takes key repeats for held keys, but not for reset', () => {
         const input = new InputManager();
         const out = createVehicleInput();
         input.keyDown('up');
@@ -220,17 +202,16 @@ describe('InputManager', () => {
         input.releaseKeys();
         input.keyDown('up', true);
         input.keyDown('boost', true);
-        input.keyDown('jump', true);
         input.keyDown('reset', true);
         expect(input.sampleTick(out)).toEqual({ steer: 0, throttle: 255, brake: 0, buttons: BTN_BOOST });
     });
 
-    it('does not lose a jump pressed and released between two ticks', () => {
+    it('does not lose a boost tap pressed and released between two ticks', () => {
         const input = new InputManager();
         const out = createVehicleInput();
-        input.keyDown('jump');
-        input.keyUp('jump');
-        expect(input.sampleTick(out).buttons).toBe(BTN_JUMP);
+        input.keyDown('boost');
+        input.keyUp('boost');
+        expect(input.sampleTick(out).buttons).toBe(BTN_BOOST);
         expect(input.sampleTick(out).buttons).toBe(0);
     });
 

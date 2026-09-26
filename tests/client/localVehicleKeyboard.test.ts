@@ -16,13 +16,11 @@ function createHost(): VehicleHost {
     const off = () => ({ active: false, timer: 0 });
     return {
         group: new THREE.Group(),
-        flipGroup: new THREE.Group(),
         carType: 'bulli',
-        powerups: { speed: off(), size: off(), jump: off(), shield: off(), magnet: off(), ghost: off() },
+        powerups: { speed: off(), size: off(), shield: off(), magnet: off(), ghost: off() },
         speed: 0,
         maxSpeed: 0,
         angle: 0,
-        isFlipping: false,
         canRecover: false
     };
 }
@@ -48,17 +46,17 @@ function drive() {
 const degrees = (rad: number) => rad * 180 / Math.PI;
 
 describe('the drive keys', () => {
-    it('map WASD, the arrows, Space, Shift, Q and R', () => {
+    it('map WASD, the arrows, Space, Shift and R (Q, the old jump, no more)', () => {
         const expected: Record<string, DriveKey> = {
             w: 'up', W: 'up', ArrowUp: 'up',
             s: 'down', ArrowDown: 'down',
             a: 'left', ArrowLeft: 'left',
             d: 'right', ArrowRight: 'right',
-            ' ': 'handbrake', Shift: 'boost', q: 'jump', Q: 'jump', r: 'reset'
+            ' ': 'handbrake', Shift: 'boost', r: 'reset'
         };
         for (const [key, drive] of Object.entries(expected)) expect(driveKeyFor(key), key).toBe(drive);
         // Shoot and honk are actions, not drive keys; the rest does nothing
-        for (const key of ['e', 'f', 'Enter', 'Escape', 'x', 'Tab']) expect(driveKeyFor(key), key).toBeUndefined();
+        for (const key of ['e', 'f', 'q', 'Q', 'Enter', 'Escape', 'x', 'Tab']) expect(driveKeyFor(key), key).toBeUndefined();
     });
 });
 
@@ -109,19 +107,6 @@ describe('driving with the keyboard', () => {
         expect(reversing - stopped).toBeGreaterThanOrEqual(8);
         expect(Math.min(...speeds.slice(stopped, reversing))).toBeGreaterThan(-0.05);
         expect(speeds.at(-1)!).toBeLessThan(-1);
-    });
-
-    it('Q jumps once and the car lands again', () => {
-        const { vehicle, tick, press, release } = drive();
-        tick(10);
-        // Pressed and released between two ticks: still exactly one jump
-        press('q');
-        release('q');
-        let airborne = 0;
-        tick(120, () => { if (!vehicle.car.state.grounded) airborne++; });
-        expect(vehicle.jumps).toBe(1);
-        expect(airborne).toBeGreaterThan(10);
-        expect(vehicle.car.state.grounded).toBe(true);
     });
 
     it('R held for half a second resets the car at rest with a contact ghost, a tap does nothing', () => {

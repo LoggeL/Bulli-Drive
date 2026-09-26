@@ -23,7 +23,6 @@ export const MS_TO_KMH = 3.6;
 export const POWERUP_DURATIONS_MS: Record<string, number> = {
     speed: 5000,
     size: 5000,
-    jump: 5000,
     shield: 8000,
     magnet: 5000,
     ghost: 8000
@@ -41,7 +40,6 @@ export const VALID_CAR_TYPES = ['bulli', 'pickup', 'sport', 'beetle', 'jeep'];
 export const POWERUP_TYPES = [
     { type: 'speed', color: 0xFFD700, label: 'Turbo' },
     { type: 'size', color: 0xFF1493, label: 'Mega' },
-    { type: 'jump', color: 0x00FF7F, label: 'Super Jump' },
     { type: 'shield', color: 0x00BFFF, label: 'Shield' },
     { type: 'magnet', color: 0xFF6600, label: 'Magnet' },
     { type: 'ghost', color: 0x9966FF, label: 'Ghost' }

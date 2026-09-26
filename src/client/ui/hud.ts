@@ -98,12 +98,11 @@ export function showInteractionPrompt(text: string) {
     }, 3000);
 }
 
-const POWERUP_KEYS = ['speed', 'size', 'jump', 'shield', 'magnet', 'ghost'] as const;
+const POWERUP_KEYS = ['speed', 'size', 'shield', 'magnet', 'ghost'] as const;
 const POWERUP_UI_INTERVAL_MS = 100;
 const POWERUP_COLOR_CSS: Record<(typeof POWERUP_KEYS)[number], string> = {
     speed: '#ffd700',
     size: '#ff1493',
-    jump: '#00ff7f',
     shield: '#00bfff',
     magnet: '#ff6600',
     ghost: '#9966ff'
@@ -111,7 +110,6 @@ const POWERUP_COLOR_CSS: Record<(typeof POWERUP_KEYS)[number], string> = {
 const POWERUP_ICON_IDS: Record<(typeof POWERUP_KEYS)[number], string> = {
     speed: 'icon-speed',
     size: 'icon-grow',
-    jump: 'icon-jump',
     shield: 'icon-shield',
     magnet: 'icon-magnet',
     ghost: 'icon-ghost'
@@ -342,30 +340,12 @@ function createPowerupIcon(type: string): SVGSVGElement {
 }
 
 
-export type JumpControlMode = 'jump' | 'super-jump' | 'recover';
-const JUMP_CONTROL_LABELS: Record<JumpControlMode, string> = {
-    jump: 'Jump and flip vehicle',
-    'super-jump': 'Use super jump',
-    recover: 'Recover vehicle'
-};
-let jumpControlButton: HTMLButtonElement | null = null;
+// The touch reset button (held: reset onto the road); off while dead
+let resetButton: HTMLButtonElement | null = null;
 
-
-/** Keep the mobile action available while changing its meaning visually when stuck. */
-export function updateJumpControl(mode: JumpControlMode, enabled: boolean) {
-    if (!jumpControlButton) {
-        jumpControlButton = document.getElementById('btn-flip') as HTMLButtonElement | null;
-    }
-    if (!jumpControlButton) return;
-
-    if (jumpControlButton.disabled === enabled) jumpControlButton.disabled = !enabled;
-    if (jumpControlButton.getAttribute('aria-label') !== JUMP_CONTROL_LABELS[mode]) {
-        jumpControlButton.setAttribute('aria-label', JUMP_CONTROL_LABELS[mode]);
-    }
-    if (jumpControlButton.dataset.mode === mode) return;
-    jumpControlButton.dataset.mode = mode;
-    const use = jumpControlButton.querySelector('use');
-    use?.setAttribute('href', mode === 'recover' ? '#icon-recover' : '#icon-jump');
+export function updateResetControl(enabled: boolean) {
+    if (!resetButton) resetButton = document.getElementById('btn-reset') as HTMLButtonElement | null;
+    if (resetButton && resetButton.disabled === enabled) resetButton.disabled = !enabled;
 }
 
 // Health bar

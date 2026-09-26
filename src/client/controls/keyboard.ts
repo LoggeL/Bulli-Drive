@@ -21,7 +21,7 @@ function spaceActivatesButton(e: KeyboardEvent): boolean {
 }
 
 // Driving keys (docs/phase-1a-design.md, 11.2): arrows as well as WASD,
-// Space handbrake, Shift boost, Q jump, R held resets
+// Space handbrake, Shift boost, R held resets
 const DRIVE_KEYS: Record<string, DriveKey> = {
     w: 'up', arrowup: 'up',
     s: 'down', arrowdown: 'down',
@@ -29,7 +29,6 @@ const DRIVE_KEYS: Record<string, DriveKey> = {
     d: 'right', arrowright: 'right',
     ' ': 'handbrake',
     shift: 'boost',
-    q: 'jump',
     r: 'reset'
 };
 

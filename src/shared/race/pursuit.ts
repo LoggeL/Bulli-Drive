@@ -56,7 +56,7 @@ export function pursuitSteer(s: VehicleState, p: VehicleParams, u: number, tx: n
 /**
  * Stuck against something: after STUCK_TICKS of throttle without speed the
  * car backs off (reverse with the wheel the other way), and after
- * BACKOFFS_BEFORE_RESET back-offs (or when flipped) it holds the reset
+ * BACKOFFS_BEFORE_RESET back-offs it holds the reset
  * button. Call override() first in a tick: while it returns something other
  * than 'drive' it has written the input. Call watch() after the normal
  * driving wrote its input.
@@ -129,7 +129,7 @@ export class StuckWatch {
      * stands still (a crash) it would wait for it for ever, and two bots
      * wedged side by side each wait for the other.
      */
-    watch(s: VehicleState, u: number, out: VehicleInput, wantsToMove = out.throttle > 100): void {
+    watch(_s: VehicleState, u: number, out: VehicleInput, wantsToMove = out.throttle > 100): void {
         if (Math.abs(u) > 4) this.goingTicks++;
         else this.goingTicks = 0;
         if (wantsToMove && Math.abs(u) < STUCK_SPEED) this.stuckTicks++;
@@ -139,7 +139,7 @@ export class StuckWatch {
         }
         if (this.stuckTicks < STUCK_TICKS) return;
         this.stuckTicks = 0;
-        if (this.backoffs >= BACKOFFS_BEFORE_RESET || s.flipAngle !== 0) {
+        if (this.backoffs >= BACKOFFS_BEFORE_RESET) {
             this.backoffs = 0;
             this.resets++;
             this.resetTicks = RESET_TICKS;

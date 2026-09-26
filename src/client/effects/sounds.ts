@@ -122,7 +122,7 @@ export function startEngineSound() {
     engineSource.start();
 }
 
-export function updateEngineSound(speed: number, isAccelerating: boolean, turboActive: boolean = false, jumpHeight: number = 0) {
+export function updateEngineSound(speed: number, isAccelerating: boolean, turboActive: boolean = false, airHeight: number = 0) {
     if (!engineSource || !engineGain || !state.audioCtx) return;
     
     const absSpeed = Math.abs(speed);
@@ -140,14 +140,14 @@ export function updateEngineSound(speed: number, isAccelerating: boolean, turboA
     
     // Playback rate based on speed (0.8 idle to 1.5 at max speed)
     // Turbo boost adds extra pitch
-    // Jump height adds pitch (revving in air)
+    // In the air the wheels spin free: the engine revs up with the height
     const baseRate = 0.8;
     const speedBoost = absSpeed * 0.7;
     const accelBoost = isAccelerating ? 0.1 : 0;
     const turboBoost = turboActive ? 0.4 : 0;
-    const jumpBoost = Math.max(0, Math.min(0.8, jumpHeight * 0.05)); // Cap pitch increase from height
+    const airBoost = Math.max(0, Math.min(0.8, airHeight * 0.05)); // Cap pitch increase from height
 
-    const targetRate = Math.min(2.5, baseRate + speedBoost + accelBoost + turboBoost + jumpBoost);
+    const targetRate = Math.min(2.5, baseRate + speedBoost + accelBoost + turboBoost + airBoost);
     
     engineSource.playbackRate.cancelScheduledValues(currentTime);
     engineSource.playbackRate.setValueAtTime(engineSource.playbackRate.value, currentTime);
@@ -186,29 +186,6 @@ export function playCollectSound() {
 
     osc.start(curTime);
     osc.stop(curTime + 0.2);
-}
-
-export function playJumpSound() {
-    if (!state.audioCtx) return;
-    if (state.audioCtx.state === 'suspended') state.audioCtx.resume();
-
-    const curTime = state.audioCtx.currentTime;
-    const osc = state.audioCtx.createOscillator();
-    const gain = state.audioCtx.createGain();
-
-    osc.connect(gain);
-    gain.connect(state.audioCtx.destination);
-
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(150, curTime);
-    osc.frequency.exponentialRampToValueAtTime(400, curTime + 0.1);
-    osc.frequency.exponentialRampToValueAtTime(100, curTime + 0.4);
-
-    gain.gain.setValueAtTime(0.15, curTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, curTime + 0.4);
-
-    osc.start(curTime);
-    osc.stop(curTime + 0.4);
 }
 
 export function playShootSound() {

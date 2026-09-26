@@ -17,7 +17,7 @@ import { nextGateIndex } from '../../src/shared/race/progress.js';
 import { createCourse } from '../../src/shared/race/progress.js';
 import { racingLine } from '../../src/shared/race/racingLine.js';
 import { trackDef } from '../../src/shared/race/tracks/index.js';
-import { BTN_BOOST, BTN_HANDBRAKE, BTN_JUMP, BTN_RESET } from '../../src/shared/sim/constants.js';
+import { BTN_BOOST, BTN_HANDBRAKE, BTN_RESET } from '../../src/shared/sim/constants.js';
 import { placeVehicle } from '../../src/shared/sim/vehicle.js';
 import { fakeClock, fakeSession, feed, type FakeTransport } from './helpers.js';
 
@@ -305,7 +305,7 @@ describe('countdown and start', () => {
         const a = human('A');
         const S = startRace([a]);
         const grid = room.racers.map(r => ({ x: r.member!.car!.state.x, z: r.member!.car!.state.z }));
-        const everything = { throttle: 255, brake: 255, steer: 127, buttons: BTN_BOOST | BTN_JUMP | BTN_RESET | BTN_HANDBRAKE };
+        const everything = { throttle: 255, brake: 255, steer: 127, buttons: BTN_BOOST | BTN_RESET | BTN_HANDBRAKE };
         tickUntil(() => room.tick === S - 1, S, new Map([[a, everything]]));
         expect(room.racers.map(r => ({ x: r.member!.car!.state.x, z: r.member!.car!.state.z }))).toEqual(grid);
         expect(a.member!.car!.state.resetHold).toBe(0);

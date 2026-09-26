@@ -278,8 +278,8 @@ Zustand und Params sind reine Objekte. Die Sim mutiert in place. Die Prediction-
 
 | Gruppe | Konstante | Wert |
 |---|---|---|
-| Gravitation | `G_AIR` (Flug, Arcade ≈ 2 g) / `G_SLOPE` (Hangabtrieb) / `G_TIRE` (für Fz) | 20 / 9,81 / 9,81 m/s² |
-| Bodenkontakt | `STICK` / `AIR_GAP` / `COYOTE_TICKS` | 8 m/s² / 0,15 m / 6 |
+| Gravitation | `GRAVITY` (Aufbau, am Boden und im Flug, Arcade ≈ 2 g; bis Abschnitt 26 `G_AIR`) / `G_SLOPE` (Hangabtrieb) / `G_TIRE` (für Fz) | 20 / 9,81 / 9,81 m/s² |
+| Federung (26) | `SUSP_FREQ` / `SUSP_DAMPING` / `SUSP_TRAVEL` | 2 Hz / 0,8 / 0,25 m (bis Abschnitt 26: `STICK` 8 m/s², `AIR_GAP` 0,15 m, `COYOTE_TICKS` 6) |
 | Niedriges Tempo | `V_LOW` (kinematische Überblendung und Slip-Nenner) | 5 m/s |
 | Widerstand | `ROLL` / `C_AIR` / `ENGINE_BRAKE` / `OVERSPEED` | 0,4 m/s² / 0,0006 1/m / 1,5 m/s² / 0,5 1/s |
 | Antrieb | `DRIVE_EXP` / `GRIP_CIRCLE` | 2,5 / 0,6 |
@@ -291,8 +291,7 @@ Zustand und Params sind reine Objekte. Die Sim mutiert in place. Die Prediction-
 | Grenzen | `R_MAX` / `V_ABS` / `V_SAFE` | 6 rad/s / 85 / 90 m/s |
 | Boost | `BOOST_ACCEL` / `BOOST_ADD` / Verbrauch / Startschwelle | 10 m/s² / +20 m/s / 0,45 /s / 0,15 |
 | Drift-Füllung | `DRIFT_FILL` / `AIR_FILL` | 0,35 /s / 0,10 /s |
-| Luft | `AIR_YAW` | 1,5 rad/s |
-| Sprung | `JUMP_COOLDOWN` | 20 Ticks |
+| Luft (26) | `AIR_YAW_RESPONSE` / `AIR_ALIGN` | 3 1/s / 2 1/s (bis Abschnitt 26: `AIR_YAW` 1,5 rad/s, Sprung-Cooldown 20 Ticks) |
 | Reset | `RESET_HOLD_TICKS` / `RESET_GHOST_TICKS` | 30 / 120 |
 | Global | `gripScale` / `yawDampHigh` / `driftReleaseKick` | 1,0 / 0 / 0 m/s |
 
@@ -341,9 +340,7 @@ für jedes nicht-kinematische car: finishTick(car, world)        // Schritte 5�
    u = v·f, w = v·l (aus vx, vz); β = u > 1 ? atan2(w, u) : 0
    h, ∇h = ground(x, z), Zentraldifferenz ±0,5 m (world.groundHeight: max(Terrain, Rampen))
 
-1  Sprung: wenn (pressed & BTN_JUMP) && jumpCooldown == 0 && (grounded || airTicks ≤ COYOTE_TICKS):
-       vy = max(vy, 0) + P.jumpSpeed; grounded = false; jumpCooldown = JUMP_COOLDOWN
-       flipRate = 2π / (2·P.jumpSpeed / G_AIR); flipAngle = 1e-6; ev.jumped = true
+1  (Sprung: entfällt seit Abschnitt 26)
 
 2  wenn grounded:
    2a Lenkung
@@ -405,13 +402,12 @@ für jedes nicht-kinematische car: finishTick(car, world)        // Schritte 5�
        wenn |u'| < 0,05 && th == 0 && br == 0: u' = 0; wenn |w'| < 0,05: w' = 0
        yawRate = clamp(r', ±R_MAX); (vx, vz) = f·u' + l·w'; |v_xz| ≤ V_SAFE
 
-3  sonst (Luft):
-       vy −= G_AIR·DT
-       yawRate += (st·AIR_YAW − yawRate)·min(1, 3·DT)
-       v_xz ·= 1 − C_AIR·|v|·DT
-       wenn boosting: v_xz += f·BOOST_ACCEL·0,5·DT·clamp((vRef − u)/10, 0, 1)
+3  sonst (Luft, Abschnitt 26):
+       yawRate += (AIR_ALIGN·β − yawRate)·min(1, AIR_YAW_RESPONSE·DT)   // kein Lenken, Landehilfe
+       v_xz ·= 1 − C_AIR·|v|·DT                                          // kein Antrieb, keine Bremse, kein Boost
        betaPrev = β; rearGrip wie in 2c (Abschnitt 19)
        airTicks++
+       // Gravitation und Höhe: stepVertical in den Substeps (Abschnitt 26)
 ```
 
 Der Handbremsen-Grip `hbGrip` ist `P.handbrakeGrip`. Die Drift-Release-Hilfe (`driftReleaseKick`, Standard 0) addiert beim Driftende nach ≥ 72 Ticks einmalig `+kick` auf u, höchstens bis vtopE.
@@ -423,23 +419,9 @@ In `stepWorld`, 3 feste Substeps (6.3). Die Anzahl hängt weder vom Tempo noch v
 ### 6.6 `finishTick` (Schritte 5–6)
 
 ```
-5  Boden und Vertikale (mit finaler xz-Position)
-   hN = ground(x, z), bzw. Oberkante eines niedrigen Colliders, auf dem das Auto steht oder landet (23.1)
-   wenn grounded:
-       yBall = y + vy·DT − ½·(G_AIR + STICK)·DT²
-       von Terrain auf Terrain: vy ≤ vy des Bodens voraus + 2 m/s    // Knick im Höhenfeld ist keine Schanze (23.1)
-       wenn yBall > hN + AIR_GAP:                       // Rampenkante, Kuppe
-           grounded = false; airTicks = 0
-           y += vy·DT − ½·G_AIR·DT²; vy −= G_AIR·DT
-       sonst:
-           vy = clamp((hN − y)/DT, −30, 25); y = hN
-   sonst:
-       y += vy·DT                                         // vy wurde in Schritt 3 schon integriert
-       wenn y ≤ hN:
-           ev.landedImpact = −(vy − ∇h·v_xz); y = hN; grounded = true; airTicks = 0   // ∇h: exakte Rampensteigung bzw. nur Terrain (23.1)
-           wenn landedImpact > 10: v_xz ·= 1 − 0,15·clamp((landedImpact − 10)/15, 0, 1)
-           vy = 0; flipAngle = 0   // Darstellung dreht den Rest über 6 Frames zu Ende
-   wenn flipAngle > 0: flipAngle += flipRate·DT; bei ≥ 2π: flipAngle = 0
+5  Boden und Vertikale: seit Abschnitt 26 in jedem Substep (`stepVertical`) mit Feder und
+   Dämpfer statt des Einrastens auf den Boden. Die frühere Fassung (Einrasten, `STICK`,
+   `AIR_GAP`, Abhebe-Deckel „vy des Bodens voraus + 2 m/s“, Salto) steht in Abschnitt 26.1.
 
 6  Drift, Boost, Timer
    drift an: grounded && u > 8 && |β| > 10° → driftTicks++ , driftLowTicks = 0
@@ -453,7 +435,7 @@ In `stepWorld`, 3 feste Substeps (6.3). Die Anzahl hängt weder vom Tempo noch v
    boosting = (buttons & BTN_BOOST) && u > 0 && (boosting ? boostMeter > 0 : boostMeter ≥ 0,15)
    ev.boostStarted = boosting && !wasBoosting
    wenn boosting: boostMeter = max(0, boostMeter − 0,45·DT)
-   jumpCooldown, ghostTicks, ghostExit herunterzählen (≥ 0); wallTicks = min(255, wallTicks + 1)
+   ghostTicks, ghostExit herunterzählen (≥ 0); wallTicks = min(255, wallTicks + 1)
    scale += ((mods.mega ? MEGA_SCALE : 1) − scale)·(1 − e^(−6·DT))
    wasGhost = mods.ghost
 ```
@@ -643,9 +625,8 @@ Maße aus `Bulli.ts` (`const width/length`; Radstand = 2·wheelZ aus `addWheels`
 | driftFill | 1,0 | 0,9 | 1,0 | 1,15 | 0,9 |
 | offroad Grip / +Roll (ab Phase 3) | 0,90 / +0,8 | 0,92 / +0,6 | 0,85 / +1,0 | 0,90 / +0,8 | 1,00 / +0,2 |
 | Kollision r / c (m) | 1,3 / 0,7 | 1,4 / 1,1 | 1,2 / 1,05 | 1,1 / 0,65 | 1,4 / 0,7 |
-| jumpSpeed (m/s) | 11 | 11 | 11 | 11 | 11 |
 
-Mittelwert vtop 49,8 m/s (179 km/h). Der Sprung ist für alle Klassen gleich (fair): 3,0 m Scheitel, 1,1 s Flug. Stabilitätskennzahl α_peak/μ ist vorne größer als hinten: alle Klassen untersteuern im Grenzbereich leicht (Bulli 3,33 gegen 2,73 °/g).
+Mittelwert vtop 49,8 m/s (179 km/h). (`jumpSpeed` 11 m/s für alle Klassen entfiel mit dem Sprung, Abschnitt 26.) Stabilitätskennzahl α_peak/μ ist vorne größer als hinten: alle Klassen untersteuern im Grenzbereich leicht (Bulli 3,33 gegen 2,73 °/g).
 
 **Charakter:** Bulli ausgewogen, durch Heckmotor leicht verspielt · Pickup schwer und stabil, schiebt am meisten · Sport schnell und griffig, driftet tief · Käfer leicht, beschleunigt am besten, driftfreudig, wird weggeschubst · Jeep Allrad, driftet flach, kaum Offroad-Nachteil (falls zu zahm: handbrakeGrip 0,45).
 
@@ -659,7 +640,7 @@ Mittelwert vtop 49,8 m/s (179 km/h). Der Sprung ist für alle Klassen gleich (fa
 |---|---|---|
 | **Turbo** (`speed`) | Beschleunigung und Topspeed ×1,8 (108 m/s) | `topSpeed ×1,3`, `accel ×1,5`. Mit Boost: `min(vtop·1,3 + 20, V_ABS = 85 m/s = 306 km/h)`. Bulli 65 / 85, Sport 71,5 / 85. `aeroGrip` bezieht sich auf das Basis-vtop und ist bei 1 gedeckelt: Turbo schenkt keinen Grip. Nach dem Ende baut `OVERSPEED` die Überspeed sanft ab. |
 | **Mega** (`size`) | Skala 2,5 (Lerp 0,1/Frame), Kollisionskreis 3,75, Ram per Abstandstest | `scale` gleitet mit `1 − e^(−6·DT)` auf `MEGA_SCALE` (optisch wie heute). Kreise r, c ×scale (Bulli r 3,25). Kontaktmasse ×3, Massenverhältnis-Deckel 3,5. Fahrverhalten unverändert (Grip normiert, rg nicht skaliert). Kontakt-Höhenfenster 1,4·scale. Legacy-Ram bleibt in 1a. |
-| **Super-Jump** (`jump`) | Salto langsamer, Hubhöhe 24 m | `jumpSpeed = 20`: Scheitel 10 m, Flug 2,0 s, ein Salto (`flipRate = 2π/Flugzeit`). Beim Absprung festgelegt; Ablauf in der Luft ändert die Bahn nicht. Überspringt Laternen, Schilder, Autos, aber keine Bäume oder Gebäude. |
+| **Super-Jump** (`jump`) | Salto langsamer, Hubhöhe 24 m | **Entfernt** (Abschnitt 26): kein Sprung, also auch kein Super-Jump. Das Powerup ist nicht mehr im Pool der Party. |
 | **Ghost** | keine Hindernis-Kollision, transparent | `mods.ghost`: kein Auto-Kontakt **und** keine Welt-Collider, nur Weltrand. Ende im Collider → `ghostExit` (7.3). Getrennt davon verhindert `state.ghostTicks` nur den Auto-Kontakt. |
 | **Schild** (+ Respawn-Schild) | Hindernistreffer `speed ×0,1` | Wand `e = 0` (kein Rückprall, Gleiten bleibt), Kontaktmasse ×2. Schaden regelt die Party-Logik. |
 | **Magnet** | Coin-Radius (`coins.ts`) | keine Sim-Wirkung |
@@ -683,9 +664,9 @@ Mittelwert vtop 49,8 m/s (179 km/h). Der Sprung ist für alle Klassen gleich (fa
 
 | Plattform | Belegung |
 |---|---|
-| **Tastatur** | W/S bzw. ↑/↓ Gas und Bremse/rückwärts · A/D bzw. ←/→ lenken · **Leertaste Handbremse/Drift** · Shift Boost · Q Sprung/Salto · R halten Reset · E Schuss · F Hupe |
-| **Gamepad** (Standard-Mapping) | RT Gas, LT Bremse/rückwärts (analog), linker Stick lenken (radiale Deadzone 0,12, Kurve \|x\|^1,6, `steer = −x`) · A Handbremse · B Boost · Y Sprung · X Schuss · LB Hupe · View/Back halten Reset |
-| **Touch** | Auto-Gas standardmäßig an (Umschalter im Touch-HUD, gemerkt in `localStorage`) · Joystick-x lenkt · Joystick-y > 0,45 nach unten bremst bzw. fährt rückwärts (`brake = (y − 0,45)/0,55`, Gas dann 0) · ohne Auto-Gas gibt Joystick-y nach oben Gas · rechts **großer DRIFT-Button** (Handbremse halten) und BOOST · `btn-flip` kurz = Sprung, 0,5 s halten = Reset · Schuss, Hupe wie heute · Assist-Profil „touch“ · Joystickfilter im v2-Modus 30/s statt 18/s (der Radeinschlag glättet schon) |
+| **Tastatur** | W/S bzw. ↑/↓ Gas und Bremse/rückwärts · A/D bzw. ←/→ lenken · **Leertaste Handbremse/Drift** · Shift Boost · R halten Reset · E Schuss · F Hupe (Q Sprung/Salto entfiel, Abschnitt 26) |
+| **Gamepad** (Standard-Mapping) | RT Gas, LT Bremse/rückwärts (analog), linker Stick lenken (radiale Deadzone 0,12, Kurve \|x\|^1,6, `steer = −x`) · A Handbremse · B Boost · X Schuss · LB Hupe · View/Back halten Reset (Y Sprung entfiel, Abschnitt 26) |
+| **Touch** | Auto-Gas standardmäßig an (Umschalter im Touch-HUD, gemerkt in `localStorage`) · Joystick-x lenkt · Joystick-y > 0,45 nach unten bremst bzw. fährt rückwärts (`brake = (y − 0,45)/0,55`, Gas dann 0) · ohne Auto-Gas gibt Joystick-y nach oben Gas · rechts **großer DRIFT-Button** (Handbremse halten) und BOOST · `btn-flip` 0,5 s halten = Reset (kurz = Sprung entfiel, Abschnitt 26) · Schuss, Hupe wie heute · Assist-Profil „touch“ · Joystickfilter im v2-Modus 30/s statt 18/s (der Radeinschlag glättet schon) |
 
 Die Leertaste als Handbremse folgt dem Genre-Standard: Drift ist die Kernmechanik, der Sprung ist im Rennen später ohnehin aus (offene Entscheidung 4). Party-Spieler lernen im v2-Modus Q für den Sprung; die Hilfe im About-Modal wird im v2-Modus angepasst.
 
@@ -785,7 +766,7 @@ Das Panel schreibt in `SIM_TUNING` (global) bzw. in die Klassen-Params des lokal
 
 | Ordner | Regler (Bereich) |
 |---|---|
-| Global | `gripScale` (0,8–1,6), `G_AIR` (10–30), `STICK` (0–20), `assistProfile` (standard/touch), Kamera-Profil |
+| Global | `gripScale` (0,8–1,6), `GRAVITY` (8–30), `assistProfile` (standard/touch), Kamera-Profil |
 | Antrieb | `accel`, `topSpeed`, `brakeDecel`, `ENGINE_BRAKE`, `C_AIR`, `DRIVE_EXP` |
 | Reifen | `gripFront/Rear`, `slipPeakFront/Rear` (3–12°), `slideFront/Rear`, `aeroGrip`, `GRIP_CIRCLE` |
 | Lenkung | `steerLock` (25–40°), `steerFalloff` (10–25), `STEER_RATE_IN/OUT` |
@@ -793,7 +774,7 @@ Das Panel schreibt in `SIM_TUNING` (global) bzw. in die Klassen-Params des lokal
 | Assists | `counterSteer` (0–1), `spinGuardAngle` (20–60°), `K_SPIN`, `K_BD`, `yawDampHigh` (0–5) |
 | Boost | `BOOST_ACCEL` (6–16), `BOOST_ADD`, Verbrauch, `DRIFT_FILL`, `AIR_FILL` |
 | Kollision | Wand e (0–0,5), μw, Auto e, μc, Massenverhältnis-Deckel, `proxyContactScale` (0–1), Δω-Kappe |
-| Sprung | `jumpSpeed` (6–16), `JUMP_COOLDOWN` |
+| Federung und Luft (26) | `SUSP_FREQ` (0,8–4 Hz), `SUSP_DAMPING` (0,2–1,5), `SUSP_TRAVEL` (0,05–0,5 m), `AIR_YAW_RESPONSE` (0–10), `AIR_ALIGN` (0–6) |
 | Debug | Anzeige u, w, β, r, δ, αF/αR, FzF/FzR, Zustand grounded/drift/boost; Vektoren im 3D-View |
 
 ---
@@ -837,12 +818,12 @@ Je Szenario Input-Skript pro Tick, 180 Ticks (11–19: 240 bzw. 300), Endzustand
 9. Mega gegen Käfer
 10. Ghost fährt durch Auto und Wand; Ghost endet im Gebäude
 11. Boost ab knapp unter vtop, loslassen, Restboost, danach nur Handbremse ohne Gas über vtop (bulli; Boost, Overspeed, Handbremsverzögerung)
-12. Sprung per Taste, zweiter Druck in der Coyote-Zeit (Cooldown), Lenken in der Luft, Landung, dann Reset halten bis er auslöst und weiter durch den Kontakt-Ghost (jeep)
+12. Über eine Bodenwelle (1 m hoch, 20 m lang) mit 30 m/s: Abheben an der Kuppe, Lenken in der Luft (ohne Wirkung), Landung auf der Federung, dann Reset halten bis er auslöst und weiter durch den Kontakt-Ghost (`crest-hop-reset-jeep`; bis Abschnitt 26 `jump-reset-jeep` mit der Sprungtaste)
 13. Slalom mit Vollausschlag und Handbremsen-Tipp je Wechsel mit Assist-Profil `touch` (beetle, Schräglauf über 30°: Gegenlenken und Spin-Guard des Handy-Profils)
 14. Rempler gegen einen kinematischen Proxy mit `PROXY_CONTACT_SCALE` (sport gegen bulli-Proxy, wie `remoteProxies.ts`)
 15.–19. Je Klasse Vollgas geradeaus und in die Kurve, dann Bremse halten bis in den Rückwärtsgang (`launch-brake-reverse-<klasse>`)
 
-Dazu ist die ausgelieferte Abstimmung selbst ein Golden (`tests/shared/sim/golden-tuning.json`: alle Werte aus `SIM_TUNING`, den fünf Klassen und beiden Assist-Profilen, exakt verglichen). Die Szenarien erreichen nicht jeden Wert (Offroad wirkt erst in Phase 3, Sprungtaste nur beim Jeep, einige Schwellen); so braucht trotzdem jede Tuning-Änderung ein bewusstes `UPDATE_GOLDEN=1`.
+Dazu ist die ausgelieferte Abstimmung selbst ein Golden (`tests/shared/sim/golden-tuning.json`: alle Werte aus `SIM_TUNING`, den fünf Klassen und beiden Assist-Profilen, exakt verglichen). Die Szenarien erreichen nicht jeden Wert (Offroad wirkt erst in Phase 3, Flug über eine Kuppe nur beim Jeep und an der Rampe, einige Schwellen); so braucht trotzdem jede Tuning-Änderung ein bewusstes `UPDATE_GOLDEN=1`.
 
 Node und Browser (`tests/e2e/sim-golden.spec.ts`, Sandbox mit `?e2e=1`, `__bulliSim.runGolden(name)`) vergleichen mit dem JSON auf 1e-9 · max(1, |Wert|), Zähler und Flags exakt (`tests/shared/sim/goldenCompare.ts`, Begründung in 24.2). Bitgleich bleibt nur der Vergleich zweier Läufe im selben Prozess (14.3).
 
@@ -867,8 +848,8 @@ Ein Input-Skript pro **Tick-Index**, `FixedStepLoop` mit Frame-Folgen 1/30, 1/60
 ### 14.8 E2E (Playwright)
 
 - **Bestehende Suite ohne Flag grün** (Legacy unverändert, Desktop und Mobile).
-- **Desktop v2:** W 2 s → Strecke in erwartetem Bereich, Tacho > 0; Q → Höhe steigt und fällt; R halten → Reset; Leertaste + A bei Tempo → β ≠ 0 (über `__bulliDebug`).
-- **Mobile v2** (iPhone 13, Touch): Auto-Gas fährt an, Joystick lenkt, DRIFT-Button wirkt, `btn-flip` lang = Reset.
+- **Desktop v2:** W 2 s → Strecke in erwartetem Bereich, Tacho > 0; Q → Höhe steigt und fällt *(Sprung überholt durch 26)*; R halten → Reset; Leertaste + A bei Tempo → β ≠ 0 (über `__bulliDebug`).
+- **Mobile v2** (iPhone 13, Touch): Auto-Gas fährt an, Joystick lenkt, DRIFT-Button wirkt, `btn-flip` lang = Reset *(überholt durch 26.4: `btn-reset`, halten = Reset)*.
 - **Multiplayer gemischt:** ein v2- und ein Legacy-Client sehen sich gegenseitig fahren; zwei v2-Clients rempeln sich (Positionen weichen nach Kontakt aus, keine Überlappung dauerhaft).
 - **Sim-Golden im Browser** (14.4).
 
@@ -987,7 +968,7 @@ Neu dazugekommen sind zwei Module:
    - Das gilt nur für den gehaltenen Reset. Teleport und Respawn rufen `resetVehicle` direkt auf.
    - Weiter als 40 m von einer Straße entfernt bleibt der Reset an Ort und Stelle.
    - Die Golden-Szenarien haben `roads = null` und bleiben unverändert.
-2. **Touch, Flip-Button:** Ein kurzer Druck springt beim Loslassen. Hält man den Button 30 Ticks (0,5 s), setzt er zurück, und es gibt keinen Sprung. Der Sprung kommt dadurch um die Tippdauer später. Die Alternative, beim Drücken zu springen und bei längerem Halten zusätzlich zurückzusetzen, würde vor jedem Reset einen Hopser erzeugen.
+2. **Touch, Flip-Button** *(überholt durch 26.4: kein Sprung mehr, der Button heißt `btn-reset` und setzt nur zurück, solange er gehalten wird)*: Ein kurzer Druck springt beim Loslassen. Hält man den Button 30 Ticks (0,5 s), setzt er zurück, und es gibt keinen Sprung. Der Sprung kommt dadurch um die Tippdauer später. Die Alternative, beim Drücken zu springen und bei längerem Halten zusätzlich zurückzusetzen, würde vor jedem Reset einen Hopser erzeugen.
 3. **Auto-Gas startet erst mit der ersten Berührung des Sticks** nach Spawn, Respawn oder Tod. Sonst fährt das Auto schon beim Beitreten los. Der Umschalter AUTO wird unter `localStorage['bulli-auto-gas']` gespeichert.
 4. **Vorrang der Quellen (11.1):** Die Achsen kommen aus der aktiven Quelle mit dem höchsten Rang, also Touch vor Gamepad vor Tastatur. Die Buttons aller Quellen werden per ODER zusammengefasst. Touch gilt als aktiv, solange der Stick berührt wird oder Auto-Gas läuft. Das Gamepad gilt als aktiv, sobald Stick oder Trigger außerhalb der Deadzone sind. *Nach dem Review (23.3):* Auto-Gas allein (Stick losgelassen) weicht einem benutzten Gamepad oder einer gedrückten Fahrtaste, z. B. einem Controller am Tablet.
 5. **Race-Kamera:**
@@ -998,7 +979,7 @@ Neu dazugekommen sind zwei Module:
 6. **HUD:**
    - Die Boost-Leiste mit Marke bei 0,15 und das Drift-Licht stehen auf dem Desktop über dem Tacho. Auf Phones stehen sie oben in der Mitte, weil der Tacho dort ausgeblendet ist. Dazu kommt ein Füllring um den BOOST-Button.
    - Während des Drift-Boosts zeigt der Tacho „BOOST“. Motorsound und Boost-Feuer verhalten sich dann wie beim Turbo.
-   - Der Reset-Hinweis nach 6.7 erscheint als Einblendung. Der Flip-Button wechselt dabei auf das Recover-Symbol.
+   - Der Reset-Hinweis nach 6.7 erscheint als Einblendung. Der Flip-Button wechselt dabei auf das Recover-Symbol *(überholt durch 26.4: der RESET-Button trägt es immer)*.
 7. **Remote-Proxies (8.5):**
    - Eine geschätzte Geschwindigkeit gilt nur 250 ms lang. Stehende Autos senden nur einmal pro Sekunde, danach ist die Geschwindigkeit 0.
    - Ein Sprung von mehr als 20 m zwischen zwei Updates gilt als Teleport und setzt die Geschwindigkeit auf 0.
@@ -1009,11 +990,11 @@ Neu dazugekommen sind zwei Module:
    - Nicken aus `loadX` mit 0,2°/(m/s²), höchstens 4°.
    - Rollen aus u · r mit 0,26°/(m/s²), höchstens 5°.
    - Beides mit 10/s gedämpft, dazu die Geländeneigung wie bei Legacy.
-   - Bei der Landung wird das Auto um höchstens 15 % gestaucht.
+   - Bei der Landung wird das Auto um höchstens 15 % gestaucht *(überholt durch 26.8: die Federung zeigt das Einfedern)*.
    - Die Vorderräder lenken sichtbar mit `steerAngle`.
-   - Ein Salto, den die Landung abbricht, dreht in rund 6 Frames zu Ende.
+   - Ein Salto, den die Landung abbricht, dreht in rund 6 Frames zu Ende *(überholt durch 26.4: kein Salto mehr)*.
 10. **Assist-Profil:** Bei `(pointer: coarse)` gilt „touch“, sonst „standard“. Der Joystick-Filter liegt im v2-Modus bei 30/s.
-11. **E2E-Hook:** `snapshot()` liefert zusätzlich `physics`, `camera`, `local.y` und `v2`. `v2` enthält die Sim-Pose, u, β, Gierrate, Input, Boost und Drift sowie Zähler für Ticks, Sprünge und Resets. `placeLocalCar` setzt auch das Sim-Auto.
+11. **E2E-Hook:** `snapshot()` liefert zusätzlich `physics`, `camera`, `local.y` und `v2`. `v2` enthält die Sim-Pose, u, β, Gierrate, Input, Boost und Drift sowie Zähler für Ticks, Sprünge *(seit 26.8: Flüge)* und Resets. `placeLocalCar` setzt auch das Sim-Auto.
 12. **Noch offen, nicht Teil dieses Schritts:**
     - Offline-Sandbox mit lil-gui-Tuning-Panel, `?tune=1` und Browser-Golden `__bulliSim` (12.7, 13, 14.4). lil-gui ist deshalb noch keine Abhängigkeit. *Erledigt im Sandbox-Schritt, Abschnitt 21.*
     - Kanten-Collider der Rampen (7.2). *Erledigt im Sandbox-Schritt, Abschnitt 21.*
@@ -1043,7 +1024,7 @@ Lokal: `npm run dev`, dann `http://localhost:5173/?sandbox=1&tune=1`. Für die S
 | Taste | Sandbox |
 |---|---|
 | W/S, A/D oder Pfeiltasten | Gas, Bremse/rückwärts, lenken |
-| Leertaste / Shift / Q | Handbremse (Drift) / Boost / Sprung |
+| Leertaste / Shift | Handbremse (Drift) / Boost *(Q/Sprung entfällt, 26.4)* |
 | R halten | Reset an Ort und Stelle (die Sandbox hat kein Straßennetz) |
 | N | Dummies und Hütchen zurück auf ihre Plätze |
 | C | nächste Karosse |
@@ -1054,9 +1035,9 @@ Dieselben Aktionen liegen als Knöpfe im SANDBOX-Kasten oben links, auch für To
 
 - *Telemetrie:* km/h, u, w, β (Drift), Gierrate r, Radeinschlag δ, Boost-Stand und -Zustand, Bodenkontakt, Drift, Luft-Ticks, Ticks seit Wandkontakt. Die Werte werden pro Sim-Tick geschrieben.
 - *Verlauf 5 s:* Canvas-Plot der letzten 300 Ticks mit Tempo (km/h) und Driftwinkel (°). Die Skalen wachsen mit den Daten.
-- *Global:* `gripScale`, `G_AIR`, `STICK`, das Assist-Profil des eigenen Autos, das Kameraprofil (race/legacy) und „Werte der Klasse“.
-- *Antrieb, Reifen, Lenkung, Drift, Assists, Boost, Kollision, Sprung:* die Regler aus Tabelle 13, dazu der Ordner *Fahrwerk* (Masse, Radstand, Schwerpunkt, Trägheitsradius, driftFill) und *Alle globalen Werte* mit den übrigen `SIM_TUNING`-Werten. Mit `·K` markierte Regler ändern die in „Werte der Klasse“ gewählte Klasse (Standard: die eigene), `·P` das Assist-Profil des eigenen Autos, alle anderen gelten global. Winkel stehen in Grad.
-- *Sandbox* (nur mit `?sandbox=1`): Powerup-Wirkungen zum Anklicken (Turbo, Mega, Super-Jump, Ghost, Schild), Karosse, Dummies zurücksetzen.
+- *Global:* `gripScale`, `G_AIR`, `STICK` *(überholt durch 26: `GRAVITY` und die Federung im Ordner „Federung und Luft“)*, das Assist-Profil des eigenen Autos, das Kameraprofil (race/legacy) und „Werte der Klasse“.
+- *Antrieb, Reifen, Lenkung, Drift, Assists, Boost, Kollision, Sprung:* *(Sprung überholt durch 26: „Federung und Luft“)* die Regler aus Tabelle 13, dazu der Ordner *Fahrwerk* (Masse, Radstand, Schwerpunkt, Trägheitsradius, driftFill) und *Alle globalen Werte* mit den übrigen `SIM_TUNING`-Werten. Mit `·K` markierte Regler ändern die in „Werte der Klasse“ gewählte Klasse (Standard: die eigene), `·P` das Assist-Profil des eigenen Autos, alle anderen gelten global. Winkel stehen in Grad.
+- *Sandbox* (nur mit `?sandbox=1`): Powerup-Wirkungen zum Anklicken (Turbo, Mega, Super-Jump *(entfällt, 26.4)*, Ghost, Schild), Karosse, Dummies zurücksetzen.
 - *Export / Import:* „Export → Zwischenablage“ kopiert die geänderten Werte als JSON, „Import ← Zwischenablage“ lädt ein solches JSON, „Reset auf Defaults“ stellt alles zurück. Ist die Zwischenablage gesperrt, fragt ein Eingabedialog. „Golden gültig“ zeigt, ob die Golden-Dateien für die aktuellen Werte noch gelten.
 
 Das Exportformat (`src/shared/sim/tuning.ts`):
@@ -1197,7 +1178,7 @@ Ein adversarielles Review (Sim-Korrektheit, Netcode-Tauglichkeit, Client-Paritä
 
 ### 23.1 Bodenkontakt
 
-- **Knick im Stadt-Übergangsring:** Das Terrain wird mit `t²` eingeblendet, an der Außenkante (d ≈ 204 m) springt die Steigung. Früher warf dieser Knick das Auto mit der vollen Steigungsgeschwindigkeit ab (bis 25 m/s, 7–12 m Flughöhe bei 45 m/s). Jetzt behält ein Auto, das von Terrain auf Terrain fährt, beim Abheben höchstens die Vertikalgeschwindigkeit des Bodens voraus plus 2 m/s. Rampen behalten ihre Absprunggeschwindigkeit. Test: Überfahrt des Rings alle 15°, hinein und hinaus, Bulli mit 45 m/s und Vollgas → höchstens 0,3 m über dem Boden. Den Blend auf Smoothstep umzustellen hätte auch Legacy und die Optik verändert und bleibt deshalb aus.
+- **Knick im Stadt-Übergangsring** *(ersetzt durch die Federung, 26; die alte Stadt ist seit Phase 3 keine Spielwelt mehr)*: Das Terrain wird mit `t²` eingeblendet, an der Außenkante (d ≈ 204 m) springt die Steigung. Früher warf dieser Knick das Auto mit der vollen Steigungsgeschwindigkeit ab (bis 25 m/s, 7–12 m Flughöhe bei 45 m/s). Jetzt behält ein Auto, das von Terrain auf Terrain fährt, beim Abheben höchstens die Vertikalgeschwindigkeit des Bodens voraus plus 2 m/s. Rampen behalten ihre Absprunggeschwindigkeit. Test: Überfahrt des Rings alle 15°, hinein und hinaus, Bulli mit 45 m/s und Vollgas → höchstens 0,3 m über dem Boden. Den Blend auf Smoothstep umzustellen hätte auch Legacy und die Optik verändert und bleibt deshalb aus.
 - **Gradient:** Statt der Zentraldifferenz über `groundHeight` (±0,5 m über Rampenkanten hinweg, bis 4,4 Scheinsteigung) nimmt die Sim die exakte Steigung der Rampe unter dem Auto, sonst die Zentraldifferenz des Terrains allein. Kein Vorwärtsstoß mehr vor der Absprungkante, und eine Landung neben oder auf der Rampenkante hat den Aufprall ihrer Vertikalgeschwindigkeit (Test: 4–7 m/s bei vy = −5).
 - **Rampenwände:** Neue Regel siehe 21.3, Punkt 3. Ein Sprung gegen Front oder Seite wird von der Wand gestoppt, statt das Auto in einem Tick auf die Rampe zu heben, und wer seitlich von der Rampe rollt, bewegt sich pro Tick höchstens um |v|·DT + 5 cm.
 - **Niedrige Collider** (Brunnen, Teich, Bank, Kübel, Fels): Man landet auf ihrer Oberkante (7.1) und fährt wieder herunter, statt um bis zu 8 m in einem Tick herausgeschoben zu werden. `SimWorld` hat dafür `terrainHeight` und `rampAt`. Ein Party-Ghost steht auf nichts. Test: Sprung auf Brunnen und Teich über viele Absprungpunkte, der Versatz pro Tick bleibt ≤ |v|·DT + 0,5 m.
@@ -1258,3 +1239,212 @@ Auf Wunsch des Nutzers gehen neue Features direkt live statt hinter Flags. Der B
 - **Werkzeuge:** `npm run perf:baseline` misst ohne Option v2 (`--physics=legacy` für die alte Physik). `npm run screenshots` nimmt v2 auf, `--physics=legacy` die alte Physik, und schreibt für die Ansichten der Verfolgerkamera den Anteil des Autos am Bild in `stats.json` (`__bulliDebug.localCarScreenBox()`). Neue Ansicht `corner`: das Auto schräg an einer Kreuzung.
 - **E2E:** Die v2-Tests laufen ohne Parameter. Die bisherigen Tests der alten Physik (Desktop mit Tempo-Messung, Touch, zwei Spieler, Perf-Overlay ohne `sim`) öffnen die Seite mit `?physics=legacy`. `physics-default.spec.ts` prüft, dass ohne Parameter und mit `?physics=v2` v2 aktiv ist (Startbildschirm, ABOUT, Sim-Auto, Kamera) und dass `?physics=legacy` die alte Physik mit ihren Hinweisen und ihrer Kamera einschaltet. Das Perf-Overlay in der Stadt zählt jetzt die Sim-Ticks des eigenen Autos.
 - **Aufräumen:** Wenn v2 einige Tage ohne Probleme live läuft, wird die Legacy-Physik gelöscht (`vehicle/legacyPhysics.ts`, die Legacy-Zweige in `controls/keyboard.ts`, `controls/mobile.ts`, `main.ts`, `ui/hud.ts`, `.legacy-only` in `index.html`, `LEGACY_CAMERA`, die Legacy-E2E-Tests und `?physics=legacy`).
+
+## 26. Vertikaldynamik mit Federung, kein Sprung
+
+Auftrag: Das Auto klebte am Boden, auch über Bodenwellen mit hohem Tempo. Das System wird ersetzt, der Sprung entfällt. Korrekturen nach dem Review: 26.9.
+
+### 26.1 Warum das Auto klebte
+
+Gemessen mit `scripts/sim-airtime.ts` (26.6): Selbst eine Bodenwelle von 1,5 m Höhe auf 12 m Länge warf das Auto bei 55 m/s nicht ab (0,00 s in der Luft, obwohl der Boden mit 21 m/s steigt). Ursachen, alle in `finishTick` (6.6 in der alten Fassung):
+
+1. **Einrasten auf den Boden:** Am Boden wurde `y = hN` gesetzt und `vy = clamp((hN − y)/DT, −30, 25)`. Die Höhe folgte jeder Oberfläche exakt, auch über eine Kuppe weg.
+2. **Abheben nur mit Zusatz-Gravitation:** Abheben nur, wenn die Wurfbahn mit `G_AIR + STICK` (20 + 8 = 28 m/s², 2,9 g) über `hN + AIR_GAP` (0,15 m) lag. Eine Kuppe musste also v²·κ > 28 m/s² fordern und das Auto dabei noch 15 cm über den Boden tragen.
+3. **Abhebe-Deckel „Terrain-Knick“ (23.1):** Von Terrain auf Terrain wurde `vy` beim Abheben auf die Vertikalgeschwindigkeit des Bodens voraus plus 2 m/s gedeckelt. Hinter einer Kuppe fällt der Boden voraus, der Deckel nahm dem Auto also genau den Schwung, mit dem es hätte fliegen sollen. Nur Rampen (eigene Steigung, kein Deckel) warfen noch ab.
+4. **Gravitation nur in der Luft**, keine Vertikalgeschwindigkeit am Boden jenseits der Bodengeschwindigkeit, keine Federung: Senken und Landungen rasteten hart ein (`vy = 0`).
+
+Der Sprung (`BTN_JUMP`, `jumpSpeed` 11 m/s, Coyote-Zeit 6 Ticks, Cooldown 20 Ticks, Salto über `flipAngle`/`flipRate`) war die einzige Art, von ebenem Gelände abzuheben.
+
+### 26.2 Das neue Modell (`stepVertical` in `vehicle.ts`)
+
+Ein Aufbau auf einer Feder mit Dämpfer über masselosen Rädern, pro Substep (3 je Tick, Δt = 1/180 s) nach der xz-Bewegung, der Welt-Kollision und dem Auto-Kontakt:
+
+- **Zustand:** `y` bleibt die Unterkante an den Rädern (am Boden gleich der Bodenhöhe, damit alle Collider-, Rampenwand-, Wasser- und Kontakt-Regeln unverändert gelten). Neu ist `susp`: die Lage des Aufbaus über seiner Ruhelage (+ ausgefedert, − eingefedert). `vy` ist die Vertikalgeschwindigkeit des Aufbaus.
+- **Am Boden:** Der Aufbau behält seine Höhe, während der Boden unter den Rädern wechselt (`susp += y − hN; y = hN`). Kraft je Masse `F = g − k·susp + c·(v_Boden − vy)` mit `k = (2π·SUSP_FREQ)²`, `c = 2·SUSP_DAMPING·√k`, `v_Boden = ∇h·v_xz` (exakte Rampensteigung bzw. Terrain, wie der Aufprall in 23.1). Die Räder können nicht ziehen: `F ≥ 0`. Semi-implizit: `vy += (F − g)·Δt; susp += vy·Δt`. In Ruhe ist `susp = 0` exakt (F = g), auf ebenem Boden bleibt alles bitgleich wie vorher (alle Goldens auf ebenem Boden unverändert, 26.5).
+- **Abheben:** Die Feder ist bei `susp = g/k` (12,7 cm) entspannt. Steigt der Aufbau darüber, verlassen die Räder den Boden. *(Seit 26.9 erst 2 cm darüber, `SUSP_LIFT`.)* Quasistatisch folgt das Auto einer Kuppe, solange v²·κ ≤ g (die Feder entlastet um v²·κ/k), darüber hebt es ab. Kein Deckel, kein Zusatzzug.
+- **Senken, Rampenfuß, harte Landung:** Die Feder federt ein. Bei `susp = −SUSP_TRAVEL` (0,25 m) sitzt der Aufbau auf dem Anschlag: Er bewegt sich mit dem Boden (`vy = max(vy, v_Boden)`), unelastisch, kein Abprall. *(Seit 26.9 als unelastischer Stoß entlang der Bodennormalen, der auch das Tempo in die Flanke nimmt.)*
+- **In der Luft:** `vy −= g·Δt; y += vy·Δt`, Landung sobald `y ≤ hN` (in jedem Substep, auch bei 85 m/s nie unter den Boden). Aufprall und Tempoverlust über 10 m/s wie bisher (23.1). Danach übernimmt die Feder mit dem voll ausgefederten Aufbau.
+
+**Parameter:** `GRAVITY` 20 m/s² (bisher `G_AIR`), `SUSP_FREQ` 2 Hz, `SUSP_DAMPING` 0,8, `SUSP_TRAVEL` 0,25 m. Stabil: ω·Δt = 0,07, c·Δt = 0,11 je Substep.
+
+**Warum `GRAVITY` bei 20 bleibt (entschieden, gemessen):** Die Abhebe-Schwelle ist v²·κ > `GRAVITY`, 1 g würde also mehr Kuppen abheben lassen. Mit 14 m/s² und 16 m/s² fliegen aber alle Rampen 1,2- bis 1,4-mal so weit; Strecken, Landezonen (`JUMP_LANDING`) und die Landeprüfung des Validators sind auf 20 m/s² ausgelegt. Gemessen mit den Bots (`driveTrack`, alle Strecken und Klassen): bei 14 m/s² landet der Sport-Bot auf der Ridge Climb nach der Canyon-Rampe zu schnell vor der Kurve (27 m neben der Linie) und ein Bulli-Bot auf der Grand Tour braucht einen Reset; bei 16 m/s² verpasst der Sport eine Rampe. Bei 20 m/s² bleiben alle Rampen und Flugweiten wie bisher. Die Straßenkuppen der Karte sind mit R ≥ 150 m ausgerundet (phase-3-design A5); sie heben erst ab etwa 55 m/s ab (Boost, Turbo). Scharfe Kuppen, Knicke und Bodenwellen werfen dagegen schon bei normalem Tempo ab (26.6). `GRAVITY` ist ein Regler im Tuning-Panel.
+
+**Reifenlast:** `G_TIRE` bleibt konstant; die Federkraft geht (noch) nicht in den Grip ein. Sonst verlören Bots auf Kuppen vor Kurven Grip, den ihr Geschwindigkeitsprofil nicht kennt. Kann später kommen.
+
+### 26.3 In der Luft: kein Antrieb, keine Lenkung, Landehilfe (entschieden)
+
+Ohne Reifenkontakt wirken weder Gas, Bremse, Boost noch Lenkung (bisher: halber Boost und Gierziel `st·AIR_YAW` mit 1,5 rad/s). Ein Boost startet in der Luft nicht und verbraucht dort nichts; ein gehaltener läuft nach der Landung weiter (26.9). Die Gierrate läuft mit `AIR_YAW_RESPONSE` (3/s) auf `AIR_ALIGN·β` (2/s mal Schräglaufwinkel): Die Nase dreht sich in die Flugrichtung, das Auto landet gerade und ohne Rutschen. Begründung: Mit Luftlenkung (erst 1,5 rad/s², bis 1 rad/s) hielten Bots im Hüpfer über eine Kuppe in der Kurve voll eingeschlagen, drehten in der Luft und landeten quer in der Wand (Grand Tour, gemessen). Ohne Landehilfe landete der Sport-Bot nach der Canyon-Rampe mit 10° Schräglauf und schaukelte sich auf 34° auf. Die Landehilfe ist wie Gegenlenk-Hilfe und Spin-Guard eine Arcade-Hilfe, keine Physik. Nick und Rollen zur Landung sind Sache der Darstellung: Die Sim hat keinen Nick-/Rollwinkel (es gibt also auch keinen Überschlag), die Darstellung neigt das Auto nach der Geländenormalen unter ihm (12.3), also nach der Landefläche.
+
+### 26.4 Sprung entfernt
+
+- **Sim:** `BTN_JUMP` (Bit 4), `jumpSpeed`, `COYOTE_TICKS`, `JUMP_COOLDOWN`, `jumpCooldown`, `flipAngle`, `flipRate`, `prevButtons` (nur für die Sprung-Flanke), `ev.jumped`, `STICK`, `AIR_GAP`, `AIR_YAW` und der Abhebe-Deckel sind weg. `clampInput` behält nur `BTN_MASK` (Handbremse, Boost, Reset); die Sim ignoriert Bit 4 ohnehin (Test).
+- **Super-Jump:** entfernt, nicht umgewidmet (ein Aufwärtsimpuls wäre wieder ein Sprung). Der Powerup-Pool der Party hat fünf Typen (Turbo, Mega, Schild, Magnet, Ghost); die Items der Karte verteilen sich reihum darauf.
+- **Protokoll v5:** Self-Block ohne `flipAngle`, `flipRate` (f64), `jumpCooldown`, `prevButtons` (u8), mit `susp` (f64): 148 statt 158 Byte. Im Compact-Record steht statt des Flip-Winkels die Federung (i8 in 5 mm). Car-Flags `1 << 5` (Super-Jump) und `1 << 11` (Flip) und Mod-Bit 4 sind frei. Die Geister-Spur behält 13 Byte je Probe, der Flip-Byte ist jetzt Reserve (neue Tuning-Werte ergeben einen neuen `simHash`, alte Geister werden ohnehin nicht mehr angeboten).
+- **Rennregel E4** (kein Sprung im Rennen): Der Eingabefilter lässt im Rennen alles durch, es gibt nichts mehr zu entfernen.
+- **Client:** Q und Gamepad-Y belegen nichts mehr, kein Sprung-Sound, kein Salto. Der Touch-Button „tippen = Sprung, halten = Reset“ heißt jetzt `btn-reset` (Klasse `.reset`, Symbol `#icon-recover`, „Hold to reset onto the road“) und setzt nur noch Bit 8, solange er gehalten wird (`InputManager.touchButton`, wie DRIFT und BOOST; `flipDown`/`flipUp` sind weg). Entfernt: `#icon-jump`, die Q-Zeilen auf Startbildschirm, ABOUT und Tastenhinweis (`.hint-row.jump-hint`), der Jump-Powerup-Eintrag, `updateJumpControl`/`JumpControlMode` (jetzt `updateResetControl`), der Hinweis heißt bei Touch „HOLD RESET BUTTON“. `flipGroup` heißt `bodyGroup` (Darstellung, 26.8).
+
+### 26.5 Tests
+
+Unit (`tests/shared/sim/ground.test.ts`, `vehicleEdges.test.ts`), Erwartungen aus Handrechnung:
+
+- Parabel-Kuppe R = 60 m: bei 0,5 und 0,9·v* (v* = √(g·R) = 34,6 m/s) nie in der Luft, bei 1,1·v* abgehoben. Bei 0,7·v* hebt sich der Aufbau um (v²/R)/ω² (±20 %).
+- Knick der Steigung bei 45 m/s: 2 % bleibt am Boden, 8 % hebt ab (Grenze (v·Δs)²/(2g) = g/ω², also 5 %).
+- 85 m/s über drei Bodenwellen in einen 60-%-Hang: nie unter dem Boden, alle Werte endlich, Landung erkannt.
+- Wurfparabel: 8 m/s aufwärts → Scheitel 1,6 m (semi-implizit 2,2 cm darunter), 0,8 s Flug, 16 m weit.
+- Landung aus 3 m und 10 m: danach nie mehr in der Luft (kein Abprall), eine Sekunde später |susp| < 5 mm, |vy| < 2 cm/s, am Ende |susp| < 0,1 mm.
+- Rampe 12 m × 2 m bei 30 m/s: Absprung 5 m/s ±10 %, Weite 22,9 m ±10 % (t = (5 + √(25 + 80))/20).
+- Determinismus über Kuppe, Flug und Landung; Replay aus kopiertem Zustand bitgleich, die Kopie mitten auf einer Bodenwelle mit eingefederter Feder (`stability.test.ts`).
+- Luft: kein Gas, keine Bremse, kein Boost (nur Luftwiderstand), Lenkung ohne Wirkung, Landehilfe 2·β·5 % je Tick; Aufprall `12 + g·Δt/3`.
+- Bit 4 wirkt nicht (Regressions-Lock), `clampInput` streicht es, Codec mit `susp`, Protokoll v5.
+
+Goldens neu erzeugt: Alle Szenarien auf ebenem Boden sind in jedem Zahlenwert gleich geblieben (Vergleich mit dem alten Stand ohne die entfernten und das neue Feld); nur die Felder änderten sich (`susp` neu; `flipAngle`, `flipRate`, `jumpCooldown`, `prevButtons` weg). `ramp-jump-beetle` fliegt anders (Federung am Rampenfuß und an der Lippe). `jump-reset-jeep` ist durch `crest-hop-reset-jeep` ersetzt.
+
+Mutationsprobe je neuem oder geändertem Test: Federkraft ziehen lassen, Abheben erst bei doppelter/dreifacher Ausfederung, doppelte Federsteife, kein Dämpfer, Landung 0,5 m unter dem Boden, 10 % weniger Gravitation im Flug, Anschlag mit Abprall, Dämpfung 0,1, Bodengeschwindigkeit ignoriert, Zufallsrauschen, Antrieb/Lenkung in der Luft, Vorzeichen der Landehilfe, kein Tempoverlust bei harter Landung, `susp`/`vy` nicht kopiert, Bit 4 wirksam, `BTN_MASK` mit Bit 4, Codec-Schritt und -Decodierung, Latch ohne Löschen, Flip-Taste mit Bit 4, Rennfilter, Geister-Reservebyte, Validator-Gravitation, Bot-Reset vor verpasstem Tor, Schätzung der Fahrzeit: jeweils rot. Äquivalent für den jeweils einzelnen Test (von der Gesamtsuite gefangen): Kraft-Klammer und doppelte Ausfederung für die Kuppen-Schwelle (die Schwelle v²κ = g hängt nicht davon ab), Dämpfer für den Knick-Test, stärkere Gravitation am Boden für die Rampenweite.
+
+### 26.6 Messung vorher/nachher (`npx tsx scripts/sim-airtime.ts`)
+
+Konstantes Tempo, Bulli; „Luft“ Summe der Ticks in der Luft, „Höhe“ größte Höhe der Unterkante über dem Boden.
+
+| Szenario | v (m/s) | vorher Luft / Höhe | nachher Luft / Höhe |
+| --- | ---: | ---: | ---: |
+| Bodenwelle 1,5 m / 12 m | 25 | 0,00 s / 0,00 m | 1,07 s / 3,61 m |
+| Bodenwelle 1,5 m / 12 m | 40 | 0,00 s / 0,00 m | 1,62 s / 7,24 m |
+| Bodenwelle 1,5 m / 12 m | 55 | 0,00 s / 0,00 m | 2,17 s / 12,52 m |
+| Kuppe R 150 m | 40 | 0,00 s / 0,00 m | 0,00 s / 0,00 m |
+| Kuppe R 150 m | 55 | 0,00 s / 0,00 m | 0,52 s / 0,20 m |
+| Grand Tour (841, 579), κ 0,0044/m, gerade | 55 | 0,00 s / 0,00 m | 0,10 s / 0,02 m |
+| Knick Ridge Climb (−120, −14), 8 % → 0 % | 40 | 0,00 s / 0,00 m | 0,18 s / 0,07 m |
+| Knick Ridge Climb (−120, −14), 8 % → 0 % | 55 | 0,00 s / 0,00 m | 0,33 s / 0,30 m |
+
+Die drei stärksten Kuppen auf geraden Streckenabschnitten haben R ≈ 220–250 m und heben bis 55 m/s kaum oder nicht ab (Schwelle 67–71 m/s); vorher auch mit Boost nie.
+
+Bots (mittel, Seed 1, alle Strecken und Klassen): Zeiten wie vorher (±0,7 s) außer Ridge Climb Sport 60,5 → 65,4 s (landet von der Canyon-Rampe auf dem Knick bei x −120, hüpft und rutscht in der folgenden Kurve), Dune Rally Käfer 76,9 → 70,2 s, Grand Tour Käfer 160,6 s mit Reset → 156,4 s ohne. Alle Rampen werfen ab wie vorher, 0 Resets. Kurze Hüpfer auf Gelände: Ridge Climb 1–3 je Rennen (≤ 0,32 s), Grand Tour bis 7 (≤ 0,45 s), Dune Rally Käfer 1 (0,52 s).
+
+Bot-Rennen im RaceRoom (`trackRaces`, 30 Seeds × 6 Strecken × 5 Bots = 900): vorher 3 Bots länger als 10 s ohne Fortschritt, nachher 5 (Massenkarambolagen an Kehren, ein Käfer, der auf den Dünen neben der Strecke hüpft). Einer davon (Coast Sprint Seed 1, im CI-Satz) fuhr nach dem Zurücksetzen verkehrt herum weiter, weil Pure Pursuit ein Ziel hinter dem Auto mit sin α ≈ 0 ansteuert. `LineDriver` lenkt deshalb voll ein, wenn das Auto gegen die Linie zeigt und das Ziel hinter ihm liegt (Test in `lineDriver.test.ts`).
+
+Angepasste Bot-Tests (`tests/tools/map/driveTrack.test.ts`): „Gelände wirft nie ab“ ist ersetzt durch „Hüpfer auf Gelände unter 0,5 s“; die Fahrzeit gegen die Schätzung ist der Median dreier Seeds (Seed 1 des Sport auf der Ridge Climb 1,17 wegen des Knicks, Seeds 2 und 3 1,085 wie vorher); der Regressions-Lock für ein verpasstes Tor nimmt Seed 11 statt 7.
+
+Sim-Kosten (`npm run perf:sim`): 32 Autos eben 0,105 statt 0,092 ms/Tick, Bulli Bay p99 0,149 statt 0,128 ms (Budget 2 bzw. 4 ms).
+
+### 26.7 Offen
+
+- **Knick am oberen Ende des Canyon (Ridge Climb, x −120, z −14):** 8 % auf 0 % innerhalb von 4 m, genau in der Landezone der Canyon-Rampe. Ein Fall für die Ausrundung im Bake (phase-3-design A5), nicht für die Sim. Nach dem Review (26.9) weiter offen: Der Knick kostet den Sport-Bot mit Seed 1 rund 5 s (60,5 → 65,4 s), der Zeit-Test nimmt deshalb den Median dreier Seeds.
+- **Stufe am Querweg bei x −564, z 300:** Die Straße steigt dort in 4 m um 0,8 m; ostwärts ab etwa 30 m/s hebt jedes Auto 0,8–1,1 s ab (2,4–3,7 m hoch). Der Mobile-E2E-Test nutzt sie als bekannte Bodenwelle (26.8). Wird sie im Bake ausgerundet, muss der Test eine andere Stelle bekommen (Suche: Wegwerf-Skript aus 26.8).
+- Reifenlast aus der Federkraft (26.2), Nicken aus zwei Achsen in der Sim: bewusst nicht.
+- `phase-3-design.md` A31 („die v2-Sim hebt auf Gelände nicht ab“) gilt seit diesem Abschnitt nicht mehr.
+
+### 26.8 Darstellung, Kamera, Mobile-Test
+
+**Aufbau auf dem Bildschirm (`src/client/vehicle/bodyMotion.ts`, nur Renderer):** Die Sim hat einen vertikalen Freiheitsgrad (`susp`) und keinen Nick-/Rollwinkel; `BodyMotion` leitet daraus pro Frame ab:
+
+- **`group`** (Position am Boden, Gier, Mega-Skala) trägt nur noch die geglättete **Bodenneigung** unter dem Auto (±2 m, Rate 6/s). Der Kontaktschatten liegt in dieser Ebene, auch im Flug.
+- **`bodyGroup`** (bisher `flipGroup`) trägt den Aufbau: Höhe = Höhe der Radunterkante über dem Gelände + `susp`·0,6 (entschieden: 60 % des Federwegs, höchstens 15 cm Einfedern, damit die Räder in den Radkästen bleiben), dazu Nicken und Rollen relativ zur Bodenneigung. Am Boden: Gelände plus die Beschleunigungsfeder wie bisher (4°/5°). In der Luft dreht die Nase mit Rate 2,5/s in die Flugbahn (−atan(vy/v), höchstens 25°: steigend Nase hoch, fallend Nase runter), das Rollen läuft mit 1,5/s aus; nach der Landung legt sich der Aufbau mit 12/s auf den Boden. Die Beschleunigungsfeder wirkt in der Luft nicht.
+- **Räder:** Die Pivots `wheel_*` des GLB (bzw. die prozeduralen Räder) werden um denselben Federweg gegenläufig verschoben (`GltfCarBody.setWheelDrop`): Am Boden bleiben die Räder auf dem Boden, während der Aufbau ein- und ausfedert; in der Luft hängen sie 7,6 cm (0,6 · g/k) unter der Ruhelage.
+- Das alte Stauchen per `scale.y` beim Landen ist weg; das Einfedern zeigt jetzt die Federung selbst. Die Höhe im Flug wird durch die Mega-Skala geteilt (vorher flog ein Mega-Auto doppelt so hoch, wie es war).
+- **Andere Autos** (`net/remotes.ts`) bekommen dasselbe `BodyMotion`: `RemoteTrack` interpoliert `susp` und `vy` jetzt linear zwischen den Snapshots (vorher sprang `susp` mit 20 Hz), im Kontakt-Set aus der Prediction. Neu dabei: Auch entfernte Autos neigen sich mit dem Gelände (vorher nur Gier). Sandbox-Dummies ebenso; der Zeitfahr-Geist nur mit Höhe.
+- **Kontaktschatten** (`contactShadowLook`): blasser und kleiner mit der Höhe (Deckkraft 1/(1 + 0,6h + 0,05h²), Größe 1 − 0,4·h/(h+3)); bei 0,5 m noch > 70 %, bei 10 m < 10 %. Vorher wuchs er in der Luft. Die Höhe kommt aus `CarModel.airHeight`, nicht mehr aus der Position der Gruppe.
+- **Motorsound:** dreht in der Luft mit der Höhe hoch wie vorher mit der Sprunghöhe (`airHeight`).
+
+**Kamera (`ChaseCamera`):** Das Ziel der Kamera war die Bodenhöhe unter dem Auto, ein fliegendes Auto lief also nach oben aus dem Bild. Jetzt folgt sie der Radunterkante (Boden + Flughöhe, ohne das Federn). Vertikal: Die Folgehöhe bewegt sich mit einer gefilterten Vertikalgeschwindigkeit (`verticalSpeedDamping` 10/s) und schließt den Rest mit 5/s (`verticalDamping`). Kein Nachhängen an einer gleichmäßigen Steigung (Test: 6 m/s aufwärts, nur die bisherige Positionsdämpfung bleibt), und Abheben/Landen (Sprung der Vertikalgeschwindigkeit um 8 m/s) ändern die Kamera-Vertikalgeschwindigkeit um höchstens 0,8 m/s je Frame (direkt gefolgt: 1,45 m/s; Test in `chaseCamera.test.ts`).
+
+**E2E-Hook:** `placeLocalCar(x, z, yaw, speed)` setzt das Auto mit Tempo ab (Server: `debugPlace.speed`, nur mit E2E=1, höchstens 60 m/s). `V2Snapshot.flights` zählt Flüge und hält den letzten (Ticks, größte Höhe, Landestoß), `V2Snapshot.body` die gezeichnete Höhe und Neigung.
+
+**Mobile-E2E (`tests/e2e/mobile.spec.ts`, bestehender Test erweitert, iPhone 13 in Chromium):** Nach Stick und Lenken setzt der Server das Auto 30 m vor die Stufe bei x −564, z 300 (ostwärts, 38 m/s, Auto-Gas); geprüft: gezeichneter Aufbau > 1 m über dem Boden (per rAF), Flug ≥ 30 Ticks und > 1 m hoch, Landestoß < 15 m/s, danach am Boden, kein Reset, weiter > 25 m/s; kein Button mit „jump“/„flip“, RESET halten setzt zurück. Mutationsprobe: Federkraft darf ziehen (klebt wieder) → rot; gezeichnete Flughöhe 0 → rot. Laufzeit des Mobile-Tests +2 s.
+
+**Emulator-Belege (Wegwerf-Skript `mobile-air.mts`, nicht im Repo), Produktions-Build, Free Roam** *(Stand vor 26.9; die Karosse der Läufe ist nicht festgehalten, deshalb weichen die Zahlen vom Kommentar im Test ab. Die Wiederholung mit dem Bulli steht in 26.9)*:
+
+| Lauf | Flug (Ticks / Höhe / Landestoß) | nach Landung | gezeichnet max. / Nicken | Kamera über Boden | Korrekturen am Hügel |
+| --- | --- | --- | --- | --- | --- |
+| WebKit iPhone 13 (390×664) | 65 / 3,36 m / 11,6 m/s | am Boden, 44 m/s, 0 Resets | 3,36 m / −7,0° … +6,0° | 4,4 … 8,5 m | 0 |
+| WebKit iPhone SE quer (568×320) | 61 / 3,00 m / 11,0 m/s | am Boden, 44 m/s, 0 Resets | 3,00 m / −6,5° … +5,4° | 4,2 … 7,9 m | 1, Versatz 0 |
+| Chromium Pixel 7 (412×839) | 61 / 2,92 m / 10,8 m/s | am Boden, 43,6 m/s, 0 Resets | 2,88 m / −6,8° … +4,3° | 4,5 … 7,9 m | 2, Versatz ≤ 3 cm |
+| Pixel 7, `?netsim=150,30,3` (7 Läufe) | 59–70 / 2,8–3,7 m / 10,8–13,6 m/s | am Boden, 44 m/s, 0 Resets | wie oben | folgt (z. B. 4,4 … 7,2 m) | 0–4, Versatz ≤ 15 cm, 0 Bildsprünge (`renderSnaps`) |
+
+Alle Läufe: kein Sprung-Button (`getByRole('button', /jump|flip/)` = 0), RESET sichtbar mit `#icon-recover`, Halten setzt zurück, kurzes Tippen nicht, keine Konsolen- oder Seitenfehler. Unter Netsim kommt das Abheben aus der Prediction (Server und Client rechnen dieselbe Sim); am Hügel gab es nur kleine Korrekturen, die als Render-Versatz auslaufen. Zweimal sprang der Lead-Regler (ein `resync`, bis 20 Ticks nach vorn) während des Anlaufs: ein Uhr-Sprung des Netzcodes, nicht des Flugs. Große Frame-Sprünge in den Messreihen sind Aussetzer von SwiftShader bzw. des headless WebKit (bis 300 ms), keine Korrekturen. Einschränkung WebKit: Playwright kann dort nur tippen; Druck und Ziehen am Stick und das Halten von RESET liefen über Maus-Pointer-Events, Taps (Modus, Start) über echte Touch-Events. In Chromium alles über CDP-Touch. Ein weiterer Netsim-Lauf brach im Skript ab (das Warten auf den Anlauf verpasste das Fenster nach einem Frame-Aussetzer) und wurde wiederholt.
+
+Screenshots vor, während und nach dem Flug (alle Läufe) zeigen das Auto über der Kreuzung mit dem blassen Schatten darunter und die Kamera mit dem Auto in der Luft.
+
+### 26.9 Review: Anstoß an steilen Flanken, Abhebe-Spielraum, Boost in der Luft (entschieden)
+
+Befunde des Reviews zu 26.1–26.8 und was daraus wurde. Messungen mit Wegwerf-Skripten (nicht im Repo), gleiche Sim wie Server und Client.
+
+**1. Steile Flanken katapultierten das Auto (behoben).** Der Anschlag setzte `vy = v_Boden = ∇h·v`, der Dämpfer zog ebenfalls auf `v_Boden`, das Tempo in der Ebene blieb. An einer Flanke entstand so Energie: bei 100 % das Doppelte, bei 300 % das Achtfache. Zwei Änderungen in `stepVertical`:
+
+- **Anschlag als unelastischer Stoß entlang der Bodennormalen** n ∝ (−∇h, 1) (`bumpStop`): Der Anteil der Geschwindigkeit (vx, vy, vz) in den Boden hinein wird entfernt. Auf einer Steigung s bleibt 1/(1 + s²) des Tempos in die Flanke, der Rest geht nach oben: bei 100 % halb und halb, statt v nach oben ohne Verlust.
+- **Schub der Federung auf steilen Flanken kostet Tempo:** Hebt die Feder den Aufbau schneller an, als sie ihn gegen die Schwerkraft hält (Δvy > 0), nimmt die Sim (∇h·v̂)·Δvy vom Tempo, **längs der Fahrtrichtung**. Das ist genau die Energie, die der Schub nach oben bringt (vy ≈ ∇h·v). Eingeblendet von `FLANK_FROM` 25 % bis `FLANK_FULL` 50 % Steigung, darüber voll.
+
+Entschieden, mit Messung:
+
+- *Längs der Fahrtrichtung, nicht entlang der Normalen:* Mit dem Anteil entlang der Normalen drückt jeder Schub das Auto seitlich die Flanke hinunter. Weil nur der Schub nach oben zählt (Δvy > 0), summiert sich das auf einer welligen Böschung zu einer Drift. Ein Käfer-Bot der Dune Rally (`trackRaces`, Seed 3) kam deshalb an der Strandböschung nicht mehr auf die Linie und kreiste 16 s lang (Test rot). Längs der Fahrt ist die Bilanz dieselbe, und es gibt keine Drift.
+- *Erst ab 25 %:* Straßen haben höchstens 20 % (`maxGrade`), Rampen höchstens 2,2 m auf 12 m (18 %). Darunter fährt alles wie vor 26.9, und die Goldens sind bis auf die Tuning-Liste unverändert. Auf normalen Steigungen ist das Bodenmodell ohnehin nicht energietreu (`G_SLOPE` 9,81 gegen `GRAVITY` 20, 26.2). Mit der Regel auf allen Steigungen änderten sich Bot-Rennen ohne Gewinn (Test „wie vorher bis 20 %“).
+- *Kein fester Deckel für vy:* Ein Deckel widerspricht `vy = ∇h·v` auf langen steilen Hängen: Der Boden holt den Aufbau ein, und der Anschlag greift wieder. Nach dem Stoß ist vy ohnehin höchstens etwa v/2.
+- *Keine Flanken als Wand:* Mit dem Stoß bleibt ein 300-%-Hang ein Hindernis, an dem das Auto stehen bleibt, keine Schanze. Ein eigener Wand-Push-out für Gelände wäre eine zweite Kollision neben den Collidern.
+
+| Flanke (rollend, ohne Gas, Bulli) | v | vorher: Scheitel über der Kante / ½v² max. | nachher |
+| --- | ---: | ---: | ---: |
+| 50 %, 1,8 m | 20 m/s | 2,26 m / 1,18 | 1,40 m / 0,94 |
+| 100 %, 3 m | 20 m/s | 8,79 m / 1,89 | 1,38 m / 0,79 |
+| 300 %, 3 m | 20 m/s | 71,7 m / 8,21 | 0,74 m / 0,38 |
+| Karte: Grasböschung 108 %, südlich (−84, −338) | 14 m/s | 2,88 m / 1,59 | 0,33 m / ≤ 1 |
+| Karte: dieselbe | 20 m/s | 8,27 m / 1,81 | 1,70 m / ≤ 1 |
+
+Kartenraster (Linien alle 16 m, vier Richtungen, Tempo mit Gas gehalten, nicht jeden Tick gesetzt; das Setzen jedes Ticks hebt den Tempoverlust wieder auf): Abflüge mit vy > 15 m/s bei 28 m/s 184 → 13, mit vy > 25 m/s 4–8 → 0, größte Abfluggeschwindigkeit bei 14 m/s 48 → 8,2 m/s. Straßen fahren wie vorher (alle 122 Kanten, beide Richtungen, auf der Mittellinie): 14, 20 und 28 m/s 0 Abflüge, 40 m/s 5 (höchstens 0,13 m), 50 m/s 5 (höchstens 0,24 m).
+
+**2. Auf Straßen hebt das Auto kaum ab (entschieden: bleibt, dem Nutzer offen gesagt).** Die Schwelle ist v²·κ > `GRAVITY`, und die Straßenkuppen sind mit R ≥ 150 m ausgerundet (phase-3-design A5). Bis 100 km/h gibt es auf keiner Straße einen Abflug, bei 180 km/h fünf Hüpfer bis 0,24 m, erst mit Boost mehr. Abseits der Straße, an Bodenwellen, Knicken und Böschungen, fliegt das Auto dagegen (26.6). Mögliche nächste Schritte, bewusst nicht in diesem Stand:
+
+- (a) `GRAVITY` auf 14–16 m/s² senken und Rampen, `JUMP_LANDING` sowie die Landeprüfung des Validators nachziehen (die Bot-Probleme aus 26.2 liegen in der Geometrie der Rampen und Landezonen);
+- (b) im Bake einzelne Straßenkuppen schärfer ausrunden (R ≈ 60–80 m) als gewollte Hügelsprünge.
+
+Beides erst nach Punkt 1, sonst verstärkt eine geringere Gravitation die Katapulte.
+
+**3. Boost in der Luft (behoben).** `finishTick` zog im Flug weiter `BOOST_DRAIN` ab und meldete `boostStarted` (Flamme, Turbo-Sound), obwohl die Luft keinen Schub gibt (26.3). Jetzt gilt: In der Luft startet kein Boost und der Tank sinkt nicht, `AIR_FILL` füllt weiter. Ein über den Flug gehaltener Boost bleibt `boosting` und läuft nach der Landung ohne neuen Start und ohne `BOOST_MIN` weiter.
+
+**4. Abhebe-Spielraum `SUSP_LIFT` 2 cm (neu).** Die Räder verlassen den Boden erst, wenn der Aufbau 2 cm über der vollen Ausfederung steht. Dazwischen berühren sie ihn ohne Last, denn die Feder kann nicht ziehen. So bleiben Antrieb und Lenkung an. Wellblech 5 cm auf 4 m bei 45 m/s: 36 → 15 Hüpfer von je 1–2 Ticks in 4 s, bei 3 cm keine. Die Knick-Schwelle bei 45 m/s steigt von 5,5–5,75 % auf 5,75–6 %.
+
+**5. Böschungen am Strand und an Straßendämmen (entschieden: bleiben).** Wer bei Stadttempo quer eine 50-%-Böschung von 1,8 m hochfährt, hebt oben ab. Das ist mit dem Stoß aus Punkt 1 physikalisch stimmig: Die Böschung dreht die Fahrt nach oben, ohne Energie zu erzeugen. Strandböschung bei x ≈ −635 ostwärts mit Gas ab 14 m/s: vorher 2,1 m und 92 Ticks, jetzt 1,7 m und 63 Ticks. Straßendamm bei (21, −520): 0,3–0,5 m (vorher mit gesetztem Tempo 2,4 m). Wer das nicht will, rundet die Böschungskanten im Bake aus. Das ist eine Frage der Karte, nicht der Sim.
+
+**6. Knick der Canyon-Rampe (Ridge Climb, 26.7): nicht in diesem Stand.** Eine andere Ausrundung im Bake ändert das Heightfield der Karte, damit das `terrain.bhf`, die Engine-Gleichheit und die Zeiten aller Strecken. Das gehört in einen eigenen Karten-PR mit eigener Messung. Bis dahin bleiben der Median dreier Seeds im Zeit-Test und Seed 11 im Lock „missed gates“.
+
+**7. Remote-Interpolation (behoben).** `vy` ist seit 26 die Geschwindigkeit des gefederten Aufbaus, `y` aber die Radunterkante. Als Hermite-Tangente von `y` ließ `vy` ein geerdetes Remote-Auto nach einer Landung zwischen zwei Snapshots bis 5 cm unter den Boden tauchen. Für geerdete Samples nimmt `RemoteTrack` jetzt die Sekante, `vy` nur für Samples in der Luft.
+
+**8. Darstellung (behoben, per Screenshot geprüft).** Rauchwölkchen, Boost-Flamme und Turbo-Sound entstanden am Boden unter dem fliegenden Auto, weil `group` am Boden bleibt. `main.ts` erzeugt sie nur noch bei `airHeight` ≤ 0,3 m.
+
+**9. Kleineres:** veraltete Kommentare (`FreeRoamRoom`, `dummies`, `e2eHook`, `ghostTrack` → 26) und Marker „überholt“ an den Sprung-Stellen in 14, 20, 21 und phase-2-design. Der Kommentar zur Bodenwelle in `tests/e2e/mobile.spec.ts` nennt jetzt die Werte aller fünf Klassen, die Landung auf Sand hinter der Kreuzung und das Hindernis rund 140 m weiter (x −383).
+
+**Tests** (`ground.test.ts`, `vehicleEdges.test.ts`, `mapFlank.test.ts`, `interpolation.test.ts`), Erwartungen aus Handrechnung:
+
+- Flanke 100 % und 300 % bei 20 m/s rollend: ½|v|² nie über dem Start, Scheitel unter (v/2)²/(2g) = 2,5 m.
+- Anschlag auf 100 % (Gradient (0,6; 0,8)) bei v = (12, 16): danach (6, 8) und vy = 10. Ein Aufbau, der schneller steigt als der Boden, bleibt unverändert.
+- Anschlag vor der Feder: 20 % bei 20 m/s ergibt vz = 20 − 0,2·4/1,04 und vy = λ + k·0,25·Δt. Anschlag nach der Feder: 24 cm eingefedert und mit 5 m/s sinkend ergibt susp = −0,25 und vy = 0.
+- Schub auf der Flanke: diagonal nimmt er v·Δvy/20 aus beiden Komponenten (Δvy = k·0,2·Δt), längs der Höhenlinie nichts, bei 37,5 % die Hälfte. Bei entlastender Feder (F < g) nimmt und gibt er nichts.
+- 20 % wie vorher: Die Regel auf allen Steigungen kostet dort 0,9 m/s mehr (Regressions-Lock).
+- Aufsetzen: Aufbau bei g/k minus Eindringtiefe, Aufprall 6 + g·Δt.
+- Landung auf ±20 %: Aufprall ∇h·v − vy mit Fallzeit aus der quadratischen Gleichung.
+- Abhebe-Spielraum: Mit 0,3 m/s steigt der Aufbau 1,73 cm über die Ausfederung und bleibt am Boden, mit 1 m/s 4 cm und hebt ab.
+- Knick-Schwelle beidseitig enger: 3,4 % bleibt (V/ω ≤ g/ω²), 6,5 % hebt ab (ballistische Untergrenze).
+- Boost in der Luft: Tank +0,05 in 30 Ticks, kein Start; nach der Landung Verbrauch ohne neuen Start.
+- Kartenstelle (−84, −338) bei 14 m/s: Scheitel über der Kante < 1,23 m (Regressions-Lock).
+- Remote-Interpolation: geerdete Samples mit vy −8/−3 bleiben auf dem Boden, am Hang linear; die Start-Tangente in der Luft wird mit der Zeit zwischen den Samples skaliert.
+
+Mutationsprobe, jeweils rot: alter Anschlag-Clamp; kein Schub-Abzug; Abzug entlang der Normalen; Abzug mit falschem Vorzeichen; Abzug auf allen Steigungen; kein Abhebe-Spielraum; Abheben bei 1,5-facher Ausfederung; Aufsetzen mit `susp = 0`; Aufprall ohne Gradient; Boost-Verbrauch in der Luft; Boost-Start in der Luft; ohne Kraft-Klammer; Interpolation mit vy als Tangente am Boden. Der Karten-Lock wird nur rot, wenn Stoß und Abzug beide fehlen (der Stand vor 26.9). Das ist gewollt, er sichert den Befund.
+
+Stryker auf die geänderten Zeilen (`stepVertical` ab dem Bodenzweig, `bumpStop`, Boost in `finishTick`, Hermite in `interpolation.ts`): 154 Mutanten, 143 getötet, 11 überlebt. Zehn davon sind äquivalent:
+
+- `<`/`<=` bzw. `>`/`>=` auf kontinuierlichen Floats (Anschlag, Abheben, Kraft-Klammer, Δvy, `BOOST_MIN`);
+- `share > 0` → `true` bzw. `>= 0` (bei share = 0 ist der Abzug 0);
+- `into <= 0` → `< 0` (bei into = 0 ist λ = 0).
+
+Einer ist eine ältere Lücke, nicht aus 26: Die Nullung des Gradienten auf einem Collider-Dach (`onTop`) im Bodenzweig prüft kein Test.
+
+**Bots** (6 Strecken × 5 Klassen × 3 Stufen × 4 Seeds = 360 Rennen, `driveTrack`): vorher 0 DNF, 4 Resets, 3 verpasste Tore, Summe 36824 s; nachher 0 DNF, 2 Resets, 0 verpasste Tore, 36825 s. `trackRaces` (Integration, alle Strecken, Seeds 1–3) grün.
+
+**Mobile-Emulator** (Produktions-Build, Free Roam, Bodenwelle bei x −564 mit 38 m/s, Bulli, Playwright WebKit bzw. Chromium mit SwiftShader):
+
+| Lauf | Flug (Ticks / Höhe / Landestoß) | nach Landung | gezeichnet max. / Nicken | Kamera über Boden | Korrekturen an der Welle |
+| --- | --- | --- | --- | --- | --- |
+| WebKit iPhone 13 hoch (390×664) | 56 / 2,48 m / 10,1 m/s | am Boden, 44,3 m/s, 0 Resets | 2,48 m / −6,1° … +4,9° | 4,4 … 7,6 m | 0 |
+| WebKit iPhone SE quer (568×320) | 56 / 2,48 m / 10,1 m/s | am Boden, 44,3 m/s, 0 Resets | 2,48 m / −6,1° … +4,8° | 4,2 … 7,4 m | 0 |
+| Chromium Pixel 7 hoch (412×839) | 56 / 2,48 m / 10,1 m/s | am Boden, 44,3 m/s, 0 Resets | 2,48 m / −6,0° … +2,3° | 4,4 … 7,6 m | 0, Versatz ≤ 3 cm |
+| Pixel 7, `?netsim=150,30,3` | 56 / 2,48 m / 10,1 m/s | am Boden, 0 Resets | 2,48 m / −5,8° … +3,7° | 4,8 … 7,6 m | 0, 0 Bildsprünge |
+
+In allen Läufen: HUD ohne Überlappung, auch mit „HOLD RESET BUTTON“; kein Element und kein Text mit jump/flip; RESET mit `#icon-recover`. Halten setzt nach 470–530 ms zurück, kurzes Tippen nicht. Keine Seitenfehler; Chromium zeigt nur die bekannten SwiftShader-Hinweise. Party (iPhone 13, Pixel 7): HUD wie oben, gemeldet wird nur die Verschachtelung von `#health-bar-container` in `#score-container`. Die Screenshots im Flug zeigen keine Rauchspur mehr auf der Fahrbahn unter dem Auto (vorher zwei, drei Wölkchen). Im Netsim-Lauf stand das Auto am Ende der 5-s-Messung bei x −383: Dort endet die Strecke an einem Hindernis, rund 3,5 s nach der Landung (Punkt 9).

@@ -59,7 +59,15 @@ export interface V2Snapshot {
     yawRate: number;
     steerAngle: number;
     grounded: boolean;
-    flipAngle: number;
+    // Suspension: body above its rest position over the wheels (m)
+    susp: number;
+    // Flights off the ground (LocalVehicle): how many ended, the last
+    // one's ticks in the air, highest point over the ground (m) and
+    // landing impact (m/s)
+    flights: { count: number; last: { ticks: number; height: number; landing: number } };
+    // The body as drawn (vehicle/bodyMotion.ts): height over the ground
+    // (m), its pitch in the world (rad, + = nose down) and the wheels' height
+    body: { y: number; pitch: number; airHeight: number };
     boostMeter: number;
     boosting: boolean;
     drifting: boolean;
@@ -72,7 +80,6 @@ export interface V2Snapshot {
     input: VehicleInput;
     // Counters since the car was created
     ticks: number;
-    jumps: number;
     resets: number;
     resetHint: boolean;
     autoGas: boolean;
@@ -303,11 +310,11 @@ function carInfo(model: CarModel): CarInfo {
     const materials = new Set<THREE.Material>();
     let meshes = 0;
     let shadowCasters = 0;
-    model.flipGroup.traverseVisible(child => {
+    model.bodyGroup.traverseVisible(child => {
         const mesh = child as THREE.Mesh;
         if (mesh.isMesh && mesh.castShadow) shadowCasters++;
     });
-    model.flipGroup.traverse(child => {
+    model.bodyGroup.traverse(child => {
         const mesh = child as THREE.Mesh;
         if (!mesh.isMesh) return;
         meshes++;
@@ -360,7 +367,13 @@ function v2Snapshot(vehicle: LocalVehicle | undefined): V2Snapshot | null {
         yawRate: s.yawRate,
         steerAngle: s.steerAngle,
         grounded: s.grounded,
-        flipAngle: s.flipAngle,
+        susp: s.susp,
+        flights: { count: vehicle.flights, last: { ...vehicle.lastFlight } },
+        body: {
+            y: vehicle.body.bodyY,
+            pitch: vehicle.body.groundPitch + vehicle.body.bodyPitch,
+            airHeight: vehicle.body.airHeight
+        },
         boostMeter: s.boostMeter,
         boosting: s.boosting,
         drifting: s.driftTicks > 0,
@@ -371,7 +384,6 @@ function v2Snapshot(vehicle: LocalVehicle | undefined): V2Snapshot | null {
         topSpeed: vehicle.car.params.topSpeed,
         input: { ...vehicle.car.input },
         ticks: vehicle.ticks,
-        jumps: vehicle.jumps,
         resets: vehicle.resets,
         resetHint: vehicle.resetHint,
         autoGas: vehicle.autoGas,
@@ -379,7 +391,7 @@ function v2Snapshot(vehicle: LocalVehicle | undefined): V2Snapshot | null {
     };
 }
 
-// Screen box of the local car's body (flip group, without shield and
+// Screen box of the local car's body (body group, without shield and
 // nametag) as fractions of the canvas, from the current camera
 export interface ScreenBox {
     left: number;
@@ -400,7 +412,7 @@ function localCarScreenBox(): ScreenBox | null {
     car.group.updateMatrixWorld(true);
     camera.updateMatrixWorld();
     let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
-    car.flipGroup.traverseVisible((child: THREE.Object3D) => {
+    car.bodyGroup.traverseVisible((child: THREE.Object3D) => {
         const mesh = child as THREE.Mesh;
         if (!mesh.isMesh || mesh === car.shieldMesh) return;
         if (!Array.isArray(mesh.material) && mesh.material.name === 'glass') return;
@@ -493,7 +505,7 @@ function carSnapshot(car: any): CarSnapshot {
         z: car.group.position.z,
         angle: car.group.rotation.y,
         speed: car.speed ?? 0,
-        visible: !!car.flipGroup?.visible
+        visible: !!car.bodyGroup?.visible
     };
 }
 
@@ -728,14 +740,15 @@ export function installE2EHook(): void {
         colliderProps(): TaggedCollider[] {
             return listTaggedColliders();
         },
-        // Puts the local car at rest at (x, z), facing angle. Online the
-        // server places it (debugPlace, only with E2E=1) and the next
-        // snapshot brings it there; offline and in the sandbox right away.
-        placeLocalCar(x: number, z: number, angle: number): void {
+        // Puts the local car at (x, z), facing angle, at rest or rolling
+        // straight ahead at speed (m/s). Online the server places it
+        // (debugPlace, only with E2E=1) and the next snapshot brings it
+        // there; offline and in the sandbox right away.
+        placeLocalCar(x: number, z: number, angle: number, speed = 0): void {
             const car = state.bulli;
             if (!car) throw new Error('No local car yet');
             if (netDriver.prediction && state.ws) {
-                sendToServer({ type: 'debugPlace', x, z, yaw: angle });
+                sendToServer({ type: 'debugPlace', x, z, yaw: angle, speed });
                 return;
             }
             car.group.position.x = x;
@@ -745,6 +758,11 @@ export function installE2EHook(): void {
             car.speed = 0;
             // v2 physics: the sim car is the source of the pose
             car.vehicle?.place(x, z, angle);
+            const s = car.vehicle?.car.state;
+            if (s) {
+                s.vx = Math.sin(angle) * speed;
+                s.vz = Math.cos(angle) * speed;
+            }
         },
         // Closes the socket as if the connection broke: the client
         // reconnects like after a lost connection, not before holdMs

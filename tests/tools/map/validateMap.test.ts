@@ -351,7 +351,7 @@ describe('ramps: lip, flight, axis', () => {
         expect(rampLip(across, ramp)).toBeCloseTo(0.8, 9);
     });
 
-    it('estimates the flight from the ramp slope, the lip and the sim\'s G_AIR = 20', () => {
+    it('estimates the flight from the ramp slope, the lip and the sim\'s GRAVITY = 20', () => {
         // h / L = 0.2 at 20 m/s: vy = 20 · 0.2 / √1.04 = 3.922, vh = 19.61;
         // falls 2 m: t = (3.922 + √(3.922² + 2 · 20 · 2)) / 20 = 0.6844 s
         const flight = rampFlight({ ...ramp, height: 2 }, 2, 20);

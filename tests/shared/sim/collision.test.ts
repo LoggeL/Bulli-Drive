@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { MEGA_SCALE } from '../../../src/shared/constants.js';
-import { BTN_JUMP, DT, GHOST_EXIT_TICKS, V_SAFE } from '../../../src/shared/sim/constants.js';
+import { DT, GHOST_EXIT_TICKS, V_SAFE } from '../../../src/shared/sim/constants.js';
 import { createFlatWorld } from '../../../src/shared/sim/scenarios.js';
 import type { CarClassId, SimCar } from '../../../src/shared/sim/types.js';
 import { CAR_CLASS_IDS } from '../../../src/shared/sim/vehicleClasses.js';
 import { stepVehicle } from '../../../src/shared/sim/world.js';
 import type { ColliderInput, SimWorld } from '../../../src/shared/world/colliders.js';
-import { DEG, drive, spawnCar, speedOf } from './helpers.js';
+import { DEG, drive, launch, spawnCar, speedOf } from './helpers.js';
 
 // Car against the static world (docs/phase-1a-design.md, 7.3 and 14.5)
 
@@ -100,10 +100,14 @@ describe('v2 wall response', () => {
         drive(grounded, world, 60, { throttle: 255 });
         expect(grounded.state.z).toBeLessThan(15);
 
-        // Jumping from 10 m before the bench clears it (apex 3 m), the lamp not
+        // Thrown up at 11 m/s about 10 m before the bench it clears it (apex
+        // 121 / 40 = 3.0 m, the old jump's), the lamp not
         const jumper = spawnCar(world, 'a', 'bulli', 0, 0, 0, 20);
         let maxZ = 0;
-        drive(jumper, world, 120, tick => ({ throttle: 255, buttons: tick === 12 ? BTN_JUMP : 0 }), () => {
+        drive(jumper, world, 120, tick => {
+            if (tick === 12) launch(jumper, 11);
+            return { throttle: 255 };
+        }, () => {
             maxZ = Math.max(maxZ, jumper.state.z);
         });
         expect(maxZ).toBeGreaterThan(17);
@@ -136,7 +140,7 @@ describe('v2 wall response', () => {
         expect(maxStep).toBeLessThan(0.05);
     });
 
-    it('jumping onto a fountain or a pond never moves the car further than its speed allows', () => {
+    it('flying onto a fountain or a pond never moves the car further than its speed allows', () => {
         // Fountain (r 5, top 1.5), pond (r 5.7, top 0.8), bench and planter
         const low: Extract<ColliderInput, { kind: 'circle' }>[] = [
             { kind: 'circle', x: 0, z: 0, r: 5, top: 1.5 },
@@ -154,7 +158,7 @@ describe('v2 wall response', () => {
                         const jump: boolean = !jumped && car.state.z >= -(collider.r + jumpAt);
                         jumped ||= jump;
                         car.input.throttle = 160;
-                        car.input.buttons = jump ? BTN_JUMP : 0;
+                        if (jump) launch(car, 11);
                         const { x, z } = car.state;
                         stepVehicle(car, world);
                         const moved = Math.hypot(car.state.x - x, car.state.z - z);
