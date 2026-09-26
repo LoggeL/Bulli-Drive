@@ -26,7 +26,7 @@ export function createDummy(spec: DummySpec, world: SimWorld): SimCar {
     return car;
 }
 
-// Back to the spawn at rest, with a fresh state (boost, drift, flip gone)
+// Back to the spawn at rest, with a fresh state (boost, drift and suspension reset)
 export function resetDummy(car: SimCar, spec: DummySpec, world: SimWorld): void {
     copyVehicleState(car.state, blankState);
     placeVehicle(car.state, world, spec.x, spec.z, spec.yaw);

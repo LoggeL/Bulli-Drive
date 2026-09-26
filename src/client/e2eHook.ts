@@ -391,7 +391,7 @@ function v2Snapshot(vehicle: LocalVehicle | undefined): V2Snapshot | null {
     };
 }
 
-// Screen box of the local car's body (flip group, without shield and
+// Screen box of the local car's body (body group, without shield and
 // nametag) as fractions of the canvas, from the current camera
 export interface ScreenBox {
     left: number;

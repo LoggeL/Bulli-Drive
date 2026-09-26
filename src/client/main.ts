@@ -249,7 +249,11 @@ function animate(frameTime: number) {
         const turboActive = state.bulli.powerups.speed.active;
         // v2 only: the drift boost (Shift) sounds and burns like the Turbo
         const vehicle: LocalVehicle | undefined = state.bulli.vehicle;
-        const boostActive = turboActive || !!vehicle?.car.state.boosting;
+        // In the air the boost gives no thrust and the car's group stays on
+        // the ground under it: no flame, no turbo sound and no puffs there
+        // (docs/phase-1a-design.md, 26.9)
+        const airborne = (vehicle?.airHeight ?? 0) > 0.3;
+        const boostActive = (turboActive || !!vehicle?.car.state.boosting) && !airborne;
         updateEngineSound(state.bulli.speed, isAccelerating, boostActive, vehicle?.airHeight ?? 0);
 
         // Update the automatic chase camera. Its yaw follows the car on the
@@ -262,7 +266,7 @@ function animate(frameTime: number) {
         const speed = Math.abs(state.bulli.speed);
 
         // Drift particles
-        if (speed > 0.1) {
+        if (speed > 0.1 && !airborne) {
             spawnDriftParticle();
         }
 

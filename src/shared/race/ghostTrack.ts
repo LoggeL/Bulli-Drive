@@ -3,7 +3,7 @@
 // 13 bytes each: x and z as i24 in 1/4096 m, y as i16 in cm, yaw as u16
 // (a full turn in 65536 steps), then three spare bytes (always 0; the
 // first held the flip angle of the removed jump, docs/phase-1a-design.md
-// 24). About 23 kB for 90 s; the JSON message carries it as Base64.
+// 26). About 23 kB for 90 s; the JSON message carries it as Base64.
 
 export const GHOST_SAMPLE_BYTES = 13;
 const XZ_SCALE = 4096;

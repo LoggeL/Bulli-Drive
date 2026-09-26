@@ -144,7 +144,13 @@ export class RemoteTrack {
         const ca = a.car, cb = b.car;
         out.x = hermite(ca.x, ca.vx * h, cb.x, cb.vx * h, s);
         out.z = hermite(ca.z, ca.vz * h, cb.z, cb.vz * h, s);
-        out.y = hermite(ca.y, ca.vy * h, cb.y, cb.vy * h, s);
+        // vy is the body's vertical speed (on its springs), y the underside at
+        // the wheels: on the ground the secant is y's tangent, vy only in the
+        // air (docs/phase-1a-design.md, 26.9)
+        const dy = cb.y - ca.y;
+        const ma = (ca.flags & CAR_GROUNDED) !== 0 ? dy : ca.vy * h;
+        const mb = (cb.flags & CAR_GROUNDED) !== 0 ? dy : cb.vy * h;
+        out.y = hermite(ca.y, ma, cb.y, mb, s);
         const yawB = ca.yaw + wrapAngle(cb.yaw - ca.yaw);
         out.yaw = wrapAngle(hermite(ca.yaw, ca.yawRate * h, yawB, cb.yawRate * h, s));
         const ua = ca.vx * Math.sin(ca.yaw) + ca.vz * Math.cos(ca.yaw);

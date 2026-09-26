@@ -22,9 +22,11 @@ type Box = { x: number; y: number; width: number; height: number };
 
 // The edge of a raised stretch of road on Bulli Bay, east-bound: the road
 // climbs 0.8 m within 4 m at x -564. Measured in the sim (all five classes,
-// full throttle from 30 m west): 55-59 ticks in the air, 2.4-2.8 m over the
-// ground at 38 m/s, landing at 10 m/s on the road beyond, clear for a
-// second after it (docs/phase-1a-design.md 26.8)
+// full throttle from 30 m west at 38 m/s): 55-58 ticks in the air, 2.3-2.7 m
+// over the ground, landing at 10 m/s on the sand beyond the crossing
+// (x -524), clear for a second after it; about 140 m further on (x -383,
+// some 3.5 s after the landing) the line ends at an obstacle, so a check
+// later than that needs another stretch (docs/phase-1a-design.md 26.8)
 const BUMP = { x: -596, z: 300, yaw: Math.PI / 2, speed: 38 };
 
 const overlaps = (a: Box, b: Box) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
