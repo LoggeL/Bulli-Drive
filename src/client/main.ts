@@ -20,7 +20,9 @@ import { AdaptiveRenderQuality, detectRenderTier } from './effects/renderQuality
 import { updateWorldShaders } from './effects/worldShaders.js';
 import { ensureCurrentBuild } from './buildVersion.js';
 import { installE2EHook } from './e2eHook.js';
-import { watchWebGLContext, isWebGLContextLost } from './ui/contextLoss.js';
+import { watchWebGLContext, isWebGLContextLost, showGraphicsUnavailable } from './ui/contextLoss.js';
+import { isSafeMode } from './render/safeMode.js';
+import { rememberGpu } from './net/clientReport.js';
 import { installPerfMonitor, type PerfMonitor } from './debug/perfMonitor.js';
 import { setupLighting, updateLighting } from './render/lighting.js';
 import { renderFrame } from './render/frameStats.js';
@@ -82,7 +84,17 @@ function init() {
     state.camera.position.set(0, RACE_CAMERA.height, RACE_CAMERA.distance);
 
     // Renderer
-    state.renderer = new THREE.WebGLRenderer({ antialias: true });
+    // The browser can refuse WebGL (e.g. blocked for the site after a GPU
+    // crash): show why instead of an endless loading screen
+    try {
+        // Lite graphics (after trouble) skip MSAA: its buffers cost the most memory
+        state.renderer = new THREE.WebGLRenderer({ antialias: !isSafeMode() });
+    } catch (error) {
+        console.error('WebGL is not available', error);
+        showGraphicsUnavailable(error);
+        return;
+    }
+    rememberGpu(state.renderer.getContext());
     renderQuality = new AdaptiveRenderQuality(
         state.renderer, window.innerWidth, window.innerHeight, detectRenderTier(state.renderer)
     );

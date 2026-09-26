@@ -11,6 +11,10 @@ import { createVehicleInput } from '../../src/shared/sim/types.js';
 // The real loss and restore in a browser are a step of
 // tests/e2e/desktop.spec.ts.
 
+// Graphics trouble reports (net/clientReport.ts) go out as a beacon; the
+// test page has no server to send them to
+Object.defineProperty(navigator, 'sendBeacon', { value: () => true, configurable: true });
+
 const canvas = document.createElement('canvas');
 
 function lose(): Event {
@@ -100,5 +104,25 @@ describe('a lost WebGL context', () => {
         vi.advanceTimersByTime(2000);
         expect(reloadButton()!.hidden).toBe(false);
         expect(document.querySelectorAll('#context-lost')).toHaveLength(1);
+    });
+});
+
+describe('WebGL refused at start', () => {
+    it('replaces the endless loading screen with an explanation and switches to lite graphics', async () => {
+        const { showGraphicsUnavailable } = await import('../../src/client/ui/contextLoss.js');
+        const { isSafeMode } = await import('../../src/client/render/safeMode.js');
+        localStorage.clear();
+        const loader = document.createElement('div');
+        loader.id = 'loading-screen';
+        document.body.appendChild(loader);
+
+        showGraphicsUnavailable(new Error('Error creating WebGL context.'));
+
+        expect(document.getElementById('loading-screen')).toBeNull();
+        const dialog = document.querySelector('[role="alertdialog"][aria-labelledby="graphics-unavailable-title"]');
+        expect(dialog?.textContent).toContain('3D graphics unavailable');
+        expect(isSafeMode()).toBe(true);
+        dialog?.remove();
+        localStorage.clear();
     });
 });

@@ -38,6 +38,7 @@ import { gracefulShutdown } from './shutdown.js';
 import { netsimFromEnv, SocketConnection } from './connection.js';
 import { hdriMiddleware, versionedAssetCache } from './staticAssets.js';
 import { AddressLimits, clientAddress, sessionLog } from './access.js';
+import { ClientReports } from './clientReports.js';
 
 // A crash leaves the process in an unknown state: log it and exit, the
 // restart policy starts a fresh one (docs/phase-1b-design.md, 11.2)
@@ -89,6 +90,17 @@ function preventStaleClientCaching(response: http.ServerResponse) {
 // Health and metrics (docs/phase-1b-design.md, 11.4 and 12). Defined
 // further down once the scheduler exists; the routes come first so they
 // also answer in dev, where Vite serves the client.
+// Graphics trouble reports from real devices (src/server/clientReports.ts)
+const clientReports = new ClientReports();
+app.post('/api/client-report', express.json({ limit: '4kb', type: () => true }), (request, response) => {
+    const outcome = clientReports.add(clientAddress(request) ?? 'unknown', request.body);
+    response.status(outcome === 'stored' ? 204 : outcome === 'limited' ? 429 : 400).end();
+});
+app.get('/api/client-reports', (_request, response) => {
+    response.setHeader('Cache-Control', 'no-store');
+    response.json(clientReports.list());
+});
+
 let healthSources: HealthSources | null = null;
 app.get('/healthz', (_request, response) => {
     response.setHeader('Cache-Control', 'no-store');

@@ -1,4 +1,5 @@
 import type { WebGLRenderer } from 'three';
+import { isSafeMode } from '../render/safeMode.js';
 
 const MIN_PIXEL_RATIO = 0.75;
 const MAX_PIXEL_RATIO = 2;
@@ -39,6 +40,8 @@ const SOFTWARE_RENDERER = /swiftshader|llvmpipe|softpipe|software|basic render/i
 export function detectRenderTier(renderer?: WebGLRenderer): RenderTier {
     const forced = tierOverride();
     if (forced) return forced;
+    // Lite graphics after a lost or refused WebGL context (render/safeMode.ts)
+    if (isSafeMode()) return 'software';
     if (renderer && SOFTWARE_RENDERER.test(rendererName(renderer))) return 'software';
     const coarse = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
     return coarse ? 'mobile' : 'desktop';
@@ -56,7 +59,9 @@ const MAX_PIXEL_RATIO_BY_TIER: Record<RenderTier, number> = { desktop: MAX_PIXEL
 let tierPixelRatioCap = MAX_PIXEL_RATIO;
 
 function maximumPixelRatio(): number {
-    return Math.max(MIN_PIXEL_RATIO, Math.min(window.devicePixelRatio || 1, tierPixelRatioCap));
+    // Lite graphics: one device pixel per CSS pixel, a quarter of the pixels of 2x
+    const cap = isSafeMode() ? 1 : tierPixelRatioCap;
+    return Math.max(MIN_PIXEL_RATIO, Math.min(window.devicePixelRatio || 1, cap));
 }
 
 /**
