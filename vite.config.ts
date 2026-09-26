@@ -61,6 +61,40 @@ function buildVersionPlugin(): Plugin {
 }
 
 /**
+ * The loading screen's first step (docs/ui.md 3.2): the inline bootstrap in
+ * index.html counts the game's code files as they load, weighted by size.
+ * This writes each file's size in bytes into its tag (data-size) and makes
+ * the stylesheet non-blocking: the loading screen has its critical CSS
+ * inline and paints without it, and nothing else shows before the loader
+ * is gone.
+ */
+function loaderAssetsPlugin(): Plugin {
+    return {
+        name: 'bulli-loader-assets',
+        apply: 'build',
+        transformIndexHtml: {
+            order: 'post',
+            handler(html, context) {
+                const bundle = context.bundle;
+                if (!bundle) throw new Error('The loader sizes need the generated client bundle.');
+                const size = (fileName: string): number => {
+                    const output = bundle[fileName];
+                    if (!output) return 0;
+                    return output.type === 'chunk' ? Buffer.byteLength(output.code) : Buffer.byteLength(output.source);
+                };
+                return html.replace(/<(script|link)\b([^>]*?)\b(src|href)="\/assets\/([^"]+)"([^>]*)>/g, (tag, name: string, before: string, attr: string, file: string, after: string) => {
+                    const bytes = size(`assets/${file}`);
+                    if (!bytes) return tag;
+                    const stylesheet = name === 'link' && /rel="stylesheet"/.test(before + after);
+                    const lazy = stylesheet ? ' media="print" onload="this.media=\'all\'"' : '';
+                    return `<${name}${before}${attr}="/assets/${file}"${after} data-size="${bytes}"${lazy}>`;
+                });
+            }
+        }
+    };
+}
+
+/**
  * Before phase 0 the client was compiled by tsc into public/js and the build
  * wrote public/build-version.txt. public/ is now Vite's publicDir and is copied
  * verbatim into dist/client, so leftovers from such a build in an older
@@ -89,7 +123,7 @@ export default defineConfig({
     // index.html in the project root is the entry; public/ (audio, favicon,
     // models, textures) is copied verbatim into the build.
     publicDir: 'public',
-    plugins: [legacyOutputGuard(), buildVersionPlugin()],
+    plugins: [legacyOutputGuard(), loaderAssetsPlugin(), buildVersionPlugin()],
     build: {
         outDir: 'dist/client',
         emptyOutDir: true,

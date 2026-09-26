@@ -26,17 +26,26 @@ function browserEnv(): SafeModeEnv {
 
 /** Whether this load uses lite graphics. */
 export function isSafeMode(env: SafeModeEnv = browserEnv()): boolean {
+    return safeModeReason(env) !== null;
+}
+
+/**
+ * Why this load uses lite graphics: the link says so (?lite=1), or the
+ * graphics had trouble on this device within SAFE_MODE_DAYS; null when it
+ * does not (the loading screen names the reason).
+ */
+export function safeModeReason(env: SafeModeEnv = browserEnv()): 'link' | 'trouble' | null {
     const forced = new URLSearchParams(env.search).get('lite');
-    if (forced === '1') return true;
+    if (forced === '1') return 'link';
     if (forced === '0') {
         clearSafeMode(env);
-        return false;
+        return null;
     }
     let until = NaN;
     try {
         until = Number(env.storage?.getItem(SAFE_MODE_KEY));
     } catch { /* ignore */ }
-    return Number.isFinite(until) && until > env.now;
+    return Number.isFinite(until) && until > env.now ? 'trouble' : null;
 }
 
 /** Remembers graphics trouble, so the next loads start in lite graphics. */

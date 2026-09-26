@@ -173,8 +173,6 @@ async function settle(page: Page, minMs: number): Promise<void> {
 
 async function join(browser: Browser, contextOptions: BrowserContextOptions, baseURL: string, name: string, mode: 'party' | 'freeroam' | 'race' = 'party'): Promise<Page> {
     const context = await browser.newContext({ ...contextOptions, baseURL });
-    await context.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, route =>
-        route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
     const page = await context.newPage();
     page.on('pageerror', error => log(`page error: ${error.message}`));
     page.on('console', message => { if (message.type() === 'error') log(`console.error: ${message.text()}`); });

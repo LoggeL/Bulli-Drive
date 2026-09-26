@@ -17,13 +17,14 @@ let world: MapWorld | null = null;
 let kit: Promise<KitCatalog | null> = Promise.resolve(null);
 let kitStarted = false;
 let kitFailed = false;
+let kitFiles: [settled: number, total: number] = [0, 0];
 let detail: WorldDetail = 'high';
 
 /** Starts loading the building kit (idempotent). A failed kit leaves the map without buildings, not broken. */
 export function startKitPreload(renderer: THREE.WebGLRenderer): void {
     if (kitStarted) return;
     kitStarted = true;
-    kit = loadKit(renderer, lightingTier()).catch(error => {
+    kit = loadKit(renderer, lightingTier(), (settled, total) => { kitFiles = [settled, total]; }).catch(error => {
         kitFailed = true;
         console.warn('Building kit failed to load, the map stays without buildings', error);
         return null;
@@ -33,6 +34,11 @@ export function startKitPreload(renderer: THREE.WebGLRenderer): void {
 /** Resolves once the kit has loaded (or failed). */
 export function whenKitReady(): Promise<void> {
     return kit.then(() => undefined);
+}
+
+/** Kit groups (GLB files with the atlas) loaded or failed, of all: [0, 0] before the manifest is in. */
+export function kitProgress(): [settled: number, total: number] {
+    return kitFiles;
 }
 
 export function kitStatus(): 'none' | 'loading' | 'ready' | 'failed' {

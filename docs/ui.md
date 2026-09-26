@@ -1,6 +1,6 @@
 # UI: Ladebildschirm und Hauptmenü
 
-**Stand:** 2026-09-26 · Branch `ui/menu-refactor` (auf `main` = Phase 3 live) · Konzept vor der Umsetzung.
+**Stand:** 2026-09-26 · Branch `ui/menu-refactor` (auf `main` = Phase 3 live) · U1 (Ladebildschirm) umgesetzt, U2–U5 offen. Was bei U1 anders kam als geplant, steht in Abschnitt 3.4 und in den Entscheidungen D12–D17.
 Auftrag: „also refactor the loading screen and main menu“. Der Ladebildschirm und das Hauptmenü sollen zum realistischen, ruhig-naturgetreuen Look von Bulli Bay passen ([`world-look.md`](world-look.md)) und sich auf Desktop und Handy gleich gut bedienen lassen.
 
 Die Entscheidungen in diesem Dokument hat der Workflow ohne Rückfragen getroffen. Jede steht mit ihrer Begründung in Abschnitt 12 („Entscheidungen“).
@@ -133,6 +133,30 @@ Heute verschwindet der Loader, sobald die Welt gebaut ist. Texturen und Modelle 
 Wir erzeugen sie mit `tools/ui/keyart.ts`. Das Skript nutzt die Infrastruktur von `scripts/screenshots.ts` (Produktionsbuild, GPU, `?e2e=1`, feste Kamera) und blendet das HUD aus. Es rendert 2560×1440 mit DPR 2 und schreibt mit `cwebp -q 72` `public/ui/keyart-1920.webp` (≤ 250 KB), `public/ui/keyart-portrait-900.webp` (≤ 120 KB) und den Blur-Platzhalter (≤ 1,5 KB). Ein Unit-Test prüft diese Größengrenzen (Abschnitt 10).
 
 Fallback nur, wenn das Render nicht trägt (etwa zu leerer Vordergrund): eine Codex-imagegen-Key-Art im Stil der Mockups, ausdrücklich „calm, naturalistic, not oversaturated“, mit dem Prompt unter `tools/ui/keyart-prompt.md`. Dann ist allerdings der Übergang zum Menü ein Schnitt mit Überblendung, und das Bild passt nur ungefähr zur Karte.
+
+### 3.4 Umsetzung (U1)
+
+![Nachher: Loader Desktop, Loader iPhone 13, WebGL verweigert](img/ui-loader.jpg)
+
+Aufnahmen vorher und nachher: `/private/tmp/claude-501/gfx/ui/before/` und `/private/tmp/claude-501/gfx/ui/after/` (Loader und Menü auf Desktop 1440×900, iPhone 13, iPhone SE quer, Pixel 7; dazu `after/nogl/` mit verweigertem WebGL und `after/lite/` mit `?lite=1`).
+
+| Teil | Datei |
+|---|---|
+| Fortschrittsmodell (rein, Uhr injiziert) | `src/client/ui/loadProgress.ts` |
+| Bindung an das DOM, Übernahme vom Bootstrap, Tipps, `removeLoader`, `stopLoadingScreen`, `?debug=load` | `src/client/ui/loadingScreen.ts` |
+| Quellen der Schritte (Kit, Autos, HDRI, Texturen, Warmup) | `src/client/assets/loadSteps.ts`; Verbindung und Karte melden aus `network/websocket.ts` |
+| Tipps je Eingabeart | `src/client/ui/loaderTips.ts` |
+| Showroom-Startpose (Key-Art und künftiges erstes Menübild) | `src/client/camera/showroom.ts` |
+| Chunk-Größen als `data-size`, nicht blockierendes Stylesheet | `vite.config.ts` (`loaderAssetsPlugin`) |
+| Key-Art-Render | `tools/ui/keyart.ts` → `public/ui/keyart-1920.webp` (70 KB), `public/ui/keyart-portrait-900.webp` (56 KB), Platzhalter inline (0,2 KB) |
+| Wortmarke | `tools/ui/wordmark.mjs` schreibt das SVG zwischen `<!-- wordmark -->`-Markern in `index.html` |
+| Schriften | `public/fonts/` mit `LICENSES.md` |
+
+**Ablauf:** Das Inline-Skript im `<head>` zählt die Code-Dateien per `load`-Event und bewegt den Balken bis 20 % (kleinster Anteil des Code-Schritts). `main.ts` startet nach dem Renderer `startLoadingScreen(tier)`, der die Anzeige übernimmt (nie rückwärts), und `trackLoadSteps`. Die Verbindung und die Karte melden aus `websocket.ts`; sobald die Welt steht (`mapWorldBuilt`), zählen die Texturen, und nach Texturen, Kit und eigenem Auto kompiliert `renderer.compileAsync(scene, camera)` die Shader. Ab diesem Moment wartet der Loader höchstens `ASSET_WAIT_MS` (20 s) auf den Rest (`expire('loader')`), jeder Schritt hat zusätzlich seine Obergrenze. Wenn die Phase „Loader“ erledigt ist, blendet `removeLoader` in 400 ms über das Menü aus, das auf derselben Key-Art liegt. Der START-Button zeigt weiter den Stand, jetzt als `percent('menu')` desselben Modells.
+
+**Gemessen (M5 Pro, lokal, `?debug=load`):** Code und Karte in ~0,35 s, Verbindung bis ~0,5 s, Kit, Autos und Texturen bis ~0,7 s, Loader weg nach 1,3–1,7 s. Lokal ist alles so schnell, dass die Gewichte daraus nicht kalibrierbar sind. Sie bleiben die Startwerte aus 3.2, die Kalibrierung mit gedrosseltem Netz gehört zu U5.
+
+**E2E:** Alle 8 Specs grün, 1:46 min inklusive Build (Port 9220). Die längere Loader-Phase hat die Suite nicht verlängert, weil das Asset-Gate am START vorher genauso lange wartete.
 
 ## 4. Hauptmenü
 
@@ -303,7 +327,7 @@ Jeder Schritt ist für sich lauffähig und mergebar.
 
 | Schritt | Inhalt |
 |---|---|
-| **U1 Loader** | Schriften selbst ausliefern, Wortmarke, Key-Art-Skript und Assets, `loadProgress` mit allen Quellen, Inline-CSS und Bootstrap, Tipps, Fehler-Overlays im neuen Stil. Das Menü bleibt vorerst das alte, liegt aber auf der Key-Art. |
+| **U1 Loader** (erledigt) | Schriften selbst ausliefern, Wortmarke, Key-Art-Skript und Assets, `loadProgress` mit allen Quellen, Inline-CSS und Bootstrap, Tipps, Fehler-Overlays im neuen Stil. Das Menü bleibt vorerst das alte, liegt aber auf der Key-Art. |
 | **U2 Menü-Overlay** | Layouts Desktop, hoch und quer, Karussell mit Renderings und Werten, Modus-Karten, DRIVE mit Fortschritt, Einstellungsdialog, About, a11y, Tastatur und Gamepad. Hintergrund noch Key-Art bzw. Lite-Einzelbild. `fixtures.ts` wird angepasst. |
 | **U3 Lack** | `paints.ts`, Protokoll v5, Server, Chips, Remote-Update |
 | **U4 Showroom und Übergang** | POI, `ShowroomCamera`, Autotausch, Kran-Übergang, Reduced Motion, fps-Deckel auf Handys |
@@ -324,10 +348,18 @@ Jeder Schritt ist für sich lauffähig und mergebar.
 | D9 | Barlow selbst ausgeliefert statt Google Fonts | Kein Fallback auf `cursive` ohne Netz, ruhige technische Anmutung, OFL |
 | D10 | Grafik „High“ ist auch auf Handys wählbar | Die Nutzer entscheiden selbst. Der Rückfall nach Kontextverlust auf Lite bleibt als Sicherheitsnetz |
 | D11 | Kein Sprung und kein Q in Menü- und Hilfetexten | Das Entfernen läuft parallel auf `sim/airborne-no-jump`. Beim Ship rebasen wir darauf und gleichen die HUD-Hinweise (`jump-hint`, `#btn-flip`) dort ab |
+| D12 | Wortmarke unten links im Loader-Panel über dem Balken statt oben links | Oben links liegt in der Key-Art der hellste Himmel. Papierfarbe darauf erreicht auch mit Scrim nur etwa 2:1 Kontrast, auf dem dunklen Deck unten mehr als 7:1 |
+| D13 | Showroom-Platz `(-745, -18)`, Gierwinkel 1,75, Hero-Winkel +0,45 rad, Querformat 8 m/1,4 m/35° mit Auto bei 68 % Breite, Hochformat 10 m/1,6 m/55° mit Auto bei 36 % Höhe | Aus Probe-Renders am Pier-Kopf. Mit 6,5 m füllte das Auto das Bild, und für die UI blieb kein Platz. Das Hochformat braucht mehr FOV, damit der Wagen nicht angeschnitten wird. Ein Unit-Test prüft, dass die Kamera in beiden Formaten auf dem Deck und mindestens 1 m vor dem Geländer steht. U4 übernimmt die Werte aus `camera/showroom.ts` oder legt sie als POI ab |
+| D14 | Key-Art-Lack als Farbcode `0x85B5A2`, der durch die heutige Lackabbildung zu Sea Green `#5E8C7A` wird | Bis U3 läuft jede Farbe durch `carPaintColor`. Ab U3 gehen Palettenwerte unverändert durch, dann trägt das Skript `0x5E8C7A` ein. Das Bild bleibt dabei gleich |
+| D15 | Auch Righteous, Quicksand und Permanent Marker selbst ausgeliefert (nicht vorgeladen) | Nur so fällt der Google-Fonts-Link schon in U1 weg, obwohl das alte Menü und das HUD diese Schriften noch nutzen. Permanent Marker verschwindet mit dem alten Splash in U2 |
+| D16 | Stylesheet nicht blockierend (`media="print"` mit Umschalten im `onload`), Größe im `data-size` | Der Loader malt nur mit Inline-CSS. Alles andere liegt bis zu seinem Ende unter ihm, deshalb gibt es kein sichtbares Flackern ohne Stil |
+| D17 | Bei verweigertem WebGL bleibt der Loader als Hintergrund stehen (Balken und Tipp aus, Status „3D graphics unavailable“), die Meldung liegt als Glas-Karte darüber. Im Lite-Modus zeigt der Loader oben rechts einen Hinweis mit Grund | Die Meldung ist sichtbar, ohne dass ein leerer Bildschirm entsteht. `safeModeReason` unterscheidet `?lite=1` von einem vorherigen Grafikproblem |
 
 ## 13. Offene Punkte
 
 - **HUD-Typografie:** Das HUD auf die neue Schrift und die neuen Tokens umstellen. Das ist ein eigener Schritt, weil HUD-Goldens und Render-Tests betroffen sind.
 - **Einstellungen im Spiel:** Den Dialog auch aus dem Raum-Menü (`roomMenu.ts`) öffnen können. Die Komponente ist dafür vorbereitet.
 - **Spielerzahl je Modus:** Die Modus-Karten könnten zeigen, wie viele Spieler gerade in einem Modus sind. Dafür bräuchte es einen öffentlichen Endpunkt oder eine Lobby-Nachricht vor `ready`, das ist nicht Teil dieses Auftrags.
+- **Statuszeile vor der Verbindung:** Solange keine Verbindung besteht, zeigt der Loader „Loading Bulli Bay“, weil der Kartenschritt bei 50 % das größte offene Gewicht hat. Das eigentliche Warten meldet dann das Verbindungsbanner. Ob ein eigener Status besser wäre, klären wir bei der Kalibrierung in U5.
+- **HUD-Hinweise zum Sprung:** `jump-hint` (Q) und `#btn-flip` stehen noch im HUD. Das ist kein Menü- oder Hilfetext, das gleichen wir beim Rebase auf `sim/airborne-no-jump` ab (D11).
 - **Merge mit `sim/airborne-no-jump`:** Beide Branches fassen wohl Protokoll und HUD-Hinweise an. Die Versionsnummer und die Steuerungstexte legen wir beim zweiten Merge zusammen.

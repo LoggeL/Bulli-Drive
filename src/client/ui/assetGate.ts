@@ -1,6 +1,7 @@
 import { models, whenModelsReady } from '../assets/gameModels.js';
 import { whenWorldTexturesLoaded, worldTextureProgress } from '../world/textures.js';
 import { whenKitReady } from '../world/mapScene.js';
+import { loadProgress } from './loadingScreen.js';
 
 // The start button waits for the world textures and the car models (loaded
 // and compiled), so nobody starts driving through an untextured world in a
@@ -20,9 +21,12 @@ export async function waitForGameAssets(button: HTMLElement | null, timeoutMs = 
     const original = label?.textContent ?? '';
     const show = () => {
         if (!label) return;
-        // Textures count three quarters, the models (one step) the rest
+        // Every step of the loader and the menu (the other cars) from the
+        // loading screen's progress; without one, textures three quarters
+        // and the models the rest
+        const progress = loadProgress();
         const modelShare = models.status === 'ready' || models.status === 'failed' ? 1 : 0;
-        const percent = Math.round((worldTextureProgress() * 0.75 + modelShare * 0.25) * 100);
+        const percent = progress ? progress.percent('menu') : Math.round((worldTextureProgress() * 0.75 + modelShare * 0.25) * 100);
         label.textContent = `LOADING ${Math.min(99, percent)}%`;
     };
     // Only show the loading state when there is something to wait for

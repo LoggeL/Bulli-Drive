@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clearSafeMode, isSafeMode, markGraphicsTrouble, SAFE_MODE_KEY, type SafeModeEnv } from '../../src/client/render/safeMode.js';
+import { clearSafeMode, isSafeMode, markGraphicsTrouble, safeModeReason, SAFE_MODE_KEY, type SafeModeEnv } from '../../src/client/render/safeMode.js';
 
 // Lite graphics after a lost or refused WebGL context
 // (src/client/render/safeMode.ts): sticky for 7 days, ?lite=1 forces it,
@@ -59,5 +59,16 @@ describe('safe mode', () => {
         expect(() => clearSafeMode(throwing)).not.toThrow();
         expect(isSafeMode(throwing)).toBe(false);
         expect(isSafeMode({ search: '', now: T0, storage: null })).toBe(false);
+    });
+
+    it('names why it is on: the link, or earlier trouble on this device', () => {
+        expect(safeModeReason(env())).toBeNull();
+        expect(safeModeReason(env('?lite=1'))).toBe('link');
+        const store = new Map<string, string>();
+        markGraphicsTrouble(env('', T0, store));
+        expect(safeModeReason(env('', T0 + 1, store))).toBe('trouble');
+        // The link wins over the stored trouble
+        expect(safeModeReason(env('?lite=1', T0 + 1, store))).toBe('link');
+        expect(safeModeReason(env('?lite=0', T0 + 1, store))).toBeNull();
     });
 });

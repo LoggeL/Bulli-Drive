@@ -15,7 +15,8 @@ import { applySplashChoice, initModeSelector, initRoomMenu } from './ui/roomMenu
 import { updatePalms } from './world/palms.js';
 import { lowerMapDetail, startKitPreload, updateMapScene } from './world/mapScene.js';
 import { updateMinimap } from './ui/minimap.js';
-import { loadingScreenCovers } from './ui/loadingScreen.js';
+import { loadingScreenCovers, removeLoader, showLoaderNotice, startLoadingScreen } from './ui/loadingScreen.js';
+import { trackLoadSteps } from './assets/loadSteps.js';
 import { Bulli, type CarType } from './entities/Bulli.js';
 import { sendToServer } from './network/socket.js';
 import { AdaptiveRenderQuality, detectRenderTier, wantsAntialias } from './effects/renderQuality.js';
@@ -23,16 +24,16 @@ import { updateWorldShaders } from './effects/worldShaders.js';
 import { ensureCurrentBuild } from './buildVersion.js';
 import { installE2EHook } from './e2eHook.js';
 import { watchWebGLContext, isWebGLContextLost, showGraphicsUnavailable } from './ui/contextLoss.js';
-import { isSafeMode } from './render/safeMode.js';
+import { isSafeMode, safeModeReason } from './render/safeMode.js';
 import { rememberGpu } from './net/clientReport.js';
 import { installPerfMonitor, type PerfMonitor } from './debug/perfMonitor.js';
-import { setupLighting, updateLighting } from './render/lighting.js';
+import { lightingTier, setupLighting, updateLighting } from './render/lighting.js';
 import { renderFrame } from './render/frameStats.js';
 import { startModelPreload } from './assets/gameModels.js';
 import { waitForGameAssets } from './ui/assetGate.js';
 import { updateCarModels } from './vehicle/CarModel.js';
 import { ChaseCamera, RACE_CAMERA, RACE_CAMERA_SLIP_BLEND, type ChaseTarget } from './camera/ChaseCamera.js';
-import { E2E_DRAW_INTERVAL_MS, SANDBOX, TUNE_PANEL, TUNE_REQUESTED } from './flags.js';
+import { E2E_DRAW_INTERVAL_MS, LOAD_DEBUG, SANDBOX, TUNE_PANEL, TUNE_REQUESTED } from './flags.js';
 import { gameHooks } from './game/hooks.js';
 import { assistProfileForDevice, type LocalVehicle } from './vehicle/LocalVehicle.js';
 import { updateRemoteCars } from './net/remotes.js';
@@ -111,6 +112,20 @@ function init() {
         .catch(error => console.warn('Model preload failed', error));
     // The map's building kit (GLB + KTX2 atlas) loads alongside
     if (!SANDBOX) startKitPreload(state.renderer);
+
+    // The loading screen shows the real progress of all that (docs/ui.md 3.2)
+    // and fades into the splash screen once the first view is complete
+    const progress = startLoadingScreen(lightingTier(), { debug: LOAD_DEBUG });
+    const lite = safeModeReason();
+    if (lite) showLoaderNotice(lite === 'link' ? 'Lite graphics' : 'Lite graphics after graphics trouble on this device');
+    if (!SANDBOX) {
+        let carType = 'bulli';
+        try {
+            carType = localStorage.getItem('bulli-car-type') || carType;
+        } catch { /* storage blocked */ }
+        trackLoadSteps(progress, { tier: lightingTier(), renderer: state.renderer, scene: state.scene, camera: state.camera, carType });
+        void progress.whenPhase('loader').then(removeLoader);
+    }
 
     // Audio Context
     try {

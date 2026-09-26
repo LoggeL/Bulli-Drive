@@ -122,7 +122,12 @@ function kitMaterial(source: THREE.MeshStandardMaterial, tier: RenderTier): THRE
  * is referenced by every GLB; a shared KTX2 loader answers each URL once,
  * so it is fetched, transcoded and uploaded once.
  */
-export async function loadKit(renderer: THREE.WebGLRenderer, tier: RenderTier): Promise<KitCatalog> {
+export async function loadKit(
+    renderer: THREE.WebGLRenderer,
+    tier: RenderTier,
+    // Groups loaded (or failed) of all groups, for the loading screen
+    onProgress: (settled: number, total: number) => void = () => undefined
+): Promise<KitCatalog> {
     const [{ GLTFLoader }, { MeshoptDecoder }, ktx2] = await Promise.all([
         import('three/examples/jsm/loaders/GLTFLoader.js'),
         import('three/examples/jsm/libs/meshopt_decoder.module.js'),
@@ -154,8 +159,13 @@ export async function loadKit(renderer: THREE.WebGLRenderer, tier: RenderTier): 
     const loader = new GLTFLoader();
     loader.setMeshoptDecoder(MeshoptDecoder);
     loader.setKTX2Loader(sharedKtx2);
-    const scenes = await Promise.all(Object.values(manifest.groups).map(group =>
-        loader.loadAsync(`${BASE}${group.file}?v=${group.hash}`).then(gltf => gltf.scene)));
+    const groups = Object.values(manifest.groups);
+    let settled = 0;
+    onProgress(0, groups.length);
+    const scenes = await Promise.all(groups.map(group =>
+        loader.loadAsync(`${BASE}${group.file}?v=${group.hash}`)
+            .finally(() => onProgress(++settled, groups.length))
+            .then(gltf => gltf.scene)));
 
     const pieces = new Map<string, KitPieceData>();
     let source: THREE.MeshStandardMaterial | null = null;

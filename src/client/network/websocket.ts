@@ -40,6 +40,8 @@ import { hideRespawnOverlay, showRespawnOverlay } from '../ui/respawnOverlay.js'
 import { clearRemoteViews, forgetRemote, noteSnapshotCars, setRemoteDead } from '../net/remotes.js';
 import { raceClient } from '../race/RaceClient.js';
 import { mapFeaturesGroup } from '../race/TrackDressing.js';
+import { loadProgress } from '../ui/loadingScreen.js';
+import { mapWorldBuilt } from '../assets/loadSteps.js';
 
 // The connection to the game server on protocol v2 (docs/phase-1b-design.md,
 // 3 and 11): the handshake, the map's world, the room state, the
@@ -128,7 +130,12 @@ export function initWebSocket() {
     // The map first (sources and terrain), then the socket: 'roomState'
     // needs the map to check the world and to predict
     const tryLoad = (attempt: number): void => {
-        loadGameMap().then(() => connect()).catch(error => {
+        loadProgress()?.start('map');
+        loadGameMap().then(() => {
+            // The files are in; building the world is the other half
+            loadProgress()?.report('map', 0.5);
+            connect();
+        }).catch(error => {
             // A map from a newer deploy: this page cannot read it, reload
             if (reloadForMap(error)) return;
             console.error('Map failed to load', error);
@@ -142,6 +149,7 @@ function connect() {
     window.clearTimeout(reconnectTimer);
     reconnectTimer = 0;
     const generation = ++socketGeneration;
+    loadProgress()?.start('connect');
     const ws = new WebSocket(CONFIG.serverUrl);
     ws.binaryType = 'arraybuffer';
     state.ws = ws;
@@ -380,6 +388,12 @@ function enterRoom(data: Extract<ServerMessage, { type: 'roomState' }>) {
         // The map's world: terrain, sea, roads, buildings, plants (once per page)
         createMapScene(map);
         initMinimap(map);
+        // The loading screen: connected, the world stands, its textures load
+        const progress = loadProgress();
+        if (progress) {
+            progress.done('connect');
+            mapWorldBuilt(progress, { renderer: state.renderer, scene: state.scene, camera: state.camera });
+        }
     } else {
         checkWorld(map, data.world);
     }
@@ -428,7 +442,7 @@ function enterRoom(data: Extract<ServerMessage, { type: 'roomState' }>) {
     const firstJoin = !state.bulli;
     if (firstJoin) {
         createLocalPlayer(state.myColor ?? 0xD32F2F, state.myName, data.preview);
-        removeLoader();
+        // The loader goes once the rest of its steps are in (main.ts)
     } else if (!resumedCar) {
         // Until the spawn the car waits at the preview spot
         placeLocalCarVisual(data.preview.x, data.preview.z, data.preview.yaw);
@@ -703,30 +717,5 @@ export function removeRemotePlayer(id: string) {
         delete state.remotePlayers[id];
         forgetRemote(id);
         updateScoreboardUI();
-    }
-}
-
-export function removeLoader() {
-    const loader = document.getElementById('loading-screen');
-    const splash = document.getElementById('splash-screen');
-
-    // Setup splash input with saved name
-    const savedName = localStorage.getItem('bulli-player-name');
-    const splashInput = document.getElementById('splash-name-input') as HTMLInputElement;
-    if (splashInput && savedName) {
-        splashInput.value = savedName;
-    }
-
-    // Show splash screen immediately behind loader
-    if (splash) {
-        splash.classList.remove('hidden');
-        if (splashInput) splashInput.focus();
-    }
-
-    if (loader) {
-        loader.style.opacity = '0';
-        setTimeout(() => {
-            loader.remove();
-        }, 500);
     }
 }

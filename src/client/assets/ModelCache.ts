@@ -114,6 +114,9 @@ export class ModelCache {
     private loadMs = 0;
     private warmupMs = 0;
     private disposed = false;
+    // Model files per model id: requested, and loaded or failed (the loading screen's counters)
+    private readonly filesRequested = new Map<string, number>();
+    private readonly filesSettled = new Map<string, number>();
 
     constructor(private readonly options: ModelCacheOptions) {
         this.baseUrl = options.baseUrl ?? '/models/';
@@ -153,7 +156,9 @@ export class ModelCache {
                 for (const lodEntry of entry.lods) {
                     if (!lods.includes(lodEntry.lod)) continue;
                     const url = `${this.baseUrl}${lodEntry.file}?v=${lodEntry.hash}`;
-                    jobs.push(withTimeout(loader.load(url), this.timeoutMs, lodEntry.file).then(
+                    this.filesRequested.set(id, (this.filesRequested.get(id) ?? 0) + 1);
+                    const settle = () => this.filesSettled.set(id, (this.filesSettled.get(id) ?? 0) + 1);
+                    jobs.push(withTimeout(loader.load(url), this.timeoutMs, lodEntry.file).finally(settle).then(
                         root => {
                             if (this.disposed) return;
                             const template = prepareTemplate(root, id, lodEntry.lod, this.staticWheelLods.includes(lodEntry.lod));
@@ -174,6 +179,20 @@ export class ModelCache {
         }
         this.loadMs = Math.round(performance.now() - t0);
         if (this.errors.length) console.warn('[models] falling back to procedural cars for:', this.errors);
+    }
+
+    /**
+     * Model files of the given models (all by default) that loaded or failed,
+     * and how many were requested: [0, 0] until the manifest is in.
+     */
+    fileProgress(ids?: readonly string[]): [settled: number, requested: number] {
+        let settled = 0, requested = 0;
+        for (const [id, count] of this.filesRequested) {
+            if (ids && !ids.includes(id)) continue;
+            requested += count;
+            settled += this.filesSettled.get(id) ?? 0;
+        }
+        return [settled, requested];
     }
 
     /** Manifest data of a model (dimensions, wheel radius, LOD sizes). */

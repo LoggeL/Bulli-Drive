@@ -36,10 +36,6 @@ export const test = base.extend<Fixtures>({
             const context = await browser.newContext({
                 baseURL, viewport, userAgent, isMobile, hasTouch, deviceScaleFactor
             });
-            // Keep the run hermetic: the web fonts come from Google, which is
-            // neither under test nor always reachable from CI.
-            await context.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, route =>
-                route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
 
             const page = await context.newPage();
             const player: Player = { page, sentMessages: [], binarySent: 0, binaryReceived: 0 };

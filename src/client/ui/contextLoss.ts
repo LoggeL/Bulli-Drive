@@ -2,6 +2,7 @@ import { releaseKeyboardInputs } from '../controls/keyboard.js';
 import { resetMobileControls } from '../controls/mobile.js';
 import { sendClientReport } from '../net/clientReport.js';
 import { isSafeMode, markGraphicsTrouble } from '../render/safeMode.js';
+import { stopLoadingScreen } from './loadingScreen.js';
 
 // The browser can take the WebGL context away at any time (GPU reset, driver
 // update, a mobile tab backgrounded under memory pressure). three.js already
@@ -95,14 +96,15 @@ function hideOverlay() {
 
 /**
  * The browser refused a WebGL context (no GPU, WebGL switched off, or
- * blocked for the site after a GPU crash): instead of a loading screen that
- * never ends, say so and offer lite graphics.
+ * blocked for the site after a GPU crash): instead of a loading bar that
+ * never ends, say so over the stopped loading screen and offer lite graphics.
  */
 export function showGraphicsUnavailable(error: unknown): void {
     const detail = error instanceof Error ? error.message : String(error);
     markGraphicsTrouble();
     sendClientReport('webgl-unavailable', detail);
-    document.getElementById('loading-screen')?.remove();
+    // The loading screen's key art stays behind the notice
+    stopLoadingScreen('3D graphics unavailable');
 
     const screen = document.createElement('div');
     screen.id = 'context-lost';

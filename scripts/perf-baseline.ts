@@ -137,9 +137,6 @@ function pagePath(options: Options): string {
 
 async function joinClient(browser: Browser, options: Options, baseURL: string, index: number): Promise<Page> {
     const context = await browser.newContext(contextOptions(options.device, baseURL));
-    // Keep the run hermetic, the web fonts come from Google.
-    await context.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, route =>
-        route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
     const page = await context.newPage();
     page.on('pageerror', error => log(`client ${index} page error: ${error.message}`));
 

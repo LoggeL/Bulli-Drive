@@ -253,4 +253,31 @@ describe('ModelCache', () => {
         expect(mapOf(2)).not.toBe(mapOf(0));
         expect(models.sharedTextureCount).toBe(1);
     });
+
+    it('counts the files of each model that loaded or failed (the loading screen)', async () => {
+        const twoCars: ModelManifest = {
+            version: 1,
+            models: { bulli: manifest.models.bulli, beetle: { ...manifest.models.bulli, lods: manifest.models.bulli.lods.map(l => ({ ...l, file: `beetle_lod${l.lod}.glb` })) } }
+        };
+        let releaseBeetle: () => void = () => undefined;
+        const beetleHeld = new Promise<void>(resolve => { releaseBeetle = resolve; });
+        const loader: ModelLoader = {
+            async load(url) {
+                if (url.includes('beetle_lod1')) await beetleHeld;
+                if (url.includes('bulli_lod2')) throw new Error('broken GLB');
+                return fakeCar();
+            }
+        };
+        const models = cache(loader, async () => twoCars);
+        expect(models.fileProgress()).toEqual([0, 0]);
+        const done = models.preload([1, 2]);
+        await vi.waitFor(() => expect(models.fileProgress(['bulli'])).toEqual([2, 2]));
+        // The broken bulli LOD counts as settled, the held beetle LOD not
+        expect(models.fileProgress(['beetle'])).toEqual([1, 2]);
+        expect(models.fileProgress()).toEqual([3, 4]);
+        releaseBeetle();
+        await done;
+        expect(models.fileProgress(['beetle'])).toEqual([2, 2]);
+        expect(models.fileProgress(['bulli', 'beetle'])).toEqual([4, 4]);
+    });
 });
