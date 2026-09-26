@@ -32,13 +32,24 @@ export interface BotSkill {
     draft: boolean;
     // Chance of a perfect start
     launchPerfect: number;
+    // Share of the grip the bot plans its corners with on unpaved ground
+    // (on top of the profile's margin): a car sliding on dirt or gravel
+    // answers the wheel late, and the easy bots' reaction delay (12 ticks)
+    // made them weave out of a 180 m bend of the Dune Rally at 39 m/s and
+    // miss its gate. Swept over 900 races on Bulli Bay (6 tracks × 3 levels
+    // × 5 classes × 10 seeds, tools/map/driveTrack.ts): missed gates 14 → 5
+    // (the easy bots' on unpaved ground 10 → 0), resets 20 → 10, the easy
+    // Dune Rally 3 s slower. The medium and hard bots keep the full grip:
+    // with less, five medium bots jammed in the Dune Rally's beach slalom
+    // (tests/integration/trackRaces.test.ts).
+    unpavedGrip: number;
 }
 
 // Start values (14)
 export const BOT_SKILLS: Readonly<Record<BotLevel, BotSkill>> = {
-    easy: { speedScale: 0.82, lookaheadTime: 0.55, noise: 1.5, delayTicks: 12, boost: false, draft: false, launchPerfect: 0.1 },
-    medium: { speedScale: 0.92, lookaheadTime: 0.45, noise: 0.8, delayTicks: 6, boost: true, draft: true, launchPerfect: 0.4 },
-    hard: { speedScale: 0.98, lookaheadTime: 0.4, noise: 0.3, delayTicks: 2, boost: true, draft: true, launchPerfect: 0.8 }
+    easy: { speedScale: 0.82, lookaheadTime: 0.55, noise: 1.5, delayTicks: 12, boost: false, draft: false, launchPerfect: 0.1, unpavedGrip: 0.7 },
+    medium: { speedScale: 0.92, lookaheadTime: 0.45, noise: 0.8, delayTicks: 6, boost: true, draft: true, launchPerfect: 0.4, unpavedGrip: 1 },
+    hard: { speedScale: 0.98, lookaheadTime: 0.4, noise: 0.3, delayTicks: 2, boost: true, draft: true, launchPerfect: 0.8, unpavedGrip: 1 }
 };
 
 // Pursuit point: LOOKAHEAD_BASE + lookaheadTime · speed ahead on the line (m)
@@ -127,7 +138,7 @@ export class LineDriver {
         private readonly random: RandomSource
     ) {
         this.skill = BOT_SKILLS[level];
-        this.profile = speedProfile(course.line, params, course.surfaces);
+        this.profile = speedProfile(course.line, params, course.surfaces, this.skill.unpavedGrip);
         const size = this.skill.delayTicks + 1;
         this.delaySteer = new Int16Array(size);
         this.delayThrottle = new Int16Array(size);

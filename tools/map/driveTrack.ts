@@ -4,14 +4,16 @@
 // reset onto the racing line). It answers what the validation can only
 // estimate: whether the bots finish every track without a reset, how long
 // they take (to calibrate drivability.ts) and whether each ramp really
-// throws a car into the air.
+// throws a car into the air. A missed gate goes as in the race room
+// (RaceRoom.ts): the bot holds reset, the reset puts it back before the
+// gate.
 
 import type { MapData } from '../../src/shared/map/mapData.js';
 import type { MapTrackDef } from '../../src/shared/map/routeToTrack.js';
 import { mulberry32 } from '../../src/shared/math/rng.js';
 import { raceInputFilter } from '../../src/shared/race/inputFilter.js';
 import { LineDriver } from '../../src/shared/race/lineDriver.js';
-import { advanceProgress, createCourse, createRaceProgress } from '../../src/shared/race/progress.js';
+import { advanceProgress, createCourse, createRaceProgress, resetBeforeNextGate } from '../../src/shared/race/progress.js';
 import { createRaceWorld } from '../../src/shared/race/raceWorld.js';
 import { buildRacingLine } from '../../src/shared/race/racingLine.js';
 import type { BotLevel, TrackDef } from '../../src/shared/race/types.js';
@@ -30,6 +32,8 @@ export interface DriveResult {
     // Race time from the green light (s), null if the bot did not finish
     time: number | null;
     resets: number;
+    // Gates the bot drove past outside (each one costs a reset)
+    missedGates: number;
     // Every stretch in the air of at least 3 ticks, with the ramp it began
     // on (-1: terrain)
     flights: Flight[];
@@ -54,15 +58,18 @@ export function driveTrack(map: MapData, track: MapTrackDef, car: CarClassId, le
     driver.startRace(START_TICKS);
     const progress = createRaceProgress();
     const flights: Flight[] = [];
-    let resets = 0, topSpeed = 0, air = 0, takeoff: Flight | null = null;
+    let resets = 0, missedGates = 0, missed = false, topSpeed = 0, air = 0, takeoff: Flight | null = null;
     for (let t = 1; t < START_TICKS + TICK_RATE * maxSeconds && progress.status === 'racing'; t++) {
+        // A missed gate: the reset puts the car back before it (RaceBot)
+        if (progress.missedGate) driver.requestReset();
         driver.drive(sim.state, sim.params, t, START_TICKS, [], sim.input);
         raceInputFilter(t < START_TICKS ? 'countdown' : 'racing', t, START_TICKS, sim.input);
         const x0 = sim.state.x, z0 = sim.state.z;
         const at = world.rampAt(x0, z0);
         const onRamp = at >= first ? at - first : -1;
         stepWorld([sim], world);
-        if (sim.events.reset) resets++;
+        const reset = sim.events.reset;
+        if (reset) resets++;
         topSpeed = Math.max(topSpeed, Math.sqrt(sim.state.vx * sim.state.vx + sim.state.vz * sim.state.vz));
         if (!sim.state.grounded) {
             if (air === 0) takeoff = { x: x0, z: z0, ticks: 0, ramp: onRamp };
@@ -72,11 +79,14 @@ export function driveTrack(map: MapData, track: MapTrackDef, car: CarClassId, le
             air = 0;
         }
         if (t >= START_TICKS) {
-            advanceProgress(progress, course, t, START_TICKS, x0, z0, sim.state.x, sim.state.z, sim.state.vx, sim.state.vz, sim.events.reset);
+            if (reset) resetBeforeNextGate(progress, course, sim.state, world);
+            advanceProgress(progress, course, t, START_TICKS, x0, z0, sim.state.x, sim.state.z, sim.state.vx, sim.state.vz, reset);
+            if (progress.missedGate && !missed) missedGates++;
+            missed = progress.missedGate;
         }
     }
     return {
         time: progress.finishTicks === null ? null : progress.finishTicks / TICK_RATE,
-        resets, flights, maxLineDistance: driver.maxLineDistance, topSpeed
+        resets, missedGates, flights, maxLineDistance: driver.maxLineDistance, topSpeed
     };
 }

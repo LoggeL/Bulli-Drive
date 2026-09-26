@@ -38,12 +38,55 @@ function racePoints(route: ResolvedRoute): ProfilePoint[] {
     return points.slice(from, to + 1);
 }
 
+const trackOf = (id: string) => tracks.find(([trackId]) => trackId === id)![2];
+
+describe('missed gates', () => {
+    it('put the bot back before the gate, as the race room does, and the race goes on', () => {
+        // Regression lock (seed 7, found in a sweep of 900 races): the easy
+        // Beetle drives past the Coast Sprint's gate 10 outside. The race
+        // room holds reset at once and puts it back before the gate: one
+        // reset, the race a few seconds longer than the 63.7 s of seed 1.
+        // Without the reset it drove on until the bot's own watchdog (25 m
+        // off the line for 2 s) reset it: 85 s, 32.6 m off the line; without
+        // the placement before the gate it followed the line to its end and
+        // stood there (a DNF with dozens of resets).
+        const result = driveTrack(map, trackOf('coast-sprint'), 'beetle', 'easy', 7);
+        expect(result.missedGates).toBe(1);
+        expect(result.resets).toBe(1);
+        expect(result.time).not.toBeNull();
+        expect(result.time!).toBeLessThan(70);
+        expect(result.maxLineDistance).toBeLessThan(25);
+    });
+
+    it('stay out of the Dune Rally for the easy bots: they take its dirt bends slower than the grip allows', () => {
+        // Regression lock of review finding (bulli easy, seeds 1-4, beetle
+        // easy seed 5): the easy bots came into a 180 m bend at 39 m/s on
+        // the dirt road after gate 6, weaved with their reaction delay and
+        // missed gate 7 (BotSkill.unpavedGrip)
+        const dune = trackOf('dune-rally');
+        for (const [car, seed] of [['bulli', 1], ['bulli', 2], ['bulli', 3], ['bulli', 4], ['beetle', 5]] as [CarClassId, number][]) {
+            const result = driveTrack(map, dune, car, 'easy', seed);
+            expect(result.missedGates, `${car} ${seed}`).toBe(0);
+            expect(result.resets, `${car} ${seed}`).toBe(0);
+        }
+    });
+});
+
 describe.each(tracks)('%s', (_id, route, track) => {
     it('is driven to the finish by a medium bot without a reset, never 8 m off the racing line', () => {
         const result = driveTrack(map, track, 'bulli');
         expect(result.time).not.toBeNull();
         expect(result.resets).toBe(0);
+        expect(result.missedGates).toBe(0);
         expect(result.maxLineDistance).toBeLessThan(8);
+    });
+
+    it('is finished by the easy bots of two more classes, at most one gate missed', () => {
+        for (const car of ['beetle', 'jeep'] as CarClassId[]) {
+            const result = driveTrack(map, track, car, 'easy');
+            expect(result.time, car).not.toBeNull();
+            expect(result.missedGates, car).toBeLessThanOrEqual(1);
+        }
     });
 
     it('throws the car into the air at every ramp, on every lap, for at least 0.3 s', () => {

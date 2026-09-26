@@ -71,6 +71,19 @@ describe('speedProfile', () => {
         expect(Array.from(tarmac)).toEqual(Array.from(speedProfile(line, createVehicleParams('bulli'))));
     });
 
+    it('takes a bot\'s own grip share on unpaved ground only (the easy bot: 0.7)', () => {
+        const line = samplePath(roundCorners([{ x: 0, z: 0 }, { x: 0, z: 300 }, { x: 300, z: 300 }], false, 20));
+        const inBend = (v: Float64Array) => line.points.map((p, i) => ({ p, v: v[i] })).filter(({ p }) => p.s >= 282 && p.s <= 309);
+        const sand = new Uint8Array(line.points.length).fill(SURFACE.sand);
+        for (const { v } of inBend(speedProfile(line, createVehicleParams('bulli'), sand, 0.7))) {
+            expect(v).toBeCloseTo(Math.sqrt(0.85 * 2.1 * G * 20 * 0.6 * 0.9 * 0.7), 6);
+        }
+        // On tarmac the share changes nothing, nor on the straights (vtop)
+        const tarmac = new Uint8Array(line.points.length).fill(SURFACE.asphalt);
+        for (const { v } of inBend(speedProfile(line, createVehicleParams('bulli'), tarmac, 0.7))) expect(v).toBeCloseTo(bendLimit, 6);
+        expect(speedProfile(line, createVehicleParams('bulli'), sand, 0.7)[0]).toBe(50);
+    });
+
     it('runs at vtop on the straights away from the bend', () => {
         const { line, v } = bend();
         const straight = line.points.map((p, i) => ({ p, v: v[i] })).filter(({ p }) => p.s < 200 || p.s > 330);
