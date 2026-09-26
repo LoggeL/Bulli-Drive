@@ -105,10 +105,13 @@ test('touch on a phone: splash, Free Roam, stick and buttons, room chip and a lo
     await expect(page.locator('#btn-autogas')).toHaveAttribute('aria-pressed', 'false');
     await expect.poll(async () => (await v2(page)).input.throttle).toBe(0);
 
-    // A tap on the flip button jumps
-    const jumpsBefore = (await v2(page)).jumps;
-    await page.locator('#btn-flip').tap();
-    await expect.poll(async () => (await v2(page)).jumps).toBe(jumpsBefore + 1);
+    // Holding the flip button resets the car (a tap no longer jumps,
+    // docs/phase-1a-design.md 26)
+    const resetsBefore = (await v2(page)).resets;
+    const flip = await center(page, '#btn-flip');
+    await touch(cdp, 'touchStart', [{ ...flip, id: 2 }]);
+    await expect.poll(async () => (await v2(page)).resets).toBe(resetsBefore + 1);
+    await touch(cdp, 'touchEnd', []);
     await expect.poll(async () => (await v2(page)).grounded).toBe(true);
 
     // ---- Back to the Party from the room chip ----

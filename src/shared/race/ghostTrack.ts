@@ -1,8 +1,9 @@
 // The pose track of a time trial ghost (docs/phase-2-design.md, 15.2 and
 // 15.4): one sample every GHOST_POSE_EVERY ticks (20 Hz) from startTick on,
 // 13 bytes each: x and z as i24 in 1/4096 m, y as i16 in cm, yaw as u16
-// (a full turn in 65536 steps), the flip angle as u8 (a full turn in 256
-// steps). About 23 kB for 90 s; the JSON message carries it as Base64.
+// (a full turn in 65536 steps), then three spare bytes (always 0; the
+// first held the flip angle of the removed jump, docs/phase-1a-design.md
+// 24). About 23 kB for 90 s; the JSON message carries it as Base64.
 
 export const GHOST_SAMPLE_BYTES = 13;
 const XZ_SCALE = 4096;
@@ -14,11 +15,10 @@ export interface GhostPose {
     y: number;
     z: number;
     yaw: number;
-    flipAngle: number;
 }
 
 export function createGhostPose(): GhostPose {
-    return { x: 0, y: 0, z: 0, yaw: 0, flipAngle: 0 };
+    return { x: 0, y: 0, z: 0, yaw: 0 };
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -54,8 +54,8 @@ export function writeGhostPose(bytes: Uint8Array, at: number, pose: GhostPose): 
     const yaw = turnSteps(pose.yaw, 65536);
     bytes[at + 8] = yaw & 0xff;
     bytes[at + 9] = yaw >> 8;
-    bytes[at + 10] = turnSteps(pose.flipAngle, 256);
-    // Two spare bytes (always 0): room for a flag set without a new format
+    // Spare bytes (always 0): room for a flag set without a new format
+    bytes[at + 10] = 0;
     bytes[at + 11] = 0;
     bytes[at + 12] = 0;
 }
@@ -69,7 +69,6 @@ export function readGhostPose(bytes: Uint8Array, i: number, out: GhostPose): Gho
     out.y = (y & 0x8000 ? y - 0x10000 : y) / Y_SCALE;
     const yaw = (bytes[at + 8] | (bytes[at + 9] << 8)) / 65536 * TWO_PI;
     out.yaw = yaw > Math.PI ? yaw - TWO_PI : yaw;
-    out.flipAngle = bytes[at + 10] / 256 * TWO_PI;
     return out;
 }
 

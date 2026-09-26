@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SURFACE } from '../../../src/shared/map/types.js';
-import { BTN_BOOST, BTN_JUMP, DT, SIM_TUNING as T } from '../../../src/shared/sim/constants.js';
+import { BTN_BOOST, DT, SIM_TUNING as T } from '../../../src/shared/sim/constants.js';
 import { VEHICLE_CLASSES } from '../../../src/shared/sim/vehicleClasses.js';
 import { WATER_RESET_TICKS } from '../../../src/shared/sim/vehicle.js';
 import { stepVehicle } from '../../../src/shared/sim/world.js';
@@ -156,7 +156,8 @@ describe('water', () => {
         car.state.y = 5;
         car.state.grounded = false;
         let dryTicks = 0, wetTicks = 0;
-        drive(car, world, 50, {}, () => {
+        // Falls 5.6 m to the depth of 0.6 m in √(2 · 5.6 / 20) s = 45 ticks
+        drive(car, world, 70, {}, () => {
             if (car.state.y > -0.6) {
                 expect(car.state.waterTicks).toBe(0);
                 dryTicks++;
@@ -168,21 +169,20 @@ describe('water', () => {
         expect(wetTicks).toBeGreaterThan(5);
     });
 
-    it('allows neither boost nor jump in the water', () => {
+    it('allows no boost in the water', () => {
         const run = (height: number) => {
             const world = groundWorld({ height: () => height, waterLevel: 0 });
             const car = spawnCar(world, 'a', 'bulli', 0, 0, 0, 10);
             car.state.boostMeter = 1;
-            let jumped = false, boosted = false;
-            drive(car, world, 10, tick => ({ throttle: 255, buttons: BTN_BOOST | (tick === 5 ? BTN_JUMP : 0) }), () => {
-                jumped ||= car.events.jumped;
+            let boosted = false;
+            drive(car, world, 10, { throttle: 255, buttons: BTN_BOOST }, () => {
                 boosted ||= car.state.boosting;
             });
-            return { jumped, boosted };
+            return boosted;
         };
-        // Dry ground as the control: both work there
-        expect(run(1)).toEqual({ jumped: true, boosted: true });
-        expect(run(-1)).toEqual({ jumped: false, boosted: false });
+        // Dry ground as the control: it works there
+        expect(run(1)).toBe(true);
+        expect(run(-1)).toBe(false);
     });
 });
 

@@ -15,10 +15,12 @@ export interface VehicleInput {
 }
 
 export interface VehicleState {
-    // Pose (m, rad)
-    x: number; y: number; z: number;   // y = underside of the car
+    // Pose (m, rad). y = underside of the car at the wheels: the ground
+    // height while the wheels touch it (docs/phase-1a-design.md, 26)
+    x: number; y: number; z: number;
     yaw: number;
-    // Velocity (world, m/s) and yaw rate (rad/s, + = left)
+    // Velocity (world, m/s) and yaw rate (rad/s, + = left). vy is the
+    // vertical speed of the body (sprung mass)
     vx: number; vy: number; vz: number;
     yawRate: number;
     // Filter states - part of the 1b snapshot, or the replay diverges
@@ -27,24 +29,21 @@ export interface VehicleState {
     rearGrip: number;      // 0..1, handbrake blend
     betaPrev: number;      // slip angle of the previous tick
     // Ground
-    grounded: boolean;
-    airTicks: number;      // ticks since leaving the ground (coyote, air fill)
+    grounded: boolean;     // the wheels touch the ground
+    airTicks: number;      // ticks since leaving the ground (air fill)
+    susp: number;          // body above its rest position over the wheels (m): + extended, - compressed
     // Gameplay
     boostMeter: number;    // 0..1
     boosting: boolean;
     driftTicks: number;    // > 0 while drifting (hysteresis), gameplay only
     driftLowTicks: number; // ticks below the exit threshold
     wallTicks: number;     // ticks since the last wall contact (saturates at 255)
-    flipAngle: number;     // flip (rad), 0 = no flip
-    flipRate: number;      // rad/s, fixed at take-off
-    jumpCooldown: number;  // ticks
     resetHold: number;     // ticks reset has been held
     reverseHold: number;   // ticks of brake at a standstill
     ghostTicks: number;    // contact ghost after reset/respawn (no car contact only)
     ghostExit: number;     // ticks world collision stays off after a Party ghost ended in a collider
     wasGhost: boolean;     // Party ghost in the previous tick
     scale: number;         // 1..MEGA_SCALE, eases
-    prevButtons: number;   // edge detection
     draft: number;         // 0..1 slipstream strength, rate limited (race world only)
     waterTicks: number;    // ticks in the water (docs/phase-3-design.md, 7), saturates at 255
 }
@@ -70,7 +69,6 @@ export interface VehicleParams {
     offroadGrip: number; offroadDrag: number;     // take effect in phase 3
     colliderRadius: number; // r of the two circles
     colliderOffset: number; // c: circle centres at ±c along the heading
-    jumpSpeed: number;      // m/s
     counterSteer: number;   // K_CS (assist profile)
     spinGuardAngle: number; // β0 (rad) (assist profile)
     contactMass: number;    // effective contact mass: mass × Mega/Shield, set by applyModifiers
@@ -81,7 +79,6 @@ export interface VehicleParams {
 export interface VehicleModifiers {
     turbo: boolean;
     mega: boolean;
-    superJump: boolean;
     ghost: boolean;   // Party ghost: no car contact AND no world colliders (world border still applies)
     shield: boolean;  // shield powerup or respawn shield
     launch: boolean;  // perfect race start: more acceleration (race rule)
@@ -95,7 +92,6 @@ export interface StepEvents {
     carImpact: number;      // max |Δv| from car contact (m/s)
     carImpactId: string;    // opponent of the strongest contact ('' = none)
     landedImpact: number;   // vertical impact speed
-    jumped: boolean;
     boostStarted: boolean;
     drifting: boolean;
     reset: boolean;
@@ -128,21 +124,18 @@ export function createVehicleState(): VehicleState {
         betaPrev: 0,
         grounded: true,
         airTicks: 0,
+        susp: 0,
         boostMeter: 0,
         boosting: false,
         driftTicks: 0,
         driftLowTicks: 0,
         wallTicks: 255,
-        flipAngle: 0,
-        flipRate: 0,
-        jumpCooldown: 0,
         resetHold: 0,
         reverseHold: 0,
         ghostTicks: 0,
         ghostExit: 0,
         wasGhost: false,
         scale: 1,
-        prevButtons: 0,
         draft: 0,
         waterTicks: 0
     };
@@ -161,21 +154,18 @@ export function copyVehicleState(dst: VehicleState, src: VehicleState): VehicleS
     dst.betaPrev = src.betaPrev;
     dst.grounded = src.grounded;
     dst.airTicks = src.airTicks;
+    dst.susp = src.susp;
     dst.boostMeter = src.boostMeter;
     dst.boosting = src.boosting;
     dst.driftTicks = src.driftTicks;
     dst.driftLowTicks = src.driftLowTicks;
     dst.wallTicks = src.wallTicks;
-    dst.flipAngle = src.flipAngle;
-    dst.flipRate = src.flipRate;
-    dst.jumpCooldown = src.jumpCooldown;
     dst.resetHold = src.resetHold;
     dst.reverseHold = src.reverseHold;
     dst.ghostTicks = src.ghostTicks;
     dst.ghostExit = src.ghostExit;
     dst.wasGhost = src.wasGhost;
     dst.scale = src.scale;
-    dst.prevButtons = src.prevButtons;
     dst.draft = src.draft;
     dst.waterTicks = src.waterTicks;
     return dst;
@@ -186,7 +176,7 @@ export function createVehicleInput(): VehicleInput {
 }
 
 export function createVehicleModifiers(): VehicleModifiers {
-    return { turbo: false, mega: false, superJump: false, ghost: false, shield: false, launch: false, bogged: false };
+    return { turbo: false, mega: false, ghost: false, shield: false, launch: false, bogged: false };
 }
 
 export function createStepEvents(): StepEvents {
@@ -202,7 +192,6 @@ export function resetStepEvents(ev: StepEvents): void {
     ev.carImpact = 0;
     ev.carImpactId = '';
     ev.landedImpact = 0;
-    ev.jumped = false;
     ev.boostStarted = false;
     ev.drifting = false;
     ev.reset = false;

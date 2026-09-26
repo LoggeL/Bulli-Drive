@@ -593,7 +593,7 @@ function handleEvent(event: GameEvent) {
 
 function resetLocalPowerups() {
     if (!state.bulli) return;
-    for (const key of ['speed', 'size', 'jump', 'shield', 'magnet', 'ghost'] as const) {
+    for (const key of ['speed', 'size', 'shield', 'magnet', 'ghost'] as const) {
         state.bulli.powerups[key].active = false;
         state.bulli.powerups[key].timer = 0;
     }

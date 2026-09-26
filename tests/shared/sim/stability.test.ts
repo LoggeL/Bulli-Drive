@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_TERRAIN_CONFIG } from '../../../src/shared/constants.js';
 import { mulberry32 } from '../../../src/shared/math/rng.js';
-import { BTN_BOOST, BTN_HANDBRAKE, BTN_JUMP, BTN_RESET } from '../../../src/shared/sim/constants.js';
-import { findScenario, runScenario, spawnCar } from '../../../src/shared/sim/scenarios.js';
+import { BTN_BOOST, BTN_HANDBRAKE, BTN_RESET } from '../../../src/shared/sim/constants.js';
+import { cosineBump, createGroundWorld, findScenario, runScenario, spawnCar } from '../../../src/shared/sim/scenarios.js';
 import { copyVehicleState, createVehicleState, type AssistProfile, type SimCar, type VehicleInput, type VehicleState } from '../../../src/shared/sim/types.js';
 import { createSimCar, placeVehicle } from '../../../src/shared/sim/vehicle.js';
 import { CAR_CLASS_IDS } from '../../../src/shared/sim/vehicleClasses.js';
-import { stepVehicle, stepWorld } from '../../../src/shared/sim/world.js';
+import { stepWorld } from '../../../src/shared/sim/world.js';
 import { createSimWorld, type ColliderInput } from '../../../src/shared/world/colliders.js';
 import { createLongWorld, DEG, drive } from './helpers.js';
 
@@ -40,7 +40,7 @@ describe('v2 stability', () => {
         }
         const world = createSimWorld(DEFAULT_TERRAIN_CONFIG, colliders, []);
         const cars = CAR_CLASS_IDS.map((classId, i) => spawnCar(world, `car${i}`, classId, i * 8 - 16, -150, 0));
-        const buttons = [0, BTN_HANDBRAKE, BTN_BOOST, BTN_JUMP, BTN_RESET, BTN_HANDBRAKE | BTN_BOOST];
+        const buttons = [0, BTN_HANDBRAKE, BTN_BOOST, BTN_RESET, BTN_HANDBRAKE | BTN_BOOST];
         for (let tick = 0; tick < 10000; tick++) {
             for (const car of cars) {
                 if (tick % 20 === 0) {
@@ -133,34 +133,41 @@ describe('v2 determinism', () => {
     });
 
     it('replays bit for bit from a copied state (all filter states live in VehicleState)', () => {
-        const world = createSimWorld(DEFAULT_TERRAIN_CONFIG, [{ kind: 'box', x: 30, z: 60, hw: 5, hd: 5, top: Infinity }], []);
+        // A bump 1.2 m high across the road at z 45-57: the copy is taken on
+        // it with the spring compressed, then the car flies (spring, flight
+        // and landing in the replay)
+        const world = createGroundWorld(cosineBump(1.2, 12, 45), [{ kind: 'box', x: 30, z: 60, hw: 5, hd: 5, top: Infinity }]);
         const script = (tick: number): Partial<VehicleInput> => ({
             throttle: 255,
             steer: Math.round(Math.sin(tick / 9) * 127),
-            buttons: (tick % 40 < 15 ? BTN_HANDBRAKE : 0) | (tick === 70 ? BTN_JUMP : 0) | (tick > 90 ? BTN_BOOST : 0)
+            buttons: (tick % 40 < 15 ? BTN_HANDBRAKE : 0) | (tick > 90 ? BTN_BOOST : 0)
         });
         const car = spawnCar(world, 'a', 'beetle', 0, 20, 0.2, 25);
         car.state.boostMeter = 0.8;
         let snapshot: VehicleState | null = null;
+        let airAfterCopy = 0;
         drive(car, world, 120, script, tick => {
             if (tick === 59) snapshot = copyVehicleState(createVehicleState(), car.state);
+            if (tick > 59 && !car.state.grounded) airAfterCopy++;
         });
+        expect(airAfterCopy).toBeGreaterThan(5);
+        expect(snapshot!.susp).toBeLessThan(-0.01);
         const replay: SimCar = spawnCar(world, 'a', 'beetle', 0, 0, 0);
         copyVehicleState(replay.state, snapshot!);
         drive(replay, world, 60, tick => script(tick + 60));
         expect(replay.state).toStrictEqual(car.state);
     });
 
-    it('triggers exactly one jump for a held key and ignores key repeat', () => {
+    it('ignores the bit of the removed jump (4)', () => {
+        // Regression lock: bit 4 was the jump; a car holding or tapping it
+        // drives exactly as without it
         const world = createLongWorld();
-        const car = spawnCar(world, 'a', 'bulli', 0, 0, 0);
-        let jumps = 0;
-        for (let tick = 0; tick < 60; tick++) {
-            car.input.buttons = BTN_JUMP;
-            stepVehicle(car, world);
-            if (car.events.jumped) jumps++;
-        }
-        expect(jumps).toBe(1);
+        const plain = spawnCar(world, 'a', 'bulli', 0, 0, 0, 10);
+        const tapping = spawnCar(world, 'a', 'bulli', 0, 0, 0, 10);
+        drive(plain, world, 60, { throttle: 200 });
+        drive(tapping, world, 60, tick => ({ throttle: 200, buttons: tick % 3 === 0 ? 4 : 0 }));
+        expect(tapping.state).toStrictEqual(plain.state);
+        expect(tapping.state.y).toBe(0);
     });
 });
 

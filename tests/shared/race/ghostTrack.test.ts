@@ -6,20 +6,19 @@ import { readRunInput, RunRecorder, RUN_INPUT_BYTES, writeRunInput } from '../..
 
 // The ghost's pose track and the recorded run inputs
 // (docs/phase-2-design.md, 15.1 and 15.2): quantisation limits from the
-// format (x, z in 1/4096 m, y in cm, yaw in 1/65536 turn, flip in 1/256
-// turn), Base64 against the RFC 4648 test vectors.
+// format (x, z in 1/4096 m, y in cm, yaw in 1/65536 turn, three spare
+// bytes), Base64 against the RFC 4648 test vectors.
 
-const TURN = Math.PI * 2;
 
 describe('ghost pose samples', () => {
     it('come back within the quantisation: x, z ± 1/8192 m, y ± 0.5 cm, yaw ± half a step', () => {
         const bytes = new Uint8Array(GHOST_SAMPLE_BYTES);
         const out = createGhostPose();
         const poses = [
-            { x: 356.123456, y: 13.777, z: 30.000061, yaw: 0.54, flipAngle: 0 },
-            { x: -97.99999, y: -0.004, z: -208.5, yaw: -2.9, flipAngle: 3.5 },
-            { x: 12.5, y: -2.506, z: 0.00006, yaw: 1e-9, flipAngle: 0.02 },
-            { x: 2047.9, y: 150, z: -2047.9, yaw: Math.PI - 1e-9, flipAngle: TURN - 0.01 }
+            { x: 356.123456, y: 13.777, z: 30.000061, yaw: 0.54 },
+            { x: -97.99999, y: -0.004, z: -208.5, yaw: -2.9 },
+            { x: 12.5, y: -2.506, z: 0.00006, yaw: 1e-9 },
+            { x: 2047.9, y: 150, z: -2047.9, yaw: Math.PI - 1e-9 }
         ];
         for (const pose of poses) {
             writeGhostPose(bytes, 0, pose);
@@ -33,20 +32,20 @@ describe('ghost pose samples', () => {
             // Kept in (-π, π], like the sim's headings
             expect(out.yaw).toBeGreaterThan(-Math.PI);
             expect(out.yaw).toBeLessThanOrEqual(Math.PI);
-            const dFlip = Math.atan2(Math.sin(out.flipAngle - pose.flipAngle), Math.cos(out.flipAngle - pose.flipAngle));
-            expect(Math.abs(dFlip)).toBeLessThanOrEqual(Math.PI / 256 + 1e-12);
+            // The spare bytes stay 0
+            expect([...bytes.subarray(10)]).toEqual([0, 0, 0]);
         }
     });
 
     it('keeps x and z within ±2048 m (clamped beyond) and writes 13 bytes a sample', () => {
         const bytes = new Uint8Array(GHOST_SAMPLE_BYTES);
         const out = createGhostPose();
-        writeGhostPose(bytes, 0, { x: 5000, y: 0, z: -5000, yaw: 0, flipAngle: 0 });
+        writeGhostPose(bytes, 0, { x: 5000, y: 0, z: -5000, yaw: 0 });
         readGhostPose(bytes, 0, out);
         expect(out.x).toBeCloseTo(2048 - 1 / 4096, 9);
         expect(out.z).toBe(-2048);
         const writer = new GhostTrackWriter();
-        for (let i = 0; i < 300; i++) writer.push({ x: i, y: 0, z: -i, yaw: 0, flipAngle: 0 });
+        for (let i = 0; i < 300; i++) writer.push({ x: i, y: 0, z: -i, yaw: 0 });
         const track = writer.finish();
         expect(track.byteLength).toBe(300 * 13);
         expect(ghostSampleCount(track)).toBe(300);

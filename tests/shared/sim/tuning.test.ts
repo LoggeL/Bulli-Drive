@@ -53,8 +53,8 @@ describe('v2 tuning', () => {
     it('replaces the whole tuning on import, not just the listed values', () => {
         SIM_TUNING.K_BD = 9;
         VEHICLE_CLASSES.bulli.mass = 1700;
-        importTuning({ format: 1, global: { STICK: 12 } });
-        expect(exportTuning()).toStrictEqual({ format: 1, global: { STICK: 12 }, classes: {}, profiles: {} });
+        importTuning({ format: 1, global: { SUSP_FREQ: 2.5 } });
+        expect(exportTuning()).toStrictEqual({ format: 1, global: { SUSP_FREQ: 2.5 }, classes: {}, profiles: {} });
     });
 
     it('rejects broken input and leaves the tuning untouched', () => {
@@ -100,7 +100,7 @@ describe('v2 tuning', () => {
         expect(message({ format: 1, extra: 1 })).toBe('invalid tuning: extra is unknown');
         expect(message({ format: 1, global: [] })).toBe('invalid tuning: global is not an object');
         expect(message({ format: 1, global: { NOPE: 1 } })).toBe('invalid tuning: global.NOPE is unknown');
-        expect(message({ format: 1, global: { STICK: Infinity } })).toBe('invalid tuning: global.STICK must be a finite number');
+        expect(message({ format: 1, global: { SUSP_FREQ: Infinity } })).toBe('invalid tuning: global.SUSP_FREQ must be a finite number');
         expect(message({ format: 1, classes: [] })).toBe('invalid tuning: classes is not an object');
         expect(message({ format: 1, classes: { tank: {} } })).toBe('invalid tuning: classes.tank is unknown');
         expect(message({ format: 1, classes: { bulli: null } })).toBe('invalid tuning: classes.bulli is not an object');

@@ -65,7 +65,6 @@ export class GhostPlayback {
         out.z = hermite(b.z, tangent(a.z, c.z, span0), c.z, tangent(b.z, d.z, span1), s);
         // Angles on the short way round
         out.yaw = wrapAngle(b.yaw + wrapAngle(c.yaw - b.yaw) * s);
-        out.flipAngle = b.flipAngle + wrapAngle(c.flipAngle - b.flipAngle) * s;
         return out;
     }
 }

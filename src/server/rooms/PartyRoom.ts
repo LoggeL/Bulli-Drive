@@ -166,7 +166,6 @@ export class PartyRoom extends Room {
             const mods = car.mods;
             mods.turbo = powerupActive(state, 'speed', tick);
             mods.mega = powerupActive(state, 'size', tick);
-            mods.superJump = powerupActive(state, 'jump', tick);
             mods.ghost = powerupActive(state, 'ghost', tick);
             mods.shield = powerupActive(state, 'shield', tick) || state.respawnShield;
             state.tickStartVx = car.state.vx;

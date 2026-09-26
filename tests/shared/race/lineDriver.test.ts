@@ -232,6 +232,30 @@ describe('LineDriver', () => {
             return driver;
         }
 
+        it('turns a car facing against the line at full lock towards its target (pure pursuit would drive on)', () => {
+            // At z = 100, 1 m right of the line (x = +1 is left when facing
+            // +z), facing -z at 5 m/s: the target lies behind, to the car's
+            // left (its left axis is -x). The pursuit arc alone asks for
+            // sin α ≈ 0.03, next to nothing.
+            const steerAfter = (yaw: number) => {
+                const course = createCourse(straight, buildRacingLine(straight));
+                const car = createSimCar('bot', 'bulli');
+                car.state.x = 1;
+                car.state.z = 100;
+                car.state.yaw = yaw;
+                car.state.vx = 5 * Math.sin(yaw);
+                car.state.vz = 5 * Math.cos(yaw);
+                const driver = new LineDriver(course, car.params, 'hard', mulberry32(3));
+                driver.startRace(0);
+                for (let t = 1; t <= 20; t++) driver.drive(car.state, car.params, t, 0, [], car.input);
+                return car.input.steer;
+            };
+            expect(steerAfter(Math.PI)).toBe(127);
+            expect(steerAfter(-Math.PI + 0.2)).toBe(127);
+            // Facing along the line: the ordinary pursuit, well short of the lock
+            expect(Math.abs(steerAfter(0))).toBeLessThan(60);
+        });
+
         it('pulls 3 m out to the side away from a slower car ahead, and aims there', () => {
             const right = offsetAfter('hard', { x: 1, z: 112, vz: 10 });
             expect(right.laneOffset).toBe(-EVADE_OFFSET);

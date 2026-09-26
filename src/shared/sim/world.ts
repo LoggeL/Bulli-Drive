@@ -1,6 +1,7 @@
 // One fixed tick for all cars of a session (docs/phase-1a-design.md, 6.3):
-// forces per car, then SUBSTEPS rounds of movement, world collision and
-// car-car contact, then ground, drift and boost per car. The order depends
+// forces per car, then SUBSTEPS rounds of movement, world collision,
+// car-car contact and the vertical motion over the ground (section 26),
+// then drift and boost per car. The order depends
 // only on the car ids, never on the order the cars arrived in.
 
 import type { SimWorld } from '../world/colliders.js';
@@ -10,7 +11,7 @@ import { resolveContact } from './contact.js';
 import { applyModifiers } from './modifiers.js';
 import { updateDrafts } from './slipstream.js';
 import { resetStepEvents, type SimCar, type VehicleState } from './types.js';
-import { finishTick, integrateForces, resetVehicle } from './vehicle.js';
+import { finishTick, integrateForces, resetVehicle, stepVertical } from './vehicle.js';
 
 const CONTACT_ITERATIONS = 2;
 const SUB_DT = DT / SUBSTEPS;
@@ -69,12 +70,15 @@ export function stepWorld(cars: SimCar[], world: SimWorld): void {
                 for (let j = i + 1; j < count; j++) resolveContact(cars[i], cars[j]);
             }
         }
+        for (let i = 0; i < count; i++) {
+            if (!cars[i].kinematic) stepVertical(cars[i], world, SUB_DT);
+        }
     }
 
     for (let i = 0; i < count; i++) {
         const car = cars[i];
         if (car.kinematic) continue;
-        finishTick(car, world);
+        finishTick(car);
         if (!stateIsFinite(car.state)) recoverCar(car, world);
     }
 }
@@ -83,8 +87,8 @@ function stateIsFinite(s: VehicleState): boolean {
     return Number.isFinite(s.x) && Number.isFinite(s.y) && Number.isFinite(s.z) && Number.isFinite(s.yaw)
         && Number.isFinite(s.vx) && Number.isFinite(s.vy) && Number.isFinite(s.vz) && Number.isFinite(s.yawRate)
         && Number.isFinite(s.steerAngle) && Number.isFinite(s.loadX) && Number.isFinite(s.rearGrip)
-        && Number.isFinite(s.betaPrev) && Number.isFinite(s.boostMeter) && Number.isFinite(s.flipAngle)
-        && Number.isFinite(s.flipRate) && Number.isFinite(s.scale) && Number.isFinite(s.draft);
+        && Number.isFinite(s.betaPrev) && Number.isFinite(s.boostMeter) && Number.isFinite(s.susp)
+        && Number.isFinite(s.scale) && Number.isFinite(s.draft);
 }
 
 // A car whose state went NaN or infinite (a degenerate case or a broken

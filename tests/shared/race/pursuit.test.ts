@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
     BACKOFF_TICKS, GOING_TICKS, RESET_TICKS, STUCK_TICKS, StuckWatch, pursuitSteer, steerForAngle, wrapAngle
 } from '../../../src/shared/race/pursuit.js';
-import { BTN_RESET } from '../../../src/shared/sim/constants.js';
 import { createVehicleInput, createVehicleState } from '../../../src/shared/sim/types.js';
 import { createSimCar } from '../../../src/shared/sim/vehicle.js';
 
@@ -37,9 +36,8 @@ describe('StuckWatch', () => {
     const input = () => createVehicleInput();
 
     // Ticks of throttle at a standstill; returns what override() said each tick
-    function stuckFor(watch: StuckWatch, ticks: number, steer = 30, flip = 0): string[] {
+    function stuckFor(watch: StuckWatch, ticks: number, steer = 30): string[] {
         const s = createVehicleState();
-        s.flipAngle = flip;
         const said: string[] = [];
         for (let t = 0; t < ticks; t++) {
             const out = input();
@@ -74,13 +72,7 @@ describe('StuckWatch', () => {
         expect(out.steer).toBe(127);
     });
 
-    it('holds reset straight away when the car is flipped, and not while it gets going', () => {
-        const flipped = new StuckWatch();
-        const said = stuckFor(flipped, STUCK_TICKS + 1, 30, 1);
-        expect(said[STUCK_TICKS]).toBe('reset');
-        const out = input();
-        flipped.override(out);
-        expect(out.buttons).toBe(BTN_RESET);
+    it('does not count a car that gets going as stuck', () => {
         // Faster than 4 m/s: the count starts over
         const moving = new StuckWatch();
         const s = createVehicleState();

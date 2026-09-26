@@ -123,7 +123,6 @@ export class NetClient {
         prediction.modsFor = (tick, mods) => {
             mods.turbo = this.powerupActive('speed', tick);
             mods.mega = this.powerupActive('size', tick);
-            mods.superJump = this.powerupActive('jump', tick);
             mods.ghost = this.powerupActive('ghost', tick);
             mods.shield = this.powerupActive('shield', tick) || this.respawnShieldAt(tick);
         };

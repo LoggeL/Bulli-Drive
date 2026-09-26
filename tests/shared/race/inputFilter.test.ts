@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { inStartGhost, raceFrozen, racePhaseAt, raceGhostFloor, raceInputFilter } from '../../../src/shared/race/inputFilter.js';
-import { BTN_BOOST, BTN_HANDBRAKE, BTN_JUMP, BTN_RESET } from '../../../src/shared/sim/constants.js';
+import { BTN_BOOST, BTN_HANDBRAKE, BTN_RESET } from '../../../src/shared/sim/constants.js';
 import { createFlatWorld, spawnCar } from '../../../src/shared/sim/scenarios.js';
 import type { VehicleInput } from '../../../src/shared/sim/types.js';
 import { stepVehicle } from '../../../src/shared/sim/world.js';
@@ -8,7 +8,7 @@ import { stepVehicle } from '../../../src/shared/sim/world.js';
 // Countdown freeze and start ghost (docs/phase-2-design.md, 11 and 12.1)
 
 const S = 500;
-const ALL = BTN_HANDBRAKE | BTN_BOOST | BTN_JUMP | BTN_RESET;
+const ALL = BTN_HANDBRAKE | BTN_BOOST | BTN_RESET;
 const full = (): VehicleInput => ({ steer: -90, throttle: 255, brake: 255, buttons: ALL });
 
 describe('racePhaseAt', () => {
@@ -41,10 +41,10 @@ describe('raceInputFilter', () => {
         expect(raceFrozen('racing', S + 5000, S)).toBe(false);
     });
 
-    it('from S on drops only the jump (E4)', () => {
-        expect(raceInputFilter('racing', S, S, full())).toEqual({ steer: -90, throttle: 255, brake: 255, buttons: ALL & ~BTN_JUMP });
-        expect(raceInputFilter('finished', S + 5000, S, full()).buttons).toBe(ALL & ~BTN_JUMP);
-        expect(raceInputFilter('results', S + 9000, S, full()).buttons).toBe(ALL & ~BTN_JUMP);
+    it('from S on passes the input unchanged (the jump E4 dropped is gone from the sim)', () => {
+        expect(raceInputFilter('racing', S, S, full())).toEqual({ steer: -90, throttle: 255, brake: 255, buttons: ALL });
+        expect(raceInputFilter('finished', S + 5000, S, full()).buttons).toBe(ALL);
+        expect(raceInputFilter('results', S + 9000, S, full()).buttons).toBe(ALL);
     });
 
     it('keeps a car standing through a 240-tick countdown with everything held (no reversing, no creeping)', () => {

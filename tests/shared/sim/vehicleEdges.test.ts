@@ -1,17 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { MEGA_SCALE } from '../../../src/shared/constants.js';
-import { BTN_BOOST, BTN_JUMP, BTN_RESET, DT } from '../../../src/shared/sim/constants.js';
+import { BTN_BOOST, BTN_RESET, DT } from '../../../src/shared/sim/constants.js';
 import { createFlatWorld, FLAT_TERRAIN } from '../../../src/shared/sim/scenarios.js';
 import { stepVehicle } from '../../../src/shared/sim/world.js';
 import { createSimWorld } from '../../../src/shared/world/colliders.js';
 import { drive, forwardSpeed, spawnCar, speedOf } from './helpers.js';
 
-// Edges of the vehicle step (docs/phase-1a-design.md, 6.4-6.7) the golden
-// runs on flat ground do not reach: boost and the speed clamp in the air,
-// the coyote limit, landing, flips, the drift event, the Mega scale rate,
-// the reset and a slope along z. Values: gravity in the air 20 m/s², the
-// boost 10 m/s² (half in the air), jump 11 m/s, coyote 6 ticks, |v| at
-// most 90 m/s, landings above 10 m/s lose up to 15 % of their speed.
+// Edges of the vehicle step (docs/phase-1a-design.md, 6.4-6.7 and 26) the
+// golden runs on flat ground do not reach: no drive, boost or steering in
+// the air, the landing assist, the speed clamp in the air, landing, the
+// drift event, the Mega scale rate, the reset and a slope along z. Values:
+// gravity 20 m/s², the yaw rate eases at 3/s towards 2/s times the slip
+// angle, |v| at most 90 m/s, landings above 10 m/s lose up to 15 % of
+// their speed.
 
 // A car in the air, 20 m above the flat ground, heading +z at speed
 function flying(speed: number) {
@@ -24,28 +25,40 @@ function flying(speed: number) {
 }
 
 describe('in the air', () => {
-    it('boosts with half the ground push towards vtop + 20', () => {
-        const plain = flying(30), boosted = flying(30);
-        boosted.car.state.boosting = true;
-        boosted.car.state.boostMeter = 1;
-        boosted.car.input.buttons = BTN_BOOST;
+    it('neither drives, brakes nor boosts: only the air drag acts', () => {
+        const plain = flying(30), pushed = flying(30), braked = flying(30);
+        pushed.car.state.boosting = true;
+        pushed.car.state.boostMeter = 1;
         stepVehicle(plain.car, plain.world);
-        stepVehicle(boosted.car, boosted.world);
-        // 10 m/s² · 0.5 for one tick, far below the target: 1/12 m/s more
-        expect(boosted.car.state.vz - plain.car.state.vz).toBeCloseTo(10 * 0.5 * DT, 9);
-        expect(boosted.car.state.vx).toBeCloseTo(0, 12);
-        // 5 m/s below the target the push is halved
-        const top = boosted.car.params.topSpeed;
-        const near = flying(top + 15), nearPlain = flying(top + 15);
-        near.car.state.boosting = true;
-        near.car.state.boostMeter = 1;
-        near.car.input.buttons = BTN_BOOST;
-        stepVehicle(near.car, near.world);
-        stepVehicle(nearPlain.car, nearPlain.world);
-        expect(near.car.state.vz - nearPlain.car.state.vz).toBeCloseTo(10 * 0.5 * DT * 0.5, 9);
+        drive(pushed.car, pushed.world, 1, { throttle: 255, buttons: BTN_BOOST });
+        drive(braked.car, braked.world, 1, { brake: 255 });
+        // Air drag C_AIR·|v|·DT = 0.0006 · 30 / 60 of the speed
+        expect(plain.car.state.vz).toBeCloseTo(30 * (1 - 0.0006 * 30 / 60), 12);
+        expect(pushed.car.state.vz).toBe(plain.car.state.vz);
+        expect(braked.car.state.vz).toBe(plain.car.state.vz);
+        // Falling with GRAVITY: 20 m/s² for one tick
+        expect(plain.car.state.vy).toBeCloseTo(-20 / 60, 12);
     });
 
-    it('never flies faster than 90 m/s horizontally, and neither drives', () => {
+    it('does not steer, and eases the yaw rate towards 2/s times the slip angle at 3/s', () => {
+        // Heading and flight direction the same (β = 0): a yaw rate of 0.4
+        // loses 3 · DT = 5 % a tick, whatever the steering
+        const coasting = flying(30), steered = flying(30);
+        coasting.car.state.yawRate = steered.car.state.yawRate = 0.4;
+        stepVehicle(coasting.car, coasting.world);
+        drive(steered.car, steered.world, 1, { steer: 127 });
+        expect(coasting.car.state.yawRate).toBeCloseTo(0.4 * 0.95, 12);
+        expect(steered.car.state).toStrictEqual(coasting.car.state);
+        // Flying 0.1 rad to the left of the nose: the yaw rate turns left,
+        // 2 · 0.1 · 5 % = 0.01 rad/s after one tick
+        const skewed = flying(0);
+        skewed.car.state.vx = 30 * Math.sin(0.1);
+        skewed.car.state.vz = 30 * Math.cos(0.1);
+        stepVehicle(skewed.car, skewed.world);
+        expect(skewed.car.state.yawRate).toBeCloseTo(0.01, 12);
+    });
+
+    it('never flies faster than 90 m/s horizontally', () => {
         const { world, car } = flying(0);
         car.state.vx = 72;
         car.state.vz = 96;   // 120 m/s
@@ -58,54 +71,13 @@ describe('in the air', () => {
         stepVehicle(driving, ground);
         expect(speedOf(driving)).toBeLessThanOrEqual(90 + 1e-9);
     });
-
-    it('jumps within 6 air ticks after leaving the ground, not after 7', () => {
-        for (const [airTicks, jumps] of [[6, true], [7, false]] as const) {
-            const { world, car } = flying(10);
-            car.state.airTicks = airTicks;
-            car.state.vy = 0;
-            car.input.buttons = BTN_JUMP;
-            stepVehicle(car, world);
-            expect(car.events.jumped, `${airTicks} air ticks`).toBe(jumps);
-        }
-    });
-
-    it('jumps off with the full 11 m/s even while falling', () => {
-        const { world, car } = flying(10);
-        car.state.airTicks = 2;
-        car.state.vy = -5;
-        car.input.buttons = BTN_JUMP;
-        stepVehicle(car, world);
-        expect(car.events.jumped).toBe(true);
-        expect(car.state.vy).toBeCloseTo(11 - 20 * DT, 9);
-        // Rising already: on top of it
-        const rising = flying(10);
-        rising.car.state.airTicks = 2;
-        rising.car.state.vy = 3;
-        rising.car.input.buttons = BTN_JUMP;
-        stepVehicle(rising.car, rising.world);
-        expect(rising.car.state.vy).toBeCloseTo(3 + 11 - 20 * DT, 9);
-    });
-
-    it('ends a full flip at one turn', () => {
-        const { world, car } = flying(10);
-        car.state.flipAngle = 2 * Math.PI - 0.01;
-        car.state.flipRate = 5;
-        stepVehicle(car, world);
-        expect(car.state.flipAngle).toBe(0);
-        const midway = flying(10);
-        midway.car.state.flipAngle = 1;
-        midway.car.state.flipRate = 5;
-        stepVehicle(midway.car, midway.world);
-        expect(midway.car.state.flipAngle).toBeCloseTo(1 + 5 * DT, 12);
-    });
 });
 
 describe('landing', () => {
-    // 5 cm above the ground, falling at vy: lands within the tick
+    // 4 cm above the ground, falling at vy: lands in the first substep
     function landing(vy: number) {
         const { world, car } = flying(20);
-        car.state.y = 0.05;
+        car.state.y = 0.04;
         car.state.vy = vy;
         stepVehicle(car, world);
         return car;
@@ -116,11 +88,14 @@ describe('landing', () => {
         const hard = landing(-12);
         expect(soft.state.grounded).toBe(true);
         expect(hard.state.grounded).toBe(true);
-        // Impact 12 + 1/3 m/s (gravity of the tick included)
-        const impact = 12 + 20 * DT;
+        // Impact 12 m/s plus the gravity of one substep (20 m/s² · DT / 3)
+        const impact = 12 + 20 * DT / 3;
         expect(hard.events.landedImpact).toBeCloseTo(impact, 9);
         expect(hard.state.vz / soft.state.vz).toBeCloseTo(1 - 0.15 * (impact - 10) / 15, 9);
-        expect(soft.state.vy).toBe(0);
+        expect(soft.events.landedImpact).toBeCloseTo(9 + 20 * DT / 3, 9);
+        // The wheels are on the ground, the spring catches the body
+        expect(soft.state.y).toBe(0);
+        expect(soft.state.vy).toBeGreaterThan(-9);
     });
 });
 

@@ -29,7 +29,6 @@ const DRIVE_KEYS: Record<string, DriveKey> = {
     d: 'right', arrowright: 'right',
     ' ': 'handbrake',
     shift: 'boost',
-    q: 'jump',
     r: 'reset'
 };
 

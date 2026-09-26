@@ -13,7 +13,7 @@ import type {
     ServerMessage
 } from '../../shared/protocol.js';
 import {
-    CAR_GHOST, CAR_IDLE, CAR_LAGGY, CAR_MEGA, CAR_SHIELD, CAR_SUPER_JUMP, CAR_TURBO,
+    CAR_GHOST, CAR_IDLE, CAR_LAGGY, CAR_MEGA, CAR_SHIELD, CAR_TURBO,
     COMPACT_BYTES, INPUT_FROZEN, INPUT_HIDDEN, SELF_BLOCK_BYTES, SNAPSHOT_HEADER_BYTES,
     modsToBits, stateFlags, writeCompactCar, writeSelfBlock, writeSnapshotHeader,
     type InputPacket
@@ -578,7 +578,6 @@ export abstract class Room {
                 const place = m.pendingPlace;
                 m.pendingPlace = null;
                 placeVehicle(m.car.state, this.world, place.x, place.z, place.yaw);
-                m.car.state.flipAngle = 0;
                 this.onPlaced(m, T);
             }
         }
@@ -686,7 +685,7 @@ export abstract class Room {
         const car = m.car!;
         const mods = car.mods;
         return stateFlags(car.state)
-            | (mods.turbo ? CAR_TURBO : 0) | (mods.mega ? CAR_MEGA : 0) | (mods.superJump ? CAR_SUPER_JUMP : 0)
+            | (mods.turbo ? CAR_TURBO : 0) | (mods.mega ? CAR_MEGA : 0)
             | (mods.ghost ? CAR_GHOST : 0) | (mods.shield ? CAR_SHIELD : 0)
             | (m.idle ? CAR_IDLE : 0) | (m.laggy ? CAR_LAGGY : 0);
     }

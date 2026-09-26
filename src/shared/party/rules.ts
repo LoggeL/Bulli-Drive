@@ -9,7 +9,8 @@ import { TICK_RATE } from '../net/constants.js';
 
 export const msToTicks = (ms: number) => Math.round(ms / 1000 * TICK_RATE);
 
-export const POWERUP_TYPE_IDS = ['speed', 'size', 'jump', 'shield', 'magnet', 'ghost'] as const;
+// No Super Jump since the jump was removed (docs/phase-1a-design.md, 26)
+export const POWERUP_TYPE_IDS = ['speed', 'size', 'shield', 'magnet', 'ghost'] as const;
 export type PowerupType = typeof POWERUP_TYPE_IDS[number];
 
 export function isPowerupType(value: unknown): value is PowerupType {
@@ -20,7 +21,6 @@ export function isPowerupType(value: unknown): value is PowerupType {
 export const POWERUP_TICKS: Record<PowerupType, number> = {
     speed: 300,
     size: 300,
-    jump: 300,
     magnet: 300,
     shield: 480,
     ghost: 480

@@ -73,14 +73,17 @@ const FOLDERS: [string, Knob[]][] = [
         g('CAR_RESTITUTION', 0, 0.6, 0.01), g('CAR_FRICTION', 0, 0.6, 0.01), c('massRatioCap', 1, 4, 0.05),
         g('CONTACT_DOMEGA_CAP', 0.5, 6, 0.1)
     ]],
-    ['Sprung', [c('jumpSpeed', 6, 16, 0.1), g('JUMP_COOLDOWN', 0, 60, 1)]],
+    ['Federung und Luft', [
+        g('SUSP_FREQ', 0.8, 4, 0.05), g('SUSP_DAMPING', 0.2, 1.5, 0.05), g('SUSP_TRAVEL', 0.05, 0.5, 0.01),
+        g('AIR_YAW_RESPONSE', 0, 10, 0.1), g('AIR_ALIGN', 0, 6, 0.1)
+    ]],
     ['Fahrwerk', [
         c('mass', 600, 3000, 10), c('wheelbase', 1.6, 3.6, 0.05), c('cgFront', 0.35, 0.65, 0.01),
         c('cgHeight', 0.3, 1.2, 0.05), c('yawRadius', 0.8, 2, 0.05), c('driftFill', 0, 2, 0.05)
     ]]
 ];
 // Global values in the top folder; the rest is listed under "Alle globalen"
-const TOP_GLOBALS: Knob[] = [g('gripScale', 0.8, 1.6, 0.01), g('G_AIR', 10, 30, 0.5), g('STICK', 0, 20, 0.5)];
+const TOP_GLOBALS: Knob[] = [g('gripScale', 0.8, 1.6, 0.01), g('GRAVITY', 8, 30, 0.5)];
 const ANGLE_GLOBALS = new Set<string>(['BETA_DAMP_FROM']);
 
 // Live values of the local car, written once per tick
@@ -322,7 +325,7 @@ export async function installTuningPanel(): Promise<void> {
         const box = gui.addFolder('Sandbox');
         const mods = {} as Record<string, boolean>;
         const MODS: [string, string][] = [
-            ['speed', 'Turbo'], ['size', 'Mega'], ['jump', 'Super-Jump'], ['ghost', 'Ghost'], ['shield', 'Schild']
+            ['speed', 'Turbo'], ['size', 'Mega'], ['ghost', 'Ghost'], ['shield', 'Schild']
         ];
         for (const [key, label] of MODS) {
             Object.defineProperty(mods, key, {

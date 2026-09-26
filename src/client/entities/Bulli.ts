@@ -31,14 +31,12 @@ export class Bulli {
     speed: number = 0;
     angle: number = 0;
     maxSpeed: number = 50 / 60;
-    isFlipping: boolean = false;
     canRecover: boolean = false;
     nextHonkTime: number = 0;
     lastShootTime: number = 0;
     powerups = {
         speed: { active: false, timer: 0 },
         size: { active: false, timer: 0 },
-        jump: { active: false, timer: 0 },
         shield: { active: false, timer: 0 },
         magnet: { active: false, timer: 0 },
         ghost: { active: false, timer: 0 }

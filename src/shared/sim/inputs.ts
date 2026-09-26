@@ -2,6 +2,7 @@
 // 5.3 and 5.4). The same on server and client, so the prediction of a
 // frozen or silent car matches the server.
 
+import { BTN_MASK } from './constants.js';
 import type { SimCar, VehicleInput, VehicleState } from './types.js';
 
 const STOP_SPEED = 0.5;
@@ -38,13 +39,14 @@ export function copyInput(dst: VehicleInput, src: VehicleInput): VehicleInput {
     return dst;
 }
 
-// Quantised input ranges; the protocol clamps to these
+// Quantised input ranges; the protocol clamps to these. Buttons keep only
+// the known bits (bit 4 was the jump, docs/phase-1a-design.md 26).
 export function clampInput(input: VehicleInput): VehicleInput {
     const clampInt = (value: number, min: number, max: number) =>
         Number.isFinite(value) ? Math.max(min, Math.min(max, Math.round(value))) : 0;
     input.steer = clampInt(input.steer, -127, 127);
     input.throttle = clampInt(input.throttle, 0, 255);
     input.brake = clampInt(input.brake, 0, 255);
-    input.buttons = clampInt(input.buttons, 0, 255) & 0x0f;
+    input.buttons = clampInt(input.buttons, 0, 255) & BTN_MASK;
     return input;
 }

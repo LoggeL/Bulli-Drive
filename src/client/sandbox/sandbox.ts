@@ -31,7 +31,6 @@ const PLAYER_COLOR = 0xD32F2F;
 // Cones fall over when a car's centre comes this close (m)
 const CONE_HIT_RADIUS = 1.9;
 const CONE_FALL_RATE = 8;
-const TWO_PI = Math.PI * 2;
 
 interface Dummy {
     spec: DummySpec;
@@ -223,8 +222,6 @@ function renderDummies(dt: number, alpha: number): void {
         group.rotation.y = p.yaw + (s.yaw - p.yaw) * alpha;
         group.scale.setScalar(p.scale + (s.scale - p.scale) * alpha);
         dummy.model.flipGroup.position.y = Math.max(0, p.y + (s.y - p.y) * alpha - ground);
-        const flip = s.flipAngle > 0 && p.flipAngle <= s.flipAngle ? p.flipAngle + (s.flipAngle - p.flipAngle) * alpha : 0;
-        dummy.model.flipGroup.rotation.x = flip % TWO_PI;
         const u = s.vx * Math.sin(s.yaw) + s.vz * Math.cos(s.yaw);
         dummy.model.setDriveState(u, s.steerAngle, dummy.car.input.brake > 20 && u > 0.5);
         if (state.camera) dummy.tag.update(group.position, state.camera, dummy.model.nametagHeight * group.scale.y);

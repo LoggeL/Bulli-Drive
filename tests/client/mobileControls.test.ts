@@ -15,10 +15,9 @@ import { createVehicleInput } from '../../src/shared/sim/types.js';
 // hold time) are tested on InputManager in input.test.ts; this checks the
 // wiring - which button sets which bit, which way the stick's axes point.
 // Bits as the protocol defines them (docs/phase-1a-design.md, 11.1):
-// handbrake 1, boost 2, jump 4, reset 8.
+// handbrake 1, boost 2, reset 8 (4 was the jump, section 26).
 const HANDBRAKE = 1;
 const BOOST = 2;
-const JUMP = 4;
 const RESET = 8;
 
 const INDEX = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../index.html');
@@ -120,16 +119,15 @@ describe('touch buttons', () => {
         expect(tick().buttons).toBe(0);
     });
 
-    it('a tap on the flip button jumps, holding it resets without a jump', () => {
+    it('the flip button holds reset while pressed; a tap sends nothing else (no jump)', () => {
         const flip = byId('btn-flip');
         pointer('pointerdown', flip, 4);
         expect(tick().buttons).toBe(RESET);
         pointer('pointerup', flip, 4);
-        expect(tick().buttons).toBe(JUMP);
         expect(tick().buttons).toBe(0);
 
         // Held for half a second (30 ticks, RESET_HOLD_TICKS): reset all
-        // along, and no jump when the finger lifts
+        // along, and nothing when the finger lifts
         pointer('pointerdown', flip, 4);
         for (let i = 0; i < 30; i++) expect(tick().buttons).toBe(RESET);
         pointer('pointerup', flip, 4);

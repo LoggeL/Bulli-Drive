@@ -37,11 +37,6 @@ describe('applyModifiers', () => {
         expect(out.yawRadius).toBe(base.yawRadius);
     });
 
-    it('Super Jump sets the take-off speed to 20 m/s', () => {
-        const out = applyModifiers(base, { ...createVehicleModifiers(), superJump: true }, 1, createVehicleParams('bulli'));
-        expect(out.jumpSpeed).toBe(20);
-    });
-
     it('Shield: no wall rebound and twice the contact mass', () => {
         const out = applyModifiers(base, { ...createVehicleModifiers(), shield: true }, 1, createVehicleParams('bulli'));
         expect(out.restitutionWall).toBe(0);
@@ -74,7 +69,7 @@ describe('applyModifiers', () => {
     });
 
     it('never changes the base params', () => {
-        applyModifiers(base, { turbo: true, mega: true, superJump: true, ghost: true, shield: true, launch: true, bogged: true }, 2, createVehicleParams('bulli'), 1);
+        applyModifiers(base, { turbo: true, mega: true, ghost: true, shield: true, launch: true, bogged: true }, 2, createVehicleParams('bulli'), 1);
         expect(JSON.stringify(base)).toBe(frozen);
     });
 });

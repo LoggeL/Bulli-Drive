@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
-    CAR_BOOSTING, CAR_DRAFTING, CAR_DRIFTING, CAR_RACE_GHOST, MOD_BOGGED, MOD_LAUNCH, CAR_FLIPPING, CAR_GHOST, CAR_GHOST_EXIT, CAR_GROUNDED, CAR_IDLE, CAR_MEGA,
-    CAR_RESPAWN_SHIELD, CAR_SHIELD, CAR_SUPER_JUMP, CAR_TURBO, CAR_WAS_GHOST, COMPACT_BYTES, decodeInputPacket,
+    CAR_BOOSTING, CAR_DRAFTING, CAR_DRIFTING, CAR_RACE_GHOST, MOD_BOGGED, MOD_LAUNCH, CAR_GHOST, CAR_GHOST_EXIT, CAR_GROUNDED, CAR_IDLE, CAR_MEGA,
+    CAR_RESPAWN_SHIELD, CAR_SHIELD, CAR_TURBO, CAR_WAS_GHOST, COMPACT_BYTES, decodeInputPacket,
     decodeRemoteState, decodeSnapshot, encodeInputPacket, encodeSnapshot, flagsToMods, FRAME_INPUT, INPUT_FROZEN,
-    inputPacketSize, MOD_MEGA, MOD_SUPER_JUMP, MOD_TURBO, SELF_BLOCK_BYTES, SELF_BLOCK_KEYS, SNAPSHOT_HEADER_BYTES,
+    inputPacketSize, MOD_MEGA, MOD_TURBO, SELF_BLOCK_BYTES, SELF_BLOCK_KEYS, SNAPSHOT_HEADER_BYTES,
     bitsToMods, modsToBits, stateFlags, type CompactCar, type InputPacket, type Snapshot
 } from '../../../src/shared/net/codec.js';
 import {
-    POS_STEP, quantByte, quantFlip, quantHeight, quantLoad, quantPos, quantScale, quantSpeed, quantSteer, quantUnit,
-    quantYaw, quantYawRate, unquantFlip, unquantYaw
+    POS_STEP, quantByte, quantHeight, quantLoad, quantPos, quantScale, quantSpeed, quantSteer, quantSusp, quantUnit,
+    quantYaw, quantYawRate, unquantYaw
 } from '../../../src/shared/net/quant.js';
 import { mulberry32 } from '../../../src/shared/math/rng.js';
 import { createVehicleModifiers, createVehicleState, type VehicleInput, type VehicleState } from '../../../src/shared/sim/types.js';
@@ -51,7 +51,7 @@ describe('input packets', () => {
     });
 });
 
-// A car in the middle of a drifting jump with every field off its default
+// A car in the middle of a drifting flight with every field off its default
 function busyState(random: () => number): VehicleState {
     const s = createVehicleState();
     for (const key of Object.keys(s) as (keyof VehicleState)[]) {
@@ -60,8 +60,8 @@ function busyState(random: () => number): VehicleState {
         else (s as unknown as Record<string, number>)[key] = value + (random() - 0.5) * 40;
     }
     // Counters are integers in their ranges
-    s.airTicks = 200; s.driftTicks = 4000; s.driftLowTicks = 7; s.wallTicks = 255; s.jumpCooldown = 19;
-    s.resetHold = 31; s.reverseHold = 8; s.ghostTicks = 180; s.ghostExit = 179; s.prevButtons = 13; s.waterTicks = 42;
+    s.airTicks = 200; s.driftTicks = 4000; s.driftLowTicks = 7; s.wallTicks = 255;
+    s.resetHold = 31; s.reverseHold = 8; s.ghostTicks = 180; s.ghostExit = 179; s.waterTicks = 42;
     s.x = -1234.56789; s.z = 987.654321; s.yaw = 17.5;
     return s;
 }
@@ -69,7 +69,7 @@ function busyState(random: () => number): VehicleState {
 function compactOf(slot: number, s: VehicleState, flags: number, last: VehicleInput): CompactCar {
     return {
         slot, flags, x: s.x, y: s.y, z: s.z, yaw: s.yaw, vx: s.vx, vy: s.vy, vz: s.vz, yawRate: s.yawRate,
-        steerAngle: s.steerAngle, input: last, scale: s.scale, flipAngle: s.flipAngle, boostMeter: s.boostMeter,
+        steerAngle: s.steerAngle, input: last, scale: s.scale, susp: s.susp, boostMeter: s.boostMeter,
         rearGrip: s.rearGrip, loadX: s.loadX, ghostTicks: s.ghostTicks
     };
 }
@@ -79,9 +79,9 @@ function randomCar(slot: number, random: () => number): CompactCar {
     s.x = (random() - 0.5) * 1000; s.z = (random() - 0.5) * 1000; s.y = random() * 30;
     s.yaw = (random() - 0.5) * 20; s.vx = (random() - 0.5) * 170; s.vy = (random() - 0.5) * 40; s.vz = (random() - 0.5) * 170;
     s.yawRate = (random() - 0.5) * 12; s.steerAngle = (random() - 0.5) * 1.2; s.scale = 1 + random() * 1.5;
-    s.flipAngle = random() < 0.5 ? 0 : random() * 6; s.boostMeter = random(); s.rearGrip = random();
+    s.susp = (random() - 0.5) * 0.6; s.boostMeter = random(); s.rearGrip = random();
     s.loadX = (random() - 0.5) * 60; s.ghostTicks = Math.floor(random() * 255);
-    return compactOf(slot, s, CAR_GROUNDED | (s.flipAngle > 0 ? CAR_FLIPPING : 0), input(3, 200, 0, 2));
+    return compactOf(slot, s, CAR_GROUNDED, input(3, 200, 0, 2));
 }
 
 function snapshotWith(cars: CompactCar[], self: Snapshot['self']): Snapshot {
@@ -97,8 +97,11 @@ describe('snapshots', () => {
         expect([...SELF_BLOCK_KEYS].sort()).toEqual(keys);
         expect(new Set(SELF_BLOCK_KEYS).size).toBe(SELF_BLOCK_KEYS.length);
         // About 150 bytes (3.4) plus draft as f64 in v3 (phase-2-design 16.1)
-        // and the water counter as u8 in v4 (phase-3-design 7), 32 per other car
-        expect(SELF_BLOCK_BYTES).toBe(149 + 8 + 1);
+        // and the water counter as u8 in v4 (phase-3-design 7); v5 drops the
+        // flip angle and rate (f64) for the suspension (f64) and the jump
+        // cooldown and previous buttons (u8) (phase-1a-design 26). 32 per
+        // other car.
+        expect(SELF_BLOCK_BYTES).toBe(149 + 8 + 1 - 2 * 8 + 8 - 2);
         expect(COMPACT_BYTES).toBe(32);
         expect(SNAPSHOT_HEADER_BYTES).toBe(16);
     });
@@ -141,7 +144,8 @@ describe('snapshots', () => {
                 expect(Math.abs(car.scale - original.scale)).toBeLessThanOrEqual(0.005 + 1e-9);
                 expect(Math.abs(car.boostMeter - original.boostMeter)).toBeLessThanOrEqual(0.5 / 255 + 1e-9);
                 expect(Math.abs(car.loadX - original.loadX)).toBeLessThanOrEqual(0.125 + 1e-9);
-                expect(car.flipAngle > 0).toBe(original.flipAngle > 0);
+                // Suspension: i8 in 5 mm
+                expect(Math.abs(car.susp - original.susp)).toBeLessThanOrEqual(0.0025 + 1e-9);
             });
         }
     });
@@ -180,16 +184,16 @@ describe('snapshots', () => {
 });
 
 describe('modifier bits', () => {
-    it('round-trip every combination', () => {
-        for (let bits = 0; bits < 32; bits++) {
+    it('round-trip every combination; bit 4 (the removed Super Jump) is dropped', () => {
+        for (let bits = 0; bits < 128; bits++) {
             const mods = bitsToMods(bits, createVehicleModifiers());
-            expect(modsToBits(mods)).toBe(bits);
+            expect(modsToBits(mods)).toBe(bits & ~4);
         }
     });
 });
 
 describe('decodeRemoteState', () => {
-    it('fills a complete, finite state that neither jumps again nor boosts from nothing', () => {
+    it('fills a complete, finite state that does not boost from nothing', () => {
         const random = mulberry32(5);
         for (let i = 0; i < 50; i++) {
             const car = randomCar(i, random);
@@ -199,12 +203,11 @@ describe('decodeRemoteState', () => {
                 if (typeof value === 'number') expect(Number.isFinite(value), key).toBe(true);
             }
             expect(Object.keys(out).sort()).toEqual(Object.keys(createVehicleState()).sort());
-            expect(out.prevButtons).toBe(car.input.buttons);
             expect(out.wallTicks).toBe(255);
             expect(out.grounded).toBe(true);
             expect(out.airTicks).toBe(0);
             expect(out.ghostExit).toBe(i % 2);
-            expect(out.flipRate > 0).toBe(car.flipAngle > 0);
+            expect(out.susp).toBe(car.susp);
         }
     });
 });
@@ -238,7 +241,7 @@ describe('quantisation (3.4)', () => {
         expect(quantByte(300)).toBe(255);
         expect(quantByte(-3)).toBe(0);
         for (const bad of [NaN, Infinity, -Infinity]) {
-            for (const quant of [quantPos, quantHeight, quantSpeed, quantYawRate, quantSteer, quantLoad, quantUnit, quantScale, quantByte, quantYaw, quantFlip]) {
+            for (const quant of [quantPos, quantHeight, quantSpeed, quantYawRate, quantSteer, quantLoad, quantUnit, quantScale, quantByte, quantYaw, quantSusp]) {
                 expect(quant(bad), `${quant.name}(${bad})`).toBe(0);
             }
         }
@@ -258,36 +261,31 @@ describe('quantisation (3.4)', () => {
         expect(unquantYaw(49152)).toBeCloseTo(-Math.PI / 2, 12);
     });
 
-    it('keeps a running flip non-zero and wraps it onto one turn', () => {
-        // 0 means "no flip", so a started flip is at least one step
-        expect(quantFlip(0)).toBe(0);
-        expect(quantFlip(-1)).toBe(0);
-        expect(quantFlip(1e-6)).toBe(1);
-        expect(quantFlip(Math.PI)).toBe(128);
-        expect(quantFlip(Math.PI / 2)).toBe(64);
-        // Just under a full turn stays on the last step, one and a half turns wrap
-        expect(quantFlip(2 * Math.PI - 1e-6)).toBe(255);
-        expect(quantFlip(3 * Math.PI)).toBe(128);
-        expect(unquantFlip(64)).toBeCloseTo(Math.PI / 2, 12);
-        expect(unquantFlip(255)).toBeCloseTo(2 * Math.PI * 255 / 256, 12);
+    it('keeps the suspension in 5 mm steps within ±0.635 m', () => {
+        expect(quantSusp(0)).toBe(0);
+        expect(quantSusp(0.1)).toBe(20);
+        expect(quantSusp(-0.25)).toBe(-50);
+        expect(quantSusp(1)).toBe(127);
+        expect(quantSusp(-1)).toBe(-127);
     });
 });
 
 describe('car flags', () => {
     it('turn each powerup flag into its modifier, both shields into shield', () => {
-        const none = { turbo: false, mega: false, superJump: false, ghost: false, shield: false, launch: false, bogged: false };
+        const none = { turbo: false, mega: false, ghost: false, shield: false, launch: false, bogged: false };
         const mods = (flags: number) => flagsToMods(flags, createVehicleModifiers());
         expect(mods(0)).toEqual(none);
         expect(mods(CAR_TURBO)).toEqual({ ...none, turbo: true });
         expect(mods(CAR_MEGA)).toEqual({ ...none, mega: true });
-        expect(mods(CAR_SUPER_JUMP)).toEqual({ ...none, superJump: true });
         expect(mods(CAR_GHOST)).toEqual({ ...none, ghost: true });
         expect(mods(CAR_SHIELD)).toEqual({ ...none, shield: true });
         expect(mods(CAR_RESPAWN_SHIELD)).toEqual({ ...none, shield: true });
         // Flags that are no modifier leave them all off
-        expect(mods(CAR_GROUNDED | CAR_BOOSTING | CAR_IDLE | CAR_FLIPPING)).toEqual(none);
+        expect(mods(CAR_GROUNDED | CAR_BOOSTING | CAR_IDLE)).toEqual(none);
+        // Nor do the bits of the removed Super Jump (1 << 5) and flip (1 << 11)
+        expect(mods(1 << 5 | 1 << 11)).toEqual(none);
         // Bits the same flags would have as modifier bits do not leak in
-        expect(mods(MOD_TURBO | MOD_MEGA | MOD_SUPER_JUMP)).toEqual(none);
+        expect(mods(MOD_TURBO | MOD_MEGA | 4)).toEqual(none);
         // The race flags are no modifiers either, and a launch window left
         // in the target object is cleared (other cars' windows are not sent)
         const stale = { ...createVehicleModifiers(), launch: true, bogged: true };
@@ -320,14 +318,15 @@ describe('car flags', () => {
         expect(flagsOf({ grounded: true })).toBe(CAR_GROUNDED);
         expect(flagsOf({ boosting: true })).toBe(CAR_BOOSTING);
         expect(flagsOf({ driftTicks: 1 })).toBe(CAR_DRIFTING);
-        expect(flagsOf({ flipAngle: 0.1 })).toBe(CAR_FLIPPING);
         expect(flagsOf({ wasGhost: true })).toBe(CAR_WAS_GHOST);
         expect(flagsOf({ ghostExit: 1 })).toBe(CAR_GHOST_EXIT);
         // Drafting only above 0.3 (the look of wind lines, phase-2-design 13)
         expect(flagsOf({ draft: 0.3 })).toBe(0);
         expect(flagsOf({ draft: 0.31 })).toBe(CAR_DRAFTING);
-        expect(flagsOf({ grounded: true, boosting: true, driftTicks: 30, flipAngle: 3, wasGhost: true, ghostExit: 9 }))
-            .toBe(CAR_GROUNDED | CAR_BOOSTING | CAR_DRIFTING | CAR_FLIPPING | CAR_WAS_GHOST | CAR_GHOST_EXIT);
+        // The suspension is no flag
+        expect(flagsOf({ susp: -0.2 })).toBe(0);
+        expect(flagsOf({ grounded: true, boosting: true, driftTicks: 30, wasGhost: true, ghostExit: 9 }))
+            .toBe(CAR_GROUNDED | CAR_BOOSTING | CAR_DRIFTING | CAR_WAS_GHOST | CAR_GHOST_EXIT);
     });
 });
 
@@ -335,7 +334,7 @@ describe('decodeRemoteState derives what the record does not carry', () => {
     function record(flags: number, patch: Partial<CompactCar> = {}): CompactCar {
         return {
             slot: 3, flags, x: 1, y: 2, z: 3, yaw: 0, vx: 10, vy: 0, vz: 10, yawRate: 0.5, steerAngle: 0.1,
-            input: input(0, 0, 0, 4), scale: 1, flipAngle: 0, boostMeter: 0.5, rearGrip: 0.7, loadX: 2, ghostTicks: 0,
+            input: input(0, 0, 0, 2), scale: 1, susp: 0, boostMeter: 0.5, rearGrip: 0.7, loadX: 2, ghostTicks: 0,
             ...patch
         };
     }
@@ -350,18 +349,15 @@ describe('decodeRemoteState derives what the record does not carry', () => {
         expect(decodeRemoteState(record(CAR_GROUNDED, { vz: 1 }), createVehicleState()).betaPrev).toBe(0);
     });
 
-    it('air, boost, drift, ghost and flip from the flags', () => {
-        const flying = decodeRemoteState(record(CAR_BOOSTING | CAR_DRIFTING | CAR_WAS_GHOST | CAR_FLIPPING, { flipAngle: 1 }), createVehicleState());
-        // In the air past the coyote time (6 ticks): no jump from the ground
+    it('air, boost, drift and ghost from the flags, the suspension from the record', () => {
+        const flying = decodeRemoteState(record(CAR_BOOSTING | CAR_DRIFTING | CAR_WAS_GHOST, { susp: 0.05 }), createVehicleState());
         expect(flying.grounded).toBe(false);
-        expect(flying.airTicks).toBe(7);
+        expect(flying.airTicks).toBe(0);
         expect(flying.boosting).toBe(true);
         expect(flying.driftTicks).toBe(1);
         expect(flying.wasGhost).toBe(true);
         expect(flying.ghostExit).toBe(0);
-        // One turn in 1.1 s (the standard jump)
-        expect(flying.flipRate).toBeCloseTo(2 * Math.PI / 1.1, 12);
-        expect(flying.flipAngle).toBe(1);
+        expect(flying.susp).toBe(0.05);
         // The slipstream is not in the record: a stale value is cleared, even
         // with the drafting flag set (it is for the looks only)
         const plain = decodeRemoteState(record(CAR_GROUNDED | CAR_DRAFTING), { ...createVehicleState(), draft: 0.8 });
@@ -369,7 +365,6 @@ describe('decodeRemoteState derives what the record does not carry', () => {
         expect(plain.boosting).toBe(false);
         expect(plain.driftTicks).toBe(0);
         expect(plain.wasGhost).toBe(false);
-        expect(plain.flipRate).toBe(0);
         expect({ x: plain.x, y: plain.y, z: plain.z, yawRate: plain.yawRate, steerAngle: plain.steerAngle, loadX: plain.loadX, rearGrip: plain.rearGrip, boostMeter: plain.boostMeter, scale: plain.scale })
             .toEqual({ x: 1, y: 2, z: 3, yawRate: 0.5, steerAngle: 0.1, loadX: 2, rearGrip: 0.7, boostMeter: 0.5, scale: 1 });
     });
@@ -400,11 +395,12 @@ describe('snapshot header edge cases', () => {
         expect(decodeInputPacket(good)).toBeNull();
     });
 
-    it('carries rear grip, flip angle and ghost ticks of the other cars', () => {
-        const car = { ...randomCar(4, mulberry32(2)), rearGrip: 0.3, flipAngle: 2, ghostTicks: 77, flags: CAR_FLIPPING };
+    it('carries rear grip, suspension and ghost ticks of the other cars', () => {
+        const car = { ...randomCar(4, mulberry32(2)), rearGrip: 0.3, susp: -0.213, ghostTicks: 77, flags: 0 };
         const back = decodeSnapshot(encodeSnapshot(snapshotWith([car], null)))!.cars[0];
         expect(Math.abs(back.rearGrip - 0.3)).toBeLessThanOrEqual(0.5 / 255);
-        expect(Math.abs(back.flipAngle - 2)).toBeLessThanOrEqual(Math.PI / 256);
+        // -0.213 m is -42.6 steps of 5 mm: -43 steps, -0.215 m
+        expect(back.susp).toBeCloseTo(-0.215, 12);
         expect(back.ghostTicks).toBe(77);
         // Full grip comes back as exactly 1
         const full = decodeSnapshot(encodeSnapshot(snapshotWith([{ ...car, rearGrip: 1, boostMeter: 1 }], null)))!.cars[0];

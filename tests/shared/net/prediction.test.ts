@@ -48,7 +48,7 @@ function predicted(p: Prediction, tick: number): VehicleState {
 function record(slot: number, x: number, z: number, patch: Partial<CompactCar> = {}): CompactCar {
     return {
         slot, flags: 1, x, y: 0, z, yaw: 0, vx: 0, vy: 0, vz: 0, yawRate: 0, steerAngle: 0,
-        input: { steer: 0, throttle: 0, brake: 0, buttons: 0 }, scale: 1, flipAngle: 0, boostMeter: 0,
+        input: { steer: 0, throttle: 0, brake: 0, buttons: 0 }, scale: 1, susp: 0, boostMeter: 0,
         rearGrip: 1, loadX: 0, ghostTicks: 0, ...patch
     };
 }

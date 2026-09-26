@@ -8,7 +8,7 @@ import { DT } from '../../../src/shared/sim/constants.js';
 function car(x: number, z: number, yaw: number, vx: number, vz: number, yawRate = 0): CompactCar {
     return {
         slot: 1, flags: CAR_GROUNDED, x, y: 0, z, yaw, vx, vy: 0, vz, yawRate, steerAngle: 0,
-        input: { steer: 0, throttle: 0, brake: 0, buttons: 0 }, scale: 1, flipAngle: 0, boostMeter: 0,
+        input: { steer: 0, throttle: 0, brake: 0, buttons: 0 }, scale: 1, susp: 0, boostMeter: 0,
         rearGrip: 1, loadX: 0, ghostTicks: 0
     };
 }

@@ -17,8 +17,7 @@ import type { NetDriver } from '../net/netDriver.js';
 // Bulli model. Online a NetDriver ticks it (prediction against the server,
 // docs/phase-1b-design.md 8); offline and in the sandbox it steps itself.
 
-const TWO_PI = Math.PI * 2;
-const POWERUP_KEYS = ['speed', 'size', 'jump', 'shield', 'magnet', 'ghost'] as const;
+const POWERUP_KEYS = ['speed', 'size', 'shield', 'magnet', 'ghost'] as const;
 // Visual spring from the accelerations (renderer only, never in the sim)
 const PITCH_PER_ACCEL = 0.0035;      // rad per m/s²
 const ROLL_PER_ACCEL = 0.0045;
@@ -26,8 +25,6 @@ const MAX_PITCH = 4 * Math.PI / 180;
 const MAX_ROLL = 5 * Math.PI / 180;
 const SPRING_RATE = 10;
 const SQUASH_RATE = 8;
-// A flip cut short by the landing turns the rest within about 6 frames
-const FLIP_FINISH_RATE = 18;
 // Terrain tilt: ±2 m samples, eased
 const SLOPE_STEP = 2.0;
 const TILT_RATE = 6;
@@ -45,7 +42,6 @@ export interface VehicleHost {
     speed: number;
     maxSpeed: number;
     angle: number;
-    isFlipping: boolean;
     canRecover: boolean;
 }
 
@@ -56,7 +52,6 @@ export interface FrameEvents {
     wallZ: number;
     carImpact: number;
     landedImpact: number;
-    jumped: boolean;
     boostStarted: boolean;
     reset: boolean;
 }
@@ -87,22 +82,18 @@ export class LocalVehicle {
     private readonly cars: SimCar[] = [];
     readonly events: FrameEvents = {
         wallImpact: 0, wallX: 0, wallZ: 0, carImpact: 0, landedImpact: 0,
-        jumped: false, boostStarted: false, reset: false
+        boostStarted: false, reset: false
     };
     // Counters for the e2e hook
     ticks = 0;
-    private lastJumpTick = -Infinity;
     private lastResetTick = -Infinity;
-    jumps = 0;
     resets = 0;
     private stuckTicks = 0;
     resetHint = false;
     // The hint came on during this frame
     hintChanged = false;
     // Interpolated pose of the last frame
-    readonly pose = { x: 0, y: 0, z: 0, yaw: 0, ground: 0, flip: 0, scale: 1 };
-    private visualFlip = 0;
-    private finishingFlip = false;
+    readonly pose = { x: 0, y: 0, z: 0, yaw: 0, ground: 0, scale: 1 };
     private pitchSpring = 0;
     private rollSpring = 0;
     private squash = 0;
@@ -153,14 +144,11 @@ export class LocalVehicle {
     // At rest on the ground, e.g. at spawn or from the e2e hook
     place(x: number, z: number, yaw: number): void {
         placeVehicle(this.car.state, this.world, x, z, yaw);
-        this.car.state.flipAngle = 0;
         this.syncPrev();
     }
 
     private syncPrev(): void {
         copyVehicleState(this.prev, this.car.state);
-        this.visualFlip = 0;
-        this.finishingFlip = false;
     }
 
     /** The state before the current tick after the prediction replayed it. */
@@ -217,7 +205,7 @@ export class LocalVehicle {
     endFrame(): void {
         const ev = this.events;
         ev.wallImpact = ev.carImpact = ev.landedImpact = 0;
-        ev.jumped = ev.boostStarted = ev.reset = false;
+        ev.boostStarted = ev.reset = false;
         this.hintChanged = false;
     }
 
@@ -251,7 +239,6 @@ export class LocalVehicle {
             const mods = car.mods;
             mods.turbo = host.powerups.speed.active;
             mods.mega = host.powerups.size.active;
-            mods.superJump = host.powerups.jump.active;
             mods.ghost = host.powerups.ghost.active;
             mods.shield = host.powerups.shield.active;
 
@@ -279,15 +266,10 @@ export class LocalVehicle {
         }
         ev.carImpact = Math.max(ev.carImpact, tickEvents.carImpact);
         ev.landedImpact = Math.max(ev.landedImpact, tickEvents.landedImpact);
-        // Online a correction can bring a jump or reset the player already
-        // saw a few ticks later again (the server got the input late); a real
-        // second one needs the cooldown or another full hold
+        // Online a correction can bring a reset the player already saw a
+        // few ticks later again (the server got the input late); a real
+        // second one needs another full hold
         const tick = this.ticks;
-        if (tickEvents.jumped && !(this.net && tick - this.lastJumpTick < SIM_TUNING.JUMP_COOLDOWN)) {
-            ev.jumped = true;
-            this.jumps++;
-            this.lastJumpTick = tick;
-        }
         if (tickEvents.boostStarted) ev.boostStarted = true;
         if (tickEvents.reset && this.net && tick - this.lastResetTick < SIM_TUNING.RESET_HOLD_TICKS) {
             this.syncPrev();
@@ -329,30 +311,10 @@ export class LocalVehicle {
         pose.scale = prev.scale + (curr.scale - prev.scale) * a;
         pose.ground = this.world.groundHeight(pose.x, pose.z);
 
-        // Flip: interpolated while it runs; when the sim ends it (full turn
-        // or landing) the model turns on to a full circle
-        if (curr.flipAngle > 0) {
-            this.finishingFlip = false;
-            const from = prev.flipAngle > 0 && prev.flipAngle <= curr.flipAngle ? prev.flipAngle : 0;
-            this.visualFlip = from + (curr.flipAngle - from) * a;
-        } else if (prev.flipAngle > 0 || this.finishingFlip) {
-            this.finishingFlip = true;
-            const start = Math.max(this.visualFlip, prev.flipAngle);
-            this.visualFlip = start + (TWO_PI - start) * damp(FLIP_FINISH_RATE, dt) + 0.02;
-            if (this.visualFlip >= TWO_PI - 0.01) {
-                this.visualFlip = 0;
-                this.finishingFlip = false;
-            }
-        } else {
-            this.visualFlip = 0;
-        }
-        pose.flip = this.visualFlip;
-
         const group = host.group;
         group.position.set(pose.x, pose.ground, pose.z);
         group.scale.setScalar(pose.scale);
         host.flipGroup.position.y = Math.max(0, pose.y - pose.ground);
-        host.flipGroup.rotation.x = pose.flip;
 
         // Tilt: terrain slope plus a spring from the accelerations
         const fwdX = Math.sin(pose.yaw), fwdZ = Math.cos(pose.yaw);
@@ -391,7 +353,6 @@ export class LocalVehicle {
         host.speed = u / 60;
         host.maxSpeed = this.car.params.topSpeed / 60;
         host.angle = pose.yaw;
-        host.isFlipping = curr.flipAngle > 0;
         host.canRecover = this.resetHint;
     }
 }

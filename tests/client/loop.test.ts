@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { FixedStepLoop, MAX_TICKS_PER_FRAME } from '../../src/client/game/loop.js';
 import { mulberry32 } from '../../src/shared/math/rng.js';
-import { BTN_HANDBRAKE, BTN_JUMP, DT } from '../../src/shared/sim/constants.js';
-import { createFlatWorld, spawnCar } from '../../src/shared/sim/scenarios.js';
+import { BTN_HANDBRAKE, DT } from '../../src/shared/sim/constants.js';
+import { createGroundWorld, spawnCar } from '../../src/shared/sim/scenarios.js';
 import { copyVehicleState, createVehicleState, type VehicleState } from '../../src/shared/sim/types.js';
 import { stepVehicle } from '../../src/shared/sim/world.js';
 
@@ -13,7 +13,12 @@ import { stepVehicle } from '../../src/shared/sim/world.js';
 const TOTAL_SECONDS = 4;
 
 function runWithFrames(frames: number[]): VehicleState[] {
-    const world = createFlatWorld();
+    // A ring-shaped bump 1 m high, 15-27 m from the start: the car crosses
+    // it whichever way it turned and leaves the ground at its top
+    const world = createGroundWorld((x, z) => {
+        const r = Math.hypot(x, z + 300);
+        return r > 15 && r < 27 ? 0.5 * (1 - Math.cos(2 * Math.PI * (r - 15) / 12)) : 0;
+    });
     const car = spawnCar(world, 'a', 'sport', 0, -300, 0);
     const loop = new FixedStepLoop();
     const states: VehicleState[] = [];
@@ -22,7 +27,7 @@ function runWithFrames(frames: number[]): VehicleState[] {
         loop.advance(frame, () => {
             car.input.throttle = 255;
             car.input.steer = tick > 60 && tick < 140 ? 90 : 0;
-            car.input.buttons = (tick > 100 && tick < 130 ? BTN_HANDBRAKE : 0) | (tick === 170 ? BTN_JUMP : 0);
+            car.input.buttons = tick > 100 && tick < 130 ? BTN_HANDBRAKE : 0;
             stepVehicle(car, world);
             states.push(copyVehicleState(createVehicleState(), car.state));
             tick++;
@@ -59,7 +64,7 @@ describe('FixedStepLoop', () => {
             // Bit-identical, not just close
             expect(states.slice(0, common)).toStrictEqual(reference.slice(0, common));
         }
-        // The script really drove, turned and jumped
+        // The script really drove, turned and flew over the bump
         const last = reference[reference.length - 1];
         expect(Math.hypot(last.x, last.z + 300)).toBeGreaterThan(30);
         expect(reference.some(state => !state.grounded)).toBe(true);

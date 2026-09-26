@@ -38,7 +38,6 @@ import { assistProfileForDevice, type LocalVehicle } from './vehicle/LocalVehicl
 import { updateRemoteCars } from './net/remotes.js';
 import type { ProfileId } from '../shared/protocol.js';
 import { raceClient } from './race/RaceClient.js';
-import { isRaceKind } from './ui/roomMenu.js';
 
 const chaseCamera = new ChaseCamera(RACE_CAMERA);
 const _chaseTarget: ChaseTarget = { position: new THREE.Vector3(), yaw: 0, speedRatio: 0, boost: false };
@@ -276,11 +275,8 @@ function animate(frameTime: number) {
         updateSpeedometer();
         if (vehicle) updateDriveHud(vehicle);
         updateHealthBar();
-        // No jump in a race (E4): the button only resets when held
-        const jumpControlMode = state.bulli.canRecover || isRaceKind(state.room?.kind)
-            ? 'recover'
-            : (state.bulli.powerups.jump.active ? 'super-jump' : 'jump');
-        updateJumpControl(jumpControlMode, !state.dead);
+        // No jump (docs/phase-1a-design.md, 26): the button resets when held
+        updateJumpControl('recover', !state.dead);
 
         // Damage smoke based on health
         if (state.health < 100 && !state.dead) {

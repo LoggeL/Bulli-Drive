@@ -51,7 +51,9 @@ describe('InputBuffer', () => {
     it('clamps the values into the quantised ranges', () => {
         const buffer = new InputBuffer();
         buffer.accept({ flags: 0, seq: 1, tick: 1, inputs: [{ steer: -128, throttle: 255, brake: 0, buttons: 0xff }] }, 0, 0);
-        expect(buffer.take(1)!.input).toEqual({ steer: -127, throttle: 255, brake: 0, buttons: 0x0f });
+        // Only handbrake, boost and reset (1 | 2 | 8) are left: bit 4 was the
+        // removed jump (docs/phase-1a-design.md, 26)
+        expect(buffer.take(1)!.input).toEqual({ steer: -127, throttle: 255, brake: 0, buttons: 0x0b });
     });
 
     it('reports the smallest lead of the window and the jitter target', () => {

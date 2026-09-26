@@ -12,11 +12,12 @@ export const V_SAFE = 90;   // m/s, safety clamp on |v|
 
 export const DEG = Math.PI / 180;
 
-// VehicleInput.buttons bits (held state)
+// VehicleInput.buttons bits (held state). Bit 4 was the jump (removed,
+// docs/phase-1a-design.md 26); the sim ignores it and clampInput drops it.
 export const BTN_HANDBRAKE = 1;
 export const BTN_BOOST = 2;
-export const BTN_JUMP = 4;    // edge-triggered via prevButtons
 export const BTN_RESET = 8;   // must be held for RESET_HOLD_TICKS
+export const BTN_MASK = BTN_HANDBRAKE | BTN_BOOST | BTN_RESET;
 
 // Ticks the world collision stays off after a Party ghost ended inside a
 // building, at most (section 7.3, step 5)
@@ -25,15 +26,17 @@ export const GHOST_EXIT_TICKS = 180;
 // Global tuning values. One mutable object so the lil-gui panel can write
 // into it; the server always runs with these defaults.
 export const SIM_TUNING = {
-    // Gravity: flight (arcade, about 2 g), downhill pull, tyre load
-    G_AIR: 20,
+    // Gravity: on the body (vertical motion, on the ground and in the
+    // air), downhill pull, tyre load
+    GRAVITY: 20,
     G_SLOPE: 9.81,
     G_TIRE: 9.81,
-    // Ground contact: extra pull that keeps the car on crests, the height
-    // above the ground at which it counts as airborne, jump grace ticks
-    STICK: 8,
-    AIR_GAP: 0.15,
-    COYOTE_TICKS: 6,
+    // Suspension (docs/phase-1a-design.md, 26): natural frequency (Hz) and
+    // damping ratio of the body on its springs, travel from the rest
+    // position down to the bump stop (m)
+    SUSP_FREQ: 2,
+    SUSP_DAMPING: 0.8,
+    SUSP_TRAVEL: 0.25,
     // Below this speed the tyre model blends into kinematic steering
     V_LOW: 5,
     // Resistances
@@ -73,9 +76,11 @@ export const SIM_TUNING = {
     BOOST_MIN: 0.15,        // meter needed to start a boost
     DRIFT_FILL: 0.35,
     AIR_FILL: 0.10,
-    // Yaw control in the air
-    AIR_YAW: 1.5,
-    JUMP_COOLDOWN: 20,
+    // Yaw in the air (section 26): no steering; the yaw rate eases at
+    // AIR_YAW_RESPONSE (1/s) towards AIR_ALIGN (1/s) times the slip angle,
+    // which turns the nose into the flight direction for a straight landing
+    AIR_YAW_RESPONSE: 3,
+    AIR_ALIGN: 2,
     RESET_HOLD_TICKS: 30,
     RESET_GHOST_TICKS: 120,
     // Global knobs

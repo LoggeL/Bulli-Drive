@@ -34,7 +34,6 @@ const scratchPosition = new THREE.Vector3();
 const scratchScale = new THREE.Vector3();
 const scratchRotation = new THREE.Quaternion();
 const scratchColor = new THREE.Color();
-const scratchDriftOffset = new THREE.Vector3();
 
 // Soft round sprites are drawn a bit larger than the cubes they replaced, so a
 // puff covers about the same area.
@@ -335,37 +334,28 @@ export function spawnDriftParticle() {
 
     const carGroup = state.bulli.group;
     const carAngle = state.bulli.angle;
-    const isJumping = state.bulli.isFlipping;
 
     const size = 0.25 + speed * 0.5;
-    const offsetX = (Math.random() - 0.5) * 1.5;
-    const offsetY = 0.2;
+    const worldOffsetX = Math.sin(carAngle + Math.PI) * 2;
+    const worldOffsetZ = Math.cos(carAngle + Math.PI) * 2;
 
-    if (isJumping) {
-        scratchDriftOffset.set(offsetX, offsetY, -2.2 + (Math.random() - 0.5) * 0.2);
-        spawnFollowingParticle(state.bulli.flipGroup, scratchDriftOffset, 0xEEEEEE, size);
-    } else {
-        const worldOffsetX = Math.sin(carAngle + Math.PI) * 2;
-        const worldOffsetZ = Math.cos(carAngle + Math.PI) * 2;
-
-        // Soft puff that rises slowly and grows while it fades
-        addParticle({
-            x: carGroup.position.x + worldOffsetX + (Math.random() - 0.5),
-            y: carGroup.position.y + 0.2,
-            z: carGroup.position.z + worldOffsetZ + (Math.random() - 0.5),
-            vx: (Math.random() - 0.5) * 0.2,
-            vy: (Math.random() * 0.5 + 0.2) * 0.2,
-            vz: (Math.random() - 0.5) * 0.2,
-            life: 1.0,
-            decay: 0.02 + Math.random() * 0.03,
-            initialScale: size,
-            initialOpacity: 0.55,
-            color: 0xF2EDE6,
-            grows: true,
-            followTarget: null,
-            localX: 0,
-            localY: 0,
-            localZ: 0
-        });
-    }
+    // Soft puff that rises slowly and grows while it fades
+    addParticle({
+        x: carGroup.position.x + worldOffsetX + (Math.random() - 0.5),
+        y: carGroup.position.y + 0.2,
+        z: carGroup.position.z + worldOffsetZ + (Math.random() - 0.5),
+        vx: (Math.random() - 0.5) * 0.2,
+        vy: (Math.random() * 0.5 + 0.2) * 0.2,
+        vz: (Math.random() - 0.5) * 0.2,
+        life: 1.0,
+        decay: 0.02 + Math.random() * 0.03,
+        initialScale: size,
+        initialOpacity: 0.55,
+        color: 0xF2EDE6,
+        grows: true,
+        followTarget: null,
+        localX: 0,
+        localY: 0,
+        localZ: 0
+    });
 }

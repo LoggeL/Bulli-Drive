@@ -15,7 +15,10 @@ import {
 // rooms with their messages (JSON, additive).
 // v4 (docs/phase-3-design.md, M3): the map Bulli Bay (roomState.world names
 // the map instead of a seed), the water counter in the self block.
-export const PROTOCOL_VERSION = 4;
+// v5 (docs/phase-1a-design.md, 26): no jump. The suspension in the self
+// block and the compact record (instead of the flip), no jump cooldown,
+// flip, previous buttons or Super Jump bits; the jump button bit is dropped.
+export const PROTOCOL_VERSION = 5;
 
 // ---------- DTOs ----------
 

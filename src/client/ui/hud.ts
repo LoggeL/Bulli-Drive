@@ -98,12 +98,11 @@ export function showInteractionPrompt(text: string) {
     }, 3000);
 }
 
-const POWERUP_KEYS = ['speed', 'size', 'jump', 'shield', 'magnet', 'ghost'] as const;
+const POWERUP_KEYS = ['speed', 'size', 'shield', 'magnet', 'ghost'] as const;
 const POWERUP_UI_INTERVAL_MS = 100;
 const POWERUP_COLOR_CSS: Record<(typeof POWERUP_KEYS)[number], string> = {
     speed: '#ffd700',
     size: '#ff1493',
-    jump: '#00ff7f',
     shield: '#00bfff',
     magnet: '#ff6600',
     ghost: '#9966ff'
@@ -111,7 +110,6 @@ const POWERUP_COLOR_CSS: Record<(typeof POWERUP_KEYS)[number], string> = {
 const POWERUP_ICON_IDS: Record<(typeof POWERUP_KEYS)[number], string> = {
     speed: 'icon-speed',
     size: 'icon-grow',
-    jump: 'icon-jump',
     shield: 'icon-shield',
     magnet: 'icon-magnet',
     ghost: 'icon-ghost'
@@ -342,10 +340,9 @@ function createPowerupIcon(type: string): SVGSVGElement {
 }
 
 
-export type JumpControlMode = 'jump' | 'super-jump' | 'recover';
+// The jump is gone (docs/phase-1a-design.md, 26): the button only resets
+export type JumpControlMode = 'recover';
 const JUMP_CONTROL_LABELS: Record<JumpControlMode, string> = {
-    jump: 'Jump and flip vehicle',
-    'super-jump': 'Use super jump',
     recover: 'Recover vehicle'
 };
 let jumpControlButton: HTMLButtonElement | null = null;

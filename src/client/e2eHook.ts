@@ -59,7 +59,8 @@ export interface V2Snapshot {
     yawRate: number;
     steerAngle: number;
     grounded: boolean;
-    flipAngle: number;
+    // Suspension: body above its rest position over the wheels (m)
+    susp: number;
     boostMeter: number;
     boosting: boolean;
     drifting: boolean;
@@ -72,7 +73,6 @@ export interface V2Snapshot {
     input: VehicleInput;
     // Counters since the car was created
     ticks: number;
-    jumps: number;
     resets: number;
     resetHint: boolean;
     autoGas: boolean;
@@ -360,7 +360,7 @@ function v2Snapshot(vehicle: LocalVehicle | undefined): V2Snapshot | null {
         yawRate: s.yawRate,
         steerAngle: s.steerAngle,
         grounded: s.grounded,
-        flipAngle: s.flipAngle,
+        susp: s.susp,
         boostMeter: s.boostMeter,
         boosting: s.boosting,
         drifting: s.driftTicks > 0,
@@ -371,7 +371,6 @@ function v2Snapshot(vehicle: LocalVehicle | undefined): V2Snapshot | null {
         topSpeed: vehicle.car.params.topSpeed,
         input: { ...vehicle.car.input },
         ticks: vehicle.ticks,
-        jumps: vehicle.jumps,
         resets: vehicle.resets,
         resetHint: vehicle.resetHint,
         autoGas: vehicle.autoGas,

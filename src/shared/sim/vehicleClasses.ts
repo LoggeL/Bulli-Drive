@@ -22,8 +22,8 @@ export const ASSIST_PROFILES: Record<AssistProfile, AssistSettings> = {
 // the contact mass, which applyModifiers derives from mass
 export type ClassParams = Omit<VehicleParams, 'counterSteer' | 'spinGuardAngle' | 'contactMass'>;
 
-function carClass(p: Omit<ClassParams, 'massRatioCap' | 'restitutionWall' | 'jumpSpeed'>): ClassParams {
-    return { ...p, massRatioCap: 1.8, restitutionWall: 0.15, jumpSpeed: 11 };
+function carClass(p: Omit<ClassParams, 'massRatioCap' | 'restitutionWall'>): ClassParams {
+    return { ...p, massRatioCap: 1.8, restitutionWall: 0.15 };
 }
 
 export const VEHICLE_CLASSES: Record<CarClassId, ClassParams> = {

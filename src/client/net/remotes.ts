@@ -138,7 +138,6 @@ export function updateRemoteCars(dt: number, now: number, alpha: number): void {
         }
         let x = pose.x, y = pose.y, z = pose.z, yaw = pose.yaw;
         let steer = pose.car?.steerAngle ?? 0;
-        let flip = pose.car?.flipAngle ?? 0;
         let scale = pose.car?.scale ?? 1;
         let speed = pose.speed;
         if (predicted && view.blend > 0) {
@@ -153,7 +152,6 @@ export function updateRemoteCars(dt: number, now: number, alpha: number): void {
             z += (pz - z) * w;
             yaw = yaw + wrapAngle(pyaw - yaw) * w;
             steer = b.steerAngle;
-            flip = b.flipAngle;
             scale = b.scale;
             speed = b.vx * Math.sin(b.yaw) + b.vz * Math.cos(b.yaw);
         }
@@ -162,7 +160,6 @@ export function updateRemoteCars(dt: number, now: number, alpha: number): void {
         remote.group.rotation.y = yaw;
         remote.group.scale.setScalar(Number.isFinite(scale) ? Math.max(0.5, Math.min(4, scale)) : 1);
         remote.flipGroup.position.y = Math.max(0, y - ground);
-        remote.flipGroup.rotation.x = flip;
         remote.angle = yaw;
         remote.speed = speed / 60;
         // Wheels and brake lights (CarModel rolls them each frame): the

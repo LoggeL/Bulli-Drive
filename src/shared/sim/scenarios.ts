@@ -4,9 +4,9 @@
 // input scripts.
 
 import type { TerrainConfig } from '../protocol.js';
-import { createSimWorld, type ColliderInput, type RampDef, type SimWorld } from '../world/colliders.js';
+import { createSimWorld, type ColliderInput, type GroundModel, type RampDef, type SimWorld } from '../world/colliders.js';
 import { MEGA_SCALE } from '../constants.js';
-import { BTN_BOOST, BTN_HANDBRAKE, BTN_JUMP, BTN_RESET, DEG } from './constants.js';
+import { BTN_BOOST, BTN_HANDBRAKE, BTN_RESET, DEG } from './constants.js';
 import { copyVehicleState, createVehicleState, type AssistProfile, type CarClassId, type SimCar, type VehicleState } from './types.js';
 import { CAR_CLASS_IDS } from './vehicleClasses.js';
 import { createSimCar, placeVehicle } from './vehicle.js';
@@ -26,6 +26,25 @@ export const FLAT_TERRAIN: TerrainConfig = {
 
 export function createFlatWorld(colliders: ColliderInput[] = [], ramps: RampDef[] = []): SimWorld {
     return createSimWorld(FLAT_TERRAIN, colliders, ramps);
+}
+
+/**
+ * A world on the ground height(x, z) (asphalt, no water, no fall limit,
+ * border at ±bound), e.g. a crest or a bump for the vertical motion
+ * (docs/phase-1a-design.md, 26)
+ */
+export function createGroundWorld(height: (x: number, z: number) => number, colliders: ColliderInput[] = [], ramps: RampDef[] = [], bound = 2000): SimWorld {
+    const cells = Math.ceil(2 * bound / 64);
+    const ground: GroundModel = {
+        height, surface: () => 0, waterLevel: -Infinity, fallLimit: -Infinity, bound,
+        grid: { origin: -bound, cellSize: 64, cells }
+    };
+    return createSimWorld(ground, colliders, ramps);
+}
+
+/** Cosine bump of height h and length L along z from z0 (0 elsewhere). */
+export function cosineBump(h: number, L: number, z0 = 0): (x: number, z: number) => number {
+    return (_x, z) => z > z0 && z < z0 + L ? h / 2 * (1 - Math.cos(2 * Math.PI * (z - z0) / L)) : 0;
 }
 
 // A car on the ground at (x, z) heading yaw, moving forward at speed
@@ -279,19 +298,19 @@ export const SIM_SCENARIOS: SimScenario[] = [
         }
     },
     {
-        name: 'jump-reset-jeep',
+        name: 'crest-hop-reset-jeep',
         ticks: 240,
         create() {
-            const world = createFlatWorld();
-            return { world, cars: [spawnCar(world, 'a', 'jeep', 0, -400, 0, 20)] };
+            // A bump 1 m high and 20 m long at z = -380: κ = 0.049/m at its
+            // top, v²·κ is above GRAVITY from 20 m/s on, so the jeep leaves
+            // it at 30 m/s
+            const world = createGroundWorld(cosineBump(1, 20, -380));
+            return { world, cars: [spawnCar(world, 'a', 'jeep', 0, -400, 0, 30)] };
         },
         drive(tick, run) {
-            // Jump, press again within the coyote time (the cooldown holds
-            // it back), steer in the air and land; then hold reset until it
-            // fires and drive on through the contact ghost
-            let buttons = 0;
-            if ((tick >= 10 && tick < 14) || (tick >= 16 && tick < 18)) buttons = BTN_JUMP;
-            else if (tick >= 120 && tick < 160) buttons = BTN_RESET;
+            // Over the bump, steer in the air and land; then hold reset until
+            // it fires and drive on through the contact ghost
+            const buttons = tick >= 120 && tick < 160 ? BTN_RESET : 0;
             setInput(run.cars[0], 200, tick >= 20 && tick < 60 ? 60 : 0, 0, buttons);
         }
     },

@@ -88,7 +88,7 @@ describe('stepWorld', () => {
     it('resets a car whose state went non-finite where it was', () => {
         const world = createFlatWorld();
         // Fields a NaN in them does not carry into the position within the tick
-        for (const key of ['y', 'boostMeter', 'flipAngle', 'flipRate'] as const) {
+        for (const key of ['y', 'vy', 'susp', 'boostMeter'] as const) {
             const car = spawnCar(world, 'a', 'bulli', 30, 40, 1);
             car.state[key] = NaN;
             stepWorld([car], world);

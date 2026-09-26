@@ -119,7 +119,7 @@ export function replayRun(world: SimWorld, course: Course, run: ReplayRun): Repl
         advanceProgress(progress, course, i, S, x0, z0, car.state.x, car.state.z, car.state.vx, car.state.vz, reset);
         if ((i - S) % GHOST_POSE_EVERY === 0) {
             const s = car.state;
-            pose.x = s.x; pose.y = s.y; pose.z = s.z; pose.yaw = s.yaw; pose.flipAngle = s.flipAngle;
+            pose.x = s.x; pose.y = s.y; pose.z = s.z; pose.yaw = s.yaw;
             poses.push(pose);
         }
     }

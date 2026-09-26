@@ -687,7 +687,7 @@ describe('what the room tells about the Party', () => {
         const alice = player('Alice');
         const T = room.tick;
         partyOf(alice).powerups.speed = { start: T - 10, end: T + 50 };
-        partyOf(alice).powerups.jump = { start: T - 100, end: T };
+        partyOf(alice).powerups.size = { start: T - 100, end: T };
         expect(room.resumeState(alice.member!).powerups).toEqual([{ type: 'speed', startTick: T - 10, endTick: T + 50 }]);
     });
 
