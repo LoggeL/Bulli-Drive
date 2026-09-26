@@ -87,6 +87,12 @@ export class Bulli {
         this.model.setDriveState(speed, steerAngle, braking);
     }
 
+    /** Another paint (menu, playerUpdated.color). */
+    setPaint(colorCode: number): void {
+        this.colorCode = colorCode;
+        this.model.setPaint(colorCode);
+    }
+
     /** AFK players are shown greyed out. */
     setAfkVisual(active: boolean): void {
         this.model.setAfkVisual(active);

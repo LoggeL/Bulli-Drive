@@ -1,6 +1,7 @@
 import { parseClientMessage } from '../shared/protocol.js';
 import { MAX_NAME_LENGTH } from '../shared/constants.js';
 import { isCarClassId } from '../shared/sim/vehicleClasses.js';
+import { paintById } from '../shared/paints.js';
 import { JOIN_ROOM_INTERVAL_MS, PING_INTERVAL_MS, RENAME_INTERVAL_MS } from './config.js';
 import type { RoomManager } from './rooms/lobby.js';
 import { roomOptions } from './rooms/Room.js';
@@ -9,8 +10,8 @@ import type { Session } from './session.js';
 // Entry point for every JSON frame after the handshake
 // (docs/phase-1b-design.md, 3.5). Anything that does not match the shared
 // ClientMessageSchema is dropped and counted as invalid, so a broken or
-// hostile client cannot crash a handler. Name, car, room and clock belong
-// to the session; everything else goes to the session's room.
+// hostile client cannot crash a handler. Name, car, paint, room and clock
+// belong to the session; everything else goes to the session's room.
 
 export type DispatchResult = 'ok' | 'invalid';
 
@@ -52,6 +53,15 @@ export function handleClientMessage(lobby: RoomManager, session: Session, data: 
             session.carType = msg.carType;
             session.profile = msg.profile;
             if (room && member) room.onSessionChanged(member, { car: true });
+            return 'ok';
+        }
+        case 'setPaint': {
+            // A palette paint only (the schema checks the id); shown to the
+            // room with the car changes, rate limited there
+            const color = paintById(msg.paint).hex;
+            if (session.color === color) return 'ok';
+            session.color = color;
+            if (room && member) room.onSessionChanged(member, { paint: true });
             return 'ok';
         }
         case 'joinRoom': {

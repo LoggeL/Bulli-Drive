@@ -69,11 +69,11 @@
         position: fixed; inset: 0; z-index: 9999; overflow: hidden; color: var(--ui-paper);
         font: 500 15px/1.4 var(--ui-font); -webkit-font-smoothing: antialiased;
         background: var(--ui-ink) center / cover no-repeat;
-        background-image: /* keyart-blur */url(data:image/webp;base64,UklGRoYAAABXRUJQVlA4IHoAAACwBACdASogABIAPu1oqU+ppiOiMBgIATAdiWUAqScJxSICalrs9eKuHvC3PXEAAP7UclFzB9wT8mJt7uKF+iejqTgKkjCNfaeM8qh9v5IRrWXbuZgZEzueCFWRoiKDTKT4ASoMgDChLa7iLnCgjFS0Pa9wXHBXdsAAAA==)/* /keyart-blur */;
+        background-image: /* keyart-blur */url(data:image/webp;base64,UklGRoAAAABXRUJQVlA4IHQAAADQAwCdASogABIAPu1iqE2ppaOiMAgBMB2JZwC7ACGmk0UXTLDt5ZAA/tMULph+NMBtwkoKec7aV/eDlklGKpNoRcCElx/RLCHDwSOHcN7chOCiFKIeEO6fkLgR/YnUbv4dX476IBIC4hr+f/bWzrEv+AAAAA==)/* /keyart-blur */;
         transition: opacity .4s var(--ui-ease);
     }
     .keyart, .keyart img { position: absolute; inset: 0; width: 100%; height: 100%; }
-    .keyart img { object-fit: cover; object-position: 62% 50%; }
+    .keyart img { object-fit: cover; object-position: 50% 50%; }
     .loader-scrim { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(18, 20, 22, .6), rgba(18, 20, 22, .25) 45%, rgba(18, 20, 22, 0) 65%), linear-gradient(0deg, rgba(18, 20, 22, .55), rgba(18, 20, 22, 0) 45%); }
     .loader-panel {
         position: absolute; left: max(24px, 5vw, env(safe-area-inset-left)); bottom: max(24px, 7vh, env(safe-area-inset-bottom));
@@ -91,7 +91,6 @@
     .loader-notice { position: absolute; top: max(16px, env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right)); margin: 0; padding: 6px 14px; border: 1px solid var(--ui-line); border-radius: 999px; background: rgba(18, 20, 22, .64); font-size: 13px; }
     @media (pointer: coarse) { .loader-tip .tip-keyboard { display: none; } .loader-tip .tip-touch { display: inline; } }
     @media (orientation: portrait) {
-        .keyart img { object-position: 45% 30%; }
         .loader-scrim { background: linear-gradient(0deg, rgba(18, 20, 22, .8), rgba(18, 20, 22, .5) 38%, rgba(18, 20, 22, 0) 58%); }
         .loader-panel { left: 24px; right: 24px; width: auto; }
     }
@@ -180,6 +179,27 @@
             <symbol id="icon-magnet" viewBox="0 0 24 24">
                 <path d="M5 3v9a7 7 0 0 0 14 0V3h-5v9a2 2 0 0 1-4 0V3zM5 7h5M14 7h5"/>
             </symbol>
+            <symbol id="icon-gear" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="3.2"/>
+                <path d="M12 2.8v2.4M12 18.8v2.4M21.2 12h-2.4M5.2 12H2.8M18.5 5.5l-1.7 1.7M7.2 16.8l-1.7 1.7M18.5 18.5l-1.7-1.7M7.2 7.2 5.5 5.5"/>
+                <circle cx="12" cy="12" r="6.6"/>
+            </symbol>
+            <symbol id="icon-sound" viewBox="0 0 24 24">
+                <path d="M4 9.5v5h4l5 4V5.5l-5 4z"/>
+                <path d="M16.5 9a4.2 4.2 0 0 1 0 6M19 6.5a7.8 7.8 0 0 1 0 11"/>
+            </symbol>
+            <symbol id="icon-mute" viewBox="0 0 24 24">
+                <path d="M4 9.5v5h4l5 4V5.5l-5 4z"/>
+                <path d="m16.5 9.5 5 5M21.5 9.5l-5 5"/>
+            </symbol>
+            <symbol id="icon-info" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="9"/>
+                <path d="M12 11v5.5"/>
+                <circle class="icon-fill" cx="12" cy="7.6" r="1.1"/>
+            </symbol>
+            <symbol id="icon-close" viewBox="0 0 24 24">
+                <path d="m6 6 12 12M18 6 6 18"/>
+            </symbol>
             <symbol id="icon-ghost" viewBox="0 0 24 24">
                 <path d="M5 21V10a7 7 0 0 1 14 0v11l-3.5-2-3.5 2-3.5-2z"/>
                 <circle class="icon-fill" cx="9.5" cy="10" r="1"/>
@@ -206,135 +226,183 @@
         </div>
     </div>
 
-    <div id="splash-screen" class="hidden">
-        <div class="splash-bg"></div>
-        <div class="splash-content">
-            <div class="splash-badge">MULTIPLAYER</div>
-            <h1 class="splash-title">
-                <span class="title-bulli">Bulli</span>
-                <span class="title-drive">Drive</span>
-            </h1>
-            <p class="splash-tagline">Collect coins. Grab powerups. Own the road.</p>
-            <div class="input-group">
-                <label for="splash-name-input" class="input-label">YOUR ROAD NAME</label>
-                <input type="text" id="splash-name-input" placeholder="e.g. SurfKing42" maxlength="20" autocomplete="off">
+    <!-- Main menu (docs/ui.md 4; ui/menu/menu.ts, ui/menu.css): the game
+         draws the showroom behind it, the car at the head of the pier -->
+    <div id="splash-screen" class="menu hidden" role="region" aria-label="Main menu" data-mode="party">
+        <div class="menu-stage" aria-hidden="true"></div>
+        <div class="menu-scrim" aria-hidden="true"></div>
+        <div class="menu-panel">
+            <div class="menu-brand"><h1 class="sr-only">Bulli Drive</h1></div>
+            <div class="menu-field menu-name">
+                <label for="splash-name-input" class="menu-label">Driver name</label>
+                <input type="text" id="splash-name-input" placeholder="e.g. SurfKing42" maxlength="20" autocomplete="nickname" autocapitalize="off" spellcheck="false" enterkeyhint="go">
             </div>
-            <div class="car-selector">
-                <label class="input-label">CHOOSE YOUR RIDE</label>
-                <div class="car-selector-row">
-                    <div class="car-card selected" data-car="bulli">
-                        <!-- Renders of the car models (tools/models/build-all.mjs --icons) -->
-                        <img src="/icons/car-bulli.webp" class="car-icon car-icon-render" width="52" height="32" alt="" decoding="async" draggable="false">
-                        <span class="car-name">Bulli</span>
-                    </div>
-                    <div class="car-card" data-car="beetle">
-                        <img src="/icons/car-beetle.webp" class="car-icon car-icon-render" width="52" height="32" alt="" decoding="async" draggable="false">
-                        <span class="car-name">Beetle</span>
-                    </div>
-                    <div class="car-card" data-car="pickup">
-                        <img src="/icons/car-pickup.webp" class="car-icon car-icon-render" width="52" height="32" alt="" decoding="async" draggable="false">
-                        <span class="car-name">Pickup</span>
-                    </div>
-                    <div class="car-card" data-car="sport">
-                        <img src="/icons/car-sport.webp" class="car-icon car-icon-render" width="52" height="32" alt="" decoding="async" draggable="false">
-                        <span class="car-name">Sport</span>
-                    </div>
-                    <div class="car-card" data-car="jeep">
-                        <img src="/icons/car-jeep.webp" class="car-icon car-icon-render" width="52" height="32" alt="" decoding="async" draggable="false">
-                        <span class="car-name">Jeep</span>
-                    </div>
+            <section class="menu-showcase" aria-label="Car">
+                <div class="car-carousel" role="group" aria-roledescription="carousel" aria-label="Choose your car">
+                    <button type="button" class="car-arrow car-prev" aria-label="Previous car">
+                        <svg class="ui-icon" aria-hidden="true"><use href="#icon-chevron"></use></svg>
+                    </button>
+                    <!-- The five cards (renders: tools/ui/menu-renders.mjs) come from ui/menu/menu.ts -->
+                    <div class="car-strip"></div>
+                    <div class="car-title" aria-hidden="true"><span class="car-title-name">Bulli</span><span class="car-dots"></span></div>
+                    <button type="button" class="car-arrow car-next" aria-label="Next car">
+                        <svg class="ui-icon" aria-hidden="true"><use href="#icon-chevron"></use></svg>
+                    </button>
                 </div>
+                <dl class="car-stats">
+                    <div class="car-stat"><dt data-short="Speed">Top speed</dt><dd><span class="stat-value" data-stat="speed">180</span><span class="stat-unit">km/h</span><span class="stat-bar"><i data-bar="speed"></i></span></dd></div>
+                    <div class="car-stat"><dt data-short="Accel">Acceleration</dt><dd><span class="stat-bar"><i data-bar="accel"></i></span></dd></div>
+                    <div class="car-stat"><dt>Weight</dt><dd><span class="stat-value" data-stat="mass">1500</span><span class="stat-unit">kg</span></dd></div>
+                </dl>
+                <p class="car-character"></p>
+            </section>
+            <div class="menu-field menu-paint">
+                <span class="menu-label" id="paint-label">Paint <span class="paint-name" aria-hidden="true"></span></span>
+                <!-- Eight chips from shared/paints.ts (ui/menu/menu.ts) -->
+                <div class="paint-chips" role="radiogroup" aria-labelledby="paint-label"></div>
             </div>
-            <div class="mode-selector">
-                <span class="input-label" id="mode-selector-label">GAME MODE</span>
+            <div class="menu-field menu-modes">
+                <span class="menu-label" id="mode-selector-label">Mode</span>
                 <div class="mode-selector-row" role="radiogroup" aria-labelledby="mode-selector-label">
                     <button type="button" class="mode-option" role="radio" aria-checked="true" data-room="party">
-                        <span class="mode-name">PARTY</span>
-                        <span class="mode-desc">Coins, powerups, shooting</span>
+                        <span class="mode-name">Party</span>
+                        <span class="mode-desc">Coins, powerups, shooting – bump everyone.</span>
                     </button>
                     <button type="button" class="mode-option" role="radio" aria-checked="false" data-room="freeroam">
-                        <span class="mode-name">FREE ROAM</span>
-                        <span class="mode-desc">Just drive and bump</span>
+                        <span class="mode-name">Free Roam</span>
+                        <span class="mode-desc">Cruise the bay. Bumping allowed.</span>
                     </button>
                     <button type="button" class="mode-option" role="radio" aria-checked="false" data-room="race">
-                        <span class="mode-name">RACE</span>
-                        <span class="mode-desc">Laps, sprints, bots</span>
+                        <span class="mode-name">Race</span>
+                        <span class="mode-desc">Six tracks, a lobby with bots.</span>
                     </button>
                 </div>
+                <p class="mode-note">You start in the race lobby: pick the track and the bots there, or a time trial.</p>
             </div>
-            <button id="start-btn">
-                <svg class="ui-icon btn-icon" aria-hidden="true"><use href="#icon-play"></use></svg>
-                <span class="btn-label">START ENGINE</span>
+            <div class="menu-drive">
+                <button id="start-btn" type="button">
+                    <span class="btn-fill" aria-hidden="true"></span>
+                    <span class="btn-label">DRIVE</span>
+                </button>
+            </div>
+            <p class="menu-hint" aria-label="Controls">
+                <span class="preview-row preview-keyboard">
+                    <span class="preview-keys">WASD</span> <span class="preview-desc">drive</span><span class="preview-sep" aria-hidden="true">·</span>
+                    <span class="preview-keys">SPACE</span> <span class="preview-desc">drift</span><span class="preview-sep" aria-hidden="true">·</span>
+                    <span class="preview-keys">SHIFT</span> <span class="preview-desc">boost</span><span class="preview-sep" aria-hidden="true">·</span>
+                    <span class="preview-keys">R</span> <span class="preview-desc">reset</span><span class="preview-sep" aria-hidden="true">·</span>
+                    <span class="preview-keys">F</span> <span class="preview-desc">horn</span><span class="preview-party"><span class="preview-sep" aria-hidden="true">·</span>
+                    <span class="preview-keys">E</span> <span class="preview-desc">shoot</span></span>
+                </span>
+                <span class="preview-row preview-touch">
+                    <span class="preview-keys">STICK</span> <span class="preview-desc">steer</span><span class="preview-sep" aria-hidden="true">·</span>
+                    <span class="preview-keys">AUTO</span> <span class="preview-desc">gas</span><span class="preview-sep" aria-hidden="true">·</span>
+                    <span class="preview-keys">DRIFT</span><span class="preview-sep" aria-hidden="true">·</span>
+                    <span class="preview-keys">BOOST</span><span class="preview-sep" aria-hidden="true">·</span>
+                    <span class="preview-desc">hold</span> <span class="preview-keys">RESET</span>
+                </span>
+                <span class="preview-row preview-gamepad">
+                    <span class="preview-keys">RT</span> <span class="preview-desc">gas</span><span class="preview-sep" aria-hidden="true">·</span>
+                    <span class="preview-keys">LT</span> <span class="preview-desc">brake</span><span class="preview-sep" aria-hidden="true">·</span>
+                    <span class="preview-keys">A</span> <span class="preview-desc">drift</span><span class="preview-sep" aria-hidden="true">·</span>
+                    <span class="preview-keys">B</span> <span class="preview-desc">boost</span><span class="preview-sep" aria-hidden="true">·</span>
+                    <span class="preview-keys">VIEW</span> <span class="preview-desc">reset</span>
+                </span>
+            </p>
+        </div>
+        <div class="menu-tools">
+            <button type="button" class="menu-tool" id="menu-settings" aria-haspopup="dialog" aria-label="Settings">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-gear"></use></svg>
             </button>
-            <div class="splash-controls-preview">
-                <div class="preview-row preview-keyboard">
-                    <span class="preview-keys">WASD</span> <span class="preview-desc">drive</span>
-                    <span class="preview-sep">&middot;</span>
-                    <span class="preview-keys">SPACE</span> <span class="preview-desc">drift</span>
-                    <span class="preview-sep">&middot;</span>
-                    <span class="preview-keys">SHIFT</span> <span class="preview-desc">boost</span>
-                    <span class="preview-sep">&middot;</span>
-                    <span class="preview-keys">R</span> <span class="preview-desc">reset</span>
-                    <span class="preview-sep">&middot;</span>
-                    <span class="preview-keys">E</span> <span class="preview-desc">shoot</span>
-                </div>
-                <!-- Phones (style.css shows it instead of the keyboard row) -->
-                <div class="preview-row preview-touch">
-                    <span class="preview-keys">STICK</span> <span class="preview-desc">steer</span>
-                    <span class="preview-sep">&middot;</span>
-                    <span class="preview-keys">AUTO</span> <span class="preview-desc">gas</span>
-                    <span class="preview-sep">&middot;</span>
-                    <span class="preview-keys">DRIFT</span>
-                    <span class="preview-sep">&middot;</span>
-                    <span class="preview-keys">BOOST</span>
-                </div>
-            </div>
-            <a id="about-link" href="#">ABOUT</a>
+            <button type="button" class="menu-tool" id="menu-sound" aria-pressed="true" aria-label="Sound">
+                <svg class="ui-icon icon-sound-on" aria-hidden="true"><use href="#icon-sound"></use></svg>
+                <svg class="ui-icon icon-sound-off" aria-hidden="true"><use href="#icon-mute"></use></svg>
+            </button>
+            <button type="button" class="menu-tool" id="about-link" aria-haspopup="dialog" aria-label="About Bulli Drive">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-info"></use></svg>
+            </button>
         </div>
+        <p class="sr-only" id="menu-live" aria-live="polite"></p>
     </div>
 
-    <div id="modal-container" class="hidden">
-        <div class="modal-backdrop"></div>
-        <div class="modal-content">
-            <button class="close-btn" id="modal-close">&times;</button>
-            <h2 id="modal-title">About Bulli Drive</h2>
-            <div id="modal-body">
-                <p class="modal-desc">
-                    A multiplayer 3D driving game where you cruise around a sun-soaked California cityscape
-                    in a classic VW Bulli. Collect coins, grab powerups, and compete with other drivers on
-                    the open road.
-                </p>
-
-                <h3 class="modal-section-title">Controls</h3>
-                <div class="modal-controls-grid">
-                    <div class="modal-control-row"><span class="modal-key">W A S D</span><span>Drive &amp; steer</span></div>
-                    <div class="modal-control-row"><span class="modal-key">SPACE</span><span>Handbrake / drift</span></div>
-                    <div class="modal-control-row"><span class="modal-key">SHIFT</span><span>Boost (fills while drifting)</span></div>
-                    <div class="modal-control-row"><span class="modal-key">R</span><span>Hold to reset onto the road</span></div>
-                    <div class="modal-control-row"><span class="modal-key">E</span><span>Shoot projectile</span></div>
-                    <div class="modal-control-row"><span class="modal-key">F</span><span>Honk horn</span></div>
-                </div>
-
-                <h3 class="modal-section-title">Touch</h3>
-                <div class="modal-controls-grid">
-                    <div class="modal-control-row"><span class="modal-key">STICK</span><span>Steer; pull back to brake and reverse</span></div>
-                    <div class="modal-control-row"><span class="modal-key">AUTO</span><span>Auto-gas on / off</span></div>
-                    <div class="modal-control-row"><span class="modal-key">DRIFT</span><span>Handbrake / drift (hold)</span></div>
-                    <div class="modal-control-row"><span class="modal-key">BOOST</span><span>Boost (hold)</span></div>
-                    <div class="modal-control-row"><span class="modal-key">RESET</span><span>Hold to reset onto the road</span></div>
-                </div>
-
-                <h3 class="modal-section-title">Powerups</h3>
-                <div class="modal-powerup-list">
-                    <div class="modal-powerup-item"><svg class="ui-icon powerup-icon" aria-hidden="true"><use href="#icon-speed"></use></svg><span><strong>Speed Boost</strong> &mdash; Doubles your top speed</span></div>
-                    <div class="modal-powerup-item"><svg class="ui-icon powerup-icon" aria-hidden="true"><use href="#icon-grow"></use></svg><span><strong>Grow</strong> &mdash; Makes your car huge</span></div>
-                    <div class="modal-powerup-item"><svg class="ui-icon powerup-icon" aria-hidden="true"><use href="#icon-shield"></use></svg><span><strong>Shield</strong> &mdash; Protects from collisions</span></div>
-                    <div class="modal-powerup-item"><svg class="ui-icon powerup-icon" aria-hidden="true"><use href="#icon-magnet"></use></svg><span><strong>Magnet</strong> &mdash; Attracts nearby coins</span></div>
-                    <div class="modal-powerup-item"><svg class="ui-icon powerup-icon" aria-hidden="true"><use href="#icon-ghost"></use></svg><span><strong>Ghost</strong> &mdash; Passes through obstacles</span></div>
-                </div>
-            </div>
+    <dialog id="settings-dialog" class="menu-dialog" aria-labelledby="settings-title">
+        <div class="dialog-head">
+            <h2 id="settings-title">Settings</h2>
+            <button type="button" class="dialog-close" aria-label="Close settings">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-close"></use></svg>
+            </button>
         </div>
-    </div>
+        <div class="dialog-body">
+            <section class="setting" aria-labelledby="graphics-label">
+                <h3 class="menu-label" id="graphics-label">Graphics</h3>
+                <div class="segmented" role="radiogroup" aria-labelledby="graphics-label">
+                    <button type="button" role="radio" aria-checked="true" data-graphics="auto">Auto</button>
+                    <button type="button" role="radio" aria-checked="false" data-graphics="lite">Lite</button>
+                    <button type="button" role="radio" aria-checked="false" data-graphics="high">High</button>
+                </div>
+                <p class="setting-note" id="graphics-note"></p>
+                <button type="button" class="menu-button" id="graphics-apply" hidden>Apply &amp; reload</button>
+            </section>
+            <section class="setting setting-row" aria-labelledby="sound-label">
+                <h3 class="menu-label" id="sound-label">Sound</h3>
+                <button type="button" class="switch" id="sound-switch" role="switch" aria-checked="true" aria-labelledby="sound-label"><span></span></button>
+            </section>
+            <section class="setting" aria-labelledby="controls-label">
+                <h3 class="menu-label" id="controls-label">Controls</h3>
+                <div class="tabs" role="tablist" aria-labelledby="controls-label">
+                    <button type="button" role="tab" id="tab-keyboard" aria-controls="controls-keyboard" aria-selected="true">Keyboard</button>
+                    <button type="button" role="tab" id="tab-touch" aria-controls="controls-touch" aria-selected="false" tabindex="-1">Touch</button>
+                    <button type="button" role="tab" id="tab-gamepad" aria-controls="controls-gamepad" aria-selected="false" tabindex="-1">Gamepad</button>
+                </div>
+                <dl class="controls-table" id="controls-keyboard" role="tabpanel" aria-labelledby="tab-keyboard">
+                    <div><dt>W A S D</dt><dd>Drive &amp; steer (or the arrow keys)</dd></div>
+                    <div><dt>SPACE</dt><dd>Handbrake / drift</dd></div>
+                    <div><dt>SHIFT</dt><dd>Boost (fills while drifting)</dd></div>
+                    <div><dt>R</dt><dd>Hold to reset onto the road</dd></div>
+                    <div><dt>F</dt><dd>Honk</dd></div>
+                    <div><dt>E</dt><dd>Shoot (Party)</dd></div>
+                </dl>
+                <dl class="controls-table" id="controls-touch" role="tabpanel" aria-labelledby="tab-touch" hidden>
+                    <div><dt>STICK</dt><dd>Steer; pull back to brake and reverse</dd></div>
+                    <div><dt>AUTO</dt><dd>Auto-gas on / off</dd></div>
+                    <div><dt>DRIFT</dt><dd>Handbrake / drift (hold)</dd></div>
+                    <div><dt>BOOST</dt><dd>Boost (hold)</dd></div>
+                    <div><dt>RESET</dt><dd>Hold to reset onto the road</dd></div>
+                </dl>
+                <dl class="controls-table" id="controls-gamepad" role="tabpanel" aria-labelledby="tab-gamepad" hidden>
+                    <div><dt>RT / LT</dt><dd>Gas / brake and reverse</dd></div>
+                    <div><dt>LEFT STICK</dt><dd>Steer</dd></div>
+                    <div><dt>A</dt><dd>Handbrake / drift</dd></div>
+                    <div><dt>B</dt><dd>Boost</dd></div>
+                    <div><dt>VIEW</dt><dd>Hold to reset onto the road</dd></div>
+                    <div><dt>LB</dt><dd>Honk</dd></div>
+                    <div><dt>X</dt><dd>Shoot (Party)</dd></div>
+                </dl>
+            </section>
+        </div>
+    </dialog>
+
+    <dialog id="about-dialog" class="menu-dialog" aria-labelledby="about-title">
+        <div class="dialog-head">
+            <h2 id="about-title">About Bulli Drive</h2>
+            <button type="button" class="dialog-close" aria-label="Close">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-close"></use></svg>
+            </button>
+        </div>
+        <div class="dialog-body">
+            <p>A multiplayer driving game in Bulli Bay, a small town on the Californian coast: cruise, race on six tracks or bump each other around in the Party.</p>
+            <h3 class="menu-label">Party powerups</h3>
+            <ul class="powerup-list">
+                <li><svg class="ui-icon" aria-hidden="true"><use href="#icon-speed"></use></svg><span><strong>Speed</strong> Doubles your top speed</span></li>
+                <li><svg class="ui-icon" aria-hidden="true"><use href="#icon-grow"></use></svg><span><strong>Grow</strong> Makes your car huge</span></li>
+                <li><svg class="ui-icon" aria-hidden="true"><use href="#icon-shield"></use></svg><span><strong>Shield</strong> Protects you from hits</span></li>
+                <li><svg class="ui-icon" aria-hidden="true"><use href="#icon-magnet"></use></svg><span><strong>Magnet</strong> Pulls nearby coins in</span></li>
+                <li><svg class="ui-icon" aria-hidden="true"><use href="#icon-ghost"></use></svg><span><strong>Ghost</strong> Drive through the others</span></li>
+            </ul>
+            <p class="about-credits">Cars modelled with our own Blender scripts. Textures and sky: Poly Haven (CC0) and others, see the licences in the repository. Type: Barlow (SIL OFL).</p>
+            <p class="about-version">Build <span id="about-build">dev</span></p>
+        </div>
+    </dialog>
 
     <div id="mobile-controls">
         <div class="joystick-zone left">
@@ -556,15 +624,19 @@
                 </button>
                 <button type="button" class="room-option" data-room="freeroam">
                     <span class="mode-name">FREE ROAM</span>
-                    <span class="mode-desc">Just drive and bump</span>
+                    <span class="mode-desc">Cruise the bay, bumping allowed</span>
                 </button>
                 <button type="button" class="room-option" data-room="race">
                     <span class="mode-name">RACE</span>
-                    <span class="mode-desc">Laps, sprints, bots</span>
+                    <span class="mode-desc">Six tracks, a lobby with bots</span>
                 </button>
                 <button type="button" class="room-option" data-room="timetrial">
                     <span class="mode-name">TIME TRIAL</span>
                     <span class="mode-desc">Alone against your ghost</span>
+                </button>
+                <button type="button" class="room-settings" id="room-settings">
+                    <svg class="ui-icon" aria-hidden="true"><use href="#icon-gear"></use></svg>
+                    <span>Settings</span>
                 </button>
             </div>
             <div id="scoreboard-panel" class="party-only" hidden>

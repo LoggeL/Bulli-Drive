@@ -1241,7 +1241,8 @@ def main(build_lod, dims_used):
             report["ortho"] = bd_lookdev.render_ortho(os.path.join(out, "work"))
         if "icon" in opt:
             bd_lookdev.wire_ao_for_render(PAINTS + (cid + "_atlas",))
-            report["icon"] = bd_lookdev.render_icon(car0, bd_lookdev.load_env("victoria_sunset_2k"), opt["icon"])
+            report["icon"] = bd_lookdev.render_icon(car0, bd_lookdev.load_env("victoria_sunset_2k"), opt["icon"],
+                                                   bd_lookdev.icon_size(opt))
         elif "no-render" not in opt:
             report["renders"] = bd_lookdev.render_views(
                 car0, bd_lookdev.load_env("victoria_sunset_2k"), os.path.join(out, "renders"), opt.get("suffix", ""),

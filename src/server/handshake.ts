@@ -4,6 +4,8 @@ import * as v from 'valibot';
 import { HelloSchema, PROTOCOL_VERSION, type HelloMessage, type RejectReason, type ServerMessage } from '../shared/protocol.js';
 import { CLOSE_FULL, CLOSE_HELLO, CLOSE_TAKEN_OVER, CLOSE_VERSION, SNAPSHOT_RATE, TICK_RATE } from '../shared/net/constants.js';
 import { isCarClassId } from '../shared/sim/vehicleClasses.js';
+import { paintById, randomPaint } from '../shared/paints.js';
+import type { RandomSource } from '../shared/math/rng.js';
 import { sessionLog } from './access.js';
 import { cleanName } from './dispatch.js';
 import type { RoomManager } from './rooms/lobby.js';
@@ -55,6 +57,8 @@ export interface HandshakeContext {
     evict?: (session: Session) => void;
     // The budget of new sessions for this connection's address (11.7)
     admitNewSession?: () => boolean;
+    // Draws the paint of a player who brought no wish (Math.random by default)
+    random?: RandomSource;
 }
 
 export interface HelloResult {
@@ -86,6 +90,10 @@ function takeOver(transport: Transport, hello: HelloMessage, ctx: HandshakeConte
     const old = session.transport;
     session.attach(transport);
     session.build = hello.build;
+    // The page's paint wins (picked again in the menu after a reload)
+    const paintColor = hello.paint ? paintById(hello.paint).hex : session.color;
+    const repainted = paintColor !== session.color;
+    session.color = paintColor;
     if (old !== transport && old.readyState <= 1) {
         try { old.close(CLOSE_TAKEN_OVER, 'taken over'); } catch { /* gone anyway */ }
     }
@@ -93,6 +101,7 @@ function takeOver(transport: Transport, hello: HelloMessage, ctx: HandshakeConte
     const room = session.room, member = session.member;
     if (samePage && room && member) {
         room.resume(member);
+        if (repainted) room.onSessionChanged(member, { paint: true });
     } else {
         session.connId = hello.connId;
         ctx.lobby.rejoin(session, hello.room);
@@ -151,7 +160,8 @@ export function acceptHelloResult(transport: Transport, text: string, ctx: Hands
 
     const id = uuidv4();
     const token = randomBytes(16).toString('base64url');
-    let color = Math.floor(Math.random() * 0xffffff);
+    // The paint picked in the menu, else one from the palette (docs/ui.md 5)
+    let color = hello.paint ? paintById(hello.paint).hex : randomPaint(ctx.random ?? Math.random).hex;
     const name = cleanName(hello.name) || `Player ${Math.floor(Math.random() * 1000)}`;
     const session = new Session(id, transport, name, color, token);
     session.connId = hello.connId;

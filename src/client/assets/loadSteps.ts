@@ -3,7 +3,9 @@ import type { LoadProgress } from '../ui/loadProgress.js';
 import { onLoadPoll } from '../ui/loadingScreen.js';
 import { models, whenModelsReady } from './gameModels.js';
 import { textureStats, whenWorldTexturesLoaded } from '../world/textures.js';
-import { kitProgress, whenKitReady } from '../world/mapScene.js';
+import { kitProgress, updateMapScene, whenKitReady } from '../world/mapScene.js';
+import { updatePalms } from '../world/palms.js';
+import { updateCarModels } from '../vehicle/CarModel.js';
 import { whenSkyReady } from '../render/lighting.js';
 import { ASSET_WAIT_MS } from '../ui/assetGate.js';
 
@@ -94,6 +96,12 @@ export function mapWorldBuilt(progress: LoadProgress, env: Pick<LoadStepEnv, 're
     void Promise.all([textures, whenKitReady(), carIn]).then(async () => {
         progress.start('warmup');
         try {
+            // The first view as the menu will draw it (the showroom has the
+            // camera already): terrain rings, kit cells, palms and car LODs
+            // for it, so the warmup compiles what that frame shows
+            updateMapScene(env.camera);
+            updatePalms(env.camera);
+            updateCarModels(env.camera, 0);
             await env.renderer.compileAsync(env.scene, env.camera);
         } catch (error) {
             console.warn('[load] shader warmup failed', error);

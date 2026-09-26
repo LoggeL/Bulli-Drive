@@ -96,19 +96,21 @@ export interface RoomMember {
     pendingSpawn: boolean;
     pendingPlace: (SpawnPose & { speed: number }) | null;
     carDirty: boolean;
-    // A setCar is waiting to be shown to the room: car changes reach the
-    // others at most once per CAR_CHANGE_INTERVAL_MS, the latest one wins
+    // A setCar or setPaint is waiting to be shown to the room: car and
+    // paint changes reach the others at most once per
+    // CAR_CHANGE_INTERVAL_MS together, the latest one wins
     carPending: boolean;
     carShownAtMs: number;
     shownCar: CarClassId;
     shownProfile: ProfileId;
+    shownColor: number;
     // Tick the car last spawned or respawned, -1 = never
     spawnTick: number;
 }
 
 // Messages about the session itself (name, car, room, clock) are handled
 // before they reach a room (server/dispatch.ts)
-export type RoomMessage = Exclude<ClientMessage, { type: 'hello' | 'rename' | 'setCar' | 'joinRoom' | 'ping' }>;
+export type RoomMessage = Exclude<ClientMessage, { type: 'hello' | 'rename' | 'setCar' | 'setPaint' | 'joinRoom' | 'ping' }>;
 
 interface QueuedEvent {
     event: GameEvent;
@@ -224,6 +226,7 @@ export abstract class Room {
             carShownAtMs: -Infinity,
             shownCar: carClass(session),
             shownProfile: session.profile,
+            shownColor: session.color,
             spawnTick: -1
         };
         // Inputs for ticks the room already ran are late
@@ -378,13 +381,14 @@ export abstract class Room {
         }
     }
 
-    // The session was renamed or changed its car (server/dispatch.ts). A
-    // rename has its own rate limit and goes out at once; a car change is
-    // shown at the next tick, and to the room at most once per
-    // CAR_CHANGE_INTERVAL_MS (every change rebuilds the car on every
-    // client), so a client toggling its car cannot flood the room.
-    onSessionChanged(member: RoomMember, change: { name?: boolean; car?: boolean }): void {
-        if (change.car) member.carPending = true;
+    // The session was renamed, changed its car or its paint
+    // (server/dispatch.ts). A rename has its own rate limit and goes out at
+    // once; a car or paint change is shown at the next tick, and to the room
+    // at most once per CAR_CHANGE_INTERVAL_MS (every car change rebuilds the
+    // car on every client), so a client toggling its car or paint cannot
+    // flood the room.
+    onSessionChanged(member: RoomMember, change: { name?: boolean; car?: boolean; paint?: boolean }): void {
+        if (change.car || change.paint) member.carPending = true;
         if (!change.name || !member.ready) return;
         this.broadcast({ type: 'playerUpdated', id: member.id, name: member.session.name });
         this.markScoreboardDirty();
@@ -394,13 +398,23 @@ export abstract class Room {
         for (const m of this.sorted) {
             if (!m.carPending || nowMs - m.carShownAtMs < CAR_CHANGE_INTERVAL_MS || !this.carChangeAllowed(m)) continue;
             m.carPending = false;
-            const carType = carClass(m.session), profile = m.session.profile;
-            if (carType === m.shownCar && profile === m.shownProfile) continue;
+            const carType = carClass(m.session), profile = m.session.profile, color = m.session.color;
+            const carChanged = carType !== m.shownCar || profile !== m.shownProfile;
+            const paintChanged = color !== m.shownColor;
+            if (!carChanged && !paintChanged) continue;
             m.shownCar = carType;
             m.shownProfile = profile;
+            m.shownColor = color;
             m.carShownAtMs = nowMs;
-            m.carDirty = true;
-            if (m.ready) this.broadcast({ type: 'playerUpdated', id: m.id, carType, profile });
+            // Only another class or profile needs a new sim car
+            if (carChanged) m.carDirty = true;
+            if (m.ready) {
+                this.broadcast({
+                    type: 'playerUpdated', id: m.id,
+                    ...(carChanged ? { carType, profile } : {}),
+                    ...(paintChanged ? { color } : {})
+                });
+            }
         }
     }
 
@@ -597,13 +611,22 @@ export abstract class Room {
      */
     protected spawnCar(m: RoomMember, pose: SpawnPose, T: number, grid?: number): void {
         m.carDirty = false;
-        const carType = carClass(m.session), profile = m.session.profile;
+        const carType = carClass(m.session), profile = m.session.profile, color = m.session.color;
         m.carPending = false;
-        if (carType !== m.shownCar || profile !== m.shownProfile) {
-            // The others learn the class before the car shows up in it
+        const carChanged = carType !== m.shownCar || profile !== m.shownProfile;
+        const paintChanged = color !== m.shownColor;
+        if (carChanged || paintChanged) {
+            // The others learn the class and paint before the car shows up in it
             m.shownCar = carType;
             m.shownProfile = profile;
-            if (m.ready) this.broadcast({ type: 'playerUpdated', id: m.id, carType, profile });
+            m.shownColor = color;
+            if (m.ready) {
+                this.broadcast({
+                    type: 'playerUpdated', id: m.id,
+                    ...(carChanged ? { carType, profile } : {}),
+                    ...(paintChanged ? { color } : {})
+                });
+            }
         }
         m.car = createSimCar(m.id, carType, profile);
         spawnVehicle(m.car.state, this.world, pose.x, pose.z, pose.yaw);

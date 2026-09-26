@@ -3,9 +3,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-// Size budgets of the loading screen's assets (docs/ui.md 9): the key art
-// (tools/ui/keyart.ts) and the self-hosted fonts, measured on disk. A
-// heavier render or another font cut shows up here, not only on a slow phone.
+// Size budgets of the loading screen's and the menu's assets (docs/ui.md
+// 9): the key art (tools/ui/keyart.ts), the menu's car renders
+// (tools/ui/menu-renders.mjs) and the self-hosted fonts, measured on disk.
+// A heavier render or another font cut shows up here, not only on a slow
+// phone.
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const kb = (file: string) => statSync(path.join(ROOT, file)).size / 1024;
@@ -39,9 +41,25 @@ describe('the loading screen assets', () => {
     it('keeps the two Barlow cuts within 60 KB, with their licence', () => {
         expect(kb('public/fonts/barlow-500.woff2') + kb('public/fonts/barlow-semi-condensed-600.woff2')).toBeLessThanOrEqual(60);
         const licences = readFileSync(path.join(ROOT, 'public/fonts/LICENSES.md'), 'utf8');
-        for (const file of ['barlow-500', 'barlow-semi-condensed-600', 'righteous-400', 'quicksand-variable', 'permanent-marker-400']) {
+        // Righteous and Quicksand are the HUD's until it moves to Barlow (docs/ui.md 13)
+        for (const file of ['barlow-500', 'barlow-semi-condensed-600', 'righteous-400', 'quicksand-variable']) {
             expect(licences).toContain(`${file}.woff2`);
             expect(readFileSync(path.join(ROOT, `public/fonts/${file}.woff2`)).toString('ascii', 0, 4)).toBe('wOF2');
         }
+    });
+});
+
+describe('the menu assets', () => {
+    it('renders each car for its card at 640 x 360 within 20 KB', () => {
+        for (const car of ['bulli', 'beetle', 'pickup', 'sport', 'jeep']) {
+            const file = `public/icons/car-${car}-menu.webp`;
+            expect(kb(file), car).toBeLessThanOrEqual(20);
+            expect(webpSize(file), car).toEqual([640, 360]);
+        }
+    });
+
+    it('serves no font the menu and the HUD do not use', () => {
+        const licences = readFileSync(path.join(ROOT, 'public/fonts/LICENSES.md'), 'utf8');
+        expect(licences).not.toMatch(/Permanent Marker/);
     });
 });

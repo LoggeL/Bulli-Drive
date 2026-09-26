@@ -5,11 +5,11 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { state } from '../../src/client/state.js';
 import {
-    applySplashChoice, initModeSelector, initRoomMenu, partyRulesActive, preferredRoomKind, requestRoom, setCurrentRoom
+    applyMenuMode, initRoomMenu, partyRulesActive, preferredRoomKind, requestRoom, setCurrentRoom
 } from '../../src/client/ui/roomMenu.js';
 
 // Party or Free Roam on the client (src/client/ui/roomMenu.ts,
-// docs/phase-1b-design.md 9): the remembered mode, the splash choice that
+// docs/phase-1b-design.md 9): the remembered mode, the menu's choice that
 // moves the connection before the car spawns, and the room chip with its
 // menu, the switch lock and the page classes that hide the Party HUD. The
 // markup is index.html's own. Room isolation and switching on the server:
@@ -49,24 +49,19 @@ describe('the game mode', () => {
         blocked.mockRestore();
     });
 
-    it('moves to the mode chosen on the splash screen before the car spawns', () => {
-        localStorage.setItem('bulli-room-kind', 'party');
-        initModeSelector();
-        expect(option('.mode-option[data-room="party"]').getAttribute('aria-checked')).toBe('true');
-        option('.mode-option[data-room="freeroam"]').click();
-        expect(option('.mode-option[data-room="freeroam"]').getAttribute('aria-checked')).toBe('true');
-        expect(option('.mode-option[data-room="party"]').getAttribute('aria-checked')).toBe('false');
-
-        // The server put the connection into the Party; START moves it
+    it('moves to the mode chosen in the menu before the car spawns', () => {
+        // The server put the connection into the Party; DRIVE moves it
         // (main.ts sends 'ready' right after this)
         setCurrentRoom({ id: 'party-1', kind: 'party', index: 1 });
-        applySplashChoice();
+        vi.advanceTimersByTime(2000);
+        applyMenuMode('freeroam');
         expect(sent).toEqual([{ type: 'joinRoom', kind: 'freeroam' }]);
         expect(preferredRoomKind()).toBe('freeroam');
         // Already in the chosen mode: nothing to send
         setCurrentRoom({ id: 'freeroam-1', kind: 'freeroam', index: 1 });
         sent.length = 0;
-        applySplashChoice();
+        vi.advanceTimersByTime(2000);
+        applyMenuMode('freeroam');
         expect(sent).toEqual([]);
     });
 
@@ -81,21 +76,20 @@ describe('the game mode', () => {
         expect(text('room-chip-mode')).toBe('PARTY');
     });
 
-    it('offers the race on the splash; a time trial played last shows as Race and stays a time trial', () => {
+    it('keeps a time trial played last while Race stays picked in the menu', () => {
         localStorage.setItem('bulli-room-kind', 'timetrial');
-        initModeSelector();
-        expect(option('.mode-option[data-room="race"]').getAttribute('aria-checked')).toBe('true');
-        expect(option('.mode-option[data-room="race"]').tabIndex).toBe(0);
         setCurrentRoom({ id: 'timetrial-3', kind: 'timetrial', index: 3 });
-        applySplashChoice();
+        vi.advanceTimersByTime(2000);
+        applyMenuMode('race');
         expect(sent).toEqual([]);
         expect(preferredRoomKind()).toBe('timetrial');
-        // Picking RACE on the splash moves to a race
+        // From the Party, Race goes to a race
+        setCurrentRoom({ id: 'party-1', kind: 'party', index: 1 });
         vi.advanceTimersByTime(2000);
-        option('.mode-option[data-room="race"]').click();
-        applySplashChoice();
+        applyMenuMode('race');
         expect(sent).toEqual([{ type: 'joinRoom', kind: 'race' }]);
         setCurrentRoom({ id: 'race-1', kind: 'race', index: 1 });
+        vi.advanceTimersByTime(2000);
     });
 
     it('shows the race HUD classes in races and time trials, without the Party rules', () => {

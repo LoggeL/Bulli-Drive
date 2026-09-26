@@ -1,6 +1,8 @@
 // Screenshot set for visual before/after comparisons: starts the production
-// server, joins with headless Chromium (?e2e=1) and captures fixed views
-// of Bulli Bay (docs/phase-3-design.md 10): the chase camera on Main
+// server, joins with headless Chromium (?e2e=1) and captures fixed views:
+// the main menu (menu, menu-phone, menu-landscape) and its showroom frame
+// alone (showroom, docs/ui.md 4), and Bulli Bay (docs/phase-3-design.md
+// 10): the chase camera on Main
 // Street, the car up close, its rear with brake lights, a showroom of all
 // car types from the front and the rear, close-ups of the Kaefer, Pritsche,
 // 356 and 181, the plaza and its fountain, the palms, the promenade, the
@@ -177,9 +179,10 @@ async function join(browser: Browser, contextOptions: BrowserContextOptions, bas
     page.on('pageerror', error => log(`page error: ${error.message}`));
     page.on('console', message => { if (message.type() === 'error') log(`console.error: ${message.text()}`); });
 
+    // The Bulli, as every view expects
+    await page.addInitScript(() => localStorage.setItem('bulli-car-type', 'bulli'));
     await page.goto('/?e2e=1');
     await page.locator('#loading-screen').waitFor({ state: 'detached', timeout: 90_000 });
-    await page.locator('.car-card[data-car="bulli"]').click();
     await page.locator('#splash-name-input').fill(name);
     const tap = (selector: string) => (contextOptions.hasTouch ? page.locator(selector).tap() : page.locator(selector).click());
     await tap(`.mode-option[data-room="${mode}"]`);
@@ -595,6 +598,41 @@ async function captureRace(browser: Browser, baseURL: string, options: Options, 
     }
 }
 
+// The main menu over its showroom (docs/ui.md 4): desktop, phone upright and
+// sideways (views menu, menu-phone, menu-landscape), and the showroom
+// frame alone (showroom, the menu hidden) for the draw call budget: the
+// menu draws while the last assets load
+async function captureMenu(browser: Browser, baseURL: string, options: Options, stats: ShotStats[]): Promise<void> {
+    const want = (view: string) => !options.only || options.only.includes(view);
+    const iphone = devices['iPhone 13'];
+    const setups: Array<[string, BrowserContextOptions]> = [
+        ['menu', { viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 }],
+        ['menu-phone', iphone],
+        ['menu-landscape', devices['iPhone SE landscape']]
+    ];
+    for (const [name, contextOptions] of setups) {
+        const views = name === 'menu' ? [name, 'showroom'] : [name];
+        if (!views.some(want)) continue;
+        const context = await browser.newContext({ ...contextOptions, baseURL, reducedMotion: 'reduce' });
+        const page = await context.newPage();
+        page.on('pageerror', error => log(`page error: ${error.message}`));
+        await page.addInitScript(() => {
+            localStorage.setItem('bulli-car-type', 'bulli');
+            localStorage.setItem('bulli-paint', 'sea');
+        });
+        await page.goto('/?e2e=1');
+        await page.locator('#loading-screen').waitFor({ state: 'detached', timeout: 90_000 });
+        await settle(page, 1500);
+        if (want(name)) await shoot(page, options.out, name, stats);
+        if (views.includes('showroom') && want('showroom')) {
+            await page.addStyleTag({ content: '#splash-screen { visibility: hidden !important; }' });
+            await settle(page, 500);
+            await shoot(page, options.out, 'showroom', stats);
+        }
+        await context.close();
+    }
+}
+
 // Side-by-side image per view, composed in the browser (no image library needed)
 async function compare(browser: Browser, [beforeDir, afterDir]: [string, string], out: string): Promise<void> {
     const views = fs.readdirSync(afterDir)
@@ -669,6 +707,7 @@ async function main() {
         log(`GL renderer: ${renderer}`);
 
         const stats: ShotStats[] = [];
+        await captureMenu(browser, baseURL, options, stats);
         await captureDesktop(browser, baseURL, options, stats);
         await captureMobile(browser, baseURL, options, stats);
         await captureRace(browser, baseURL, options, stats);

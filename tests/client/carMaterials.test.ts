@@ -74,4 +74,14 @@ describe('car materials', () => {
             if (source.s > 0.05) expect(hsl.h).toBeCloseTo(source.h, 2);
         }
     });
+
+    it('paints the palette colours of the menu as they are', () => {
+        // Sea Green and Anthracite (docs/ui.md 5): the anthracite would be
+        // lifted to lightness 0.2 by the paint range, it stays at #2A2C2E
+        for (const hex of [0x5E8C7A, 0x2A2C2E, 0xE6DFCC]) {
+            expect(carPaintColor(hex).getHex(THREE.SRGBColorSpace)).toBe(hex);
+        }
+        // One step off the palette is mapped like before (the key art's old code)
+        expect(carPaintColor(0x85B5A2).getHex(THREE.SRGBColorSpace)).not.toBe(0x85B5A2);
+    });
 });

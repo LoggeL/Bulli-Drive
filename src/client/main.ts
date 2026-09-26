@@ -10,8 +10,14 @@ import { checkCoinCollection, animateCoins } from './world/coins.js';
 import { animatePowerups } from './world/powerups.js';
 import { updatePowerupsUI, updateSpeedometer, updateHealthBar, updateDriveHud } from './ui/hud.js';
 import { updateProjectiles } from './world/projectiles.js';
-import { initSplashScreen, initAboutModal } from './ui/screens.js';
-import { applySplashChoice, initModeSelector, initRoomMenu } from './ui/roomMenu.js';
+import { applyMenuMode, initRoomMenu } from './ui/roomMenu.js';
+import { closeMenu, initMenu, menuCarFrame, menuChoice, menuOpen, onMenuLayout } from './ui/menu/menu.js';
+import { ShowroomCamera } from './camera/ShowroomCamera.js';
+import { SHOWROOM_SPOT } from './camera/showroom.js';
+import { menuModeFor, type MenuChoice } from './ui/menu/menuState.js';
+import { paintById, type PaintId } from '../shared/paints.js';
+import { netDriver } from './net/netDriver.js';
+import { groundHeight } from './world/ground.js';
 import { updatePalms } from './world/palms.js';
 import { lowerMapDetail, startKitPreload, updateMapScene } from './world/mapScene.js';
 import { updateMinimap } from './ui/minimap.js';
@@ -42,6 +48,11 @@ import { raceClient } from './race/RaceClient.js';
 
 const chaseCamera = new ChaseCamera(RACE_CAMERA);
 const _chaseTarget: ChaseTarget = { position: new THREE.Vector3(), yaw: 0, speedRatio: 0, boost: false };
+// While the menu's showroom has the game camera, the chase camera follows
+// the car on this one (its damping starts from where it left the camera);
+// the way into the game ends on it (camera/ShowroomCamera.ts)
+const chaseView = new THREE.PerspectiveCamera();
+let showroom: ShowroomCamera | null = null;
 
 let renderQuality: AdaptiveRenderQuality;
 
@@ -66,6 +77,40 @@ function switchLocalCar(carType: string): void {
         state.scene.add(state.bulli.group);
     }
     sendToServer({ type: 'setCar', carType, profile: assistProfileForDevice() as ProfileId });
+}
+
+// A paint picked in the menu: the own car repainted, the server told (docs/ui.md 5)
+function repaintLocalCar(paint: PaintId): void {
+    const hex = paintById(paint).hex;
+    state.myColor = hex;
+    state.bulli?.setPaint(hex);
+    showroom?.invalidate();
+    sendToServer({ type: 'setPaint', paint });
+}
+
+// DRIVE (ui/menu/menu.ts): sounds and assets, name, car, paint and mode to
+// the server, ready; then the way from the showroom into the chase camera
+async function startFromMenu(choice: MenuChoice): Promise<void> {
+    if (state.audioCtx?.state === 'suspended') await state.audioCtx.resume();
+    // The sounds decode while the last textures and car models come in (DRIVE shows it)
+    await Promise.all([initSounds(), waitForGameAssets()]);
+    startEngineSound();
+
+    state.myName = choice.name;
+    sendToServer({ type: 'rename', name: choice.name });
+    switchLocalCar(choice.car);
+    applyMenuMode(choice.mode);
+    sendToServer({ type: 'ready' });
+    markPlayerReady();
+    state.inMenu = false;
+    closeMenu();
+
+    const view = showroom;
+    if (!view) {
+        document.body.classList.remove('in-menu');
+        return;
+    }
+    void view.startTransition(state.camera).then(() => document.body.classList.remove('in-menu'));
 }
 // Only set with ?debug=perf (FPS/draw call/bandwidth overlay)
 let perfMonitor: PerfMonitor | null = null;
@@ -103,6 +148,8 @@ function init() {
     );
     // Tone mapping, sky, fog, environment, lights and shadows
     setupLighting(state.scene, state.renderer);
+    // The picture says nothing a screen reader could read (docs/ui.md 4.4)
+    state.renderer.domElement.setAttribute('aria-hidden', 'true');
     document.body.appendChild(state.renderer.domElement);
     // Show a notice and pause rendering if the browser drops the GL context
     watchWebGLContext(state.renderer.domElement);
@@ -116,8 +163,11 @@ function init() {
     // The loading screen shows the real progress of all that (docs/ui.md 3.2)
     // and fades into the splash screen once the first view is complete
     const progress = startLoadingScreen(lightingTier(), { debug: LOAD_DEBUG });
-    const lite = safeModeReason();
-    if (lite) showLoaderNotice(lite === 'link' ? 'Lite graphics' : 'Lite graphics after graphics trouble on this device');
+    const liteReason = safeModeReason();
+    if (liteReason) {
+        showLoaderNotice(liteReason === 'link' ? 'Lite graphics' : liteReason === 'setting' ? 'Lite graphics (settings)'
+            : 'Lite graphics after graphics trouble on this device');
+    }
     if (!SANDBOX) {
         let carType = 'bulli';
         try {
@@ -127,46 +177,48 @@ function init() {
         void progress.whenPhase('loader').then(removeLoader);
     }
 
+    // The menu's showroom: the own car at the head of the pier, the camera
+    // round it, until DRIVE (docs/ui.md 4.1); not in the sandbox, whose
+    // world has no pier
+    const lite = isSafeMode();
+    if (!SANDBOX) {
+        const reducedMotion = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+        showroom = new ShowroomCamera({
+            groundHeight: (x, z) => groundHeight(x, z),
+            carFree: () => !netDriver.prediction?.spawned,
+            spawned: () => !netDriver.prediction || netDriver.prediction.spawned,
+            frame: menuCarFrame,
+            spawnHint: () => {
+                const choice = menuChoice();
+                const room = state.room;
+                return room && state.preview && menuModeFor(room.kind) === choice.mode ? state.preview : null;
+            },
+            reducedMotion: () => !!reducedMotion?.matches,
+            lite,
+            // Phones (and CPU rasterizers) draw the showroom at 30 fps at most
+            maxFps: lightingTier() === 'desktop' ? 0 : 30
+        });
+        onMenuLayout(() => showroom?.invalidate());
+    }
+    document.body.classList.add('in-menu');
+    state.inMenu = true;
+
     // Audio Context
     try {
         (window as any).AudioContext = (window as any).AudioContext || (window as any).webkitAudioContext;
         state.audioCtx = new AudioContext();
     } catch (e) { /* ignore */ }
 
-    // Splash Screen
-    const splashScreen = document.getElementById('splash-screen');
-    initSplashScreen(async (name, carType) => {
-        // Resume audio
-        if (state.audioCtx?.state === 'suspended') {
-            await state.audioCtx.resume();
-        }
-
-        // Init the sounds while the world textures and car models finish
-        // loading (the start button shows the progress)
-        await Promise.all([initSounds(), waitForGameAssets(document.getElementById('start-btn'))]);
-        startEngineSound();
-
-        // Save name and car type
-        localStorage.setItem('bulli-player-name', name);
-        state.myName = name;
-
-        // Notify server of name and car type (the local car is rebuilt in
-        // the chosen type), move to the chosen mode, then the car spawns
-        sendToServer({ type: 'rename', name });
-        switchLocalCar(carType);
-        applySplashChoice();
-        sendToServer({ type: 'ready' });
-        markPlayerReady();
-
-        // Hide splash screen
-        if (splashScreen) {
-            const focused = document.activeElement;
-            if (focused instanceof HTMLElement && splashScreen.contains(focused)) {
-                focused.blur();
-            }
-            splashScreen.classList.add('hidden');
-            splashScreen.inert = true;
-        }
+    // Main menu (docs/ui.md 4): car, paint and mode change the showroom's
+    // car at once; DRIVE joins
+    initMenu({
+        onCar: car => {
+            showroom?.swapCar();
+            // The new body swaps in at the bottom of the car's dip
+            window.setTimeout(() => switchLocalCar(car), showroom ? 120 : 0);
+        },
+        onPaint: repaintLocalCar,
+        onStart: startFromMenu
     });
 
     // Init WebSocket, or with ?sandbox=1 the offline test pad of the v2
@@ -185,8 +237,6 @@ function init() {
     setupMobileControls();
 
     // UI modules
-    initAboutModal();
-    initModeSelector();
     initRoomMenu();
     raceClient.setCarSwitcher(switchLocalCar);
 
@@ -214,11 +264,14 @@ function onWindowResize() {
     chaseCamera.refreshEnvelope();
     state.camera.aspect = window.innerWidth / window.innerHeight;
     state.camera.updateProjectionMatrix();
+    chaseView.aspect = state.camera.aspect;
+    chaseView.updateProjectionMatrix();
+    showroom?.invalidate();
     renderQuality.resize(window.innerWidth, window.innerHeight);
 }
 
 // The camera swings a little towards the travel direction in a drift
-function updateRaceCamera(dt: number, carPos: THREE.Vector3, vehicle: LocalVehicle) {
+function updateRaceCamera(dt: number, carPos: THREE.Vector3, vehicle: LocalVehicle, camera: THREE.PerspectiveCamera) {
     // A race spectator follows another car (race/RaceClient.ts)
     const spectate = raceClient.spectateTarget();
     if (spectate) {
@@ -227,7 +280,7 @@ function updateRaceCamera(dt: number, carPos: THREE.Vector3, vehicle: LocalVehic
         _chaseTarget.yaw = spectate.yaw;
         _chaseTarget.speedRatio = 0.5;
         _chaseTarget.boost = false;
-        if (chaseCamera.update(dt, state.camera, _chaseTarget, state.cameraSnapPending)) state.cameraSnapPending = false;
+        if (chaseCamera.update(dt, camera, _chaseTarget, state.cameraSnapPending)) state.cameraSnapPending = false;
         return;
     }
     const s = vehicle.car.state;
@@ -239,7 +292,7 @@ function updateRaceCamera(dt: number, carPos: THREE.Vector3, vehicle: LocalVehic
         + RACE_CAMERA_SLIP_BLEND * vehicle.slipAngle * Math.max(0, Math.min(1, u / 10));
     _chaseTarget.speedRatio = Math.min(1, Math.abs(u) / Math.max(1, vehicle.car.params.topSpeed));
     _chaseTarget.boost = s.boosting || vehicle.car.mods.turbo;
-    if (chaseCamera.update(dt, state.camera, _chaseTarget, state.cameraSnapPending)) {
+    if (chaseCamera.update(dt, camera, _chaseTarget, state.cameraSnapPending)) {
         state.cameraSnapPending = false;
     }
 }
@@ -275,7 +328,7 @@ function animate(frameTime: number) {
         // shortest arc, while position, framing and FOV use independent damping
         // so a quick turn feels deliberate instead of whipping the view around.
         const carPos = state.bulli.group.position;
-        if (vehicle) updateRaceCamera(dt, carPos, vehicle);
+        if (vehicle) updateRaceCamera(dt, carPos, vehicle, showroom?.busy ? chaseView : state.camera);
 
         // Effects based on speed
         const speed = Math.abs(state.bulli.speed);
@@ -310,6 +363,13 @@ function animate(frameTime: number) {
                 );
             }
         }
+    }
+
+    // The menu's showroom, or the way from it into the game, has the camera
+    if (showroom?.busy && state.camera) {
+        showroom.update(state.camera, state.bulli, chaseView);
+        // The HUD comes in over the last 0.3 s of it
+        if (!showroom.active && showroom.remaining() <= 0.3) document.body.classList.remove('in-menu');
     }
 
     // Sandbox dummies and cones (game/hooks.ts, empty in the game)
@@ -348,7 +408,8 @@ function animate(frameTime: number) {
     // While the GL context is lost three.js skips rendering anyway; skip the
     // adaptive quality sampling too so the gap doesn't lower the resolution.
     // Nothing is drawn under the opaque loading screen either.
-    const drawNow = (E2E_DRAW_INTERVAL_MS === 0 || frameTime - lastDrawAt >= E2E_DRAW_INTERVAL_MS) && !loadingScreenCovers();
+    const drawNow = (E2E_DRAW_INTERVAL_MS === 0 || frameTime - lastDrawAt >= E2E_DRAW_INTERVAL_MS) && !loadingScreenCovers()
+        && (!showroom || showroom.shouldDraw(frameTime));
     if (drawNow && state.renderer && state.scene && state.camera && !isWebGLContextLost()) {
         lastDrawAt = frameTime;
         updateWorldShaders(state.clock.getElapsed());
@@ -365,6 +426,8 @@ function animate(frameTime: number) {
         if (renderQuality.struggling) lowerMapDetail();
         // Counters include the shadow pass (perf overlay, e2e snapshot)
         renderFrame(state.renderer, state.scene, state.camera);
+        // The cross-fade of the way into the game holds this frame
+        showroom?.afterRender(state.renderer.domElement);
     }
 
     perfMonitor?.endFrame(frameTime);

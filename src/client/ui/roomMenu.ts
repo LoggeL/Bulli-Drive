@@ -1,11 +1,13 @@
 import { DEFAULT_ROOM_KIND, isRoomKind, type RoomInfo, type RoomKind } from '../../shared/protocol.js';
 import { sendToServer } from '../network/socket.js';
 import { state } from '../state.js';
+import { openSettings } from './menu/settingsDialog.js';
 
 // Party, Free Roam, Race or Time Trial (docs/phase-1b-design.md, 9 and
-// docs/phase-2-design.md, 17.6): the choice on the splash screen, the room
-// chip in the HUD with its mode menu, and the page classes that hide the
-// Party HUD outside the Party and show the race HUD in races.
+// docs/phase-2-design.md, 17.6): the mode picked in the menu, the room chip
+// in the HUD with its mode menu (and the settings, docs/ui.md 13), and the
+// page classes that hide the Party HUD outside the Party and show the race
+// HUD in races.
 
 const STORAGE_KEY = 'bulli-room-kind';
 // The server takes one room switch per two seconds
@@ -16,7 +18,6 @@ const SWITCH_TIMEOUT_MS = 5000;
 const LABELS: Record<RoomKind, string> = { party: 'PARTY', freeroam: 'FREE ROAM', race: 'RACE', timetrial: 'TIME TRIAL' };
 const NAMES: Record<RoomKind, string> = { party: 'Party', freeroam: 'Free Roam', race: 'Race', timetrial: 'Time Trial' };
 
-let splashChoice: RoomKind = DEFAULT_ROOM_KIND;
 let pendingKind: RoomKind | null = null;
 let lockedUntil = 0;
 let unlockTimer = 0;
@@ -47,51 +48,16 @@ export function isRaceKind(kind: RoomKind | undefined): boolean {
     return kind === 'race' || kind === 'timetrial';
 }
 
-// The splash offers Party, Free Roam and Race; the time trial counts as Race
-function splashOption(kind: RoomKind): RoomKind {
-    return kind === 'timetrial' ? 'race' : kind;
-}
-
-// ---- Splash screen ----
-
-function renderSplashChoice(): void {
-    document.querySelectorAll<HTMLElement>('.mode-option').forEach(option => {
-        const checked = option.dataset.room === splashOption(splashChoice);
-        option.setAttribute('aria-checked', String(checked));
-        option.tabIndex = checked ? 0 : -1;
-    });
-}
-
-export function initModeSelector(): void {
-    splashChoice = preferredRoomKind();
-    const options = [...document.querySelectorAll<HTMLElement>('.mode-option')];
-    options.forEach((option, index) => {
-        option.addEventListener('click', () => {
-            if (isRoomKind(option.dataset.room)) splashChoice = option.dataset.room;
-            renderSplashChoice();
-        });
-        // Radio group keys: arrows move the choice
-        option.addEventListener('keydown', (event) => {
-            const step = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1
-                : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 0;
-            if (!step) return;
-            event.preventDefault();
-            const next = options[(index + step + options.length) % options.length];
-            next.click();
-            next.focus();
-        });
-    });
-    renderSplashChoice();
-}
-
 /**
- * START on the splash: moves to the chosen mode first if the connection
- * joined another one (the server handles joinRoom before ready). A time
- * trial played last stays a time trial unless another mode was picked.
+ * DRIVE in the menu (ui/menu/menu.ts): moves to the chosen mode first if
+ * the connection joined another one (the server handles joinRoom before
+ * ready). The menu shows a time trial as Race: a time trial played last
+ * stays a time trial while Race stays picked.
  */
-export function applySplashChoice(): void {
-    rememberRoomKind(splashChoice);
-    if (state.room && state.room.kind !== splashChoice) requestRoom(splashChoice);
+export function applyMenuMode(mode: 'party' | 'freeroam' | 'race'): void {
+    const kind: RoomKind = mode === 'race' && (state.room?.kind ?? preferredRoomKind()) === 'timetrial' ? 'timetrial' : mode;
+    rememberRoomKind(kind);
+    if (state.room && state.room.kind !== kind) requestRoom(kind);
 }
 
 // ---- In the game ----
@@ -144,6 +110,11 @@ export function initRoomMenu(): void {
             option.blur();
             requestRoom(option.dataset.room);
         });
+    });
+    document.getElementById('room-settings')?.addEventListener('click', () => {
+        setPanelOpen(false);
+        const coarse = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
+        openSettings(coarse ? 'touch' : 'keyboard');
     });
     // The scoreboard closes the mode menu, and a tap elsewhere closes it
     document.getElementById('scoreboard-toggle')?.addEventListener('click', () => setPanelOpen(false));

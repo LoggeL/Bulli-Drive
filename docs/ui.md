@@ -1,6 +1,6 @@
 # UI: Ladebildschirm und Hauptmenü
 
-**Stand:** 2026-09-26 · Branch `ui/menu-refactor` (auf `main` = Phase 3 live) · U1 (Ladebildschirm) umgesetzt, U2–U5 offen. Was bei U1 anders kam als geplant, steht in Abschnitt 3.4 und in den Entscheidungen D12–D17.
+**Stand:** 2026-09-26 · Branch `ui/menu-refactor` (auf `main` = Phase 3 live) · U1 (Ladebildschirm) und U2–U4 (Hauptmenü, Lack, Showroom und Übergang) umgesetzt, U5 (Feinschliff) offen. Was anders kam als geplant, steht in den Abschnitten 3.4 und 4.5 und in den Entscheidungen D12–D27.
 Auftrag: „also refactor the loading screen and main menu“. Der Ladebildschirm und das Hauptmenü sollen zum realistischen, ruhig-naturgetreuen Look von Bulli Bay passen ([`world-look.md`](world-look.md)) und sich auf Desktop und Handy gleich gut bedienen lassen.
 
 Die Entscheidungen in diesem Dokument hat der Workflow ohne Rückfragen getroffen. Jede steht mit ihrer Begründung in Abschnitt 12 („Entscheidungen“).
@@ -218,6 +218,45 @@ Das linke Panel ist 360 px breit und vertikal zentriert. Autoreihe und Werte lie
 - **Kontraste:** Text mindestens 4,5:1 und große Schrift mindestens 3:1, jeweils auf dem hellsten Hintergrund. Einmalig lokal mit axe-core geprüft, nicht in CI.
 - **Bewegung:** Mit `prefers-reduced-motion` steht die Showroom-Kamera still, und die Übergänge sind Überblendungen.
 
+### 4.5 Umsetzung (U2–U4)
+
+![Hauptmenü: Desktop, iPhone 13, Pixel 7, iPhone SE quer](img/ui-menu.jpg)
+
+Aufnahmen: `/private/tmp/claude-501/gfx/ui/menu/` (Chromium und WebKit, je Desktop 1440×900, iPhone 13, iPhone SE quer, Pixel 7; dazu Einstellungen, About, Race-Auswahl, Lite, der Übergang als Bildfolge `*-drive-*.png` und das Raum-Menü im Spiel `room*.png`).
+
+| Teil | Datei |
+|---|---|
+| Zustand, Speicherung, Navigation, Gamepad-Abbildung (rein) | `src/client/ui/menu/menuState.ts` |
+| Werte der Autos aus `VEHICLE_CLASSES` | `src/client/ui/menu/carStats.ts` |
+| Controller: DOM, Karussell, Wischen, Tasten, Gamepad, DRIVE, Rahmen für den Showroom | `src/client/ui/menu/menu.ts` |
+| Einstellungen und About (`<dialog>`), auch aus dem Raum-Menü im Spiel | `src/client/ui/menu/settingsDialog.ts` |
+| Lack zwischen Verbindung und Chips | `src/client/ui/menu/paintSync.ts` |
+| Stile (Desktop, Handy hoch, Handy quer), importiert von `style.css` | `src/client/ui/menu.css` |
+| Showroom-Posen, Einpassen, Kran-Übergang (rein) | `src/client/camera/showroom.ts` |
+| Showroom und Übergang an Kamera, Auto und Renderer | `src/client/camera/ShowroomCamera.ts`, verdrahtet in `main.ts` |
+| Grafik-Einstellung (Vorrang URL > Einstellung > Trouble > Auto) | `src/client/render/safeMode.ts`, `effects/renderQuality.ts` |
+| Ton an/aus als Master-Gain | `src/client/effects/sounds.ts` |
+| Menü-Renderings der Autos (Blender, 640×360, je ≤ 20 KB) | `tools/ui/menu-renders.mjs` → `public/icons/car-*-menu.webp` |
+| Key-Art = erstes Menübild (echtes Menü, reduzierte Bewegung, UI ausgeblendet) | `tools/ui/keyart.ts` |
+| Ansichten `menu`, `menu-phone`, `menu-landscape`, `showroom` mit Draw-Call-Budget | `scripts/screenshots.ts` |
+
+**Ablauf:** `initMenu` baut Karten und Lack-Chips aus den Daten (`MENU_CARS`, `PAINTS`) und stellt die Wahl des letzten Besuchs her. Der Loader gibt das Menü mit dem Ereignis `menushow` frei. Solange das Menü offen ist, stellt `ShowroomCamera` das eigene Auto (vor dem Spawn nicht in der Simulation) an den Pier-Kopf und führt die Spielkamera. Die Verfolgerkamera läuft derweil auf einer eigenen Kamera mit, damit ihre Dämpfung nicht von der Showroom-Pose ausgeht. DRIVE wartet auf die Assets (Beschriftung `LOADING n %`, danach `STARTING…`), schickt Name, Auto, Lack und Modus und dann `ready`. Danach übernimmt der Kran und gibt am Ende die Kamera an die Verfolgerkamera ab. Das HUD blendet in den letzten 0,3 s ein (`body.in-menu`).
+
+**Einpassen statt fester Posen:** Das Auto steht in der freien Fläche neben bzw. über den Bedienelementen (`menuCarFrame`: Bühne ohne Karussell, Wortmarke und Werkzeuge). `fitDistance` rechnet daraus den Kameraabstand. Die Höhe des Autos (0,54 des Bildes bei 8 m und 35°, an der Key-Art gemessen) soll 70 % der freien Höhe füllen und höchstens 72 % der freien Breite, mit 1,5 als Breiten-/Höhenverhältnis in der Dreiviertelansicht. Der Abstand bleibt zwischen 7 und 15 m. Weil der Pier nur 10 m breit ist, dreht `heroAngleFor` weitere Einstellungen mehr nach vorn, damit die Kamera über den ganzen Schwenk mindestens 1,2 m innerhalb des Geländers bleibt (Unit-Test über alle Abstände und den ganzen Schwenk).
+
+**Gemessen (M5 Pro, GPU, `/?e2e=1`, Menü offen, 2 s):**
+
+| Gerät | Draw Calls | Dreiecke | fps im Menü |
+|---|---|---|---|
+| Desktop 1440×900 (Desktop-Tier) | 61 | 408 k | 60 |
+| iPhone 13 / Pixel 7 (Handy-Tier) | 55 | 198 k | 30 (Deckel) |
+| iPhone SE quer | 54 | 198 k | 30 |
+| Lite (`?lite=1`) | 32 | 92 k | 0 im Leerlauf (Standbild) |
+
+Alles liegt weit im Budget des Tiers (Desktop ≤ 300/1,2 Mio., Handy ≤ 150/500 k). Den Ladevorgang bremst der Showroom nicht: Unter dem deckenden Loader wird nichts gezeichnet. Der Loader verschwindet lokal nach 1,3–1,9 s wie in U1. Der Shader-Warmup kompiliert die erste Showroom-Ansicht, vorher werden Gelände, Kit-Zellen, Palmen und Auto-LODs für genau diese Kamera gesetzt.
+
+**Übergang:** Kran 0,7 s nach oben bis 45 m, Blick 10° über die Bildunterkante in den Himmel, Schnitt beim Spawn, 1,1 s Anflug (Bildfolge `chromium-desktop-drive-*.png`). Mit reduzierter Bewegung und in Lite: Das nächste Showroom-Bild wird nach dem Zeichnen als Standbild festgehalten (`afterRender`), das Auto steht dafür noch am Pier, und das Standbild blendet in 0,3 s über dem ersten Spielbild aus.
+
 ## 5. Lackfarbe (Protokoll v5)
 
 Neues Modul `src/shared/paints.ts` mit `PAINT_IDS` und je Lack Name und sRGB-Hex. Startwerte, die im Lookdev (Showroom-Licht und Blender-Renders) nachjustiert werden:
@@ -240,6 +279,7 @@ Protokolländerungen:
 - **`playerUpdated.color?: number`** (additiv). Remote-Autos tauschen damit ihr Lackmaterial, ohne das Modell neu zu bauen.
 - Ohne `paint` wählt der Server einen zufälligen Lack aus der Palette statt einer beliebigen 24-Bit-Farbe. Das gilt auch für die Race-Bots: `BOT_COLORS` wird durch die Palette ersetzt. Resume-Tickets behalten die Farbe wie heute.
 - **Client:** `carPaintColor` erkennt Paletten-Hexwerte und übernimmt sie unverändert, weil sie bereits im Lookdev abgestimmt sind. Andere Werte, etwa von alten Tickets, werden wie heute gemappt. Die zweite Farbe (Creme-Oberteil bei Bulli und Pickup) bleibt fest am Modell.
+- **Umgesetzt:** `hello.paint` gilt auch bei der Übernahme einer Sitzung (Neuladen, Wiederverbinden). Bei einem wiederaufgenommenen Mitglied geht die Änderung wie ein `setPaint` an den Raum. `setPaint` setzt `session.color` sofort. Dem Raum zeigt `Room.showCarChanges` Auto- und Lackwechsel gemeinsam höchstens einmal je `CAR_CHANGE_INTERVAL_MS`. Ein reiner Lackwechsel baut kein neues Sim-Auto und löst kein `carChanged` aus. Ohne Wunsch zieht der Server den Lack über eine injizierbare `RandomSource` (`HandshakeContext.random`).
 - **`PROTOCOL_VERSION` 4 → 5.** Die neue Nachricht würde ein alter Server abweisen, und laut `protocol.ts` wird bei jeder inkompatiblen Änderung erhöht. Deploys laufen ohnehin über den Build-Check mit Neuladen. Der parallele Branch `sim/airborne-no-jump` fasst womöglich ebenfalls Protokollbits an. Wer zuletzt merged, legt beide Änderungen in eine Version zusammen (siehe Abschnitt 13).
 
 ## 6. Übergang Menü → Spiel
@@ -253,6 +293,9 @@ Ziel ist eine durchgehende Kamerafahrt vom Showroom in die Verfolgerkamera, ohne
 Liegt der Spawn nahe am Showroom (unter 150 m, gleicher Raum), entfällt der Himmel. Die Kamera fliegt dann direkt als Hermite-Kurve von der Orbit- zur Verfolgerpose. Mit `prefers-reduced-motion` gibt es keinen Kran: Das letzte Showroom-Bild wird per `createImageBitmap` festgehalten und über 200 ms auf das erste Verfolgerbild überblendet. Die Posen berechnet `transitionPose(t, from, to, cutAt)` als reine Funktion (Test in Abschnitt 10). Das Canvas wird nie geleert, und die Deckkraft der Overlays geht nie über ein Bild ohne gezeichneten Frame.
 
 ## 7. Grafik-Einstellung und Lite
+
+**Umgesetzt (Abweichung, D23):** In Lite zeichnet das Menü die ganze Showroom-Szene als Standbild, jeweils 0,7 s nach einer Änderung (Auto, Lack, Layout), danach nichts mehr. Das ersetzt die geplante Kombination aus Key-Art und Einzelbild vom Auto auf transparentem Grund.
+
 
 - **Auto / Lite / High** wird unter `bulli-graphics` gespeichert. Vorrang in `safeMode.ts`: URL `?lite=` > Nutzereinstellung > Trouble-Timer (`bulli-safe-mode-until`) > automatische Tier-Erkennung. „High“ erzwingt den Desktop-Tier mit HDRI und MSAA auch auf Handys. Bekommt das Gerät Grafikprobleme (Kontextverlust), fällt das Spiel wie heute auf Lite zurück, und die Einstellung zeigt dann „Auto (Lite after graphics trouble)“. MSAA und Tier gelten ab dem nächsten Laden, deshalb bietet der Dialog bei einer Änderung „Apply & reload“ an.
 - **Lite im Menü:** kein laufender 3D-Showroom. Der Hintergrund ist die Key-Art. Das gewählte Auto wird einmal pro Wechsel (Auto oder Lack) als Einzelbild mit three.js in ein 640-px-Canvas gerendert: nur das Auto, Studio-Licht, transparenter Hintergrund, über die Key-Art gelegt. Der Render-Loop zeichnet im Menü sonst nichts, so wie heute unter dem Loader. Der Übergang ins Spiel ist dann eine Überblendung von 300 ms.
@@ -354,12 +397,23 @@ Jeder Schritt ist für sich lauffähig und mergebar.
 | D15 | Auch Righteous, Quicksand und Permanent Marker selbst ausgeliefert (nicht vorgeladen) | Nur so fällt der Google-Fonts-Link schon in U1 weg, obwohl das alte Menü und das HUD diese Schriften noch nutzen. Permanent Marker verschwindet mit dem alten Splash in U2 |
 | D16 | Stylesheet nicht blockierend (`media="print"` mit Umschalten im `onload`), Größe im `data-size` | Der Loader malt nur mit Inline-CSS. Alles andere liegt bis zu seinem Ende unter ihm, deshalb gibt es kein sichtbares Flackern ohne Stil |
 | D17 | Bei verweigertem WebGL bleibt der Loader als Hintergrund stehen (Balken und Tipp aus, Status „3D graphics unavailable“), die Meldung liegt als Glas-Karte darüber. Im Lite-Modus zeigt der Loader oben rechts einen Hinweis mit Grund | Die Meldung ist sichtbar, ohne dass ein leerer Bildschirm entsteht. `safeModeReason` unterscheidet `?lite=1` von einem vorherigen Grafikproblem |
+| D18 | Der Showroom-Schwenk geht nur zur Front hin (0 bis −30°) statt ±35° | Der Pier ist nur 10 m breit (z −25…−15). Zur Seeseite stünde die Kamera schon wenige Grad hinter der Heldenpose über dem Geländer. Nach vorn hat das Deck die ganze Pierlänge |
+| D19 | Kameraabstand aus der freien Fläche eingepasst (`fitDistance`, 7–15 m) statt fester Abstände je Format | Mit 6,5–10 m füllte das Auto auf allen Geräten das Bild und lief unter Wortmarke, Werkzeuge und Autoreihe. Die freie Fläche unterscheidet sich zwischen iPhone 13, Pixel 7 und Desktop stark |
+| D20 | Key-Art aus dem echten Menü aufgenommen (reduzierte Bewegung, Menü ausgeblendet) statt aus einer nachgebauten Pose | Das erste Menübild und die Key-Art stimmen so bei 16:9 und 9:16 von selbst überein, auch nach Layoutänderungen. Neu erzeugt mit geänderter Einstellung (Auto kleiner und höher, Platz für die Autoreihe). Das Key-Art-Bild wird jetzt mittig beschnitten |
+| D21 | Beim ersten Besuch zeigt das Menü den Lack, den der Server gezogen hat, nicht den Werkslack des Renderings | Das Auto im Showroom und im Spiel hat genau diesen Lack. Ein Werkslack als Voreinstellung würde alle neuen Spieler gleich färben. Gespeichert wird ein Lack erst, wenn man ihn wählt (oder Auto bzw. Modus ändert) |
+| D22 | Lack-Chips auf dem Desktop in einer eigenen Glaskarte rechts oben, im DOM aber im Panel | Die Tab-Reihenfolge Name → Auto → Lack → Modus → DRIVE bleibt in allen drei Layouts gleich. Die Teile neben dem Auto sind `position: fixed` |
+| D23 | Lite: die Szene als Standbild statt Key-Art + Auto-Einzelbild | Eine zweite Render-Pipeline (Render-Target, Tonemapping auf der CPU) für schwache Geräte wäre fehleranfälliger. Das Standbild kostet nach 0,7 s nichts mehr und zeigt Lack und Auto richtig |
+| D24 | Modi auf Handys (hoch und quer) als Segmentsteuerung | Auf dem iPhone SE quer passen Name, Lack, Modus und DRIVE nur so ohne Scrollen. DRIVE bleibt trotzdem `sticky` |
+| D25 | Gewähltes Race lässt ein zuletzt gespieltes Zeitfahren bestehen (`applyMenuMode`) | Das Menü zeigt das Zeitfahren als Race. Wer Race wählt, landet sonst jedes Mal aus dem Zeitfahren in einer Rennlobby |
+| D26 | Einstellungen auch aus dem Raum-Menü im Spiel (Punkt „Settings“) | Ton und Grafik lassen sich sonst nur vor dem Start ändern. Der Dialog friert wie das alte About-Modal die Eingaben ein (`state.isModalOpen`) |
+| D27 | Menü-Renderings der Autos aus den Blender-Skripten (`--icon-size`), nicht aus three.js | Gleiche Produkt-Ansicht wie die kleinen Lobby-Icons, Werkslack, sauberer Alpha-Rand; `public/models` bleibt unberührt |
 
 ## 13. Offene Punkte
 
 - **HUD-Typografie:** Das HUD auf die neue Schrift und die neuen Tokens umstellen. Das ist ein eigener Schritt, weil HUD-Goldens und Render-Tests betroffen sind.
-- **Einstellungen im Spiel:** Den Dialog auch aus dem Raum-Menü (`roomMenu.ts`) öffnen können. Die Komponente ist dafür vorbereitet.
+- **U5:** Gewichte des Loaders kalibrieren, axe-Check, Stryker-Gesamtlauf, Nachher-Aufnahmen in `scripts/screenshots.ts` festschreiben.
+- **Lack im Spiel wechseln:** Das Protokoll kann es (`setPaint`), die UI bietet es im Spiel noch nicht an.
 - **Spielerzahl je Modus:** Die Modus-Karten könnten zeigen, wie viele Spieler gerade in einem Modus sind. Dafür bräuchte es einen öffentlichen Endpunkt oder eine Lobby-Nachricht vor `ready`, das ist nicht Teil dieses Auftrags.
 - **Statuszeile vor der Verbindung:** Solange keine Verbindung besteht, zeigt der Loader „Loading Bulli Bay“, weil der Kartenschritt bei 50 % das größte offene Gewicht hat. Das eigentliche Warten meldet dann das Verbindungsbanner. Ob ein eigener Status besser wäre, klären wir bei der Kalibrierung in U5.
 - **HUD-Hinweise zum Sprung:** `jump-hint` (Q) und `#btn-flip` stehen noch im HUD. Das ist kein Menü- oder Hilfetext, das gleichen wir beim Rebase auf `sim/airborne-no-jump` ab (D11).
-- **Merge mit `sim/airborne-no-jump`:** Beide Branches fassen wohl Protokoll und HUD-Hinweise an. Die Versionsnummer und die Steuerungstexte legen wir beim zweiten Merge zusammen.
+- **Merge mit `sim/airborne-no-jump`:** Dieser Branch hebt `PROTOCOL_VERSION` auf 5 (Lack). Ändert der andere Branch das Protokoll ebenfalls, bekommt der zweite Merge eine gemeinsame Version (dann 6 oder beide Änderungen in 5, je nach Reihenfolge) und einen Protokoll-Test für beide. Die Steuerungstexte im Menü, im Dialog und in den Loader-Tipps nennen schon keinen Sprung. Im HUD bleiben `jump-hint` und `#btn-flip` Sache des anderen Branches.

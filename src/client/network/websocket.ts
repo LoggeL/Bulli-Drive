@@ -33,6 +33,7 @@ import { roomSimWorld, setGameMapWorld } from '../vehicle/simWorldClient.js';
 import { assistProfileForDevice } from '../vehicle/LocalVehicle.js';
 import { startNetPump } from '../vehicle/v2Driver.js';
 import { preferredRoomKind, setCurrentRoom } from '../ui/roomMenu.js';
+import { onOwnPaint, preferredPaint } from '../ui/menu/paintSync.js';
 import { netDriver, placeholderCar } from '../net/netDriver.js';
 import { reloadOnce } from './reloadOnce.js';
 import { applyResumeOutcome, resumeOutcome } from './resumeOutcome.js';
@@ -200,7 +201,9 @@ function sendHello() {
         name: savedName,
         carType: localStorage.getItem('bulli-car-type') || 'bulli',
         profile: assistProfileForDevice(),
-        room: state.room?.kind ?? preferredRoomKind()
+        room: state.room?.kind ?? preferredRoomKind(),
+        // The paint picked in the menu (a random palette paint without one)
+        ...(preferredPaint() ? { paint: preferredPaint()! } : {})
     });
 }
 
@@ -300,6 +303,8 @@ function handleServerMessage(data: ServerMessage) {
             if (build && data.serverBuild && build !== data.serverBuild && reloadOnce(BUILD_RELOAD_KEY, data.serverBuild)) return;
             state.myId = data.playerId;
             state.myColor = data.color;
+            // The menu's paint chips show the paint the server gave
+            onOwnPaint(data.color);
             state.myName = data.name;
             // The own car carries the player id in the sim (contacts, order)
             if (state.bulli?.vehicle) state.bulli.vehicle.car.id = data.playerId;
@@ -405,6 +410,7 @@ function enterRoom(data: Extract<ServerMessage, { type: 'roomState' }>) {
     clearPowerupMarkers();
 
     setCurrentRoom(data.room);
+    state.preview = { x: data.preview.x, z: data.preview.z, yaw: data.preview.yaw };
     setMapSceneRoom(data.room.kind);
     const party = data.room.kind === 'party';
     if (data.items) {
@@ -479,7 +485,8 @@ function updateMember(data: Extract<ServerMessage, { type: 'playerUpdated' }>) {
         ...member,
         ...(data.name !== undefined ? { name: data.name } : {}),
         ...(data.carType !== undefined ? { carType: data.carType } : {}),
-        ...(data.profile !== undefined ? { profile: data.profile } : {})
+        ...(data.profile !== undefined ? { profile: data.profile } : {}),
+        ...(data.color !== undefined ? { color: data.color } : {})
     };
     netDriver.setMember(next);
     const remote = state.remotePlayers[data.id] as unknown as Bulli | undefined;
@@ -492,6 +499,9 @@ function updateMember(data: Extract<ServerMessage, { type: 'playerUpdated' }>) {
         // A new body: rebuild the model where the old one stood
         removeRemotePlayer(data.id);
         addRemotePlayer(next);
+    } else if (remote && data.color !== undefined) {
+        // Only the paint: the same model, its paint material recoloured
+        remote.setPaint(data.color);
     }
     updateScoreboardUI();
 }

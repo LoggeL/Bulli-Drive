@@ -171,6 +171,65 @@ describe('session messages', () => {
         expect(alice.member!.car!.base.mass).toBe(createVehicleParams('bulli', 'standard').mass);
     });
 
+    it('repaints the car in a palette paint and tells the room, rate limited together with the car', () => {
+        const alice = player('Alice');
+        const other = player('Other');
+        other.transport.clear();
+        // Signal Orange (docs/ui.md 5); the id is checked by the schema
+        expect(handleClientMessage(lobby, alice, { type: 'setPaint', paint: 'orange' }, 10_000)).toBe('ok');
+        expect(alice.color).toBe(0xC8612A);
+        expect(handleClientMessage(lobby, alice, { type: 'setPaint', paint: 'neon' }, 10_000)).toBe('invalid');
+        expect(handleClientMessage(lobby, alice, { type: 'setPaint', paint: 0xff00ff }, 10_000)).toBe('invalid');
+        expect(alice.color).toBe(0xC8612A);
+        steps(room, 1, 10_000);
+        // Only the paint changed: no new sim car, no carChanged event
+        expect(other.transport.of('playerUpdated')).toEqual([{ type: 'playerUpdated', id: alice.id, color: 0xC8612A }]);
+        expect(alice.transport.events('carChanged')).toEqual([]);
+        // Within the interval a car and a paint change wait and go out together
+        handleClientMessage(lobby, alice, { type: 'setCar', carType: 'jeep', profile: 'standard' }, 10_200);
+        handleClientMessage(lobby, alice, { type: 'setPaint', paint: 'silver' }, 10_300);
+        steps(room, 1, 10_400);
+        expect(other.transport.of('playerUpdated')).toHaveLength(1);
+        steps(room, 1, 11_000);
+        expect(other.transport.of('playerUpdated').at(-1)).toEqual({
+            type: 'playerUpdated', id: alice.id, carType: 'jeep', profile: 'standard', color: 0x9A9FA3
+        });
+        // The scoreboard and a newcomer's member list carry the new paint
+        expect(room.memberInfo(alice.member!).color).toBe(0x9A9FA3);
+    });
+
+    it('shows a paint picked and taken back within the interval to nobody, and a profile change on its own', () => {
+        const alice = player('Alice');
+        const other = player('Other');
+        other.transport.clear();
+        // Sea Green, shown; then Signal Orange and back to Sea Green within one interval
+        handleClientMessage(lobby, alice, { type: 'setPaint', paint: 'sea' }, 18_000);
+        steps(room, 1, 18_000);
+        other.transport.clear();
+        handleClientMessage(lobby, alice, { type: 'setPaint', paint: 'orange' }, 20_000);
+        handleClientMessage(lobby, alice, { type: 'setPaint', paint: 'sea' }, 20_000);
+        steps(room, 1, 20_000);
+        expect(other.transport.of('playerUpdated')).toEqual([]);
+        // Only the assist profile changes: shown with car and profile, no paint
+        handleClientMessage(lobby, alice, { type: 'setCar', carType: 'bulli', profile: 'touch' }, 22_000);
+        steps(room, 1, 22_000);
+        expect(other.transport.of('playerUpdated')).toEqual([{ type: 'playerUpdated', id: alice.id, carType: 'bulli', profile: 'touch' }]);
+    });
+
+    it('keeps the paint of a player still in the menu to itself until the car is announced', () => {
+        const other = player('Other');
+        const alice = fakeSession('Alice');
+        lobby.join(alice, 'party');
+        other.transport.clear();
+        handleClientMessage(lobby, alice, { type: 'setPaint', paint: 'blue' }, 30_000);
+        steps(room, 1, 30_000);
+        expect(other.transport.of('playerUpdated')).toEqual([]);
+        // DRIVE: the others meet the car in its paint
+        ready(lobby, alice);
+        steps(room, 1, 30_100);
+        expect(other.transport.of('playerJoined').map(m => m.member.color)).toEqual([0x5C7C95]);
+    });
+
     it('tells every player its own score and rank with the top 10, also from place 12', () => {
         const players = Array.from({ length: 12 }, (_, i) => player(`P${String(i).padStart(2, '0')}`));
         // Scores 120, 110, ... 10: the last one is 12th

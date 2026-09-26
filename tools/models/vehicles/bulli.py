@@ -1882,7 +1882,8 @@ def main():
         if "icon" in OPT:
             # car-select icon (build-all.mjs --icons); its own render scene, so before/without the views
             bd_lookdev.wire_ao_for_render(("paint_primary", "paint_secondary", "bulli_atlas"))
-            report["icon"] = bd_lookdev.render_icon(car0, bd_lookdev.load_env("victoria_sunset_2k"), OPT["icon"])
+            report["icon"] = bd_lookdev.render_icon(car0, bd_lookdev.load_env("victoria_sunset_2k"), OPT["icon"],
+                                                   bd_lookdev.icon_size(OPT))
         elif DO_RENDER:
             report["renders"] = bd_lookdev.render_views(
                 car0, bd_lookdev.load_env("victoria_sunset_2k"), REN, SUFFIX, VIEWS,

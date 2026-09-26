@@ -195,29 +195,20 @@ export function stopLoadingScreen(status: string): void {
 }
 
 /**
- * The loader is done: the splash screen shows (on the same key art), the
- * loader fades out over it and goes. Idempotent.
+ * The loader is done: the menu shows (over the showroom, which the key art
+ * showed until now), the loader fades out over it and goes. The menu hears
+ * of it by the 'menushow' event on #splash-screen (ui/menu/menu.ts).
+ * Idempotent.
  */
 export function removeLoader(): void {
     if (removed) return;
     removed = true;
     const loader = document.getElementById('loading-screen');
     const splash = document.getElementById('splash-screen');
-
-    // Setup splash input with saved name
-    let savedName: string | null = null;
-    try {
-        savedName = localStorage.getItem('bulli-player-name');
-    } catch { /* storage blocked */ }
-    const splashInput = document.getElementById('splash-name-input') as HTMLInputElement | null;
-    if (splashInput && savedName) splashInput.value = savedName;
-
-    // Show splash screen immediately behind loader
     if (splash) {
         splash.classList.remove('hidden');
-        splashInput?.focus();
+        splash.dispatchEvent(new Event('menushow'));
     }
-
     if (loader) {
         loader.setAttribute('aria-busy', 'false');
         loader.style.opacity = '0';

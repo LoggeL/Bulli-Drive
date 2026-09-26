@@ -268,6 +268,11 @@ def render_ortho(out_dir):
 
 
 
+def icon_size(opt):
+    """--icon-size=<w>x<h> (the menu's car cards: 640x360, tools/ui/menu-renders.mjs), 480x300 by default"""
+    return tuple(int(v) for v in str(opt.get("icon-size", "480x300")).split("x"))
+
+
 def render_icon(car_root, info, path, size=(480, 300)):
     """Car-select icon of the start screen: the car alone on a transparent background, seen from the
     front left like a product shot, lit by the sun-clamped HDRI and a warm key light. build-all.mjs
