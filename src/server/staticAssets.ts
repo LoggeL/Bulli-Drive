@@ -24,8 +24,12 @@ export function versionedAssetCache() {
 
 // Binary assets that no CDN or Express compresses on its own: the sky
 // HDRIs (public/textures/hdri, 2.7 MB of Radiance .hdr, about 60 % with
-// Brotli) and the maps' baked terrain (public/maps/<map>/terrain.bhf, 3 MB,
-// about 10 % with Brotli; docs/phase-3-design.md, E13 and A37). They are
+// Brotli), the maps' baked terrain (public/maps/<map>/terrain.bhf, 3 MB,
+// about 10 % with Brotli; docs/phase-3-design.md, E13 and A37) and the
+// models (public/models: the cars and the building kit, meshopt packed
+// GLBs, which meshopt lays out for a general compressor after it: Brotli
+// takes the kit's 2.09 MB down to 0.84 MB, 60 % smaller; the KTX2 textures
+// beside them are compressed already and served as they are). They are
 // compressed once at startup, off the event loop (zlib's thread pool), and
 // served with a content ETag, so a deploy that leaves them unchanged does
 // not make every client download them again. Until the compressed copies
@@ -40,6 +44,7 @@ interface Entry {
 
 export const HDR_CONTENT_TYPE = 'image/vnd.radiance';
 export const BHF_CONTENT_TYPE = 'application/octet-stream';
+export const GLB_CONTENT_TYPE = 'model/gltf-binary';
 
 // Relative paths (with /) of the files under directory with the extension
 function filesUnder(directory: string, extension: string, prefix = ''): string[] {
@@ -104,4 +109,8 @@ export function hdriMiddleware(directory: string) {
 
 export function terrainMiddleware(directory: string) {
     return compressedAssets(directory, '.bhf', BHF_CONTENT_TYPE);
+}
+
+export function modelMiddleware(directory: string) {
+    return compressedAssets(directory, '.glb', GLB_CONTENT_TYPE);
 }

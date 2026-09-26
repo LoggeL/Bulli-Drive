@@ -5,7 +5,9 @@ import path from 'path';
 import zlib from 'zlib';
 import express from 'express';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { BHF_CONTENT_TYPE, HDR_CONTENT_TYPE, hdriMiddleware, terrainMiddleware, versionedAssetCache } from '../../src/server/staticAssets.js';
+import {
+    BHF_CONTENT_TYPE, GLB_CONTENT_TYPE, HDR_CONTENT_TYPE, hdriMiddleware, modelMiddleware, terrainMiddleware, versionedAssetCache
+} from '../../src/server/staticAssets.js';
 
 // Cache headers of hashed model/texture URLs and the compressed HDRIs
 // (src/server/staticAssets.ts), against a real Express app.
@@ -17,18 +19,23 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bulli-assets-'));
 const hdr = Buffer.from('#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y 64 +X 64\n' + 'abcd'.repeat(20_000));
 // A baked terrain: the magic and smooth heights
 const bhf = Buffer.concat([Buffer.from('BDHF'), Buffer.alloc(100_000, 7)]);
+// A kit GLB in a subfolder: the magic and repetitive vertex data
+const glb = Buffer.concat([Buffer.from('glTF'), Buffer.from('0123456789abcdef'.repeat(5_000))]);
 
 beforeAll(async () => {
     fs.mkdirSync(path.join(dir, 'textures', 'hdri'), { recursive: true });
     fs.mkdirSync(path.join(dir, 'models'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'textures', 'hdri', 'sky.hdr'), hdr);
     fs.writeFileSync(path.join(dir, 'models', 'car.glb'), Buffer.alloc(64, 1));
+    fs.mkdirSync(path.join(dir, 'models', 'kit'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'models', 'kit', 'kit_town.glb'), glb);
     fs.writeFileSync(path.join(dir, 'models', 'manifest.json'), '{}');
     fs.mkdirSync(path.join(dir, 'maps', 'bay'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'maps', 'bay', 'terrain.bhf'), bhf);
     fs.writeFileSync(path.join(dir, 'maps', 'bay', 'manifest.json'), '{}');
     const app = express();
     app.use(['/models', '/textures', '/maps'], versionedAssetCache());
+    app.use('/models', modelMiddleware(path.join(dir, 'models')));
     app.use('/textures/hdri', hdriMiddleware(path.join(dir, 'textures', 'hdri')));
     app.use('/maps', terrainMiddleware(path.join(dir, 'maps')));
     app.use(express.static(dir, { index: false }));
@@ -58,7 +65,7 @@ describe('static asset caching', () => {
         expect(hashed.status).toBe(200);
         expect(hashed.headers['cache-control']).toBe('public, max-age=31536000, immutable');
         const plain = await get('/models/car.glb');
-        expect(plain.headers['cache-control']).toBe('public, max-age=0');
+        expect(plain.headers['cache-control']).toBe('public, max-age=86400');
         const manifest = await get('/models/manifest.json?v=1');
         expect(manifest.headers['cache-control']).toBe('no-cache');
     });
@@ -102,6 +109,22 @@ describe('static asset caching', () => {
         // Without the hash a day; the map's manifest always revalidates
         expect((await get('/maps/bay/terrain.bhf')).headers['cache-control']).toBe('public, max-age=86400');
         expect((await get('/maps/bay/manifest.json?v=1')).headers['cache-control']).toBe('no-cache');
+    });
+
+    it('serves the models, the kit\'s in their subfolder too, compressed and typed', async () => {
+        let response = await get('/models/kit/kit_town.glb?v=k1', { 'accept-encoding': 'gzip, br' });
+        for (let i = 0; i < 50 && response.headers['content-encoding'] !== 'br'; i++) {
+            await new Promise(resolve => setTimeout(resolve, 20));
+            response = await get('/models/kit/kit_town.glb?v=k1', { 'accept-encoding': 'gzip, br' });
+        }
+        expect(response.headers['content-encoding']).toBe('br');
+        expect(response.headers['content-type']).toBe(GLB_CONTENT_TYPE);
+        expect(response.headers['cache-control']).toBe('public, max-age=31536000, immutable');
+        expect(Number(response.headers['content-length'])).toBeLessThan(glb.length / 10);
+        expect(zlib.brotliDecompressSync(response.body).equals(glb)).toBe(true);
+        // A client without Brotli gets Gzip, one without either the file
+        expect(zlib.gunzipSync((await get('/models/kit/kit_town.glb', { 'accept-encoding': 'gzip' })).body).equals(glb)).toBe(true);
+        expect((await get('/models/kit/kit_town.glb')).body.equals(glb)).toBe(true);
     });
 
     it('leaves unknown HDRI paths to the next handler', async () => {

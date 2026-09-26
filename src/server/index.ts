@@ -36,7 +36,7 @@ import { healthReport, metricsReport, TrafficMeter, type HealthSources } from '.
 import { TicketSigner } from './resumeTicket.js';
 import { gracefulShutdown } from './shutdown.js';
 import { netsimFromEnv, SocketConnection } from './connection.js';
-import { hdriMiddleware, terrainMiddleware, versionedAssetCache } from './staticAssets.js';
+import { hdriMiddleware, modelMiddleware, terrainMiddleware, versionedAssetCache } from './staticAssets.js';
 import { AddressLimits, clientAddress, sessionLog } from './access.js';
 import { ClientReports } from './clientReports.js';
 
@@ -139,6 +139,7 @@ if (fs.existsSync(clientIndexPath)) {
     // Hashed model and texture URLs cached for good, compressed HDRIs with a
     // content ETag (staticAssets.ts)
     app.use(['/models', '/textures', '/maps'], versionedAssetCache());
+    app.use('/models', modelMiddleware(path.join(clientPath, 'models')));
     app.use('/textures/hdri', hdriMiddleware(path.join(clientPath, 'textures', 'hdri')));
     app.use('/maps', terrainMiddleware(path.join(clientPath, 'maps')));
 
