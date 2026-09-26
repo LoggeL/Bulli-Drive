@@ -195,6 +195,64 @@ describe('roadProfiles', () => {
         }
     });
 
+    it('holds a terrace level over its length, also on an edge walked backwards in its chain', () => {
+        // docs/phase-1a-design.md, 27: a pin with a length runs level from s
+        // to s + length. East half 10 % (x 10 .. 40: natural 21 .. 24 m):
+        // the terrace at 22.5 m from x = 10 to 40. On a single edge drawn
+        // west to east it is s 100-130; on 'back', drawn from the east end
+        // to a joint at x = 0 and walked backwards in the chain from the
+        // west, s 50-80 (the chain's stations run from 80 down to 50)
+        const single = buildRoadNetwork(network([node('a', -90, 0), node('b', 90, 0)],
+            [edge('ab', 'a', 'b', [], { maxGrade: 0.12, elevation: [{ s: 100, length: 30, y: 22.5 }] })]));
+        const chain = buildRoadNetwork(network([node('a', -90, 0), node('m', 0, 0, 'joint'), node('b', 90, 0)], [
+            edge('up', 'a', 'm', [], { maxGrade: 0.12 }),
+            edge('back', 'b', 'm', [], { maxGrade: 0.12, elevation: [{ s: 50, length: 30, y: 22.5 }] })
+        ]));
+        for (const [net, id, s] of [[single, 'ab', 100], [chain, 'back', 50]] as const) {
+            const h = roadProfiles(net, SPEC, slope()).heights.get(id)!;
+            // (stations every 0.9945 m: the samples at its ends lie between
+            // a station on it and one off it)
+            for (let k = s + 1; k < s + 30; k++) expect(h[k], `${id} ${k}`).toBeCloseTo(22.5, 9);
+            // East of it the road climbs on with the ground
+            const east = id === 'ab' ? h[s + 45] : h[s - 15];
+            expect(east).toBeGreaterThan(22.6);
+        }
+    });
+
+    it('adds the bumps of an edge on top of its profile: h · (1 − u²)², u = 2(s − centre)/length', () => {
+        // A bump 1 m high and 20 m long at s = 60 of 'ab' and, on the same
+        // road drawn the other way, at s = 120 of 'ba': the same place
+        const plain = roadProfiles(buildRoadNetwork(network([node('a', -90, 0), node('b', 90, 0)], [edge('ab', 'a', 'b')])), SPEC, slope()).heights.get('ab')!;
+        for (const [id, from, to, s] of [['ab', 'a', 'b', 60], ['ba', 'b', 'a', 120]] as const) {
+            const net = buildRoadNetwork(network([node('a', -90, 0), node('b', 90, 0)],
+                [edge(id, from, to, [], { bumps: [{ s, length: 20, height: 1 }] })]));
+            const h = roadProfiles(net, SPEC, slope()).heights.get(id)!;
+            // Sample k of 'ab' is at x = -90 + k; of 'ba' at x = 90 - k
+            const added = (x: number) => (id === 'ab' ? h[x + 90] : h[90 - x]) - plain[x + 90];
+            expect(added(-30)).toBeCloseTo(1, 9);
+            expect(added(-35)).toBeCloseTo(0.5625, 9);
+            expect(added(-25)).toBeCloseTo(0.5625, 9);
+            for (const x of [-40, -20, -60, 0]) expect(added(x), `${id} x ${x}`).toBeCloseTo(0, 9);
+        }
+    });
+
+    it('rounds an edge with its own vertical radius: a sharper sag with verticalRadius 60 than the default 150', () => {
+        // The ground bends from 4 % to 10 % at x = 0 (a sag of 6 %): rounded
+        // with R the slope changes by at most 1/R per metre
+        const bend = (verticalRadius?: number) => {
+            const net = buildRoadNetwork(network([node('a', -90, 0), node('b', 90, 0)],
+                [edge('ab', 'a', 'b', [], { maxGrade: 0.12, ...(verticalRadius ? { verticalRadius } : {}) })]));
+            const h = roadProfiles(net, SPEC, slope()).heights.get('ab')!;
+            let max = 0;
+            for (let k = 1; k + 1 < h.length; k++) max = Math.max(max, Math.abs(h[k + 1] - 2 * h[k] + h[k - 1]));
+            return max;
+        };
+        // Stations every 0.9945 m, samples every 1 m: 1 % leeway
+        expect(bend()).toBeLessThanOrEqual(1.01 / 150);
+        expect(bend(60)).toBeLessThanOrEqual(1.01 / 60);
+        expect(bend(60)).toBeGreaterThan(1.5 / 150);
+    });
+
     it('closes a ring of joints at its node height', () => {
         // Four edges round a square through joints; the first node fixed at 30 m
         const net = buildRoadNetwork(network(

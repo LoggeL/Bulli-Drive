@@ -1,6 +1,6 @@
 {
   "global": {
-    "GRAVITY": 20,
+    "GRAVITY": 15,
     "G_SLOPE": 9.81,
     "G_TIRE": 9.81,
     "SUSP_FREQ": 2,

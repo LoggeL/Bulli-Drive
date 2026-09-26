@@ -86,6 +86,33 @@ function race(track: TrackDef, level: BotLevel, seed: number, laps = 1, meter = 
     };
 }
 
+describe('LineDriver speed plan', () => {
+    it('plans with the terrain of its course: a crest before a bend below lift-off (docs/phase-1a-design.md, 27)', () => {
+        // 600 m north, a left bend of R 60 (from z = 540), then east; a crest
+        // of vertical radius 40 m at z = 530 on the first leg. The bot's
+        // profile there is √(0.8 · GRAVITY · R) = √(0.8 · 15 · 40) = 21.9 m/s,
+        // the braking for the bend alone allows 37 m/s
+        const track: TrackDef = {
+            id: 'hill-sprint', name: '', kind: 'sprint', laps: 1, mapVersion: 1, trackVersion: 1,
+            centerline: [{ x: 0, z: 0 }, { x: 0, z: 600 }, { x: 600, z: 600 }], lineOptions: { radius: 60, apexShift: 0 },
+            gates: [], grid: [], hints: [], minimap: { minX: 0, maxX: 1, minZ: 0, maxZ: 1 }, ramps: []
+        };
+        const line = buildRacingLine(track);
+        // (y = -d²/80 within 20 m of it, the grades ±0.5 beyond; the second
+        // leg runs level along z = 600)
+        const crest = (_x: number, z: number) => {
+            const d = z - 530;
+            return Math.abs(d) <= 20 ? -d * d / 80 : -(Math.abs(d) - 10) * 0.5;
+        };
+        const at = line.points.findIndex(q => q.s === 530);
+        const params = createSimCar('bot', 'bulli').params;
+        const planned = new LineDriver(createCourse(track, line, () => 0, crest), params, 'medium', mulberry32(1)).profile[at];
+        const blind = new LineDriver(createCourse(track, line, () => 0), params, 'medium', mulberry32(1)).profile[at];
+        expect(planned).toBeCloseTo(Math.sqrt(0.8 * 15 * 40), 6);
+        expect(blind).toBeGreaterThan(35);
+    });
+});
+
 describe('LineDriver', () => {
     it('drives a Downtown Loop lap in a medium Bulli without a reset, in 30-50 s, never 8 m off the line', () => {
         const run = race(DOWNTOWN_LOOP, 'medium', 1);

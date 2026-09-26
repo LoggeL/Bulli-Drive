@@ -6,6 +6,7 @@
 // default.
 
 import * as v from 'valibot';
+import { MIN_DESIGN_RADIUS } from './corridor.js';
 
 export const Finite = v.pipe(v.number(), v.finite());
 export const NonNegative = v.pipe(v.number(), v.finite(), v.minValue(0));
@@ -106,7 +107,17 @@ const RoadEdgeSchema = v.strictObject({
     oneWay: v.optional(v.boolean()),
     // Longitudinal grade limit, default 0.08
     maxGrade: v.optional(v.pipe(v.number(), v.gtValue(0), v.maxValue(0.3))),
-    elevation: v.optional(v.array(v.strictObject({ s: NonNegative, y: Finite }))),
+    // Height pins at station s; with `length` the road runs level at y from
+    // s to s + length (a terrace, e.g. a crossing on a steep street)
+    elevation: v.optional(v.array(v.strictObject({ s: NonNegative, y: Finite, length: v.optional(Positive) }))),
+    // Smallest vertical radius of the crests and sags (m), default 150
+    // (docs/phase-3-design.md A5); smaller on purpose where a fast car
+    // should leave the ground (docs/phase-1a-design.md, 27)
+    verticalRadius: v.optional(v.pipe(v.number(), v.minValue(MIN_DESIGN_RADIUS), v.maxValue(1000))),
+    // Bumps on top of the profile: a smooth hump `height` m high (a dip
+    // when negative) and `length` m long, centred at station s
+    // (bumpHeight in tools/map/bakeTerrain.ts)
+    bumps: v.optional(v.array(v.strictObject({ s: NonNegative, length: v.pipe(v.number(), v.minValue(8), v.maxValue(200)), height: v.pipe(v.number(), v.finite(), v.minValue(-3), v.maxValue(3)) }))),
     rails: v.optional(v.array(RailRangeSchema)),
     // Retaining walls: a vertical step instead of an embankment on that side
     walls: v.optional(v.array(WallRangeSchema)),
@@ -226,6 +237,9 @@ export function validateRoadNetwork(file: RoadNetworkFile): string[] {
                 if (last && segment.to) errors.push(`edge ${edge.id}: the last Bézier segment ends at node ${edge.to}, drop its "to"`);
                 if (!last && !segment.to) errors.push(`edge ${edge.id}: Bézier segment ${i} needs "to"`);
             });
+        }
+        for (const bump of edge.bumps ?? []) {
+            if (bump.s < bump.length / 2) errors.push(`edge ${edge.id}: the bump at s = ${bump.s} starts before the edge`);
         }
         for (const range of [...(edge.rails ?? []), ...(edge.walls ?? [])]) {
             if (range.to !== -1 && range.to <= range.from) {

@@ -64,6 +64,15 @@ describe('createCourse', () => {
         expect(course.surfaces).toHaveLength(line.points.length);
         line.points.forEach((p, i) => expect(course.surfaces![i]).toBe(p.x < 50 ? 6 : 0));
     });
+
+    it('reads the terrain height under every point of the line when it is given, else none', () => {
+        // The bots plan their speed over crests with it (docs/phase-1a-design.md, 27)
+        const line = buildRacingLine(SQUARE);
+        expect(createCourse(SQUARE, line, () => 0).heights).toBeNull();
+        const course = createCourse(SQUARE, line, () => 0, (x, z) => 0.1 * x - 0.01 * z);
+        expect(course.heights).toHaveLength(line.points.length);
+        line.points.forEach((p, i) => expect(course.heights![i]).toBe(0.1 * p.x - 0.01 * p.z));
+    });
 });
 
 describe('laps and gate order', () => {

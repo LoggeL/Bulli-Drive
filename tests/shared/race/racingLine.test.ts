@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { roundCorners, samplePath } from '../../../src/shared/race/geometry.js';
-import { buildRacingLine, racingLine, speedProfile } from '../../../src/shared/race/racingLine.js';
+import { buildRacingLine, crestCurvature, racingLine, speedProfile } from '../../../src/shared/race/racingLine.js';
 import type { TrackDef } from '../../../src/shared/race/types.js';
 import { SURFACE } from '../../../src/shared/map/types.js';
 import { CAR_CLASS_IDS, createVehicleParams } from '../../../src/shared/sim/vehicleClasses.js';
@@ -115,5 +115,100 @@ describe('speedProfile', () => {
         expect(racingLine(sprint)).not.toBe(racingLine(track('sprint')));
         expect(racingLine(sprint).closed).toBe(false);
         expect(racingLine(circuit).closed).toBe(true);
+    });
+});
+
+describe('speedProfile at crests (docs/phase-1a-design.md, 27)', () => {
+    // 600 m north, a left bend of R = 60 (the arc from s = 540 to 634),
+    // then east. A crest of vertical radius 40 m (y = -(s - c)²/80 within
+    // 20 m of c, the grades ±0.5 beyond). Bulli: vtop 50 m/s.
+    function crestLine(c: number) {
+        const line = samplePath(roundCorners([{ x: 0, z: 0 }, { x: 0, z: 600 }, { x: 600, z: 600 }], false, 60));
+        const heights = Float64Array.from(line.points, p => {
+            const d = p.s - c;
+            return Math.abs(d) <= 20 ? -d * d / 80 : -(Math.abs(d) - 10) * 0.5;
+        });
+        return { line, heights, at: line.points.findIndex(p => p.s === c) };
+    }
+
+    it('measures the vertical curvature over ±6 m: 1/R on the parabola, convex > 0', () => {
+        const { line, heights, at } = crestLine(200);
+        const kappa = crestCurvature(line, heights);
+        // Second differences of a parabola are exact
+        for (let i = at - 7; i <= at + 7; i++) expect(kappa[i]).toBeCloseTo(1 / 40, 9);
+        // On the straight grade beyond it: none
+        expect(kappa[at + 20]).toBeCloseTo(0, 9);
+        // A sag is negative
+        expect(crestCurvature(line, heights.map(h => -h))[at]).toBeCloseTo(-1 / 40, 9);
+    });
+
+    it('takes a crest before a bend below lift-off: √(0.8 · GRAVITY / κ) = √(0.8 · 15 · 40) = 21.9 m/s', () => {
+        // At 50 m/s the flight (0.6 s) reaches 30 m: from s = 530, 20 m of
+        // the R 60 arc, a turn of 0.33 rad
+        const { line, heights, at } = crestLine(530);
+        const v = speedProfile(line, createVehicleParams('bulli'), null, 1, heights);
+        expect(v[at]).toBeCloseTo(Math.sqrt(0.8 * 15 * 40), 6);
+        // Without the heights the crest does not count: only the braking
+        // for the bend, √(32.4² + 2 · 16 · 10) = 37 m/s
+        expect(speedProfile(line, createVehicleParams('bulli'))[at]).toBeGreaterThan(35);
+    });
+
+    it('wraps a circuit: the window reaches across the lap\'s start, the flight into the next lap', () => {
+        // A square circuit, 400 m sides, corners R 60; the lap starts where
+        // the first corner ends, so it ends inside that corner
+        const line = samplePath(roundCorners([{ x: 0, z: 0 }, { x: 0, z: 400 }, { x: 400, z: 400 }, { x: 400, z: 0 }], true, 60));
+        const n = line.points.length, L = line.length;
+        // A parabola (R 40) around station c, distances taken round the lap
+        const crest = (c: number) => Float64Array.from(line.points, p => {
+            let d = p.s - c;
+            if (d < -L / 2) d += L;
+            if (d > L / 2) d -= L;
+            return Math.abs(d) <= 20 ? -d * d / 80 : -(Math.abs(d) - 10) * 0.5;
+        });
+        // Around the start: the window takes the last points of the lap
+        const atStart = crestCurvature(line, crest(2));
+        for (const i of [n - 2, n - 1, 0, 1, 2, 3]) expect(atStart[i], `point ${i}`).toBeCloseTo(1 / 40, 9);
+        // In the corner that ends the lap: capped (the corner turns 0.17 rad
+        // within 10 m, and the flight runs on into the next lap)
+        const c = line.points[n - 5].s;
+        const v = speedProfile(line, createVehicleParams('bulli'), null, 1, crest(c));
+        expect(v[n - 5]).toBeCloseTo(Math.sqrt(0.8 * 15 * 40), 6);
+        // On the lap's last point the corner has 1 m left (1/60 rad), the
+        // next lap starts straight: the flight turns about 0.03 rad, no cap;
+        // the corner's own limit √(0.85 · 2.1 · 9.81 · 60) = 32.4 m/s holds
+        const last = speedProfile(line, createVehicleParams('bulli'), null, 1, crest(line.points[n - 1].s));
+        expect(last[n - 1]).toBeCloseTo(Math.sqrt(0.85 * 2.1 * G * 60), 3);
+    });
+
+    it('does not wrap a sprint: a crest at its end sees no bend from its start', () => {
+        // The sprint starts 3 m before a bend (R 20, 45°) and ends straight;
+        // a crest about 14 m before its end has nothing ahead of it (read
+        // round from the start, its 30 m of flight would reach 13 m into
+        // that bend: 0.65 rad)
+        const line = samplePath(roundCorners([{ x: 8, z: -8 }, { x: 0, z: 0 }, { x: 0, z: 400 }], false, 20));
+        const n = line.points.length;
+        const c = line.points[n - 8].s;
+        const heights = Float64Array.from(line.points, p => {
+            const d = p.s - c;
+            return Math.abs(d) <= 20 ? -d * d / 80 : -(Math.abs(d) - 10) * 0.5;
+        });
+        expect(crestCurvature(line, heights)[n - 8]).toBeCloseTo(1 / 40, 9);
+        expect(speedProfile(line, createVehicleParams('bulli'), null, 1, heights)[n - 8]).toBe(50);
+        // A line shorter than the window (±6 m) has no curvature at all
+        const short = samplePath(roundCorners([{ x: 0, z: 0 }, { x: 0, z: 10 }], false, 0));
+        expect(Array.from(crestCurvature(short, Float64Array.from(short.points, p => -p.s * p.s)))).toEqual(short.points.map(() => 0));
+    });
+
+    it('lets the car fly over a crest on a straight: no bend within the flight', () => {
+        // From s = 200 the next 30 m and more are straight
+        const { line, heights, at } = crestLine(200);
+        const v = speedProfile(line, createVehicleParams('bulli'), null, 1, heights);
+        expect(v[at]).toBe(50);
+        // A crest whose convex stretch (±14 m: the ±6 m window over the
+        // ±20 m parabola) ends more than a flight (30 m) before the bend at
+        // 540: from s = 480 the last crest point 494 reaches 524. The
+        // braking for the bend starts later (√(32.4² + 2 · 16 · 60) > 50)
+        const early = crestLine(480);
+        expect(speedProfile(early.line, createVehicleParams('bulli'), null, 1, early.heights)[early.at]).toBe(50);
     });
 });

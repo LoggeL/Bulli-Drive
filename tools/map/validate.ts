@@ -33,7 +33,7 @@ function main(argv: string[]): number {
             + (t.obliqueBarriers ? `, ${t.obliqueBarriers} oblique barrier rows (obox, M3)` : ''));
         for (const j of t.jumps) {
             console.log(`  jump at ${j.s.toFixed(0)} m (${j.x.toFixed(0)} | ${j.z.toFixed(0)}): lip ${j.lip.toFixed(2)} m, take-off ${j.speed.toFixed(0)} km/h, `
-                + `${j.airtime.toFixed(2)} s in the air over ${j.distance.toFixed(0)} m`);
+                + `${j.airtime.toFixed(2)} s in the air over ${j.distance.toFixed(0)} m; fastest class ${j.maxSpeed.toFixed(0)} km/h over ${j.maxDistance.toFixed(0)} m`);
         }
     }
     const mesh = terrainMeshStats(bundle.hf);

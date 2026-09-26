@@ -164,13 +164,18 @@ describe('ramp edge walls', () => {
         const world = createSandboxWorld();
         const kicker = SANDBOX.ramps.find(ramp => ramp.x === 70 && !ramp.hill)!;
         const slope = SANDBOX.ramps.find(ramp => ramp.hill && ramp.yaw !== 0)!;
+        // With GRAVITY 15 the flight lasts about 1.1 s, the landing comes
+        // about 2.4 s after the start
         const car = carAt(world, kicker.x, kicker.z - 40, 0, 30);
-        const log = run([car], world, 150);
+        const log = run([car], world, 180);
         expect(log.wallImpact).toBe(0);
         expect(log.airTicks).toBeGreaterThan(30);
         expect(log.firstLanding).not.toBeNull();
         expect(log.firstLanding!.z).toBeGreaterThan(slope.z - slope.length / 2);
         expect(log.firstLanding!.z).toBeLessThan(slope.z + slope.length / 2);
+        // with room for a faster car: more than 8 m before the slope's foot
+        // (the 24 m slope of GRAVITY 20 ended 2 m after this landing)
+        expect(log.firstLanding!.z).toBeLessThan(slope.z + slope.length / 2 - 8);
         expect(log.firstLanding!.impact).toBeLessThan(10);
     });
 });

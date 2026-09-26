@@ -42,16 +42,13 @@ const trackOf = (id: string) => tracks.find(([trackId]) => trackId === id)![2];
 
 describe('missed gates', () => {
     it('put the bot back before the gate, as the race room does, and the race goes on', () => {
-        // Regression lock (seed 11, found in a sweep of seeds 1-120 after the
-        // suspension of docs/phase-1a-design.md 26; seed 7 before it): the
-        // easy Beetle drives past a gate of the Coast Sprint outside. The
-        // race room holds reset at once and puts it back before the gate:
-        // one reset, the race a few seconds longer than the 61.3 s of seed 1.
-        // Without the reset it drove on until the bot's own watchdog (25 m
-        // off the line for 2 s) reset it: 85 s, 32.6 m off the line; without
-        // the placement before the gate it followed the line to its end and
-        // stood there (a DNF with dozens of resets).
-        const result = driveTrack(map, trackOf('coast-sprint'), 'beetle', 'easy', 11);
+        // Regression lock (seed 13, found in a sweep of seeds 1-120 after
+        // GRAVITY 15 and the crests of docs/phase-1a-design.md 27; seed 11
+        // after the suspension of 26, seed 7 before it): the easy Beetle
+        // drives past a gate of the Coast Sprint outside. The race room
+        // holds reset at once and puts it back before the gate: one reset,
+        // 67.4 s, a few seconds longer than the 61.3 s of seed 1.
+        const result = driveTrack(map, trackOf('coast-sprint'), 'beetle', 'easy', 13);
         expect(result.missedGates).toBe(1);
         expect(result.resets).toBe(1);
         expect(result.time).not.toBeNull();
@@ -70,6 +67,18 @@ describe('missed gates', () => {
             expect(result.missedGates, `${car} ${seed}`).toBe(0);
             expect(result.resets, `${car} ${seed}`).toBe(0);
         }
+    });
+});
+
+describe('flights', () => {
+    it('count a flight over the finish line: the medium Sport jumps the Ridge Climb\'s last ramp across it', () => {
+        // The last ramp stands 33 m before the finish; with GRAVITY 15 the
+        // Sport (137 km/h there) is still in the air when it crosses the
+        // line and the race ends (docs/phase-1a-design.md, 27)
+        const result = driveTrack(map, trackOf('hill-sprint'), 'sport', 'medium', 1);
+        const last = result.flights.filter(f => f.ramp === 2);
+        expect(last).toHaveLength(1);
+        expect(last[0].ticks).toBeGreaterThanOrEqual(18);
     });
 });
 
@@ -98,12 +107,13 @@ describe.each(tracks)('%s', (_id, route, track) => {
             expect(off, `ramp ${i}`).toHaveLength(laps);
             for (const flight of off) expect(flight.ticks, `ramp ${i}`).toBeGreaterThanOrEqual(18);
         });
-        // Crests of the terrain may lift the car since the suspension
-        // (docs/phase-1a-design.md, 26), but only for short hops: the
-        // longest is the medium Bulli's 0.3 s at the grade kink at the top
-        // of the Ridge Climb's canyon (x -120, 8 % to 0 % within 4 m)
+        // Crests of the terrain lift the car since the suspension
+        // (docs/phase-1a-design.md, 26), the designed crests and bumps of 27
+        // for 0.1-0.6 s: the longest is the medium Bulli's 0.55 s over the
+        // bumps of the Oak Canyon Trail (Grand Tour) and the dune humps of
+        // the Beach Trail (Dune Rally) at 150-160 km/h
         for (const flight of result.flights.filter(f => f.ramp < 0)) {
-            expect(flight.ticks, `terrain at ${flight.x.toFixed(0)}, ${flight.z.toFixed(0)}`).toBeLessThan(30);
+            expect(flight.ticks, `terrain at ${flight.x.toFixed(0)}, ${flight.z.toFixed(0)}`).toBeLessThan(39);
         }
     });
 
@@ -112,10 +122,10 @@ describe.each(tracks)('%s', (_id, route, track) => {
         // rolling resistance per surface of the sim; the medium bot drives
         // 92 % of its own speed profile (85 % of the grip, phase 2) with a
         // standing start. The median of three seeds: a crest hop can throw
-        // one race off (seed 1 of the Sport on the Ridge Climb lands from the
-        // canyon ramp on the grade kink above, hops again and slides in the
-        // next bend: 1.17 of the estimate; seeds 2 and 3: 1.085, as before
-        // the suspension).
+        // one race off (seed 1 of the Sport on the Ridge Climb landed from
+        // the canyon ramp on the grade kink above, hopped again and slid in
+        // the next bend: 1.17 of the estimate; since the kink is rounded,
+        // docs/phase-1a-design.md 27, all three are 1.09).
         for (const car of ['sport', 'pickup'] as CarClassId[]) {
             const estimate = speedProfile(VEHICLE_CLASSES[car], racePoints(route), 0, CORNER_GRIP_MARGIN).time;
             const times = [1, 2, 3].map(seed => driveTrack(map, track, car, 'medium', seed).time!).sort((a, b) => a - b);

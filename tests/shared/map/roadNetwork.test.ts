@@ -31,12 +31,25 @@ describe('roads.json schema', () => {
         const bad = JSON.parse(JSON.stringify(valid));
         bad.edges[0].maxGrade = 0.5;
         bad.nodes[0].kind = 'bridge';
+        // A crest sharper than 40 m, a bump shorter than 8 m and higher than
+        // 3 m, a terrace without length (docs/phase-1a-design.md, 27)
+        bad.edges[0].verticalRadius = 30;
+        bad.edges[0].bumps = [{ s: 20, length: 6, height: 4 }];
+        bad.edges[0].elevation = [{ s: 10, y: 1, length: 0 }];
         const parsed = parseRoadNetwork(bad);
         expect(parsed.ok).toBe(false);
         if (!parsed.ok) {
             expect(parsed.errors.some(e => e.startsWith('edges.0.maxGrade'))).toBe(true);
             expect(parsed.errors.some(e => e.startsWith('nodes.0.kind'))).toBe(true);
+            for (const path of ['edges.0.verticalRadius', 'edges.0.bumps.0.length', 'edges.0.bumps.0.height', 'edges.0.elevation.0.length']) {
+                expect(parsed.errors.some(e => e.startsWith(path)), path).toBe(true);
+            }
         }
+        const ok = JSON.parse(JSON.stringify(valid));
+        ok.edges[0].verticalRadius = 40;
+        ok.edges[0].bumps = [{ s: 20, length: 8, height: -3 }];
+        ok.edges[0].elevation = [{ s: 10, y: 1, length: 12 }];
+        expect(parseRoadNetwork(ok).ok).toBe(true);
     });
 
     it('finds broken references, node kinds and ranges', () => {
@@ -44,7 +57,7 @@ describe('roads.json schema', () => {
             [node('a', 0, 0), node('b', 100, 0, 'joint'), node('c', 200, 0), node('a', 5, 5), node('lonely', 9, 9, 'junction'),
                 node('d', 0, 50), node('e', 100, 50)],
             [
-                edge('ab', 'a', 'b', [], { rails: [{ side: 'left', from: 20, to: 10, kind: 'wbeam' }] }),
+                edge('ab', 'a', 'b', [], { rails: [{ side: 'left', from: 20, to: 10, kind: 'wbeam' }], bumps: [{ s: 9, length: 20, height: 1 }, { s: 10, length: 20, height: 1 }] }),
                 edge('bx', 'b', 'x'),
                 edge('ac', 'a', 'c', [], { profile: 'nope' }),
                 edge('de', 'd', 'e', [[0.3, 50]])
@@ -56,10 +69,13 @@ describe('roads.json schema', () => {
             'edge ac: unknown profile nope',
             'edge de: support points 0 and 1 closer than 0.5 m',
             'edge ab: range 20..10 is empty (use to = -1 for the edge end)',
+            // A bump 20 m long must be centred 10 m into the edge at least
+            'edge ab: the bump at s = 9 starts before the edge',
             // ab and ac both start at a
             'node a: an end needs exactly 1 edge end, has 2'
         ]));
         expect(errors).toContain('node lonely: junction without edges');
+        expect(errors).not.toContain('edge ab: the bump at s = 10 starts before the edge');
         // b has two ends (ab, bx): a valid joint
         expect(errors.some(e => e.startsWith('node b'))).toBe(false);
     });

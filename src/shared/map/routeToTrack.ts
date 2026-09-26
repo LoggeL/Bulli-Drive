@@ -61,7 +61,11 @@ export function isAxisYaw(yaw: number): boolean {
 // row at the trim radius would reach into the route's roadway (on the
 // inside of the turn), so it moves into the branch in steps until it is
 // clear, at most BARRIER_MAX_PUSH beyond the trim radius.
-export const BARRIER_ROUTE_CLEARANCE = 0.5;
+// 1.5 m since GRAVITY 15 (docs/phase-1a-design.md, 27): with 0.5 m the
+// bots, cutting the inside of the bend at 150 km/h, clipped the row across
+// the Ranch Fire Road at the Grand Tour's ranch-end junction and spun off
+// the road (a reset in 6 of 360 bot races)
+export const BARRIER_ROUTE_CLEARANCE = 1.5;
 export const BARRIER_PUSH_STEP = 0.5;
 export const BARRIER_MAX_PUSH = 30;
 // Probes along a row (m)

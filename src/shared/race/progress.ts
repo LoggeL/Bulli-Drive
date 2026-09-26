@@ -29,14 +29,19 @@ export interface Course {
     // null where the course was built without its world (the bots plan
     // their speed with it, docs/phase-3-design.md, 8.1)
     surfaces: Uint8Array | null;
+    // Terrain height under each point of the line, null without the world
+    // (the bots take crests before bends below lift-off with it,
+    // docs/phase-1a-design.md, 27)
+    heights: Float64Array | null;
 }
 
 /**
- * A track's course. With the surface of the world it is raced in (the
- * race world's surfaceAt), the course knows the surface under every point
- * of its line.
+ * A track's course. With the surface and the terrain of the world it is
+ * raced in (the race world's surfaceAt and terrainHeight), the course knows
+ * the surface and the height under every point of its line.
  */
-export function createCourse(track: TrackDef, line: Polyline = racingLine(track), surfaceAt?: (x: number, z: number) => number): Course {
+export function createCourse(track: TrackDef, line: Polyline = racingLine(track), surfaceAt?: (x: number, z: number) => number,
+    terrainHeight?: (x: number, z: number) => number): Course {
     const gateS = gateArcLengths(track, line);
     const n = gateS.length;
     const legLength = gateS.map((s, k) => {
@@ -44,7 +49,8 @@ export function createCourse(track: TrackDef, line: Polyline = racingLine(track)
         return track.kind === 'circuit' ? s - gateS[n - 1] + line.length : s;
     });
     const surfaces = surfaceAt ? Uint8Array.from(line.points, p => surfaceAt(p.x, p.z)) : null;
-    return { track, line, gateS, legLength, surfaces };
+    const heights = terrainHeight ? Float64Array.from(line.points, p => terrainHeight(p.x, p.z)) : null;
+    return { track, line, gateS, legLength, surfaces, heights };
 }
 
 export interface RaceProgress {

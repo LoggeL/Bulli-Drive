@@ -10,7 +10,7 @@
 //  5. zones from zones.json, then quantise.
 
 import {
-    DEFAULT_MAX_GRADE, FLAT_MARGIN, flatHalfWidths, longitudinalProfile, movingAverage,
+    DEFAULT_MAX_GRADE, FLAT_MARGIN, flatHalfWidths, longitudinalProfile, MIN_VERTICAL_RADIUS, movingAverage,
     PROFILE_SMOOTH_WINDOW, TerrainShaper, type ConflictReport, type CorridorLine, type ProfilePin
 } from '../../src/shared/map/corridor.js';
 import { pointInPolygon, polygonEdgeDistance } from '../../src/shared/map/geometry.js';
@@ -28,7 +28,7 @@ import { baseSample, regionSurface, smoothstep, type BaseTerrain, type KeepWeigh
 
 // Bumped whenever the bake's algorithm changes its output; part of the
 // sourceHash, so a stale terrain.bhf is detected
-export const BAKE_VERSION = 2;
+export const BAKE_VERSION = 3;
 
 // Natural ground below the water line by more than this is sea floor
 const WATER_SURFACE_DEPTH = 0.05;
@@ -53,6 +53,9 @@ export interface ChainReport {
     length: number;
     // Shortfall of the pins against the grade limit (m), 0 = fine
     infeasible: number;
+    // Stretches left with a kink: the grade limit and the vertical radius
+    // cannot both be met between two pins
+    unrounded: number;
 }
 
 export interface BakeReport {
@@ -64,6 +67,9 @@ export interface BakeReport {
     maxHeight: number;
     conflicts: ConflictReport;
     infeasibleChains: ChainReport[];
+    // Chains with kinks the rounding could not remove (grade too low for
+    // the height difference and the radius)
+    unroundedChains: ChainReport[];
     // Steepest grade between neighbouring samples of any edge, measured on
     // the baked heightfield
     maxBakedGrade: { edge: string; grade: number };
@@ -175,6 +181,26 @@ function edgeGrade(edge: RoadEdgeData): number {
     return edge.def.maxGrade ?? DEFAULT_MAX_GRADE;
 }
 
+/**
+ * Height the edge's bumps add at station s (docs/phase-1a-design.md, 27):
+ * per bump height · (1 − u²)² with u = 2(s − centre)/length, within
+ * length/2 of its centre. A smooth hump (level at both feet) from exactly
+ * rounded arithmetic only (the bake runs bit-identically in the browser):
+ * its top bends with 16·height/length², its flanks rise by at most
+ * 3.08·height/length (at u = 1/√3).
+ */
+export function bumpHeight(edge: RoadEdgeData, s: number): number {
+    let y = 0;
+    for (const bump of edge.def.bumps ?? []) {
+        const u = 2 * (s - bump.s) / bump.length;
+        if (u > -1 && u < 1) {
+            const w = 1 - u * u;
+            y += bump.height * w * w;
+        }
+    }
+    return y;
+}
+
 // Height profile of every edge, sample by sample
 export function roadProfiles(net: RoadNetwork, spec: GridSpec, natural: Float64Array,
     areaHeights: readonly number[] = []): { heights: Map<string, Float64Array>; chains: RoadChain[]; reports: ChainReport[] } {
@@ -227,19 +253,25 @@ export function roadProfiles(net: RoadNetwork, spec: GridSpec, natural: Float64A
                 if (joint.def.y !== undefined) pins.push({ from: st.offsets[i], to: st.offsets[i], y: joint.def.y });
             }
             for (const pin of edge.def.elevation ?? []) {
-                const S = partStation(net, st, i, Math.min(pin.s, edge.length));
-                pins.push({ from: S, to: S, y: pin.y });
+                // A terrace (length) is a level stretch from s to s + length
+                const a = partStation(net, st, i, Math.min(pin.s, edge.length));
+                const b = partStation(net, st, i, Math.min(pin.s + (pin.length ?? 0), edge.length));
+                pins.push({ from: Math.min(a, b), to: Math.max(a, b), y: pin.y });
             }
         });
-        // Grade limit per step: that of the edge the step lies on
+        // Grade limit and vertical radius per step: those of the edge the
+        // step lies on
         const grades = new Float64Array(Math.max(1, count - 1));
+        const radii = new Float64Array(Math.max(1, count - 1));
         let part = 0;
         for (let i = 0; i < count - 1; i++) {
             const mid = (i + 0.5) * spacing;
             while (part < chain.parts.length - 1 && st.offsets[part + 1] <= mid) part++;
-            grades[i] = edgeGrade(net.edges[chain.parts[part].edge]);
+            const edge = net.edges[chain.parts[part].edge];
+            grades[i] = edgeGrade(edge);
+            radii[i] = edge.def.verticalRadius ?? MIN_VERTICAL_RADIUS;
         }
-        const profile = longitudinalProfile(st.natural, spacing, grades, pins);
+        const profile = longitudinalProfile(st.natural, spacing, grades, pins, radii);
         chain.parts.forEach((p, i) => {
             const edge = net.edges[p.edge];
             const values = new Float64Array(edge.samples.length);
@@ -247,11 +279,12 @@ export function roadProfiles(net: RoadNetwork, spec: GridSpec, natural: Float64A
                 const S = partStation(net, st, i, sample.s);
                 const g = Math.max(0, Math.min(count - 1, S / spacing));
                 const j = Math.min(count - 2, Math.floor(g));
-                values[k] = profile.heights[j] + (profile.heights[j + 1] - profile.heights[j]) * (g - j);
+                values[k] = profile.heights[j] + (profile.heights[j + 1] - profile.heights[j]) * (g - j)
+                    + bumpHeight(edge, sample.s);
             });
             heights.set(edge.id, values);
         });
-        reports.push({ edges: chain.parts.map(p => net.edges[p.edge].id), length, infeasible: profile.infeasible });
+        reports.push({ edges: chain.parts.map(p => net.edges[p.edge].id), length, infeasible: profile.infeasible, unrounded: profile.unrounded });
     }
     return { heights, chains, reports };
 }
@@ -482,6 +515,7 @@ export function bakeTerrain(input: BakeInput): BakeResult {
             minHeight, maxHeight,
             conflicts,
             infeasibleChains: reports.filter(c => c.infeasible > 0.01),
+            unroundedChains: reports.filter(c => c.unrounded > 0),
             maxBakedGrade,
             networkIssues: net.issues,
             surfaceCounts,

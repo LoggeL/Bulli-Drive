@@ -16,7 +16,7 @@ import { pointInPolygon, polygonEdgeDistance, segmentDistanceSq, type Vec2 } fro
 import { FLAT_MARGIN, flatHalfWidths } from '../../src/shared/map/corridor.js';
 import { heightAt, meshDeviation, waterDepth, type Heightfield } from '../../src/shared/map/heightfield.js';
 import type { MapFile, PoisFile, TracksFile, ZonesFile } from '../../src/shared/map/mapFiles.js';
-import { JUMP_RUNUP } from '../../src/shared/map/mapData.js';
+import { JUMP_LANDING, JUMP_RUNUP } from '../../src/shared/map/mapData.js';
 import { areaRailLine, areaRailSides, DEFAULT_AREA_RAIL_OFFSET, networkRailColliders } from '../../src/shared/map/rails.js';
 import { WATER_DEPTH } from '../../src/shared/sim/vehicle.js';
 import { AXIS_SNAP, isAxisYaw, routeBends, routeToTrack, snapYaw, type MapTrackDef } from '../../src/shared/map/routeToTrack.js';
@@ -97,13 +97,20 @@ export const CONTAINER_WIDTH = 2.44;
 export const ITEM_CLEARANCE = 2;
 // A ramp's lip, its height above the ground in front of it, must be at
 // least this: on a slope the ground rises under the ramp (the sim puts its
-// base at the rear edge), and a lip below AIR_GAP-sized steps barely lifts
-// a car (docs/phase-3-design.md, A31)
-export const MIN_RAMP_LIP = 0.8;
+// base at the rear edge), and a car must fall long enough from the lip to
+// fly. 0.8 m with GRAVITY 20 (docs/phase-3-design.md, A31), since
+// GRAVITY 15 the same fall time √(2·lip/g) = 0.28 s from 0.6 m
+// (docs/phase-1a-design.md, 27)
+export const MIN_RAMP_LIP = 0.6;
 // The route must run this straight (curvature ≤ 1/LANDING_RADIUS) from the
-// ramp over the estimated flight plus a car length
+// ramp over the flight plus LANDING_MARGIN: the flight of the fastest
+// class's take-off speed (the longest), over the real ground
 export const LANDING_RADIUS = 60;
 export const LANDING_MARGIN = 10;
+// ... and the car must not need to brake in the air: the fastest class's
+// speed profile allows its take-off speed where it lands, within this
+// (m/s; docs/phase-1a-design.md, 27)
+export const AIR_BRAKE_TOLERANCE = 1;
 // Flow of a race track (bonus tracks excepted): no straight longer than
 // MAX_STRAIGHT (curvature below STRAIGHT_CURVATURE), at least
 // MIN_BENDS_PER_KM bends that turn FLOW_BEND_TURN or more
@@ -116,6 +123,11 @@ export const MIN_BENDS_PER_KM = 3;
 export const GRID_SPACING = 6;
 // Free-roam jumps must land on dry ground inside the map at this speed (km/h)
 export const JUMP_CHECK_SPEED = 90;
+// ... and at this speed (km/h) within the ground kept free beyond the ramp
+// (JUMP_LANDING, mapData.ts) with a car length (JUMP_CLEAR_MARGIN m) to
+// spare (docs/phase-1a-design.md, 27)
+export const JUMP_CLEAR_SPEED = 130;
+export const JUMP_CLEAR_MARGIN = 5;
 
 function finding(check: string, message: string, at?: { x: number; z: number }, severity: Severity = 'error'): Finding {
     return at ? { check, severity, message, x: round(at.x), z: round(at.z) } : { check, severity, message };
@@ -300,6 +312,13 @@ export function checkGrades(net: RoadNetwork, hf: Heightfield): Finding[] {
         const limit = edge.def.maxGrade ?? 0.08;
         if (limit > MAX_GRADE_BY_SURFACE[surface] + 1e-9) {
             findings.push(finding('grades', `edge ${edge.id}: maxGrade ${limit} is steeper than ${surface} allows (${MAX_GRADE_BY_SURFACE[surface]})`));
+        }
+        // A bump past the edge's end would end in a step (the bake adds it
+        // on the edge's own samples; roadSchema checks the start)
+        for (const bump of edge.def.bumps ?? []) {
+            if (bump.s + bump.length / 2 > edge.length) {
+                findings.push(finding('grades', `edge ${edge.id}: the bump at s = ${bump.s} reaches ${(bump.s + bump.length / 2 - edge.length).toFixed(1)} m beyond the edge`, sampleAt(edge, edge.length)));
+            }
         }
         let worst = 0, at = edge.samples[0];
         for (let k = 1; k < edge.samples.length; k++) {
@@ -501,15 +520,31 @@ export function rampLip(hf: Heightfield, ramp: RampDef): number {
     return lip;
 }
 
-// Flight after a ramp at speed v (m/s) over level ground: the car leaves
-// along the ramp's slope and falls with the sim's GRAVITY from the lip
-export function rampFlight(ramp: RampDef, lip: number, v: number): { time: number; distance: number } {
+// Flight after a ramp at speed v (m/s): the car leaves along the ramp's
+// slope and falls with the sim's GRAVITY from the lip. Over level ground
+// (the ground in front of the lip) without `hf`; with it over the real
+// ground, until the path meets it (a slope falling away lengthens the
+// flight, a rising one shortens it). The distance is from the front edge.
+const FLIGHT_STEP = 1 / 120;
+const FLIGHT_MAX_TIME = 10;
+export function rampFlight(ramp: RampDef, lip: number, v: number, hf?: Heightfield): { time: number; distance: number } {
     const g = SIM_TUNING_DEFAULTS.GRAVITY;
     const slope = ramp.height / ramp.length;
     const vy = v * slope / Math.sqrt(1 + slope * slope);
     const vh = v / Math.sqrt(1 + slope * slope);
-    const time = (vy + Math.sqrt(vy * vy + 2 * g * Math.max(0, lip))) / g;
-    return { time, distance: vh * time };
+    if (!hf) {
+        const time = (vy + Math.sqrt(vy * vy + 2 * g * Math.max(0, lip))) / g;
+        return { time, distance: vh * time };
+    }
+    const fx = Math.sin(ramp.yaw), fz = Math.cos(ramp.yaw);
+    const x0 = ramp.x + fx * ramp.length / 2, z0 = ramp.z + fz * ramp.length / 2;
+    const y0 = heightAt(hf, x0, z0) + lip;
+    let t = FLIGHT_STEP;
+    for (; t < FLIGHT_MAX_TIME; t += FLIGHT_STEP) {
+        const d = vh * t;
+        if (y0 + vy * t - g * t * t / 2 <= heightAt(hf, x0 + fx * d, z0 + fz * d)) break;
+    }
+    return { time: t, distance: vh * t };
 }
 
 // A ramp works as a jump: enough lip, and facing along an axis (the phase 2
@@ -538,10 +573,14 @@ export interface JumpStats {
     // Route station of the ramp's centre
     s: number;
     lip: number;
-    // Take-off speed of the slowest class (km/h) and its flight
+    // Take-off speed of the slowest class (km/h) and its flight over the
+    // real ground
     speed: number;
     airtime: number;
     distance: number;
+    // The same for the fastest class: the flight the landing is checked for
+    maxSpeed: number;
+    maxDistance: number;
 }
 
 export interface TrackStats {
@@ -723,6 +762,7 @@ export function checkTrack(net: RoadNetwork, hf: Heightfield, track: TracksFile[
     if (route.closed) { climb /= track.laps; descent /= track.laps; }
     let slowest = { car: '', time: -Infinity }, fastest = { car: '', time: Infinity };
     let slowestSpeeds: Float64Array | null = null;
+    const allSpeeds: Float64Array[] = [];
     for (const id of CAR_CLASS_IDS) {
         const profile = speedProfile(VEHICLE_CLASSES[id], run, 0, CORNER_GRIP_MARGIN);
         if (profile.stall >= 0) {
@@ -731,11 +771,12 @@ export function checkTrack(net: RoadNetwork, hf: Heightfield, track: TracksFile[
         }
         if (profile.time > slowest.time) { slowest = { car: id, time: profile.time }; slowestSpeeds = profile.speeds; }
         if (profile.time < fastest.time) fastest = { car: id, time: profile.time };
+        allSpeeds.push(profile.speeds);
     }
 
     // Jumps: every ramp with a working lip along an axis, its take-off speed
-    // (slowest class, first lap) and flight; the route must run straight
-    // over the flight
+    // (slowest and fastest class, first lap) and flight over the real
+    // ground; the route must run straight over the fastest class's flight
     const jumps: JumpStats[] = [];
     built.ramps.forEach((ramp, i) => {
         const S = rampStations[i];
@@ -749,15 +790,39 @@ export function checkTrack(net: RoadNetwork, hf: Heightfield, track: TracksFile[
         let k = run.findIndex(p => p.s >= front);
         if (k < 0) k = run.length - 1;
         const v = slowestSpeeds ? slowestSpeeds[k] : 0;
-        const flight = rampFlight(ramp, lip, v);
-        for (let d = 0; d <= flight.distance + LANDING_MARGIN; d += 2) {
+        const flight = rampFlight(ramp, lip, v, hf);
+        let fastestSpeeds = allSpeeds[0];
+        for (const speeds of allSpeeds) if (speeds[k] > fastestSpeeds[k]) fastestSpeeds = speeds;
+        const vMax = fastestSpeeds[k];
+        const longest = rampFlight(ramp, lip, vMax, hf);
+        // No brakes in the air: for every class the landing must allow its
+        // take-off speed, or the car reaches the next bend too fast (its
+        // speed profile brakes from the landing on)
+        let worstExcess = AIR_BRAKE_TOLERANCE, worstNote = '', worstAt = 0;
+        CAR_CLASS_IDS.forEach((id, c) => {
+            const speeds = allSpeeds[c];
+            const flightOf = rampFlight(ramp, lip, speeds[k], hf);
+            let land = run.findIndex(p => p.s >= front + flightOf.distance);
+            if (land < 0) land = run.length - 1;
+            if (speeds[k] - speeds[land] > worstExcess) {
+                worstExcess = speeds[k] - speeds[land];
+                worstAt = run[land].s;
+                worstNote = `${id} lands too close before a bend: ${(speeds[k] * KMH_PER_MS).toFixed(0)} km/h at the lip, `
+                    + `${(speeds[land] * KMH_PER_MS).toFixed(0)} km/h allowed where it lands ${flightOf.distance.toFixed(0)} m on (it would have to brake in the air)`;
+            }
+        });
+        if (worstNote) findings.push(finding(check, `${label}: ${worstNote}`, routePointAt(route, worstAt)));
+        for (let d = 0; d <= longest.distance + LANDING_MARGIN; d += 2) {
             const p = routePointAt(route, front + d);
             if (Math.abs(p.curvature) > 1 / LANDING_RADIUS) {
-                findings.push(finding(check, `${label}: lands in a bend (R ${(1 / Math.abs(p.curvature)).toFixed(0)} m, ${d.toFixed(0)} m after the ramp)`, p));
+                findings.push(finding(check, `${label}: lands in a bend at ${(vMax * KMH_PER_MS).toFixed(0)} km/h (R ${(1 / Math.abs(p.curvature)).toFixed(0)} m, ${d.toFixed(0)} m after the ramp)`, p));
                 break;
             }
         }
-        jumps.push({ x: ramp.x, z: ramp.z, s: S, lip, speed: v * KMH_PER_MS, airtime: flight.time, distance: flight.distance });
+        jumps.push({
+            x: ramp.x, z: ramp.z, s: S, lip, speed: v * KMH_PER_MS, airtime: flight.time, distance: flight.distance,
+            maxSpeed: vMax * KMH_PER_MS, maxDistance: longest.distance
+        });
     });
     if (jumps.length < (track.minJumps ?? 0)) {
         findings.push(finding(check, `track ${track.id}: ${jumps.length} working jumps, needs ${track.minJumps}`));
@@ -952,11 +1017,18 @@ export function checkPois(net: RoadNetwork, hf: Heightfield, map: MapFile, pois:
             }
         }
         if (runUp) findings.push(finding(check, `${label}: the ${JUMP_RUNUP} m run-up ${runUp}`, jump));
-        const flight = rampFlight(jump, rampLip(hf, jump), JUMP_CHECK_SPEED / KMH_PER_MS);
+        const lip = rampLip(hf, jump);
+        const flight = rampFlight(jump, lip, JUMP_CHECK_SPEED / KMH_PER_MS, hf);
         const reach = jump.length / 2 + flight.distance;
         const lx = jump.x + Math.sin(jump.yaw) * reach, lz = jump.z + Math.cos(jump.yaw) * reach;
         if (!pointInPolygon(map.boundary, lx, lz) || waterDepth(hf, lx, lz) > -0.1) {
             findings.push(finding(check, `${label}: a car at ${JUMP_CHECK_SPEED} km/h lands in the water or beyond the boundary`, { x: lx, z: lz }));
+        }
+        // The ground kept free of buildings and plants (jumpZone) holds the
+        // landing of a fast car too
+        const clear = rampFlight(jump, lip, JUMP_CLEAR_SPEED / KMH_PER_MS, hf);
+        if (clear.distance + JUMP_CLEAR_MARGIN > JUMP_LANDING) {
+            findings.push(finding(check, `${label}: a car at ${JUMP_CLEAR_SPEED} km/h flies ${clear.distance.toFixed(0)} m, beyond the ${JUMP_LANDING} m kept free for the landing (less ${JUMP_CLEAR_MARGIN} m)`, jump));
         }
     }
 

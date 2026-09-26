@@ -330,6 +330,48 @@ describe('splitEdge', () => {
     });
 });
 
+describe('terraces and bumps (docs/phase-1a-design.md, 27)', () => {
+    const shaped = () => {
+        const base = fixture();
+        return {
+            ...base,
+            edges: base.edges.map(e => e.id === 'ab' ? {
+                ...e, elevation: [{ s: 10, y: 1, length: 20 }], verticalRadius: 60,
+                bumps: [{ s: 20, length: 10, height: 1 }, { s: 70, length: 16, height: -0.5 }]
+            } : e)
+        };
+    };
+
+    it('reverses a terrace from its other end and mirrors the bumps\' centres', () => {
+        // The terrace 10-30 m of a 100 m edge is 70-90 m backwards
+        const out = edgeOf(reverseEdge(shaped(), 'ab', 100).file, 'ab')!;
+        expect(out.elevation).toEqual([{ s: 70, y: 1, length: 20 }]);
+        expect(out.bumps).toEqual([{ s: 30, length: 16, height: -0.5 }, { s: 80, length: 10, height: 1 }]);
+        expect(out.verticalRadius).toBe(60);
+    });
+
+    it('gives each part of a split the bumps centred on it, the second part\'s from its start', () => {
+        const { file } = splitEdge(shaped(), 'ab', { x: 50, z: 0, s: 50 });
+        expect(edgeOf(file, 'ab')!.bumps).toEqual([{ s: 20, length: 10, height: 1 }]);
+        expect(edgeOf(file, 'ab-b')!.bumps).toEqual([{ s: 20, length: 16, height: -0.5 }]);
+        // Both parts keep the edge's vertical radius
+        expect(edgeOf(file, 'ab')!.verticalRadius).toBe(60);
+        expect(edgeOf(file, 'ab-b')!.verticalRadius).toBe(60);
+    });
+
+    it('joins the bumps of two edges at a joint, the second one\'s shifted by the first one\'s length', () => {
+        const base = fixture();
+        const file = {
+            ...base,
+            edges: base.edges.map(e => e.id === 'ab' ? { ...e, bumps: [{ s: 20, length: 10, height: 1 }], verticalRadius: 60 }
+                : e.id === 'bc' ? { ...e, bumps: [{ s: 10, length: 10, height: 1 }] } : e)
+        };
+        const { file: out, notes } = deleteNode(file, 'b', lengthOf);
+        expect(edgeOf(out, 'ab')!.bumps).toEqual([{ s: 20, length: 10, height: 1 }, { s: 110, length: 10, height: 1 }]);
+        expect(notes).toContain('bc: verticalRadius of ab applies to the merged road');
+    });
+});
+
 describe('reverseEdge', () => {
     it('swaps the ends, reverses the points and mirrors the stations', () => {
         const base = fixture();

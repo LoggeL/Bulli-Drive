@@ -36,8 +36,8 @@ describe('in the air', () => {
         expect(plain.car.state.vz).toBeCloseTo(30 * (1 - 0.0006 * 30 / 60), 12);
         expect(pushed.car.state.vz).toBe(plain.car.state.vz);
         expect(braked.car.state.vz).toBe(plain.car.state.vz);
-        // Falling with GRAVITY: 20 m/s² for one tick
-        expect(plain.car.state.vy).toBeCloseTo(-20 / 60, 12);
+        // Falling with GRAVITY: 15 m/s² for one tick
+        expect(plain.car.state.vy).toBeCloseTo(-15 / 60, 12);
     });
 
     it('neither starts nor drains a boost; one held through the flight goes on after the landing', () => {
@@ -120,11 +120,11 @@ describe('landing', () => {
         const hard = landing(-12);
         expect(soft.state.grounded).toBe(true);
         expect(hard.state.grounded).toBe(true);
-        // Impact 12 m/s plus the gravity of one substep (20 m/s² · DT / 3)
-        const impact = 12 + 20 * DT / 3;
+        // Impact 12 m/s plus the gravity of one substep (15 m/s² · DT / 3)
+        const impact = 12 + 15 * DT / 3;
         expect(hard.events.landedImpact).toBeCloseTo(impact, 9);
         expect(hard.state.vz / soft.state.vz).toBeCloseTo(1 - 0.15 * (impact - 10) / 15, 9);
-        expect(soft.events.landedImpact).toBeCloseTo(9 + 20 * DT / 3, 9);
+        expect(soft.events.landedImpact).toBeCloseTo(9 + 15 * DT / 3, 9);
         // The wheels are on the ground, the spring catches the body
         expect(soft.state.y).toBe(0);
         expect(soft.state.vy).toBeGreaterThan(-9);

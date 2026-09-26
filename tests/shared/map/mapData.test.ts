@@ -711,16 +711,17 @@ describe('Bulli Bay', () => {
     });
 
     it('keeps a 30 m run-up behind and the landing zone beyond every jump free of buildings and plants', () => {
-        expect(JUMP_LANDING).toBe(45);
+        // 60 m of landing since GRAVITY 15 (45 m before, docs/phase-1a-design.md 27)
+        expect(JUMP_LANDING).toBe(60);
         expect(JUMP_RUNUP).toBe(30);
         expect(JUMP_SIDE).toBe(4);
         for (const ramp of map.ramps) {
-            // From 30 m behind the ramp's rear edge to 45 m beyond its front
-            // edge, 4 m to each side
+            // From 30 m behind the ramp's rear edge to 60 m beyond its front
+            // edge, 4 m to each side: centred 15 m ahead, 45 m either way
             const fx = Math.sin(ramp.yaw), fz = Math.cos(ramp.yaw);
             const zone = {
-                x: ramp.x + fx * 7.5, z: ramp.z + fz * 7.5,
-                hw: ramp.width / 2 + 4, hd: ramp.length / 2 + 37.5, ux: fx, uz: fz
+                x: ramp.x + fx * 15, z: ramp.z + fz * 15,
+                hw: ramp.width / 2 + 4, hd: ramp.length / 2 + 45, ux: fx, uz: fz
             };
             for (const plant of map.plants) expect(boxContains(zone, plant.x, plant.z), `${plant.kind} at ${plant.x}, ${plant.z} on ${ramp.id}`).toBe(false);
             for (const lot of map.buildings) expect(boxesOverlap(zone, placementBox(lot)), `${lot.edge} on ${ramp.id}`).toBe(false);

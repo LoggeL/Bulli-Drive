@@ -12,10 +12,10 @@ import { DEFAULT_TERRAIN_CONFIG } from '../../../src/shared/constants.js';
 import { DEG, drive, forwardSpeed, launch, spawnCar, speedOf } from './helpers.js';
 
 // Vertical motion (suspension, crests, flight, landing), ramps, slopes and
-// reset (docs/phase-1a-design.md, 6.4-6.7 and 26). GRAVITY is 20 m/s², the
+// reset (docs/phase-1a-design.md, 6.4-6.7, 26 and 27). GRAVITY is 15 m/s², the
 // suspension 2 Hz with a damping ratio of 0.8 and 0.25 m to the bump stop.
 
-const G = 20;
+const G = 15;
 
 // A parabolic crest y = -z²/(2R) around z = 0 between straight grades of
 // ±grade: its vertical curvature y'' = -1/R is the same all over the crest,
@@ -41,7 +41,7 @@ function holdSpeed(world: SimWorld, v: number, z0: number, ticks: number, after:
 
 describe('v2 vertical motion: crests', () => {
     it('leaves a crest from v²/R > GRAVITY on, and stays on it below (threshold ±10 %)', () => {
-        // R = 60 m: v* = √(20 · 60) = 34.64 m/s
+        // R = 60 m: v* = √(15 · 60) = 30 m/s
         const R = 60, world = parabolicCrest(R, 0.25);
         const vStar = Math.sqrt(G * R);
         const flight = (v: number) => {
@@ -60,9 +60,40 @@ describe('v2 vertical motion: crests', () => {
         expect(over.gap).toBeGreaterThan(0.1);
     });
 
+    it('leaves the map\'s bumps from v²·κ > GRAVITY on: 1 m high, 34 m long, v* = 32.9 m/s with GRAVITY 15 and 38 m/s with 20', () => {
+        // The bake's bump (docs/phase-1a-design.md, 27): h·(1 − u²)², u =
+        // 2z/L; y'' = h·(12u² − 4)·(2/L)², at the top 16h/L² = 0.01384/m.
+        // v* = √(g/κ): 32.92 m/s (118.5 km/h) with GRAVITY 15, 38.01 m/s with
+        // 20. The top is short (the curvature falls to zero at u = 0.577,
+        // 9.8 m either side), so the bounds are ±10 %.
+        const bump = createGroundWorld((_x, z) => {
+            const u = 2 * z / 34;
+            return Math.abs(u) < 1 ? (1 - u * u) ** 2 : 0;
+        });
+        const kappa = 16 / (34 * 34);
+        const air = (v: number) => {
+            let ticks = 0;
+            holdSpeed(bump, v, -60, Math.ceil(120 / v * 60), car => { if (!car.state.grounded) ticks++; });
+            return ticks;
+        };
+        const vStar = (g: number) => Math.sqrt(g / kappa);
+        expect(vStar(G)).toBeCloseTo(32.92, 2);
+        expect(air(0.9 * vStar(G))).toBe(0);
+        expect(air(1.1 * vStar(G))).toBeGreaterThan(5);
+        // The same bump with GRAVITY 20 (the tuning panel): 1.1 v*(15) =
+        // 36.2 m/s is 0.95 v*(20), the car stays on it; it leaves at 1.1 v*(20)
+        try {
+            SIM_TUNING.GRAVITY = 20;
+            expect(air(1.1 * vStar(G))).toBe(0);
+            expect(air(1.1 * vStar(20))).toBeGreaterThan(5);
+        } finally {
+            resetTuning();
+        }
+    });
+
     it('takes a crest with the body: it rises on its springs by v²/R / ω² before the wheels leave', () => {
         // At 0.7 v* the body needs 0.49 g downwards: the spring unloads by
-        // that, the body rides 0.49 · 20 / (2π · 2)² = 6.2 cm above rest
+        // that, the body rides 0.49 · 15 / (2π · 2)² = 4.7 cm above rest
         const R = 60, world = parabolicCrest(R, 0.25);
         const v = 0.7 * Math.sqrt(G * R);
         let atTop = NaN;
@@ -74,25 +105,26 @@ describe('v2 vertical motion: crests', () => {
         expect(atTop).toBeLessThan(1.2 * (v * v / R) / (omega * omega));
     });
 
-    it('rides over a grade kink of 3.4 % at 45 m/s but leaves one of 6.5 %', () => {
+    it('rides over a grade kink of 2.6 % at 45 m/s but leaves one of 5 %', () => {
         // A convex kink drops the ground away at V = v·Δs. The spring cannot
         // pull, so the body decelerates at most with g and at least as a
         // clamped spring (F = g − k·s ≥ 0, the damper only lowers F): it
         // stays on the ground while V/ω ≤ g/ω² (the spring alone catches it:
-        // Δs ≤ g/(ω·v) = 3.5 %) and leaves for sure once even the ballistic
-        // rise clears the full extension plus SUSP_LIFT: (V − g·1 m/v)²/(2g)
-        // > 12.7 + 2 cm (the gradient's ±0.5 m spreads the kink over 1 m,
-        // 22 ms in which the body keeps up with the ground at g), from
-        // Δs = 6.4 %. Lift-off at 1.5 times the extension, or a damper that
-        // may pull (no clamp), keeps the car on the ground at 6.5 %.
+        // Δs ≤ g/(ω·v) = 15/(4π·45) = 2.65 %) and leaves for sure once even
+        // the ballistic rise clears the full extension plus SUSP_LIFT:
+        // (V − g·1 m/v)²/(2g) > 9.5 + 2 cm (the gradient's ±0.5 m spreads
+        // the kink over 1 m, 22 ms in which the body keeps up with the
+        // ground at g), from Δs = 4.87 %. Lift-off at 1.5 times the
+        // extension, or a damper that may pull (no clamp), keeps the car on
+        // the ground at 5 %.
         const kink = (ds: number) => createGroundWorld((_x, z) => z < 0 ? 0 : -ds * z);
         const air = (ds: number) => {
             let ticks = 0;
             holdSpeed(kink(ds), 45, -30, 90, car => { if (!car.state.grounded) ticks++; });
             return ticks;
         };
-        expect(air(0.034)).toBe(0);
-        expect(air(0.065)).toBeGreaterThan(0);
+        expect(air(0.026)).toBe(0);
+        expect(air(0.05)).toBeGreaterThan(0);
     });
 
     it('never goes below the ground, even at 85 m/s over bumps and into a steep hill', () => {
@@ -129,8 +161,8 @@ describe('v2 vertical motion: steep flanks, touchdown and the lift-off margin', 
         // of (v, 0), half the kinetic energy, and the climb costs more. So
         // ½|v|² never exceeds its start, and the car leaves the top at
         // about vy ≤ v/2 (the compressed spring gives a little back): apex
-        // under (v/2)²/(2g) = 2.5 m over the plateau (measured 1.4 m at
-        // 100 %, 0.7 m at 300 %). Before, vy was raised to ∇h·v without any
+        // under (v/2)²/(2g) = 3.3 m over the plateau (measured 1.4 m at
+        // 100 %, 0.7 m at 300 % with GRAVITY 20). Before, vy was raised to ∇h·v without any
         // cost: at 100 % 1.9 times the energy and 8.8 m over the plateau, at
         // 300 % 8.2 times and 72 m.
         for (const grade of [1, 3]) {
@@ -186,7 +218,7 @@ describe('v2 vertical motion: steep flanks, touchdown and the lift-off margin', 
         expect(up.state.vz).toBeCloseTo(20 - 0.2 * lambda, 9);
         expect(up.state.vy).toBeCloseTo(lambda + k * 0.25 / 180, 9);
         // After: on flat ground 24 cm compressed and sinking at 5 m/s, the
-        // spring and damper (20 + 37.9 + 100.5 m/s²) slow it to 4.23 m/s in
+        // spring and damper (15 + 37.9 + 100.5 m/s²) slow it to 4.23 m/s in
         // the substep, which still takes it 2.35 cm down, past the stop:
         // there it stops dead (inelastic, vy = 0), no deeper than 25 cm.
         const flat = createFlatWorld();
@@ -261,7 +293,7 @@ describe('v2 vertical motion: steep flanks, touchdown and the lift-off margin', 
         // One substep of 1/180 s from 1 cm above flat ground at -6 m/s: the
         // underside ends 3.395 cm lower, 2.395 cm "below" the ground. The
         // wheels land on the ground and the body keeps its height: 2.395 cm
-        // under the full extension g/k = 20/(4π)² = 12.665 cm.
+        // under the full extension g/k = 15/(4π)² = 9.499 cm.
         const world = createFlatWorld();
         const car = spawnCar(world, 'a', 'bulli', 0, 0, 0, 20);
         Object.assign(car.state, { y: 0.01, vy: -6, grounded: false, susp: 0 });
@@ -278,10 +310,10 @@ describe('v2 vertical motion: steep flanks, touchdown and the lift-off margin', 
     it('lands on a grade with the impact of its speed across the ground, ∇h·v − vy', () => {
         // Flying level at 20 m/s along +z, 0.3 m above a 20 % uphill and
         // falling at 3 m/s: the gap closes at 4 + 3 m/s + g·t, so it lands
-        // after t = (−7 + √(49 + 4·10·0.3))/20 = 40.5 ms at vy = −3.81 m/s,
-        // impact 4 + 3.81 = 7.81 m/s. Over a 20 % downhill falling at 5 m/s
-        // the ground drops away at 4: t = (−1 + √13)/20 = 130 ms, impact
-        // 1 + 2.61 = 3.61 m/s. The substeps land up to g/180 s later.
+        // after t = (−7 + √(49 + 4·7.5·0.3))/15 = 41.1 ms at vy = −3.62 m/s,
+        // impact 4 + 3.62 = 7.62 m/s. Over a 20 % downhill falling at 5 m/s
+        // the ground drops away at 4: t = (−1 + √10)/15 = 144 ms, impact
+        // 1 + 2.16 = 3.16 m/s. The substeps land up to g/180 s later.
         for (const [grade, fall] of [[0.2, 3], [-0.2, 5]]) {
             const world = createGroundWorld((_x, z) => grade * z);
             const car = spawnCar(world, 'a', 'bulli', 0, 0, 0, 20);
@@ -301,9 +333,9 @@ describe('v2 vertical motion: steep flanks, touchdown and the lift-off margin', 
     it('keeps its wheels on the ground while the body rises less than SUSP_LIFT over the full extension', () => {
         // Flat ground, the body 1.5 cm above the full extension, still
         // rising. The spring cannot pull, the body flies ballistically
-        // relative to the wheels: at 0.3 m/s it rises 0.3²/40 = 0.23 cm more,
-        // 1.73 cm in all, under the 2 cm margin: the wheels keep touching
-        // (drive and steering stay on). At 1 m/s it rises 2.5 cm more: off.
+        // relative to the wheels: at 0.3 m/s it rises 0.3²/30 = 0.3 cm more,
+        // 1.8 cm in all, under the 2 cm margin: the wheels keep touching
+        // (drive and steering stay on). At 1 m/s it rises 3.3 cm more: off.
         const world = createFlatWorld();
         const extension = G / (4 * Math.PI) ** 2;
         const hop = (vy: number) => {
@@ -320,8 +352,8 @@ describe('v2 vertical motion: steep flanks, touchdown and the lift-off margin', 
 
 describe('v2 vertical motion: flight and landing', () => {
     it('flies a projectile parabola: apex vy²/2g and time 2vy/g', () => {
-        // Thrown up at 8 m/s from flat ground at 20 m/s: apex 64/40 = 1.6 m,
-        // 0.8 s in the air, 16 m far less the air drag (under 1 %)
+        // Thrown up at 8 m/s from flat ground at 20 m/s: apex 64/30 = 2.133 m,
+        // 16/15 = 1.067 s in the air, 21.3 m far less the air drag (under 1 %)
         const world = createFlatWorld();
         const car = spawnCar(world, 'a', 'bulli', 0, 0, 0, 20);
         car.state.vy = 8;
@@ -334,12 +366,12 @@ describe('v2 vertical motion: flight and landing', () => {
         });
         // Semi-implicit Euler in 1/180 s substeps tops out vy·Δt/2 = 2.2 cm
         // below the exact apex
-        expect(apex).toBeGreaterThan(64 / 40 - 0.03);
-        expect(apex).toBeLessThanOrEqual(64 / 40);
-        expect(air / 60).toBeGreaterThan(0.8 - 2 / 60);
-        expect(air / 60).toBeLessThan(0.8 + 2 / 60);
-        expect(landZ).toBeGreaterThan(0.97 * 20 * 0.8);
-        expect(landZ).toBeLessThan(20 * 0.8 + 20 / 60);
+        expect(apex).toBeGreaterThan(64 / 30 - 0.03);
+        expect(apex).toBeLessThanOrEqual(64 / 30);
+        expect(air / 60).toBeGreaterThan(16 / 15 - 2 / 60);
+        expect(air / 60).toBeLessThan(16 / 15 + 2 / 60);
+        expect(landZ).toBeGreaterThan(0.97 * 20 * 16 / 15);
+        expect(landZ).toBeLessThan(20 * 16 / 15 + 20 / 60);
     });
 
     it('lands without a bounce or a shake, from 3 m and from 10 m', () => {
@@ -367,7 +399,7 @@ describe('v2 vertical motion: flight and landing', () => {
 
     it('flies off a ramp as far as its lip speed and GRAVITY say (±10 %)', () => {
         // 12 m long, 2 m high (1/6) at 30 m/s: vy = 5 m/s at the lip, 2 m
-        // above the ground: t = (5 + √(25 + 2 · 20 · 2)) / 20 = 0.762 s, 22.9 m
+        // above the ground: t = (5 + √(25 + 2 · 15 · 2)) / 15 = 0.948 s, 28.4 m
         const ramp = { x: 0, z: 0, yaw: 0, width: 8, length: 12, height: 2 };
         const world = createFlatWorld([], [ramp]);
         let takeOff = NaN, landZ = NaN, lipVy = NaN;
@@ -382,8 +414,8 @@ describe('v2 vertical motion: flight and landing', () => {
         expect(takeOff).toBeLessThan(6.6);
         expect(lipVy).toBeGreaterThan(0.9 * 5);
         expect(lipVy).toBeLessThan(1.1 * 5);
-        expect(landZ - 6).toBeGreaterThan(0.9 * 22.87);
-        expect(landZ - 6).toBeLessThan(1.1 * 22.87);
+        expect(landZ - 6).toBeGreaterThan(0.9 * 28.44);
+        expect(landZ - 6).toBeLessThan(1.1 * 28.44);
     });
 
     it('is deterministic over crests, flights and landings', () => {
@@ -497,10 +529,10 @@ describe('v2 ramp edges', () => {
                 const world = withWalls();
                 const car = spawnCar(world, 'a', 'beetle', run.x, run.z, run.yaw, 15);
                 let prevY = car.state.y, maxY = 0;
-                // Thrown up at 10.5 m/s: apex 110 / 40 = 2.76 m, clear of the
+                // Thrown up at 9.1 m/s: apex 82.8 / 30 = 2.76 m, clear of the
                 // 0.35 m landing step below the ramp's side (3.3 m at z = 3)
                 drive(car, world, 120, tick => {
-                    if (tick === jumpTick) launch(car, 10.5);
+                    if (tick === jumpTick) launch(car, 9.1);
                     return { throttle: 255 };
                 }, () => {
                     // The underside never pops up by more than the flight allows

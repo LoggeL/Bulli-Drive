@@ -200,6 +200,13 @@ describe('checkGrades', () => {
         expect(checkGrades(straight({ maxGrade: 0.15 }, 'dirt'), FLAT)).toEqual([]);
     });
 
+    it('reports a bump that reaches beyond the end of its edge (it would end in a step)', () => {
+        // The edge is 200 m long: a bump 20 m long ends at 200 when centred at 190
+        expect(checkGrades(straight({ bumps: [{ s: 190, length: 20, height: 0.5 }] }), FLAT)).toEqual([]);
+        expect(messages(checkGrades(straight({ bumps: [{ s: 195, length: 20, height: 0.5 }] }), FLAT)))
+            .toEqual(['edge ab: the bump at s = 195 reaches 5.0 m beyond the edge']);
+    });
+
     it('reports a climb the weakest class cannot drive up', () => {
         // Pickup: 8 · (1 - (10/47)^2.5) = 7.83 m/s² < 9.81 · 0.9
         const findings = checkGrades(straight({ maxGrade: 0.18 }, 'dirt'), field(x => 5 + 0.9 * Math.max(0, x - 100)));
@@ -351,17 +358,43 @@ describe('ramps: lip, flight, axis', () => {
         expect(rampLip(across, ramp)).toBeCloseTo(0.8, 9);
     });
 
-    it('estimates the flight from the ramp slope, the lip and the sim\'s GRAVITY = 20', () => {
+    it('estimates the flight from the ramp slope, the lip and the sim\'s GRAVITY = 15', () => {
         // h / L = 0.2 at 20 m/s: vy = 20 · 0.2 / √1.04 = 3.922, vh = 19.61;
-        // falls 2 m: t = (3.922 + √(3.922² + 2 · 20 · 2)) / 20 = 0.6844 s
+        // falls 2 m: t = (3.922 + √(3.922² + 2 · 15 · 2)) / 15 = 0.8403 s
         const flight = rampFlight({ ...ramp, height: 2 }, 2, 20);
-        expect(flight.time).toBeCloseTo(0.6844, 3);
-        expect(flight.distance).toBeCloseTo(13.42, 1);
+        expect(flight.time).toBeCloseTo(0.8403, 3);
+        expect(flight.distance).toBeCloseTo(16.48, 1);
     });
 
-    it('reports a lip under 0.8 m and a ramp off the axes; 1.5708 counts as π/2', () => {
+    it('follows the flight over the real ground: farther where it falls away, shorter where it rises', () => {
+        // The ramp from z = -6 to 6, 2.4 m high (h / L = 0.2), level ground
+        // up to its front edge, then 20 % down (or up) along +z. At 20 m/s
+        // (vy 3.922, vh 19.61) from 2.4 m above the edge: over the fall the
+        // gap closes as 2.4 + 3.922 t − 7.5 t² = −0.2 · 19.61 t, t = (7.845
+        // + √(7.845² + 72)) / 15 = 1.293 s, 25.4 m; over the rise 2.4 +
+        // 3.922 t − 7.5 t² = 3.922 t, t = √(2.4 / 7.5) = 0.566 s, 11.1 m.
+        // Level: t = (3.922 + √(3.922² + 72)) / 15 = 0.885 s, 17.3 m.
+        // The path is checked every 1/120 s, so it lands up to 1/120 s late.
+        const tall = { ...ramp, length: 12, height: 2.4 };
+        const falling = field((_, z) => 5 - 0.2 * Math.max(0, z - 6));
+        const rising = field((_, z) => 5 + 0.2 * Math.max(0, z - 6));
+        const expectFlight = (flight: { time: number; distance: number }, time: number) => {
+            expect(flight.time).toBeGreaterThanOrEqual(time - 1e-9);
+            expect(flight.time).toBeLessThan(time + 1 / 120 + 1e-9);
+            expect(flight.distance).toBeCloseTo(19.61 * flight.time, 2);
+        };
+        expect(rampLip(falling, tall)).toBeCloseTo(2.4, 9);
+        expectFlight(rampFlight(tall, 2.4, 20, falling), 1.2934);
+        expectFlight(rampFlight(tall, 2.4, 20, rising), 0.5657);
+        expectFlight(rampFlight(tall, 2.4, 20, field(() => 5)), 0.8847);
+    });
+
+    it('reports a lip under 0.6 m and a ramp off the axes; 1.5708 counts as π/2', () => {
+        // 0.6 m: the fall time √(2 · lip / g) of the former 0.8 m with GRAVITY 20
         const up = field((_, z) => 5 + 0.1 * z);
-        expect(messages(checkRamp('r', ramp, up))).toEqual(['r: lip 0.20 m above the ground in front (height 1.2 m less the rise of the ground), needs 0.8 m']);
+        expect(messages(checkRamp('r', ramp, up))).toEqual(['r: lip 0.20 m above the ground in front (height 1.2 m less the rise of the ground), needs 0.6 m']);
+        expect(messages(checkRamp('r', { ...ramp, height: 1.55 }, up))).toEqual(['r: lip 0.55 m above the ground in front (height 1.55 m less the rise of the ground), needs 0.6 m']);
+        expect(checkRamp('r', { ...ramp, height: 1.65 }, up)).toEqual([]);
         expect(checkRamp('r', { ...ramp, yaw: 1.5708 }, FLAT)).toEqual([]);
         expect(messages(checkRamp('r', { ...ramp, yaw: 0.3 }, FLAT))).toEqual(['r: faces 17.2°, not along an axis (its walls need obox colliders, M3)']);
     });
@@ -625,17 +658,20 @@ describe('checkPois', () => {
         const low = { ...jump, id: 'low', x: 30, height: 0.5 };
         const out = { ...jump, id: 'out', x: 245 };
         // Water between z = -30 and -10: a jump at z = -48 heading south
-        // (+z) leaves at z = -43 and flies 15.2 m at 25 m/s (h / L = 0.15,
-        // lip 1.5 m: t = 0.615 s), landing at z = -27.8
+        // (+z) leaves at z = -43 and flies 18.7 m at 25 m/s (h / L = 0.15,
+        // lip 1.5 m: vy 3.708, vh 24.72, t = (3.708 + √(3.708² + 45)) / 15
+        // = 0.758 s), landing at z = -24.3; from z = -54 at z = -30.25, on
+        // the last dry grid cell (the flight is traced every 1/120 s: up to
+        // 0.2 m farther)
         const wet = field((_, z) => (z > -30 && z < -10 ? -2 : 5));
         expect(messages(checkPois(poiNetwork(), FLAT, POI_MAP, { ...validPois(), jumps: [jump, jump, low, out] }))).toEqual([
             'jump kicker: duplicate id',
-            'jump low: lip 0.50 m above the ground in front (height 0.5 m less the rise of the ground), needs 0.8 m',
+            'jump low: lip 0.50 m above the ground in front (height 0.5 m less the rise of the ground), needs 0.6 m',
             'jump out reaches beyond the boundary'
         ]);
         expect(messages(checkPois(poiNetwork(), wet, POI_MAP, { ...validPois(), jumps: [{ ...jump, z: -48 }] })))
             .toContainEqual('jump kicker: a car at 90 km/h lands in the water or beyond the boundary');
-        expect(checkPois(poiNetwork(), wet, POI_MAP, { ...validPois(), jumps: [{ ...jump, z: -52 }] })).toEqual([]);
+        expect(checkPois(poiNetwork(), wet, POI_MAP, { ...validPois(), jumps: [{ ...jump, z: -54 }] })).toEqual([]);
         // A run-up of 30 m behind the rear edge, checked every 2 m: from a
         // ramp at z = 1 heading south (rear edge at z = -4) it reaches the
         // water at z = -12 (the 2 m grid: -10 is still dry); from one at
@@ -646,7 +682,23 @@ describe('checkPois', () => {
             .toEqual(['jump kicker: the 30 m run-up leaves the map 16 m behind the ramp']);
         // A ramp without a working lip gets no landing check on top
         expect(messages(checkPois(poiNetwork(), wet, POI_MAP, { ...validPois(), jumps: [{ ...jump, z: -48, height: 0.5 }] })))
-            .toEqual(['jump kicker: lip 0.50 m above the ground in front (height 0.5 m less the rise of the ground), needs 0.8 m']);
+            .toEqual(['jump kicker: lip 0.50 m above the ground in front (height 0.5 m less the rise of the ground), needs 0.6 m']);
+    });
+
+    it('asks the ground kept free beyond a jump (60 m) to hold the landing of a car at 130 km/h', () => {
+        // Level ground at 40 m up to the front edge (z = -35), then 30 %
+        // down along +z to z = 55. At 36.11 m/s (h / L = 0.15: vy 5.356, vh 35.71)
+        // from 1.5 m above the edge: 1.5 + 5.356 t − 7.5 t² = −0.3 · 35.71 t,
+        // t = (16.07 + √(16.07² + 45)) / 15 = 2.232 s, 79.7 m: beyond 60 m
+        // less a car length. Level ground: t = (5.356 + √(5.356² + 45)) / 15
+        // = 0.929 s, 33.2 m. At 90 km/h the fall lands on dry ground.
+        const jump = { id: 'kicker', x: 100, z: -40, yaw: 0, width: 6, length: 10, height: 1.5, look: 'earth' as const };
+        // (level again from z = 55 on, where the arena's ramps stand)
+        const cliff = field((_, z) => 40 - 0.3 * Math.min(90, Math.max(0, z + 35)));
+        const found = messages(checkPois(poiNetwork(), cliff, POI_MAP, { ...validPois(), jumps: [jump] }));
+        expect(found).toHaveLength(1);
+        expect(found[0]).toMatch(/^jump kicker: a car at 130 km\/h flies (79|80) m, beyond the 60 m kept free for the landing \(less 5 m\)$/);
+        expect(checkPois(poiNetwork(), field(() => 40), POI_MAP, { ...validPois(), jumps: [jump] })).toEqual([]);
     });
 
     it('checks the arena ramps\' lips and axes', () => {
@@ -720,7 +772,7 @@ describe('checkTrack', () => {
             expect.stringMatching(/^track loop: bend with R = \d+\.\d m allows \d+ km\/h, minCornerSpeed 60$/),
             'track loop: ramp at s = 90 on ab2 reaches into a junction or beyond the edge',
             // Its front edge (s = 95) is already in the corner at B
-            'track loop: ramp at s = 90 on ab2: lands in a bend (R 12 m, 0 m after the ramp)'
+            expect.stringMatching(/^track loop: ramp at s = 90 on ab2: lands in a bend at \d+ km\/h \(R 12 m, 0 m after the ramp\)$/)
         ]);
     });
 
@@ -777,15 +829,39 @@ describe('checkTrack', () => {
         // Lap stations: ab1 0..76, M1 ..100, ab2 ..176, B's corner (6π)
         // ..194.85, bc from its s = 12: s = 100 is station 194.85 + 88
         expect(jump.s).toBeCloseTo(282.85, 1);
-        // h / L = 0.15 from 1.5 m: 0.51 s at 15 m/s .. 0.78 s at 40 m/s
+        // h / L = 0.15 from 1.5 m: 0.62 s at 15 m/s .. 0.99 s at 40 m/s
         expect(jump.speed).toBeGreaterThan(15 * 3.6);
-        expect(jump.airtime).toBeGreaterThan(0.5);
-        expect(jump.airtime).toBeLessThan(0.8);
+        expect(jump.airtime).toBeGreaterThan(0.6);
+        expect(jump.airtime).toBeLessThan(1);
+        // The fastest class takes off faster and flies farther: its flight
+        // is the one the landing is checked for
+        expect(jump.maxSpeed).toBeGreaterThan(jump.speed + 5);
+        expect(jump.maxDistance).toBeGreaterThan(jump.distance);
+    });
+
+    it('reports a jump that lands too close before a bend to brake for it: no brakes in the air', () => {
+        // The Sport (brakeDecel 24) takes off at about 157 km/h from a ramp
+        // at s = 120 on bc and lands 46 m on, about 17 m before the corner at
+        // C (R 14 m, 54 km/h): braking from 43.6 to 15 m/s takes
+        // (43.6² − 15²)/48 = 35 m. From s = 100 (149 km/h, landing 42 m on)
+        // 41 m are left for the 31 m it needs.
+        const close = checkTrack(square(), big, { ...LOOP, ramps: [{ edge: 'bc', s: 120, length: 10, height: 1.5 }] });
+        expect(messages(close.findings)).toEqual([expect.stringMatching(
+            /^track loop: ramp at s = 120 on bc: sport lands too close before a bend: 15\d km\/h at the lip, \d+ km\/h allowed where it lands 4\d m on \(it would have to brake in the air\)$/)]);
+        expect(checkTrack(square(), big, { ...LOOP, ramps: [{ edge: 'bc', s: 100, length: 10, height: 1.5 }] }).findings).toEqual([]);
     });
 
     it('reports a jump landing in a bend and a lip the slope eats', () => {
         const late = checkTrack(square(), big, { ...LOOP, ramps: [{ edge: 'bc', s: 175, length: 10, height: 1.5 }] });
-        expect(messages(late.findings)).toEqual([expect.stringMatching(/^track loop: ramp at s = 175 on bc: lands in a bend \(R \d+ m, \d+ m after the ramp\)$/)]);
+        // (it has no room to brake for the corner either)
+        const inBend = messages(late.findings).filter(m => m.includes('lands in a bend'));
+        expect(inBend).toEqual([expect.stringMatching(/^track loop: ramp at s = 175 on bc: lands in a bend at \d+ km\/h \(R \d+ m, \d+ m after the ramp\)$/)]);
+        // The landing is checked for the fastest class: the speed in the
+        // message is its take-off speed, above the slowest class's
+        const speed = Number(/at (\d+) km\/h/.exec(inBend[0])![1]);
+        const reported = late.stats!.jumps[0];
+        expect(speed).toBe(Math.round(reported.maxSpeed));
+        expect(speed).toBeGreaterThan(reported.speed + 5);
         // bc runs south (+z): ground rising 12 % southwards takes 1.2 m of 1.5
         const rising = field((_, z) => 5 + 0.12 * Math.max(0, Math.min(200, z)), { ...SPEC, cols: 201, rows: 201 });
         const eaten = checkTrack(square(), rising, { ...LOOP, ramps: [{ edge: 'bc', s: 100, length: 10, height: 1.5 }] });

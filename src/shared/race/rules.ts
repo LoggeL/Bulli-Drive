@@ -67,6 +67,15 @@ export const LINE_WINDOW = 40;
 // Safety margin on the front grip for the speed profile, and on the brakes
 export const LINE_GRIP_MARGIN = 0.85;
 export const LINE_BRAKE_MARGIN = 0.8;
+// Crests (docs/phase-1a-design.md, 27): a car leaves a crest of vertical
+// curvature κ from v²·κ > GRAVITY on and cannot steer in the air. Where the
+// line turns by more than CREST_MAX_TURN (rad) within CREST_FLIGHT_TIME (s)
+// of flight after a crest, the bots take the crest at most at
+// √(CREST_LIFT_MARGIN · GRAVITY / κ); κ from the terrain over ±CREST_WINDOW m
+export const CREST_WINDOW = 6;
+export const CREST_LIFT_MARGIN = 0.8;
+export const CREST_FLIGHT_TIME = 0.6;
+export const CREST_MAX_TURN = 0.1;
 
 // ---- Launch ----
 
