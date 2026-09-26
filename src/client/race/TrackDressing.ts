@@ -1,12 +1,12 @@
 import * as THREE from 'three';
 import { createCourse } from '../../shared/race/progress.js';
 import { CHEVRON_POST_TOP } from '../../shared/race/raceWorld.js';
-import type { GateDef, TrackDef } from '../../shared/race/types.js';
-import { rampRearBase } from '../../shared/world/colliders.js';
-import { HILL_ROAD, MAP_RAMPS, type MapRamp } from '../../shared/world/mapFeatures.js';
+import type { GateDef, TrackDef, TrackRamp } from '../../shared/race/types.js';
+import { rampRearBase, type RampDef } from '../../shared/world/colliders.js';
+import type { MapData } from '../../shared/map/mapData.js';
 import { lightingTier } from '../render/lighting.js';
 import { Batch, rgb } from '../world/batch.js';
-import { getTerrainHeight, renderedGroundHeight } from '../world/environment.js';
+import { groundHeight } from '../world/ground.js';
 import { FINISH, PropBatch, type Finish } from '../world/furniture.js';
 import { worldMaterials } from '../world/worldMaterials.js';
 import type { GateLook } from './raceModel.js';
@@ -18,9 +18,9 @@ import { barrierPieces, chevronPosts, delineatorPosts, gateEnds, ribbonEdges } f
 // two slim masts with a fabric banner ("CP 3") and an LED strip below it
 // (the next gate glows warm white and pulses, gates passed are dim);
 // red-white water barriers across the side streets, chevron boards on two
-// posts, delineator posts along the hill road, arrows and grid boxes on
-// the road. Plus the drivable map features the race world has (the three
-// ramps of the Hill Sprint and the hill road they stand on).
+// posts, delineator posts, arrows and grid boxes on the road, and the
+// track's ramps. The map's jump ramps are drawn once for every room
+// (mapFeaturesGroup).
 //
 // Draw calls: every static piece of one material in one merged mesh
 // (props through the street furniture material, the banners, boards and
@@ -212,7 +212,7 @@ function atlasQuad(batch: Batch, center: THREE.Vector3, uAxis: THREE.Vector3, vA
 
 /** A flat mark on the ground (road paint) along yaw, length along the heading. */
 function groundMark(batch: Batch, x: number, z: number, yaw: number, width: number, length: number, cell: number, lift = 0.075): void {
-    const y = Math.max(getTerrainHeight(x, z), renderedGroundHeight(x, z)) + lift;
+    const y = groundHeight(x, z) + lift;
     // u runs to the right of the heading (-left), v along the heading
     const right = new THREE.Vector3(-Math.cos(yaw), 0, Math.sin(yaw));
     const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
@@ -220,7 +220,7 @@ function groundMark(batch: Batch, x: number, z: number, yaw: number, width: numb
 }
 
 function groundAt(x: number, z: number): number {
-    return getTerrainHeight(x, z);
+    return groundHeight(x, z);
 }
 
 // ---- Gates ----
@@ -396,16 +396,19 @@ function hints(build: GateBuild, track: TrackDef): void {
     }
 }
 
-// ---- Map features: ramps and the hill road ----
+// ---- Ramps ----
 
-function rampMesh(props: PropBatch, ramp: MapRamp): void {
-    const base = rampRearBase(ramp, (x, z) => getTerrainHeight(x, z));
+type LookedRamp = RampDef & { look?: TrackRamp['look'] };
+
+function rampMesh(props: PropBatch, ramp: LookedRamp): void {
+    const base = rampRearBase(ramp, (x, z) => groundHeight(x, z));
     const sin = Math.sin(ramp.yaw), cos = Math.cos(ramp.yaw);
     // Local (across, along) to world; across along the left axis
     const world = (across: number, along: number) => ({ x: ramp.x + cos * across + sin * along, z: ramp.z - sin * across + cos * along });
     const surface = (along: number) => base + ramp.height * (along / ramp.length + 0.5);
     const half = ramp.width / 2, halfL = ramp.length / 2;
-    const deck = ramp.look === 'steel' ? STEEL_DECK : EARTH;
+    const steel = ramp.look === undefined || ramp.look === 'steel';
+    const deck = steel ? STEEL_DECK : EARTH;
     const steps = 8;
     const positions: number[] = [];
     const quadAt = (p: THREE.Vector3[]) => {
@@ -435,8 +438,8 @@ function rampMesh(props: PropBatch, ramp: MapRamp): void {
     props.add(g, deck);
     // The lip: a hazard bar on the steel ramp, a timber edge on the earth ones
     const lip = world(0, halfL - 0.15);
-    boxAt(props, ramp.width, 0.14, 0.32, lip.x, surface(halfL) - 0.1, lip.z, ramp.yaw, ramp.look === 'steel' ? HAZARD_YELLOW : FINISH.wood);
-    if (ramp.look === 'steel') {
+    boxAt(props, ramp.width, 0.14, 0.32, lip.x, surface(halfL) - 0.1, lip.z, ramp.yaw, steel ? HAZARD_YELLOW : FINISH.wood);
+    if (steel) {
         // Anti-slip ribs across the steel deck
         for (let k = 1; k <= 7; k++) {
             const along = -halfL + k * ramp.length / 8;
@@ -444,7 +447,7 @@ function rampMesh(props: PropBatch, ramp: MapRamp): void {
             boxAt(props, ramp.width - 0.3, 0.05, 0.08, at.x, surface(along) - 0.01, at.z, ramp.yaw, FINISH.galvanized);
         }
     }
-    if (ramp.look === 'earth') {
+    if (!steel) {
         // Planks across the upper half of the deck
         for (let k = 1; k <= 4; k++) {
             const along = halfL - 0.5 - k * 0.9;
@@ -454,62 +457,21 @@ function rampMesh(props: PropBatch, ramp: MapRamp): void {
     }
 }
 
-/** The hill road: the rounded line of the Hill Sprint outside the city, 10 m wide, with its paint. */
-function hillRoad(asphalt: Batch, paint: Batch): void {
-    const line = createCourse({
-        id: 'hill-sprint', name: '', kind: 'sprint', laps: 1, mapVersion: 0, trackVersion: 0,
-        centerline: HILL_ROAD.line.map(p => ({ x: p.x, z: p.z })),
-        lineOptions: { radius: 40, apexShift: 0 }, gates: [], grid: [], hints: [],
-        minimap: { minX: 0, maxX: 1, minZ: 0, maxZ: 1 }
-    }).line;
-    const points = line.points.map(p => ({ x: p.x, z: p.z }));
-    const lift = (x: number, z: number) => Math.max(getTerrainHeight(x, z), renderedGroundHeight(x, z)) + 0.06;
-    const strip = (edges: { left: { x: number; z: number }; right: { x: number; z: number } }[], batch: Batch, yLift: number, uv: boolean) => {
-        const positions: number[] = [];
-        const index: number[] = [];
-        edges.forEach((e, i) => {
-            positions.push(e.left.x, lift(e.left.x, e.left.z) + yLift, e.left.z, e.right.x, lift(e.right.x, e.right.z) + yLift, e.right.z);
-            if (i > 0) {
-                const a = (i - 1) * 2, b = a + 1, c = i * 2, d = c + 1;
-                // Up-facing (counter-clockwise seen from above): left, right, next left
-                index.push(a, b, c, b, d, c);
-            }
-        });
-        const g = new THREE.BufferGeometry();
-        g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-        g.setIndex(index);
-        g.computeVertexNormals();
-        batch.add(g, null, [1, 1, 1], uv ? { box: 3 } : null);
-    };
-    strip(ribbonEdges(points, HILL_ROAD.width), asphalt, 0, true);
-    // Edge lines and a dashed centre line
-    const lineEdges = ribbonEdges(points, 9.1);
-    for (const side of ['left', 'right'] as const) strip(ribbonEdges(lineEdges.map(e => e[side]), 0.16), paint, 0.012, false);
-    for (let i = 0; i + 1 < points.length; i += 5) {
-        const dash = points.slice(i, Math.min(points.length, i + 3));
-        if (dash.length > 1) strip(ribbonEdges(dash, 0.14), paint, 0.012, false);
-    }
-}
-
 let mapFeatures: THREE.Group | null = null;
 
-/** The ramps and the hill road (built once; the race world drives on them). */
-export function mapFeaturesGroup(): THREE.Group {
-    if (mapFeatures) return mapFeatures;
+/**
+ * The map's jump ramps (built once per page; every room's world has them):
+ * null until a map is given.
+ */
+export function mapFeaturesGroup(map: MapData | null): THREE.Group | null {
+    if (mapFeatures || !map) return mapFeatures;
     const M = worldMaterials();
     const group = new THREE.Group();
-    group.name = 'race-map-features';
-    const props = new PropBatch('race-ramps');
-    for (const ramp of MAP_RAMPS) rampMesh(props, ramp);
+    group.name = 'map-ramps';
+    const props = new PropBatch('map-ramps');
+    for (const ramp of map.ramps) rampMesh(props, ramp);
     const rampMeshObject = props.mesh(M.furniture, { cast: lightingTier() !== 'software' });
     if (rampMeshObject) group.add(rampMeshObject);
-    const asphalt = new Batch('race-hill-road');
-    const paint = new Batch('race-hill-road-paint');
-    hillRoad(asphalt, paint);
-    const road = asphalt.mesh(M.asphalt, { cast: false });
-    const lines = paint.mesh(M.markings, { cast: false });
-    if (road) group.add(road);
-    if (lines) group.add(lines);
     mapFeatures = group;
     return group;
 }
@@ -541,6 +503,8 @@ export class TrackDressing {
             else portal(build, gate, i, gate.visual !== 'finish');
         });
         hints(build, track);
+        // The track's own ramps (the map's are in mapFeaturesGroup)
+        for (const ramp of track.ramps) rampMesh(build.props, ramp);
         const cast = lightingTier() !== 'software';
         const props = build.props.mesh(M.furniture, { cast });
         if (props) this.group.add(props);

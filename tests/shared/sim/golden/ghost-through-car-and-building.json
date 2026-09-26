@@ -34,7 +34,8 @@
           "wasGhost": true,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         },
         "parked": {
           "x": 0,
@@ -66,7 +67,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         }
       }
     },
@@ -103,7 +105,8 @@
           "wasGhost": true,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         },
         "parked": {
           "x": 0,
@@ -135,7 +138,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         }
       }
     },
@@ -172,7 +176,8 @@
           "wasGhost": true,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         },
         "parked": {
           "x": 0,
@@ -204,7 +209,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         }
       }
     },
@@ -241,7 +247,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         },
         "parked": {
           "x": 0,
@@ -273,7 +280,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         }
       }
     },
@@ -310,7 +318,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         },
         "parked": {
           "x": 0,
@@ -342,7 +351,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         }
       }
     },
@@ -379,7 +389,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         },
         "parked": {
           "x": 0,
@@ -411,7 +422,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         }
       }
     }

@@ -102,5 +102,9 @@ describe('the race camera', () => {
         new ChaseCamera(RACE_CAMERA).update(1 / 60, wide, target, true);
         new ChaseCamera(RACE_CAMERA).update(1 / 60, tall, target, true);
         expect(horizontal(tall.position, target.position)).toBeGreaterThan(horizontal(wide.position, target.position) * 1.3);
+        // But no higher than 5 m: the signal heads over the lanes hang from
+        // 5.06 m, a camera above them looks down through their arms
+        expect(tall.position.y).toBeLessThanOrEqual(5 + 1e-9);
+        expect(tall.position.y).toBeGreaterThanOrEqual(wide.position.y - 1e-9);
     });
 });

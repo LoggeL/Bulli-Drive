@@ -1,6 +1,9 @@
 // Static collision world of the v2 driving simulation (docs/phase-1a-design.md,
 // section 7): colliders in the XZ plane with a height, a static uniform
-// grid for the broad phase, sandbox ramps and the ground height.
+// grid for the broad phase, sandbox ramps and the ground height. A world
+// stands either on the sine terrain of a TerrainConfig (the old city, the
+// sandbox) or on a ground model: the baked heightfield of a curated map
+// with its surfaces, water level and grid (docs/phase-3-design.md, 6 to 8).
 
 import type { TerrainConfig } from '../protocol.js';
 import type { VehicleState } from '../sim/types.js';
@@ -9,14 +12,30 @@ import { getTerrainHeight } from './terrain.js';
 // top is the height of the upper edge above base. A car whose underside is
 // at or above base + top passes over the collider. ramp marks the edge walls
 // of that ramp (index into SimWorld.ramps, see rampEdgeColliders).
+//
+// segment: a capsule of radius r around the line a-b (guard rails, fences,
+// the map border; phase 3, E8); x, z is its midpoint. obox: a box turned in
+// the XZ plane (buildings along oblique roads, containers, oblique barrier
+// rows); (ux, uz) is the unit vector of its local z axis, along which it
+// extends hd, and its local x axis is (uz, -ux) with the extent hw. With
+// (ux, uz) = (sin yaw, cos yaw) that is the sim's forward and left.
 export type Collider =
     | { kind: 'circle'; x: number; z: number; r: number; base: number; top: number; ramp?: number }
-    | { kind: 'box'; x: number; z: number; hw: number; hd: number; base: number; top: number; ramp?: number }; // axis-aligned
+    | { kind: 'box'; x: number; z: number; hw: number; hd: number; base: number; top: number; ramp?: number } // axis-aligned
+    | { kind: 'segment'; x: number; z: number; ax: number; az: number; bx: number; bz: number; r: number; base: number; top: number; ramp?: number }
+    | { kind: 'obox'; x: number; z: number; hw: number; hd: number; ux: number; uz: number; base: number; top: number; ramp?: number };
 
-// What the world builder provides; createSimWorld adds base
+// The shapes of phase 1a (circle and axis-aligned box), e.g. of the old city
+export type BoxOrCircleInput = Extract<ColliderInput, { kind: 'circle' | 'box' }>;
+export type BoxInput = Extract<ColliderInput, { kind: 'box' }>;
+
+// What the world builder provides; createSimWorld adds base (and a
+// segment's midpoint, and normalises an obox's axis)
 export type ColliderInput =
     | { kind: 'circle'; x: number; z: number; r: number; top: number; ramp?: number }
-    | { kind: 'box'; x: number; z: number; hw: number; hd: number; top: number; ramp?: number };
+    | { kind: 'box'; x: number; z: number; hw: number; hd: number; top: number; ramp?: number }
+    | { kind: 'segment'; ax: number; az: number; bx: number; bz: number; r: number; top: number }
+    | { kind: 'obox'; x: number; z: number; hw: number; hd: number; ux: number; uz: number; top: number; ramp?: number };
 
 // Wedge rising along its heading (sin yaw, cos yaw) from 0 at the rear edge
 // to height at the front edge, where cars take off. Its base is the terrain
@@ -24,49 +43,55 @@ export type ColliderInput =
 // flush with the ground behind it (docs/phase-2-design.md, 5.5).
 export interface RampDef { x: number; z: number; yaw: number; width: number; length: number; height: number }
 
-// Straight roads a reset puts the car back onto (the city's road grid):
-// centre lines x = const running from minZ to maxZ and z = const running
-// from minX to maxX. A car farther than snapRange from every line is reset
-// where it is.
-export interface RoadGrid {
-    xLines: number[];
-    zLines: number[];
-    minX: number; maxX: number;
-    minZ: number; maxZ: number;
-    snapRange: number;
-}
-
-// Collider heights (top) of the obstacle sources in client/world/city.ts and
-// environment.ts (section 7.1). Infinity = cannot be jumped over.
-export const COLLIDER_TOPS = {
-    building: Infinity,
-    bench: 1.2,
-    pond: 0.8,
-    parkTree: Infinity,
-    palm: Infinity,
-    lamp: 5.5,
-    signPost: 3.3,
-    planter: 1.0,
-    parasol: 2.8,
-    fountain: 1.5,
-    tree: Infinity,
-    // Rocks: top = rockPerSize × rockSize
-    rockPerSize: 0.9
-} as const;
-
 // ---- Spatial grid ----
+
+// A square grid of `cells` × `cells` cells of `cellSize` m from `origin`
+// (the same on both axes)
+export interface ColliderGridSpec {
+    origin: number;
+    cellSize: number;
+    cells: number;
+}
 
 export const GRID_CELL_SIZE = 16;
 export const GRID_ORIGIN = -512;
 export const GRID_CELLS = 64;
+// The old city and the sandbox: 64 × 64 cells over 1024 m
+export const DEFAULT_GRID: ColliderGridSpec = { origin: GRID_ORIGIN, cellSize: GRID_CELL_SIZE, cells: GRID_CELLS };
 
-function cellCoord(value: number): number {
-    const cell = Math.floor((value - GRID_ORIGIN) / GRID_CELL_SIZE);
-    return cell < 0 ? 0 : cell >= GRID_CELLS ? GRID_CELLS - 1 : cell;
+// Half extents of a collider's bounding box along x and z (module scratch)
+let extentX = 0;
+let extentZ = 0;
+export function colliderExtent(collider: Collider): void {
+    switch (collider.kind) {
+        case 'circle':
+            extentX = extentZ = collider.r;
+            return;
+        case 'box':
+            extentX = collider.hw;
+            extentZ = collider.hd;
+            return;
+        case 'segment':
+            extentX = Math.abs(collider.bx - collider.ax) / 2 + collider.r;
+            extentZ = Math.abs(collider.bz - collider.az) / 2 + collider.r;
+            return;
+        case 'obox': {
+            const ux = Math.abs(collider.ux), uz = Math.abs(collider.uz);
+            // Local x (uz, -ux) · hw plus local z (ux, uz) · hd
+            extentX = uz * collider.hw + ux * collider.hd;
+            extentZ = ux * collider.hw + uz * collider.hd;
+        }
+    }
 }
 
-// Uniform 64 × 64 grid in CSR layout, built once. Colliders outside the
-// covered 1024 m square land in the border cells, so queries stay complete.
+/** Bounding box of a collider: [minX, minZ, maxX, maxZ]. */
+export function colliderBounds(collider: Collider): [number, number, number, number] {
+    colliderExtent(collider);
+    return [collider.x - extentX, collider.z - extentZ, collider.x + extentX, collider.z + extentZ];
+}
+
+// Uniform grid in CSR layout, built once. Colliders outside the covered
+// square land in the border cells, so queries stay complete.
 export class SpatialGrid {
     // items[cellStart[c] .. cellStart[c + 1]) are the colliders of cell c,
     // ascending by index
@@ -74,17 +99,24 @@ export class SpatialGrid {
     readonly items: Int32Array;
     private readonly stamps: Int32Array;
     private stamp = 0;
+    private readonly origin: number;
+    private readonly cellSize: number;
+    private readonly cells: number;
 
-    constructor(colliders: readonly Collider[]) {
-        const cellCount = GRID_CELLS * GRID_CELLS;
+    constructor(colliders: readonly Collider[], spec: ColliderGridSpec = DEFAULT_GRID) {
+        this.origin = spec.origin;
+        this.cellSize = spec.cellSize;
+        this.cells = spec.cells;
+        const cells = this.cells;
+        const cellCount = cells * cells;
         const counts = new Int32Array(cellCount + 1);
         const forEachCell = (collider: Collider, visit: (cell: number) => void) => {
-            const hx = collider.kind === 'circle' ? collider.r : collider.hw;
-            const hz = collider.kind === 'circle' ? collider.r : collider.hd;
-            const x0 = cellCoord(collider.x - hx), x1 = cellCoord(collider.x + hx);
-            const z0 = cellCoord(collider.z - hz), z1 = cellCoord(collider.z + hz);
+            colliderExtent(collider);
+            const hx = extentX, hz = extentZ;
+            const x0 = this.cellCoord(collider.x - hx), x1 = this.cellCoord(collider.x + hx);
+            const z0 = this.cellCoord(collider.z - hz), z1 = this.cellCoord(collider.z + hz);
             for (let cz = z0; cz <= z1; cz++) {
-                for (let cx = x0; cx <= x1; cx++) visit(cz * GRID_CELLS + cx);
+                for (let cx = x0; cx <= x1; cx++) visit(cz * cells + cx);
             }
         };
         for (const collider of colliders) forEachCell(collider, cell => { counts[cell + 1]++; });
@@ -94,6 +126,11 @@ export class SpatialGrid {
         const fill = counts.slice(0, cellCount);
         colliders.forEach((collider, index) => forEachCell(collider, cell => { this.items[fill[cell]++] = index; }));
         this.stamps = new Int32Array(colliders.length);
+    }
+
+    private cellCoord(value: number): number {
+        const cell = Math.floor((value - this.origin) / this.cellSize);
+        return cell < 0 ? 0 : cell >= this.cells ? this.cells - 1 : cell;
     }
 
     // Writes the indices of all colliders whose cells overlap the AABB into
@@ -107,12 +144,13 @@ export class SpatialGrid {
             this.stamp = 0;
         }
         const stamp = ++this.stamp;
-        const x0 = cellCoord(minX), x1 = cellCoord(maxX);
-        const z0 = cellCoord(minZ), z1 = cellCoord(maxZ);
+        const x0 = this.cellCoord(minX), x1 = this.cellCoord(maxX);
+        const z0 = this.cellCoord(minZ), z1 = this.cellCoord(maxZ);
+        const cells = this.cells;
         let count = 0;
         for (let cz = z0; cz <= z1; cz++) {
             for (let cx = x0; cx <= x1; cx++) {
-                const cell = cz * GRID_CELLS + cx;
+                const cell = cz * cells + cx;
                 for (let k = this.cellStart[cell], end = this.cellStart[cell + 1]; k < end; k++) {
                     const index = this.items[k];
                     if (this.stamps[index] === stamp) continue;
@@ -137,20 +175,50 @@ export class SpatialGrid {
 
 // ---- World ----
 
+/**
+ * The ground of a curated map (docs/phase-3-design.md, 6 to 8): the height
+ * (the baked heightfield), the surface ID under a point (SURFACE in
+ * shared/map/types.ts), the water level and the grid of the colliders.
+ */
+export interface GroundModel {
+    height(x: number, z: number): number;
+    surface(x: number, z: number): number;
+    waterLevel: number;
+    // A car whose underside falls below this is reset (fell out of the map)
+    fallLimit: number;
+    // Half side of the square the cars stay in (the world border)
+    bound: number;
+    grid: ColliderGridSpec;
+}
+
 export interface SimWorld {
-    terrain: TerrainConfig;
+    // The sine terrain of the old city and the sandbox, null on a map's ground
+    terrain: TerrainConfig | null;
     colliders: Collider[];       // index = deterministic order
     grid: SpatialGrid;
     ramps: RampDef[];
     rampBases: number[];         // height of each ramp's rear edge (terrain there)
-    roads: RoadGrid | null;      // reset target, null = reset in place
-    // Race world only (docs/phase-2-design.md, 5.6): the reset target on the
-    // racing line (instead of roads) and the slipstream step in stepWorld
+    // The reset target: the racing line of a race world
+    // (docs/phase-2-design.md, 5.6), the nearest road of a map
+    // (docs/phase-3-design.md, 8.3). Returns false to reset in place; a
+    // world without it resets in place.
     resetPose?: (s: VehicleState) => boolean;
+    // Race world only: the slipstream step in stepWorld
     slipstream?: boolean;
     bound: number;               // terrain.size/2 - 2 = 498 (the old client clamp)
-    groundHeight(x: number, z: number): number;   // max(getTerrainHeight, ramps)
-    terrainHeight(x: number, z: number): number;  // getTerrainHeight alone
+    // The world border the cars' circles stay inside, even a Party ghost:
+    // ±bound by default; the Party's arena (docs/phase-3-design.md, 12)
+    border: { minX: number; maxX: number; minZ: number; maxZ: number };
+    groundHeight(x: number, z: number): number;   // max(terrain, ramps)
+    terrainHeight(x: number, z: number): number;  // the terrain alone
+    // Surface ID at (x, z) (SURFACE in shared/map/types.ts); always 0
+    // (asphalt) on the sine terrain
+    surfaceAt(x: number, z: number): number;
+    // Water level; -Infinity: no water. A car whose underside is WATER_DEPTH
+    // below it is in the water (vehicle.ts)
+    waterLevel: number;
+    // A car below this is reset; -Infinity on the sine terrain
+    fallLimit: number;
     // Index of the ramp whose surface is the ground at (x, z), -1 = terrain
     rampAt(x: number, z: number): number;
     // Scratch buffer for grid queries of the collision code
@@ -212,7 +280,7 @@ const RAMP_SIDE_PIECE = 4;
  */
 export function rampEdgeColliders(
     ramp: RampDef, index: number, front = true, terrainHeight: (x: number, z: number) => number = FLAT_GROUND
-): ColliderInput[] {
+): BoxInput[] {
     const quarter = ramp.yaw / (Math.PI / 2);
     if (Math.abs(quarter - Math.round(quarter)) > 1e-6) {
         throw new Error('ramp edge colliders need a ramp facing along an axis');
@@ -221,7 +289,7 @@ export function rampEdgeColliders(
     const fx = Math.round(Math.sin(ramp.yaw)), fz = Math.round(Math.cos(ramp.yaw));
     const lx = fz, lz = -fx;
     const t = RAMP_EDGE_THICKNESS;
-    const out: ColliderInput[] = [];
+    const out: BoxInput[] = [];
     const base = rampRearBase(ramp, terrainHeight);
     // A wall centred at along/across (ramp frame) with half extents; height
     // is the ramp's height above its base at the wall's upper end
@@ -251,44 +319,95 @@ export function rampEdgeColliders(
     return out;
 }
 
+function isTerrainConfig(ground: TerrainConfig | GroundModel): ground is TerrainConfig {
+    return typeof (ground as TerrainConfig).frequency1 === 'number';
+}
+
+const ASPHALT = (): number => 0;
+
 export function createSimWorld(
-    terrain: TerrainConfig,
+    ground: TerrainConfig | GroundModel,
     colliders: readonly ColliderInput[],
-    ramps: readonly RampDef[] = [],
-    roads: RoadGrid | null = null
+    ramps: readonly RampDef[] = []
 ): SimWorld {
     const rampList = ramps.map(ramp => ({ ...ramp }));
-    const terrainHeight = (x: number, z: number): number => getTerrainHeight(terrain, x, z);
+    const terrain = isTerrainConfig(ground) ? ground : null;
+    const terrainHeight = terrain
+        ? (x: number, z: number): number => getTerrainHeight(terrain, x, z)
+        : (ground as GroundModel).height;
     // Ramps start at the terrain height of their rear edge
     const rampBases = rampList.map(ramp => rampRearBase(ramp, terrainHeight));
+    // Per ramp: heading, and the radius of a circle around its footprint
+    // (a cheap test that skips the far ones; the result is the same)
+    const count = rampList.length;
+    const sins = rampList.map(ramp => Math.sin(ramp.yaw));
+    const coss = rampList.map(ramp => Math.cos(ramp.yaw));
+    const reach = rampList.map(ramp => Math.sqrt(ramp.length * ramp.length + ramp.width * ramp.width) / 2);
+    // Height of ramp i's surface at (x, z), or -Infinity off its footprint
+    const onRamp = (i: number, x: number, z: number): number => {
+        const ramp = rampList[i];
+        const dx = x - ramp.x, dz = z - ramp.z;
+        if (dx > reach[i] || dx < -reach[i] || dz > reach[i] || dz < -reach[i]) return -Infinity;
+        const sin = sins[i], cos = coss[i];
+        const along = dx * sin + dz * cos;
+        const across = dx * cos - dz * sin;
+        if (Math.abs(across) > ramp.width / 2 || Math.abs(along) > ramp.length / 2) return -Infinity;
+        return rampBases[i] + ramp.height * (along / ramp.length + 0.5);
+    };
     const groundHeight = (x: number, z: number): number => {
-        let height = getTerrainHeight(terrain, x, z);
-        for (let i = 0; i < rampList.length; i++) {
-            const h = rampHeight(rampList[i], rampBases[i], x, z);
+        let height = terrainHeight(x, z);
+        for (let i = 0; i < count; i++) {
+            const h = onRamp(i, x, z);
             if (h > height) height = h;
         }
         return height;
     };
     const rampAt = (x: number, z: number): number => {
-        let height = getTerrainHeight(terrain, x, z), found = -1;
-        for (let i = 0; i < rampList.length; i++) {
-            const h = rampHeight(rampList[i], rampBases[i], x, z);
+        let height = terrainHeight(x, z), found = -1;
+        for (let i = 0; i < count; i++) {
+            const h = onRamp(i, x, z);
             if (h > height) { height = h; found = i; }
         }
         return found;
     };
-    const list: Collider[] = colliders.map(input => ({ ...input, base: groundHeight(input.x, input.z) }));
+    const list: Collider[] = colliders.map(input => placeCollider(input, groundHeight));
+    const model = terrain ? null : ground as GroundModel;
     return {
         terrain,
         colliders: list,
-        grid: new SpatialGrid(list),
+        grid: new SpatialGrid(list, model ? model.grid : DEFAULT_GRID),
         ramps: rampList,
         rampBases,
-        roads,
-        bound: terrain.size / 2 - 2,
+        bound: terrain ? terrain.size / 2 - 2 : model!.bound,
+        border: borderOf(terrain ? terrain.size / 2 - 2 : model!.bound),
         groundHeight,
         terrainHeight,
+        surfaceAt: model ? model.surface : ASPHALT,
+        waterLevel: model ? model.waterLevel : -Infinity,
+        fallLimit: model ? model.fallLimit : -Infinity,
         rampAt,
         queryBuffer: new Int32Array(list.length)
     };
+}
+
+function borderOf(bound: number): SimWorld['border'] {
+    return { minX: -bound, maxX: bound, minZ: -bound, maxZ: bound };
+}
+
+/**
+ * A collider input on the ground: base is the ground height at its centre;
+ * a segment stands on the higher of its two ends (so a rail on a slope is
+ * never lower than top at either end) and gets its midpoint; an obox's
+ * axis is normalised.
+ */
+export function placeCollider(input: ColliderInput, groundHeight: (x: number, z: number) => number): Collider {
+    if (input.kind === 'segment') {
+        const base = Math.max(groundHeight(input.ax, input.az), groundHeight(input.bx, input.bz));
+        return { ...input, x: (input.ax + input.bx) / 2, z: (input.az + input.bz) / 2, base };
+    }
+    if (input.kind === 'obox') {
+        const length = Math.sqrt(input.ux * input.ux + input.uz * input.uz);
+        return { ...input, ux: input.ux / length, uz: input.uz / length, base: groundHeight(input.x, input.z) };
+    }
+    return { ...input, base: groundHeight(input.x, input.z) };
 }

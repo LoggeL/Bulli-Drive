@@ -209,7 +209,11 @@ describe('textures (public/textures)', () => {
             expect(material.license, role).toBe('CC0-1.0');
             expect(String(material.source)).toMatch(/^https:\/\/polyhaven\.com\/a\//);
             expect(material.tileMeters, role).toBeGreaterThan(0);
+            // Every published map is shipped, the albedo always (the lawns
+            // publish only theirs, tools/textures/textures.json)
+            expect(material.albedo, `${role} albedo`).toBeDefined();
             for (const map of ['albedo', 'normal', 'arm']) {
+                if (material[map] === undefined) continue;
                 expect(textureManifest.textures[material[map] as string], `${role} ${map}`).toBeDefined();
             }
         }

@@ -34,7 +34,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         },
         "b": {
           "x": 5.103818120989983e-15,
@@ -66,7 +67,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         }
       }
     },
@@ -103,7 +105,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         },
         "b": {
           "x": 5.857093282326351e-15,
@@ -135,7 +138,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         }
       }
     },
@@ -172,7 +176,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         },
         "b": {
           "x": 6.440580995621889e-15,
@@ -204,7 +209,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         }
       }
     },
@@ -241,7 +247,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         },
         "b": {
           "x": 7.079104493361678e-15,
@@ -273,7 +280,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         }
       }
     },
@@ -310,7 +318,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         },
         "b": {
           "x": 7.774051680529402e-15,
@@ -342,7 +351,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         }
       }
     },
@@ -379,7 +389,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         },
         "b": {
           "x": 8.530856792445177e-15,
@@ -411,7 +422,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         }
       }
     }

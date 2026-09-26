@@ -1,8 +1,8 @@
 import type { BotLevel, TrackId } from '../../shared/race/types.js';
-import { TRACKS } from '../../shared/race/tracks/index.js';
 import { isTrackId } from '../../shared/race/tracks/index.js';
 import type { HudView, LobbyView, ResultsView } from './raceModel.js';
 import { drawTrackPreview } from './trackMap.js';
+import { gameTrack } from '../map/gameMap.js';
 
 // The race HUD and the lobby and results sheets in the page (index.html,
 // docs/phase-2-design.md 17.2 and 17.5): renders the views of raceModel.ts
@@ -199,7 +199,7 @@ export function renderLobby(view: LobbyView | null, carType: string): void {
         previewTrack = view.trackId;
         const canvas = el<HTMLCanvasElement>('race-track-preview');
         if (canvas) {
-            drawTrackPreview(canvas, TRACKS[view.trackId]);
+            drawTrackPreview(canvas, gameTrack(view.trackId));
             setAttr(canvas, 'aria-label', `Map of ${view.trackName}`);
         }
     }

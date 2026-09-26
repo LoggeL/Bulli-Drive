@@ -13,7 +13,9 @@ import {
 // v3 (docs/phase-2-design.md, 16): draft in the self block, launch/bogged
 // mod bits, race-ghost and drafting car flags; the race and time trial
 // rooms with their messages (JSON, additive).
-export const PROTOCOL_VERSION = 3;
+// v4 (docs/phase-3-design.md, M3): the map Bulli Bay (roomState.world names
+// the map instead of a seed), the water counter in the self block.
+export const PROTOCOL_VERSION = 4;
 
 // ---------- DTOs ----------
 
@@ -43,35 +45,6 @@ export interface CoinData {
     x: number;
     z: number;
     collected: boolean;
-}
-
-export interface TreeData {
-    id: number;
-    x: number;
-    z: number;
-    height: number;
-}
-
-export interface BuildingData {
-    x: number;
-    z: number;
-    width: number;
-    depth: number;
-    height: number;
-    color: number;
-}
-
-export interface RoadData {
-    x: number;
-    z: number;
-    width: number;
-    length: number;
-    rotation: number;
-}
-
-export interface CityData {
-    buildings: BuildingData[];
-    roads: RoadData[];
 }
 
 // Room types (docs/phase-1b-design.md, section 2): the Party with coins,
@@ -119,10 +92,10 @@ export interface MemberInfo {
     bot?: boolean;
 }
 
-// The map is generated on both sides from the seed; the hash proves the
-// client built the same world and colliders (3.2)
+// Both sides build the map from the same sources and terrain.bhf; the hash
+// proves the client built the same world and colliders (3.2)
 export interface WorldRef {
-    seed: number;
+    mapId: string;
     mapVersion: number;
     worldHash: string;
 }

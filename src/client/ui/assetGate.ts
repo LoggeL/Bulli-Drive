@@ -1,5 +1,6 @@
 import { models, whenModelsReady } from '../assets/gameModels.js';
 import { whenWorldTexturesLoaded, worldTextureProgress } from '../world/textures.js';
+import { whenKitReady } from '../world/mapScene.js';
 
 // The start button waits for the world textures and the car models (loaded
 // and compiled), so nobody starts driving through an untextured world in a
@@ -14,7 +15,7 @@ let ready = false;
 /** Resolves when the world textures and car models are in (or the wait timed out). */
 export async function waitForGameAssets(button: HTMLElement | null, timeoutMs = ASSET_WAIT_MS): Promise<'ready' | 'timeout'> {
     if (ready) return 'ready';
-    const assets = Promise.all([whenWorldTexturesLoaded(), whenModelsReady()]).then(() => { ready = true; });
+    const assets = Promise.all([whenWorldTexturesLoaded(), whenModelsReady(), whenKitReady()]).then(() => { ready = true; });
     const label = button?.querySelector('.btn-label') as HTMLElement | null;
     const original = label?.textContent ?? '';
     const show = () => {

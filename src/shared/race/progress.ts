@@ -11,7 +11,7 @@ import { createProjection, lineDelta, pointAt, projectGlobal, projectNear, type 
 import { crossGate, crossingTicks, gateArcLengths } from './gates.js';
 import { racingLine } from './racingLine.js';
 import {
-    MISSED_GATE_DISTANCE, OFF_LINE_DISTANCE, RESET_BEFORE_GATE, WRONG_WAY_BACKTRACK, WRONG_WAY_DOT, WRONG_WAY_ENTER_TICKS,
+    MISSED_GATE_DISTANCE, OFF_LINE_DISTANCE, RESET_BEFORE_GATE, RESET_BEHIND_MAX, WRONG_WAY_BACKTRACK, WRONG_WAY_DOT, WRONG_WAY_ENTER_TICKS,
     WRONG_WAY_EXIT_DOT, WRONG_WAY_EXIT_TICKS, WRONG_WAY_MIN_SPEED
 } from './rules.js';
 import type { RacerStatus, TrackDef } from './types.js';
@@ -25,16 +25,26 @@ export interface Course {
     // Distance along the line from the gate before to gate k (circuit: gate
     // n-1 before gate 0; sprint: the line's start before gate 0)
     legLength: number[];
+    // Surface ID under each point of the line (SURFACE in map/types.ts),
+    // null where the course was built without its world (the bots plan
+    // their speed with it, docs/phase-3-design.md, 8.1)
+    surfaces: Uint8Array | null;
 }
 
-export function createCourse(track: TrackDef, line: Polyline = racingLine(track)): Course {
+/**
+ * A track's course. With the surface of the world it is raced in (the
+ * race world's surfaceAt), the course knows the surface under every point
+ * of its line.
+ */
+export function createCourse(track: TrackDef, line: Polyline = racingLine(track), surfaceAt?: (x: number, z: number) => number): Course {
     const gateS = gateArcLengths(track, line);
     const n = gateS.length;
     const legLength = gateS.map((s, k) => {
         if (k > 0) return s - gateS[k - 1];
         return track.kind === 'circuit' ? s - gateS[n - 1] + line.length : s;
     });
-    return { track, line, gateS, legLength };
+    const surfaces = surfaceAt ? Uint8Array.from(line.points, p => surfaceAt(p.x, p.z)) : null;
+    return { track, line, gateS, legLength, surfaces };
 }
 
 export interface RaceProgress {
@@ -226,9 +236,13 @@ const resetScratch: Projection = createProjection();
  * The server's check of a reset onto the racing line (10.3): the sim puts
  * a reset car on the nearest point of the line, which may lie past the
  * next gate (a shortcut over a parallel leg). Then the car goes back to
- * RESET_BEFORE_GATE before that gate, facing along the line, at rest.
- * Returns whether it moved the car. The room and the ghost replay run it
- * in the same place of the tick.
+ * RESET_BEFORE_GATE before that gate, facing along the line, at rest. The
+ * nearest point may also lie far behind the racer, on a leg it drove long
+ * ago (a car that spun off the slalom of the Dune Rally towards the leg
+ * before): more than RESET_BEHIND_MAX behind its own place on the line (the
+ * last tick's, p.sLine), it goes to that place instead. Returns whether it
+ * moved the car. The room and the ghost replay run it in the same place of
+ * the tick.
  */
 export function resetBeforeNextGate(p: RaceProgress, course: Course, s: VehicleState, world: SimWorld): boolean {
     if (p.status !== 'racing') return false;
@@ -237,9 +251,13 @@ export function resetBeforeNextGate(p: RaceProgress, course: Course, s: VehicleS
     const line = course.line;
     const at = projectGlobal(line, s.x, s.z, resetScratch).s;
     const gateS = course.gateS[k];
-    const past = line.closed ? lineDelta(line, gateS, at) > 0 : at > gateS;
-    if (!past) return false;
-    const back = pointAt(line, gateS - RESET_BEFORE_GATE, resetScratch);
+    const beforeGate = gateS - RESET_BEFORE_GATE;
+    const ahead = (from: number, to: number) => line.closed ? lineDelta(line, from, to) : to - from;
+    let target: number;
+    if (ahead(gateS, at) > 0) target = beforeGate;
+    else if (p.lineIndex >= 0 && ahead(at, p.sLine) > RESET_BEHIND_MAX) target = ahead(beforeGate, p.sLine) > 0 ? beforeGate : p.sLine;
+    else return false;
+    const back = pointAt(line, target, resetScratch);
     placeVehicle(s, world, back.x, back.z, Math.atan2(back.tx, back.tz));
     return true;
 }

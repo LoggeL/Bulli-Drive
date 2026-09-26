@@ -46,6 +46,7 @@ export interface VehicleState {
     scale: number;         // 1..MEGA_SCALE, eases
     prevButtons: number;   // edge detection
     draft: number;         // 0..1 slipstream strength, rate limited (race world only)
+    waterTicks: number;    // ticks in the water (docs/phase-3-design.md, 7), saturates at 255
 }
 
 export interface VehicleParams {
@@ -142,7 +143,8 @@ export function createVehicleState(): VehicleState {
         wasGhost: false,
         scale: 1,
         prevButtons: 0,
-        draft: 0
+        draft: 0,
+        waterTicks: 0
     };
 }
 
@@ -175,6 +177,7 @@ export function copyVehicleState(dst: VehicleState, src: VehicleState): VehicleS
     dst.scale = src.scale;
     dst.prevButtons = src.prevButtons;
     dst.draft = src.draft;
+    dst.waterTicks = src.waterTicks;
     return dst;
 }
 

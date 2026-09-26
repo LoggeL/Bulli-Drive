@@ -1,6 +1,6 @@
 # Plan: Bulli Drive als Open-World-Multiplayer-Rennspiel
 
-**Stand:** 2026-09-24 · **Aktuelle Phase:** Phase 2 (Rennen) auf `game/phase-2-racing` spielbar, offen sind Schritt 4 und der Playtest ([`phase-2-design.md`](phase-2-design.md), Abschnitt 25). Davor: Phase 1b auf dem Branch fertig (Branch `net/phase-1b`, Spezifikation und Stand: [`phase-1b-design.md`](phase-1b-design.md)): Server-Sim, Protokoll v2 und Client-Prediction stehen, die Legacy-Physik und `?physics=legacy` sind gelöscht; Reconnect mit 30 s Grace, Graceful Shutdown mit Resume-Ticket, `/healthz` mit Docker-`HEALTHCHECK` und die Dev-Netsim sind da (Betrieb: [`ops.md`](ops.md)); Bot-Clients (`npm run bots`, `npm run test:bots` in der CI) und die Messung mit 32 Bots belegen die Budgets. Offen sind nur Messungen auf echten Geräten und der Playtest Desktop gegen Handy. Phase 1a ist live, v2 ist die einzige Physik. Phase 0 ist gemergt (PR #7, CI grün); offen ist dort nur noch die Messung auf echten Geräten (Referenz-Handy, Desktop im Browserfenster).
+**Stand:** 2026-09-25 · **Aktuelle Phase:** Phase 3 (kuratierte Map „Bulli Bay“) auf `map/phase-3` fertig bis zum Release (M5: CI grün, Merge, Live-Prüfung; Spezifikation, Stand und Abweichungen A1–A73: [`phase-3-design.md`](phase-3-design.md)); das Three-Upgrade r186 ist live (PR #16). Phase 2 (Rennen) ist live (PR #14), offen sind dort nur der Playtest und Messungen auf echten Geräten ([`phase-2-design.md`](phase-2-design.md), Abschnitt 25). Davor: Phase 1b auf dem Branch fertig (Branch `net/phase-1b`, Spezifikation und Stand: [`phase-1b-design.md`](phase-1b-design.md)): Server-Sim, Protokoll v2 und Client-Prediction stehen, die Legacy-Physik und `?physics=legacy` sind gelöscht; Reconnect mit 30 s Grace, Graceful Shutdown mit Resume-Ticket, `/healthz` mit Docker-`HEALTHCHECK` und die Dev-Netsim sind da (Betrieb: [`ops.md`](ops.md)); Bot-Clients (`npm run bots`, `npm run test:bots` in der CI) und die Messung mit 32 Bots belegen die Budgets. Offen sind nur Messungen auf echten Geräten und der Playtest Desktop gegen Handy. Phase 1a ist live, v2 ist die einzige Physik. Phase 0 ist gemergt (PR #7, CI grün); offen ist dort nur noch die Messung auf echten Geräten (Referenz-Handy, Desktop im Browserfenster).
 
 ## 0. Entscheidungen (2026-09-23)
 
@@ -174,7 +174,7 @@ Verbindliche Spezifikation, Abweichungen und Messwerte: [`phase-1a-design.md`](p
   - [x] Party-Modus spielbar wie vorher, Free Roam wählbar, auch auf dem Handy (E2E)
   - [ ] Messungen auf dem Referenz-Handy (Replay-Kosten bei hohem Lead hinter Verlust, Overlay `?debug=net`)
 
-**Phase 2 – Vertical Slice Rennen (ca. 3 Wochen) → Release · Status: auf `game/phase-2-racing` spielbar (Server, Bots, Zeitfahren, Client, E2E); offen sind Schritt 4 (Rampen in der Karte für alle Modi) und der Playtest**
+**Phase 2 – Vertical Slice Rennen (ca. 3 Wochen) → Release · Status: live (PR #14: Server, Bots, Zeitfahren, Client, E2E); Schritt 4 (Rampen in der Karte für alle Modi) ist in Phase 3 aufgegangen; offen ist der Playtest**
 
 Verbindliche Spezifikation, Entscheidungen und Testplan: [`phase-2-design.md`](phase-2-design.md) (Branch `game/phase-2-racing`); Stand, Abweichungen und Messwerte dort in Abschnitt 25.
 
@@ -195,22 +195,31 @@ Verbindliche Spezifikation, Entscheidungen und Testplan: [`phase-2-design.md`](p
   - [x] Bot-Rennen mit Kontakt und manipulierten Clients in der CI (`tests/integration/race.test.ts`)
   - [x] Client: RACE im Menü und im Room-Chip (auch TIME TRIAL), Lobby, Countdown mit Startampel und Launch-Fenster, Race-HUD (Position, Runde, Zeit, Split, Nächstes-Gate-Pfeil), Ergebnisse mit Rematch, Zuschauer; Start/Ziel-Portal, Checkpoints mit LED-Streifen, Absperrungen, Pfeiltafeln, Leitpfosten, Rampen und Hügelstraße; Ghost-Auto im Zeitfahren; Minimap im Streckenmodus
   - [x] Mobile: Renn-Layout (Stick lenkt, BRAKE, Auto-Gas ab Tipp auf die GO-Zone oder nach Grün), Render-Messung in acht Viewports, E2E-Test des Renn-Nutzerwegs auf dem Handy
-  - [ ] Schritt 4: Rampen und Hügelstraße in `MapData` (`MAP_VERSION` 3), dann auch in Free Roam und Party
+  - [x] Schritt 4: Rampen in `MapData` für alle Modi, mit Phase 3 auf Bulli Bay (`map.ramps`, Rampen-Kanten als Collider; die Hügelstraße ist die Ridge Road, [`phase-3-design.md`](phase-3-design.md) M3)
   - [ ] Playtest (≥ 70 % wollen noch ein Rennen), Messungen auf echten Geräten
 
-**Phase 3 – Kuratierte Map (4–5 Wochen) → Release**
+**Phase 3 – Kuratierte Map (4–5 Wochen) → Release · Status: auf `map/phase-3` fertig bis zum Release (M5); offen danach M6 und Messungen auf echten Geräten**
 - **Deliverables:**
   - [x] Eigener PR für das Three-Upgrade: r160 → r186, WebGLRenderer bleibt; Screenshot-Vergleich aller Ansichten ohne sichtbare Änderung (Umstellungen und Begründungen in PR #16)
-  - Eine Map von 1,5–2 km mit **handgebauten Straßen-Splines als JSON**, prozedural geschmückt (Gebäude, Bäume, Props entlang der Korridore)
-  - `tools/worldviewer` mit einfachem Spline-Editor (Punkte setzen, Breite, Oberfläche, Export als JSON)
-  - Straßen als Ribbons mit Markierungs-Shader
-  - Ein vorberechnetes Heightfield für die ganze Map mit Road-Corridor-Flatten, als Asset ausgeliefert; Mesh, Client und Server interpolieren identisch bilinear
-  - Die ganze Map wird beim Start geladen; Gebäude gemergt pro Chunk und Material, Fenster im Shader, Props als InstancedMesh, Frustum- und Distanz-Culling pro Chunk
-  - Offroad-Oberflächen, Leitplanken, Out-of-Track-Reset
-  - Eine Party-Zone (Arena oder Stadtteil) für den Party-Modus
-  - QualityTiers
-  - `routeToTrack` für neue Strecken auf den Splines
+  - [x] Eine Map von 2 × 2 km („Bulli Bay“, 19,4 km Straße) mit **handgebauten Straßen-Splines als JSON**, prozedural geschmückt (Gebäude, Bäume, Props entlang der Korridore)
+  - [x] `tools/worldviewer` mit Spline-Editor (Punkte setzen, Breite, Oberfläche, Export als JSON, Bake im Browser, Validierung)
+  - [x] Straßen als Ribbons mit Markierungs-Shader
+  - [x] Ein vorberechnetes Heightfield für die ganze Map mit Road-Corridor-Flatten, als Asset ausgeliefert (`terrain.bhf`, 307 KB Brotli); Mesh, Client und Server interpolieren identisch bilinear (bitgleich in WebKit, Chromium und Node)
+  - [x] Die ganze Map wird beim Start geladen; Gebäude gemergt je Kit-Zelle und LOD mit einem gemeinsamen Atlas (Fenster und Läden im Atlas statt im Shader, A24/A61), Props als InstancedMesh je Chunk, Frustum- und Distanz-Culling
+  - [x] Offroad-Oberflächen, Leitplanken, Out-of-Track-Reset (Wasser, Fallgrenze, Reset auf die nächste Straße)
+  - [x] Eine Party-Zone für den Party-Modus: Cannery Lot und die Hafenhöfe rundherum
+  - [x] QualityTiers: Render-Tiers desktop/mobile/software und Detailstufen high/mid/low/software
+  - [x] `routeToTrack` für neue Strecken auf den Splines: sechs Strecken
 - **Exit:** Unter 300 Draw Calls. 60 FPS auf dem Referenz-Desktop, mindestens 30 FPS auf dem Handy (Tier low) bei stabilem Speicher (iOS ohne Tab-Reload nach 20 Minuten). Die Strecken aus Phase 2 laufen unverändert oder sind auf die neue Map portiert.
+- **Stand** (Branch `map/phase-3`, Einzelheiten in [`phase-3-design.md`](phase-3-design.md), Abschnitt 18):
+  - [x] Karte als Daten (Splines, Plätze, Zonen, POIs, Strecken), Heightfield-Bake, Validierung, worldviewer mit Spline-Editor, Gebäude-Kit (M1)
+  - [x] Sim und Server auf Bulli Bay (M3): Heightfield als Boden, Oberflächen mit Griff und Rollwiderstand, Wasser-Reset, Leitplanken, Gebäude, Bäume und Landmarken als Collider (`segment`, `obox`), Reset auf die nächste Straße, Spawns je Modus aus `pois.json`, die Party in der Arena, die Phase-2-Strecken portiert, Protokoll v4
+  - [x] Strecken und Party-Zone (Server-Teil von M5): alle sechs Strecken im Rennbetrieb (Downtown Loop, Coast Sprint, Ridge Climb, Harbor Circuit, Dune Rally, Grand Tour), Bots fahren jede Strecke im vollen Feld durch (Integrationstest), Zeitfahr-Ghosts alter Strecken verworfen; die Party in Cannery Lot und den Hafenhöfen rundherum, Free Roam auf der ganzen Karte
+  - [x] Client-Rendering der Karte (M4): Gelände als Clipmap auf dem Boden der Sim, Straßen-Ribbons mit Markierungs-Shader, Gehwege und Bordsteine, Meer mit Brandung, Gebäude, Landmarken, Hafenkräne und Pier aus dem Kit (je Zelle und LOD gemergt), Straßenmöbel mit Collidern, Streuung und Requisiten je Zone, Party-Zaun, Detailstufen high/mid/low/software; Budgets gemessen (Desktop bis 182 Draw Calls, Handy bis 126), E2E-Suite wieder unter dem Stand von main (A59–A70)
+  - [x] Minimap genordet, alte Stadt gelöscht (Client-Teil von M5, A69)
+  - [x] Tests und Budgets: E2E-Suite an die Karte angepasst (Runway der Party-Arena unit-getestet), der E2E-Job wieder deutlich unter 5 min (in einem 4-CPU-Container 1,7–1,9 statt 2,6–3,1 min für main, geschätzt 3,6–4,3 min Job in CI, A73), Budget je Tier geprüft: software im E2E-Desktop-Pfad, Handy im Render-Job, Desktop als Warnung in `npm run screenshots` (A72); Software-Tier ohne Schattenkarte (A71); Stryker für Karte und Rennen
+  - [ ] Release (M5): CI grün, Merge, Live-Prüfung
+  - [ ] M6: Aussichtspunkt aus dem Einschnitt heben (A66), Poller und Weidezäune (A67), Budgets und Speicher auf echten Geräten (Exit: 60 FPS Referenz-Desktop, ≥ 30 FPS Handy, iOS 20 min ohne Tab-Reload)
 
 **Phase 4 – Open-World-Multiplayer und Persistenz (3–4 Wochen)**
 - **Deliverables:**

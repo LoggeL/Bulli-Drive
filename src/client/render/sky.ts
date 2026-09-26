@@ -51,18 +51,29 @@ uniform vec3 uCloudTop;
 uniform float uCloudCov;
 varying vec3 vSkyDirection;
 
+// The noise averaged over a few texels: it is ETC1S, whose 4 x 4 blocks
+// would show as square steps along the cloud edges that threshold it
+vec4 cloudNoise( vec2 uv ) {
+	const float t = 1.6 / 256.0;
+	return ( texture2D( uNoise, uv + vec2( t, t ) ) + texture2D( uNoise, uv + vec2( -t, t ) )
+		+ texture2D( uNoise, uv + vec2( t, -t ) ) + texture2D( uNoise, uv - vec2( t, t ) ) ) * 0.25;
+}
+
 // Cloud layer as a plane about 1.5 km up, noise stretched into bands
 float cloudDensity( vec3 d, out float edge ) {
 	vec2 p = d.xz / max( d.y, 0.035 );
 	p = mat2( 0.94, -0.34, 0.34, 0.94 ) * p;
 	vec2 q = p * vec2( 0.16, 0.55 );
-	float n = texture2D( uNoise, q * 0.11 + vec2( 0.13, 0.71 ) ).r * 0.52
-		+ texture2D( uNoise, q * 0.29 + vec2( 0.4, 0.2 ) ).g * 0.28
-		+ texture2D( uNoise, p * vec2( 0.21, 0.6 ) + vec2( 0.7, 0.1 ) ).b * 0.14
+	float n = cloudNoise( q * 0.11 + vec2( 0.13, 0.71 ) ).r * 0.52
+		+ cloudNoise( q * 0.29 + vec2( 0.4, 0.2 ) ).g * 0.28
+		+ cloudNoise( p * vec2( 0.21, 0.6 ) + vec2( 0.7, 0.1 ) ).b * 0.14
 		+ texture2D( uNoise, p * vec2( 0.9, 1.6 ) ).r * 0.06;
-	float big = texture2D( uNoise, p * vec2( 0.018, 0.05 ) + vec2( 0.31, 0.47 ) ).g;
+	float big = cloudNoise( p * vec2( 0.018, 0.05 ) + vec2( 0.31, 0.47 ) ).g;
 	n += ( big - 0.5 ) * 0.55;
-	float band = smoothstep( 0.012, 0.05, d.y ) * ( 1.0 - smoothstep( 0.32, 0.62, d.y ) );
+	// The plane's projection is clamped below d.y = 0.035, where the pattern
+	// would hang down in streaks: the layer thins out above that into the
+	// haze (the open sea shows the horizon)
+	float band = smoothstep( 0.035, 0.08, d.y ) * ( 1.0 - smoothstep( 0.32, 0.62, d.y ) );
 	edge = smoothstep( 0.5 - uCloudCov, 0.56 - uCloudCov, n ) - smoothstep( 0.56 - uCloudCov, 0.7 - uCloudCov, n );
 	return smoothstep( 0.5 - uCloudCov, 0.64 - uCloudCov, n ) * band;
 }

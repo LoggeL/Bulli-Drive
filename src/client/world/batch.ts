@@ -26,8 +26,6 @@ export function rgb(hex: number | string): RGB {
     return [c.r, c.g, c.b];
 }
 
-export const scaleRgb = (c: RGB, k: number): RGB => [c[0] * k, c[1] * k, c[2] * k];
-
 export class Batch {
     private parts: THREE.BufferGeometry[] = [];
 
@@ -125,30 +123,6 @@ export class Batch {
 
 type Vec3 = readonly [number, number, number];
 type Vec2 = readonly [number, number];
-
-/**
- * Quad from four corners (counter-clockwise seen from the front: bottom
- * left, bottom right, top right, top left) with optional UVs.
- */
-export function quad(p0: Vec3, p1: Vec3, p2: Vec3, p3: Vec3, uv: readonly Vec2[] = [[0, 0], [1, 0], [1, 1], [0, 1]]): THREE.BufferGeometry {
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([...p0, ...p1, ...p2, ...p3]), 3));
-    g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uv.flat()), 2));
-    g.setIndex([0, 1, 2, 0, 2, 3]);
-    g.computeVertexNormals();
-    return g;
-}
-
-/** Quad facing `want` (flips the winding if needed). */
-export function orientedQuad(p0: Vec3, p1: Vec3, p2: Vec3, p3: Vec3, want: Vec3, uv?: readonly Vec2[]): THREE.BufferGeometry {
-    const e1 = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
-    const e2 = [p3[0] - p0[0], p3[1] - p0[1], p3[2] - p0[2]];
-    const n = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
-    if (n[0] * want[0] + n[1] * want[1] + n[2] * want[2] < 0) {
-        return quad(p3, p2, p1, p0, uv ? [uv[3], uv[2], uv[1], uv[0]] : undefined);
-    }
-    return quad(p0, p1, p2, p3, uv);
-}
 
 /** Tube with varying radius along a polyline (palm trunks, lamp arms). */
 export function tube(points: THREE.Vector3[], radii: number[], radial = 8, vScale = 1): THREE.BufferGeometry {

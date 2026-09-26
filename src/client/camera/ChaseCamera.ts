@@ -25,8 +25,10 @@ export interface ChaseProfile {
     mobileDistanceScale: number;
     mobileHeightScale: number;
     // Distance and height in a portrait window (narrower than high), where
-    // the car would otherwise fill half the width
+    // the car would otherwise fill half the width; the height at most
+    // portraitMaxHeight
     portraitScale: number;
+    portraitMaxHeight: number;
     yawDamping: number;
     positionDamping: number;
     lookDamping: number;
@@ -55,6 +57,9 @@ export const RACE_CAMERA: ChaseProfile = {
     mobileDistanceScale: 1,
     mobileHeightScale: 1,
     portraitScale: 1.5,
+    // Below the heads of the signal arms over the lanes (5.06 m and up,
+    // streetFurniture.ts): 7.2 m put the arm right under the lens
+    portraitMaxHeight: 5,
     // Tight enough not to trail far behind at 50 m/s
     yawDamping: 7,
     positionDamping: 12,
@@ -134,8 +139,9 @@ export class ChaseCamera {
         const heightScale = (this.mobile ? p.mobileHeightScale : 1) * portraitScale;
         const distance = p.distance * distanceScale
             * (1 + speedRatio * p.distanceSpeedGain + (boostActive ? p.distanceBoostGain : 0));
-        const height = p.height * heightScale
+        let height = p.height * heightScale
             * (1 + speedRatio * p.heightSpeedGain + (boostActive ? p.heightBoostGain : 0));
+        if (portraitScale !== 1) height = Math.min(height, p.portraitMaxHeight);
         const forwardX = Math.sin(this.cameraYaw);
         const forwardZ = Math.cos(this.cameraYaw);
         const lookAhead = p.lookAhead + p.speedLookAhead * speedRatio;

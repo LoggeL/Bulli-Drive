@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { roundCorners, samplePath } from '../../../src/shared/race/geometry.js';
 import { buildRacingLine, racingLine, speedProfile } from '../../../src/shared/race/racingLine.js';
-import { DOWNTOWN_LOOP, HILL_SPRINT } from '../../../src/shared/race/tracks/index.js';
+import type { TrackDef } from '../../../src/shared/race/types.js';
+import { SURFACE } from '../../../src/shared/map/types.js';
 import { CAR_CLASS_IDS, createVehicleParams } from '../../../src/shared/sim/vehicleClasses.js';
 
 // Speed profile of the racing line (docs/phase-2-design.md, 5.4), checked
@@ -11,6 +12,21 @@ import { CAR_CLASS_IDS, createVehicleParams } from '../../../src/shared/sim/vehi
 // a straight far from any bend it runs at vtop.
 
 const G = 9.81;
+
+// The Downtown Loop of phase 2: a closed city block round, every corner
+// rounded to R = 19 m
+const LOOP_CORNERS = [
+    { x: 6, z: -10 }, { x: 6, z: 58 }, { x: 58, z: 58 }, { x: 58, z: 110 }, { x: -98, z: 110 },
+    { x: -98, z: -98 }, { x: 58, z: -98 }, { x: 58, z: -46 }, { x: 6, z: -46 }
+];
+
+function track(kind: 'circuit' | 'sprint'): TrackDef {
+    return {
+        id: kind === 'circuit' ? 'downtown-loop' : 'hill-sprint', name: '', kind, laps: kind === 'circuit' ? 3 : 1,
+        mapVersion: 1, trackVersion: 1, centerline: LOOP_CORNERS, lineOptions: { radius: 19, apexShift: 0 },
+        gates: [], grid: [], hints: [], minimap: { minX: 0, maxX: 1, minZ: 0, maxZ: 1 }, ramps: []
+    };
+}
 
 describe('speedProfile', () => {
     // 300 m straight, a left bend of R = 20, 300 m straight; bulli: vtop 50,
@@ -44,14 +60,38 @@ describe('speedProfile', () => {
         expect(binding).toBeGreaterThan(25);
     });
 
+    it('takes the bend slower by the grip of the surface under the line (sand: 0.6 · the offroad grip 0.9)', () => {
+        const line = samplePath(roundCorners([{ x: 0, z: 0 }, { x: 0, z: 300 }, { x: 300, z: 300 }], false, 20));
+        const sand = new Uint8Array(line.points.length).fill(SURFACE.sand);
+        const v = speedProfile(line, createVehicleParams('bulli'), sand);
+        const inBend = line.points.map((p, i) => ({ p, v: v[i] })).filter(({ p }) => p.s >= 282 && p.s <= 309);
+        for (const { v: speed } of inBend) expect(speed).toBeCloseTo(Math.sqrt(0.85 * 2.1 * G * 20 * 0.6 * 0.9), 6);
+        // Tarmac under the line changes nothing
+        const tarmac = speedProfile(line, createVehicleParams('bulli'), new Uint8Array(line.points.length).fill(SURFACE.asphalt));
+        expect(Array.from(tarmac)).toEqual(Array.from(speedProfile(line, createVehicleParams('bulli'))));
+    });
+
+    it('takes a bot\'s own grip share on unpaved ground only (the easy bot: 0.7)', () => {
+        const line = samplePath(roundCorners([{ x: 0, z: 0 }, { x: 0, z: 300 }, { x: 300, z: 300 }], false, 20));
+        const inBend = (v: Float64Array) => line.points.map((p, i) => ({ p, v: v[i] })).filter(({ p }) => p.s >= 282 && p.s <= 309);
+        const sand = new Uint8Array(line.points.length).fill(SURFACE.sand);
+        for (const { v } of inBend(speedProfile(line, createVehicleParams('bulli'), sand, 0.7))) {
+            expect(v).toBeCloseTo(Math.sqrt(0.85 * 2.1 * G * 20 * 0.6 * 0.9 * 0.7), 6);
+        }
+        // On tarmac the share changes nothing, nor on the straights (vtop)
+        const tarmac = new Uint8Array(line.points.length).fill(SURFACE.asphalt);
+        for (const { v } of inBend(speedProfile(line, createVehicleParams('bulli'), tarmac, 0.7))) expect(v).toBeCloseTo(bendLimit, 6);
+        expect(speedProfile(line, createVehicleParams('bulli'), sand, 0.7)[0]).toBe(50);
+    });
+
     it('runs at vtop on the straights away from the bend', () => {
         const { line, v } = bend();
         const straight = line.points.map((p, i) => ({ p, v: v[i] })).filter(({ p }) => p.s < 200 || p.s > 330);
         for (const { v: speed } of straight) expect(speed).toBe(50);
     });
 
-    it('never exceeds vtop, and the bend limit in every bend of the Downtown Loop (R = 19)', () => {
-        const loop = buildRacingLine(DOWNTOWN_LOOP);
+    it('never exceeds vtop, and the bend limit in every bend of a closed loop (R = 19)', () => {
+        const loop = buildRacingLine(track('circuit'));
         for (const classId of CAR_CLASS_IDS) {
             const params = createVehicleParams(classId);
             const profile = speedProfile(loop, params);
@@ -70,8 +110,10 @@ describe('speedProfile', () => {
     });
 
     it('caches one line per track', () => {
-        expect(racingLine(HILL_SPRINT)).toBe(racingLine(HILL_SPRINT));
-        expect(racingLine(HILL_SPRINT).closed).toBe(false);
-        expect(racingLine(DOWNTOWN_LOOP).closed).toBe(true);
+        const sprint = track('sprint'), circuit = track('circuit');
+        expect(racingLine(sprint)).toBe(racingLine(sprint));
+        expect(racingLine(sprint)).not.toBe(racingLine(track('sprint')));
+        expect(racingLine(sprint).closed).toBe(false);
+        expect(racingLine(circuit).closed).toBe(true);
     });
 });

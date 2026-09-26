@@ -64,10 +64,9 @@ describe('world textures', () => {
         expect(arm[2]).toBe(0);
         // Albedo: the material's mean color
         expect(placeholderTexel('pbr/asphalt_albedo', 0x55524e)).toEqual({ rgba: [0x55, 0x52, 0x4e, 255], srgb: true });
-        expect(Math.min(...placeholderTexel('generated/facade_albedo_tint').rgba)).toBeGreaterThan(100);
-        // Foliage cut-outs vanish, emissive maps stay dark
+        expect(Math.min(...placeholderTexel('generated/rock_albedo').rgba)).toBeGreaterThan(100);
+        // Foliage cut-outs vanish
         expect(placeholderTexel('generated/tree_cards').rgba[3]).toBe(0);
         expect(placeholderTexel('generated/palm_fronds').rgba[3]).toBe(0);
-        expect(placeholderTexel('generated/facade_emissive').rgba.slice(0, 3)).toEqual([0, 0, 0]);
     });
 });

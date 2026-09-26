@@ -4,10 +4,10 @@ import { TICK_RATE } from '../../shared/net/constants.js';
 import { raceGhostFloor, raceInputFilter } from '../../shared/race/inputFilter.js';
 import { applyLaunchMods } from '../../shared/race/launch.js';
 import { createRaceWorld } from '../../shared/race/raceWorld.js';
-import { TRACKS } from '../../shared/race/tracks/index.js';
 import type { TrackId } from '../../shared/race/types.js';
 import type { SimWorld } from '../../shared/world/colliders.js';
-import type { MapData } from '../../shared/world/mapData.js';
+import type { MapData } from '../../shared/map/mapData.js';
+import { gameTrack } from '../map/gameMap.js';
 import { inputManager } from '../input/InputManager.js';
 import { netDriver } from '../net/netDriver.js';
 import { sendToServer } from '../network/socket.js';
@@ -19,7 +19,7 @@ import { GhostCar } from './GhostCar.js';
 import { GhostPlayback } from './ghostPlayback.js';
 import { arrowDegrees, RaceModel, type GhostMessage } from './raceModel.js';
 import { initRaceUi, renderHud, renderLobby, renderResults, type ArrowView } from './raceUi.js';
-import { lampsFor, mapFeaturesGroup, TrackDressing } from './TrackDressing.js';
+import { lampsFor, TrackDressing } from './TrackDressing.js';
 
 // The race on the client (docs/phase-2-design.md, 17): the race and time
 // trial rooms' messages and events into the model, the prediction with
@@ -57,7 +57,7 @@ class RaceClient {
     private world(track: TrackId): SimWorld {
         let world = this.worlds.get(track);
         if (!world) {
-            world = createRaceWorld(this.map!, TRACKS[track]);
+            world = createRaceWorld(this.map!, gameTrack(track));
             this.worlds.set(track, world);
         }
         return world;
@@ -113,7 +113,6 @@ class RaceClient {
         setWorldOverride(null);
         this.dressing?.dispose();
         this.dressing = null;
-        mapFeaturesGroup().removeFromParent();
         setMinimapTrack(null);
         inputManager.setRaceTouch(false);
         netDriver.beforeSample = null;
@@ -134,8 +133,6 @@ class RaceClient {
             this.dressing = new TrackDressing(track);
             state.scene?.add(this.dressing.group);
         }
-        const features = mapFeaturesGroup();
-        if (!features.parent) state.scene?.add(features);
         setMinimapTrack(track);
     }
 

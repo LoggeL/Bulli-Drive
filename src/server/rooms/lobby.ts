@@ -1,15 +1,15 @@
 import { DEFAULT_ROOM_KIND, type RoomKind } from '../../shared/protocol.js';
 import { replayRun } from '../../shared/race/replay.js';
 import { RACE_ROOM_MAX_MEMBERS } from '../../shared/race/rules.js';
-import type { TrackId } from '../../shared/race/types.js';
-import type { MapData } from '../../shared/world/mapData.js';
+import { TRACK_IDS, type TrackId } from '../../shared/race/types.js';
+import type { MapData } from '../../shared/map/mapData.js';
 import { MemoryGhostStore, ReplayBudget, type GhostStore } from '../race/ghostStore.js';
 import type { Session } from '../session.js';
 import { FreeRoamRoom } from './FreeRoamRoom.js';
 import { PartyRoom } from './PartyRoom.js';
 import { RaceRoom, trackRuntime } from './RaceRoom.js';
 import type { Room, RoomMember } from './Room.js';
-import { TimeTrialRoom } from './TimeTrialRoom.js';
+import { ghostKeyFor, TimeTrialRoom } from './TimeTrialRoom.js';
 
 // All rooms of the process (docs/phase-1b-design.md, 2.3). New players go
 // to the fullest room of the kind they asked for that still has space, so
@@ -52,6 +52,11 @@ export class RoomManager {
             const { world, course } = trackRuntime(map, run.key.trackId);
             return replayRun(world, course, run).poses;
         });
+        // Ghosts only fit the track, map and sim they were driven on: the
+        // phase 2 tracks, ported to Bulli Bay, and every later change of a
+        // track (trackVersion), the map or the tuning leave theirs behind
+        const dropped = this.ghosts.retain(TRACK_IDS.map(id => ghostKeyFor(map, id)));
+        if (dropped > 0) console.log(`Ghost store: ${dropped} runs of old tracks dropped`);
         this.create(DEFAULT_ROOM_KIND, 1);
     }
 

@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import {
     test, expect, openGame, joinFromSplash, snapshot, distance, placeOnClearRunway, v2, debugCall, waitFrames, meanColor
 } from './fixtures.js';
-import type { BulliDebugSnapshot, CarInfo, TextureProbe, WorldInfo } from '../../src/client/e2eHook.js';
+import type { BulliDebugSnapshot, CarInfo, MapWorldStats, TextureProbe, WorldInfo } from '../../src/client/e2eHook.js';
 
 // The critical path on the desktop, in the production build: load, the
 // assets (meshopt + KTX2 car models and world textures through the hashed
@@ -73,14 +73,15 @@ test('loads, joins, drives and survives a lost WebGL context on the desktop', as
     await waitFrames(page, 5);
     expect((await snapshot(page)).render.calls).toBeGreaterThan(10);
 
-    // The world: textures and sky in, baked palm impostors, no environment
-    // map on the software tier
+    // The world: textures and sky in, the map's world with its building
+    // kit, baked palm impostors, no environment map on the software tier
     const world = await debugCall<WorldInfo>(page, 'worldSettled');
     expect(world.tier).toBe('software');
     expect(world.textures.failed).toBe(0);
     expect(world.textures.requested).toBeGreaterThan(5);
     expect(world.textures.loaded).toBe(world.textures.requested);
-    expect(world.groups).toEqual(expect.arrayContaining(['city', 'environment', 'sky-dome']));
+    expect(world.groups).toEqual(expect.arrayContaining(['map', 'sky-dome']));
+    await expect.poll(async () => (await debugCall<MapWorldStats | null>(page, 'mapWorldStats'))?.kit).toBe('ready');
     expect(world.environment).toBeNull();
     expect(world.palms?.baked).toBe(true);
     // The own car is the GLB model
@@ -131,11 +132,23 @@ test('loads, joins, drives and survives a lost WebGL context on the desktop', as
     expect((await snapshot(page)).myId).toBe(myId);
 
     // ---- A lost WebGL context (GPU reset) ----
-    // A fixed view of the street with the car at rest
-    await debugCall(page, 'placeLocalCar', runway.x, runway.z, 0);
+    // A fixed view along the runway with the car at rest: from behind it,
+    // 4 m to its right, 14 m back (forward f, left l of the runway's heading)
+    await debugCall(page, 'placeLocalCar', runway.x, runway.z, runway.yaw);
     await expect.poll(async () => Math.abs((await v2(page)).u), { timeout: 20_000 }).toBeLessThan(0.05);
-    await debugCall(page, 'setCameraOverride', { position: [runway.x - 4, 6, runway.z - 14], lookAt: [runway.x + 2, 2, runway.z + 20], fov: 55 });
+    const f = [Math.sin(runway.yaw), Math.cos(runway.yaw)], l = [f[1], -f[0]];
+    await debugCall(page, 'setCameraOverride', {
+        position: [runway.x - 4 * l[0] - 14 * f[0], 6, runway.z - 4 * l[1] - 14 * f[1]],
+        lookAt: [runway.x + 2 * l[0] + 20 * f[0], 2, runway.z + 2 * l[1] + 20 * f[1]],
+        fov: 55
+    });
     await waitFrames(page, 3);
+    // The budget of the software tier (docs/phase-3-design.md 10: 110 draw
+    // calls, 300 k triangles), without a shadow pass (A71)
+    const { render } = await snapshot(page);
+    expect(render.shadowCalls).toBe(0);
+    expect(render.calls).toBeLessThanOrEqual(110);
+    expect(render.triangles).toBeLessThanOrEqual(300_000);
     const colorBefore = await meanColor(page);
 
     const notice = page.locator('#context-lost');

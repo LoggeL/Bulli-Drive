@@ -36,7 +36,7 @@ import { healthReport, metricsReport, TrafficMeter, type HealthSources } from '.
 import { TicketSigner } from './resumeTicket.js';
 import { gracefulShutdown } from './shutdown.js';
 import { netsimFromEnv, SocketConnection } from './connection.js';
-import { hdriMiddleware, versionedAssetCache } from './staticAssets.js';
+import { hdriMiddleware, modelMiddleware, terrainMiddleware, versionedAssetCache } from './staticAssets.js';
 import { AddressLimits, clientAddress, sessionLog } from './access.js';
 import { ClientReports } from './clientReports.js';
 
@@ -138,8 +138,10 @@ if (fs.existsSync(clientIndexPath)) {
 
     // Hashed model and texture URLs cached for good, compressed HDRIs with a
     // content ETag (staticAssets.ts)
-    app.use(['/models', '/textures'], versionedAssetCache());
+    app.use(['/models', '/textures', '/maps'], versionedAssetCache());
+    app.use('/models', modelMiddleware(path.join(clientPath, 'models')));
     app.use('/textures/hdri', hdriMiddleware(path.join(clientPath, 'textures', 'hdri')));
+    app.use('/maps', terrainMiddleware(path.join(clientPath, 'maps')));
 
     app.use(express.static(clientPath, {
         index: false,
@@ -185,7 +187,7 @@ const addressLimits = new AddressLimits({
 let kicks = 0;
 let shuttingDown = false;
 
-console.log(`Server starting... (world ${map.worldHash}, ${map.colliders.length} colliders, build ${SERVER_BUILD ?? 'dev'})`);
+console.log(`Server starting... (map ${map.mapId} v${map.mapVersion}, world ${map.worldHash}, ${map.colliders.length} colliders, build ${SERVER_BUILD ?? 'dev'})`);
 
 // 60 Hz for every room with members (docs/phase-1b-design.md, 5.1)
 const scheduler = new TickScheduler(() => lobby.stepAll(performance.now()));

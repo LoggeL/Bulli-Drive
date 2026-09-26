@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { state } from '../state.js';
-import { getTerrainHeight } from './environment.js';
+import { groundHeight } from './ground.js';
 import { playCollectSound } from '../effects/sounds.js';
 import { spawnParticles } from '../effects/particles.js';
 import { MAGNET_RANGE } from '../../shared/constants.js';
@@ -9,10 +9,15 @@ import { distSq2D } from './util.js';
 import { netDriver } from '../net/netDriver.js';
 import type { CoinData } from '../../shared/protocol.js';
 
+// All coins are drawn by one instanced mesh (one draw call and one shadow
+// call for the lot, docs/phase-3-design.md 10): a coin is a plain Object3D
+// that is moved, spun and collected here, and animateCoins writes its
+// matrix into the instance buffer every frame.
+
 // Store base Y for bobbing animation
-const coinBaseY: Map<THREE.Mesh, number> = new Map();
-// Map coin server ID to mesh
-const coinMeshes: Map<number, THREE.Mesh> = new Map();
+const coinBaseY: Map<THREE.Object3D, number> = new Map();
+// Map coin server ID to its object
+const coinMeshes: Map<number, THREE.Object3D> = new Map();
 // Coins the local car took before the server confirmed them (8.7): the
 // time they were taken; without a pickup event they come back
 const pendingCollects = new Map<number, number>();
@@ -30,6 +35,27 @@ const coinMat = new THREE.MeshStandardMaterial({
     emissive: 0xFFD700,
     emissiveIntensity: 0.3
 });
+let coinInstances: THREE.InstancedMesh | null = null;
+
+// The instanced mesh, grown to hold `count` coins
+function instancesFor(count: number): THREE.InstancedMesh {
+    if (coinInstances && coinInstances.instanceMatrix.count >= count && coinInstances.parent === state.scene) return coinInstances;
+    let capacity = 64;
+    while (capacity < count) capacity *= 2;
+    if (coinInstances) {
+        coinInstances.removeFromParent();
+        coinInstances.dispose();
+    }
+    coinInstances = new THREE.InstancedMesh(coinGeo, coinMat, capacity);
+    coinInstances.name = 'coins';
+    coinInstances.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    coinInstances.castShadow = true;
+    // The coins move every frame: no bounding sphere to keep up to date
+    coinInstances.frustumCulled = false;
+    coinInstances.count = 0;
+    state.scene.add(coinInstances);
+    return coinInstances;
+}
 
 export function createCoinsFromServer(coinsData: CoinData[]) {
     coinsData.forEach(cd => {
@@ -40,12 +66,10 @@ export function createCoinsFromServer(coinsData: CoinData[]) {
 }
 
 export function createCoin(id: number, x: number, z: number) {
-    const coin = new THREE.Mesh(coinGeo, coinMat);
-    const baseY = getTerrainHeight(x, z) + 2.0;
+    const coin = new THREE.Object3D();
+    const baseY = groundHeight(x, z) + 2.0;
     coin.position.set(x, baseY, z);
-    coin.castShadow = true;
     (coin as any).coinId = id;
-    state.scene.add(coin);
     state.coins.push(coin);
     coinBaseY.set(coin, baseY);
     coinMeshes.set(id, coin);
@@ -53,8 +77,6 @@ export function createCoin(id: number, x: number, z: number) {
 
 // Removes every coin (a room switch brings the new room's coins)
 export function clearCoins() {
-    for (const coin of coinMeshes.values()) state.scene.remove(coin);
-    for (const coin of state.coins) state.scene.remove(coin);
     coinMeshes.clear();
     coinBaseY.clear();
     pendingCollects.clear();
@@ -98,7 +120,6 @@ export function confirmCoinPickup(coinId: number) {
 function removeCoinMesh(coinId: number) {
     const coin = coinMeshes.get(coinId);
     if (coin) {
-        state.scene.remove(coin);
         coinBaseY.delete(coin);
         coinMeshes.delete(coinId);
         const idx = state.coins.indexOf(coin);
@@ -130,7 +151,7 @@ export function animateCoins(time: number) {
     const dt = lastAnimTime === null ? 0 : Math.min(Math.max(time - lastAnimTime, 0), 0.1);
     lastAnimTime = time;
 
-    state.coins.forEach((coin: THREE.Mesh) => {
+    state.coins.forEach((coin: THREE.Object3D) => {
         // Spin around Y axis
         coin.rotation.y = time * 2.0;
         // Gentle bob up and down
@@ -150,11 +171,25 @@ export function animateCoins(time: number) {
                 coin.position.x += (carPos.x - coin.position.x) * pull;
                 coin.position.z += (carPos.z - coin.position.z) * pull;
                 // Update base Y for new position
-                const newBaseY = getTerrainHeight(coin.position.x, coin.position.z) + 2.0;
+                const newBaseY = groundHeight(coin.position.x, coin.position.z) + 2.0;
                 coinBaseY.set(coin, newBaseY);
             }
         }
     });
+    drawCoins();
+}
+
+// The coins still in the world into the instance buffer
+function drawCoins(): void {
+    const coins = state.coins as THREE.Object3D[];
+    if (!coins.length && !coinInstances) return;
+    const mesh = instancesFor(coins.length);
+    coins.forEach((coin, i) => {
+        coin.updateMatrix();
+        mesh.setMatrixAt(i, coin.matrix);
+    });
+    mesh.count = coins.length;
+    mesh.instanceMatrix.needsUpdate = true;
 }
 
 export function checkCoinCollection() {
@@ -204,10 +239,9 @@ function takeConfirmed(coinId: number) {
     if (idx !== -1) state.coins.splice(idx, 1);
 }
 
-export function collectCoin(coin: THREE.Mesh, coinId: number) {
+export function collectCoin(coin: THREE.Object3D, coinId: number) {
     // Optimistic visual removal + SFX; score is server-authoritative
     // and arrives via the 'scoreboard' message.
-    state.scene.remove(coin);
     coinBaseY.delete(coin);
     coinMeshes.delete(coinId);
     playCollectSound();

@@ -16,6 +16,10 @@ export const STUCK_TICKS = 90;
 export const BACKOFF_TICKS = 70;
 // After this many back-offs without getting going, the reset button
 export const BACKOFFS_BEFORE_RESET = 2;
+// Getting going: faster than 4 m/s for this long. A car that bounces off
+// the wall it is wedged against touches 4 m/s for a moment and would
+// otherwise back off for ever without the reset.
+export const GOING_TICKS = 60;
 // Held a little longer than the sim's RESET_HOLD_TICKS (30)
 export const RESET_TICKS = 34;
 
@@ -63,12 +67,13 @@ export class StuckWatch {
     private backoffs = 0;
     private resetTicks = 0;
     private backoffSteer = 0;
+    private goingTicks = 0;
     // For tests and reports
     resets = 0;
     backoffCount = 0;
 
     restart(): void {
-        this.stuckTicks = this.backoffTicks = this.backoffs = this.resetTicks = 0;
+        this.stuckTicks = this.backoffTicks = this.backoffs = this.resetTicks = this.goingTicks = 0;
     }
 
     /** Holds the reset button from the next tick on (unless it already does). */
@@ -117,11 +122,20 @@ export class StuckWatch {
         return 'drive';
     }
 
-    watch(s: VehicleState, u: number, out: VehicleInput): void {
-        if (out.throttle > 100 && Math.abs(u) < STUCK_SPEED) this.stuckTicks++;
+    /**
+     * After the driving wrote its input. wantsToMove: the driver means the
+     * car to go (default: a throttle above 100). A race bot always does
+     * while it races, also where it asks for no speed: behind a car that
+     * stands still (a crash) it would wait for it for ever, and two bots
+     * wedged side by side each wait for the other.
+     */
+    watch(s: VehicleState, u: number, out: VehicleInput, wantsToMove = out.throttle > 100): void {
+        if (Math.abs(u) > 4) this.goingTicks++;
+        else this.goingTicks = 0;
+        if (wantsToMove && Math.abs(u) < STUCK_SPEED) this.stuckTicks++;
         else if (Math.abs(u) > 4) {
             this.stuckTicks = 0;
-            this.backoffs = 0;
+            if (this.goingTicks >= GOING_TICKS) this.backoffs = 0;
         }
         if (this.stuckTicks < STUCK_TICKS) return;
         this.stuckTicks = 0;

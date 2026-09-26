@@ -13,7 +13,7 @@ import { BTN_BOOST } from '../sim/constants.js';
 import type { VehicleInput, VehicleParams, VehicleState } from '../sim/types.js';
 import { createProjection, pointAt, projectGlobal, projectNear, type Projection } from './geometry.js';
 import type { Course } from './progress.js';
-import { forwardSpeed, pursuitSteer, StuckWatch } from './pursuit.js';
+import { forwardSpeed, pursuitSteer, StuckWatch, wrapAngle } from './pursuit.js';
 import { speedProfile } from './racingLine.js';
 import { DRAFT_MIN_SPEED, LAUNCH_WINDOW_TICKS } from './rules.js';
 import type { BotLevel } from './types.js';
@@ -32,13 +32,24 @@ export interface BotSkill {
     draft: boolean;
     // Chance of a perfect start
     launchPerfect: number;
+    // Share of the grip the bot plans its corners with on unpaved ground
+    // (on top of the profile's margin): a car sliding on dirt or gravel
+    // answers the wheel late, and the easy bots' reaction delay (12 ticks)
+    // made them weave out of a 180 m bend of the Dune Rally at 39 m/s and
+    // miss its gate. Swept over 900 races on Bulli Bay (6 tracks × 3 levels
+    // × 5 classes × 10 seeds, tools/map/driveTrack.ts): missed gates 14 → 5
+    // (the easy bots' on unpaved ground 10 → 0), resets 20 → 10, the easy
+    // Dune Rally 3 s slower. The medium and hard bots keep the full grip:
+    // with less, five medium bots jammed in the Dune Rally's beach slalom
+    // (tests/integration/trackRaces.test.ts).
+    unpavedGrip: number;
 }
 
 // Start values (14)
 export const BOT_SKILLS: Readonly<Record<BotLevel, BotSkill>> = {
-    easy: { speedScale: 0.82, lookaheadTime: 0.55, noise: 1.5, delayTicks: 12, boost: false, draft: false, launchPerfect: 0.1 },
-    medium: { speedScale: 0.92, lookaheadTime: 0.45, noise: 0.8, delayTicks: 6, boost: true, draft: true, launchPerfect: 0.4 },
-    hard: { speedScale: 0.98, lookaheadTime: 0.4, noise: 0.3, delayTicks: 2, boost: true, draft: true, launchPerfect: 0.8 }
+    easy: { speedScale: 0.82, lookaheadTime: 0.55, noise: 1.5, delayTicks: 12, boost: false, draft: false, launchPerfect: 0.1, unpavedGrip: 0.7 },
+    medium: { speedScale: 0.92, lookaheadTime: 0.45, noise: 0.8, delayTicks: 6, boost: true, draft: true, launchPerfect: 0.4, unpavedGrip: 1 },
+    hard: { speedScale: 0.98, lookaheadTime: 0.4, noise: 0.3, delayTicks: 2, boost: true, draft: true, launchPerfect: 0.8, unpavedGrip: 1 }
 };
 
 // Pursuit point: LOOKAHEAD_BASE + lookaheadTime · speed ahead on the line (m)
@@ -70,6 +81,13 @@ const STRAIGHT_AHEAD = 60;
 const BOOST_METER = 0.5;
 // A jump farther than this between two ticks is a reset or a teleport (m)
 const TELEPORT_DISTANCE = 10;
+// Traction control: no throttle while the velocity points more than this
+// (rad, about 7°) away from the nose, above TRACTION_MIN_SPEED (m/s). On
+// Bulli Bay five medium bots per race spun about half as often with it
+// (192 against 92 resets in 120 races, tests/integration/trackRaces.test.ts)
+// and were 1-2 % slower.
+export const TRACTION_SLIP = 0.12;
+export const TRACTION_MIN_SPEED = 5;
 // Farther off the line than this (m) for OFF_LINE_RESET_TICKS: reset
 const OFF_LINE_RESET = 25;
 const OFF_LINE_RESET_TICKS = 120;
@@ -120,7 +138,7 @@ export class LineDriver {
         private readonly random: RandomSource
     ) {
         this.skill = BOT_SKILLS[level];
-        this.profile = speedProfile(course.line, params);
+        this.profile = speedProfile(course.line, params, course.surfaces, this.skill.unpavedGrip);
         const size = this.skill.delayTicks + 1;
         this.delaySteer = new Int16Array(size);
         this.delayThrottle = new Int16Array(size);
@@ -282,11 +300,15 @@ export class LineDriver {
             brake = 0;
         }
         this.delayed(steer, throttle, brake, out);
+        // Traction control: off the throttle while the car slides (the
+        // delayed pedal would otherwise spin a Beetle out of a corner exit)
+        if (u > TRACTION_MIN_SPEED && Math.abs(wrapAngle(Math.atan2(s.vx, s.vz) - s.yaw)) > TRACTION_SLIP) out.throttle = 0;
         if (this.skill.boost && s.boostMeter >= BOOST_METER && !blocked && out.brake === 0
             && this.profileMin(hit.s, hit.s + STRAIGHT_AHEAD) >= p.topSpeed * 0.98) {
             out.buttons |= BTN_BOOST;
         }
-        this.stuck.watch(s, u, out);
+        // Racing, the bot never means to stand: stuck is stuck, whatever it asks for
+        this.stuck.watch(s, u, out, true);
         return out;
     }
 

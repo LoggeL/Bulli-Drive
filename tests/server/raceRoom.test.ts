@@ -14,7 +14,9 @@ import {
 } from '../../src/shared/race/rules.js';
 import { createProjection, pointAt } from '../../src/shared/race/geometry.js';
 import { nextGateIndex } from '../../src/shared/race/progress.js';
-import { DOWNTOWN_LOOP, HILL_SPRINT } from '../../src/shared/race/tracks/index.js';
+import { createCourse } from '../../src/shared/race/progress.js';
+import { racingLine } from '../../src/shared/race/racingLine.js';
+import { trackDef } from '../../src/shared/race/tracks/index.js';
 import { BTN_BOOST, BTN_HANDBRAKE, BTN_JUMP, BTN_RESET } from '../../src/shared/sim/constants.js';
 import { placeVehicle } from '../../src/shared/sim/vehicle.js';
 import { fakeClock, fakeSession, feed, type FakeTransport } from './helpers.js';
@@ -88,8 +90,20 @@ function pos(player: Session): { x: number; z: number } {
     return { x: s.x, z: s.z };
 }
 
-// 20 m before the Hill Sprint finish gate (356, 30), facing along it (yaw 0.540)
-const BEFORE_FINISH = { x: 356 - 20 * Math.sin(0.54), z: 30 - 20 * Math.cos(0.54), yaw: 0.54 };
+const DOWNTOWN_LOOP = trackDef(mapFor(), 'downtown-loop');
+const HILL_SPRINT = trackDef(mapFor(), 'hill-sprint');
+const HARBOR_CIRCUIT = trackDef(mapFor(), 'harbor-circuit');
+
+// A point of a track's racing line at station s (a circuit wraps), facing
+// along the line (against it with back = true)
+function onLine(track: typeof HILL_SPRINT, s: number, back = false): { x: number; z: number; yaw: number } {
+    const p = pointAt(racingLine(track), s, createProjection());
+    return { x: p.x, z: p.z, yaw: back ? Math.atan2(-p.tx, -p.tz) : Math.atan2(p.tx, p.tz) };
+}
+
+// 20 m before the Ridge Climb's finish gate on its racing line, facing along it
+const FINISH_S = createCourse(HILL_SPRINT, racingLine(HILL_SPRINT)).gateS.at(-1)!;
+const BEFORE_FINISH = onLine(HILL_SPRINT, FINISH_S - 20);
 
 /**
  * E2E placement of the players' cars just before the finish, full throttle
@@ -191,7 +205,7 @@ describe('lobby', () => {
         send(a, { type: 'raceConfig', botLevel: 'easy' });
         expect([room.trackId, room.botLevel]).toEqual(['hill-sprint', 'easy']);
         tick();
-        expect(a.transport.of('raceState').at(-1)).toMatchObject({ trackId: 'hill-sprint', botLevel: 'easy', trackVersion: 1 });
+        expect(a.transport.of('raceState').at(-1)).toMatchObject({ trackId: 'hill-sprint', botLevel: 'easy', trackVersion: HILL_SPRINT.trackVersion });
     });
 });
 
@@ -473,12 +487,13 @@ describe('vote and the next race', () => {
         send(b, { type: 'raceVote', choice: 'next' });
         tick();
         expect(room.phase).toBe('lobby');
-        expect(room.trackId).toBe('downtown-loop');
+        // The track after the Ridge Climb in the rotation
+        expect(room.trackId).toBe('harbor-circuit');
         expect([...room.ready].sort()).toEqual([a.id, b.id].sort());
         expect(room.members.size).toBe(2);
         expect([...room.members.values()].some(m => m.bot)).toBe(false);
         // Both on the new grid
-        expect([pos(a), pos(b)].map(p => [p.x, p.z]).sort()).toEqual(DOWNTOWN_LOOP.grid.slice(0, 2).map(g => [g.x, g.z]).sort());
+        expect([pos(a), pos(b)].map(p => [p.x, p.z]).sort()).toEqual(HARBOR_CIRCUIT.grid.slice(0, 2).map(g => [g.x, g.z]).sort());
         const T = room.tick;
         tick(2);
         const spawns = a.transport.events('spawn').filter(e => e.tick === T);
@@ -507,7 +522,7 @@ describe('vote and the next race', () => {
         const T = room.tick;
         tickUntil(() => room.phase === 'lobby', RESULTS_TICKS + 1);
         expect(room.tick).toBe(T + RESULTS_TICKS);
-        expect(room.trackId).toBe('downtown-loop');
+        expect(room.trackId).toBe('harbor-circuit');
         expect(room.ready.size).toBe(0);
     });
 
@@ -575,8 +590,10 @@ describe('wrong way and the reset', () => {
         const a = human('A');
         const S = startRace([a]);
         tickUntil(() => room.tick === S + START_GHOST_TICKS, S + START_GHOST_TICKS);
-        // On the straight south of the start, facing north: against the line
-        send(a, { type: 'debugPlace', x: 58, z: -100, yaw: 0 });
+        // On the line 250 m past the start, facing back: against the line,
+        // and seconds ahead of the bots (it must not meet them head-on)
+        const start = room.runtime.course.gateS[0];
+        send(a, { type: 'debugPlace', ...onLine(HILL_SPRINT, start + 250, true) });
         tickUntil(() => a.transport.events('wrongWay').some(e => e.id === a.id && e.on), 200, new Map([[a, { throttle: 200 }]]));
         tick(2, new Map([[a, { throttle: 200 }]]));
         expect(a.transport.lastSnapshot!.self!.flags & CAR_RACE_GHOST).toBe(CAR_RACE_GHOST);
@@ -593,19 +610,21 @@ describe('wrong way and the reset', () => {
         const a = human('A');
         const S = startRace([a], 'downtown-loop');
         tickUntil(() => room.tick === S + START_GHOST_TICKS, S + START_GHOST_TICKS);
-        // Past the start line on the leg z = 58 (next gate G1 at (32, 58))
-        send(a, { type: 'debugPlace', x: 20, z: 60, yaw: Math.PI / 2 });
+        // Just past the start line (next gate: G1)
+        const { gateS } = room.runtime.course;
+        send(a, { type: 'debugPlace', ...onLine(DOWNTOWN_LOOP, gateS[0] + 5) });
         tick(3);
         expect(room.racer(a.id)!.progress.passed).toBe(1);
-        // Pushed north between the legs: the nearest line point is on the
-        // leg z = 110, past G1 (and G2)
-        placeVehicle(a.member!.car!.state, room.map.simWorld, 20, 88, Math.PI / 2);
+        // Pushed onto the line 20 m past G2: the nearest line point is past G1
+        const beyond = onLine(DOWNTOWN_LOOP, gateS[2] + 20);
+        placeVehicle(a.member!.car!.state, room.runtime.world, beyond.x, beyond.z, beyond.yaw);
         tick(40, new Map([[a, { buttons: BTN_RESET }]]));
         const s = a.member!.car!.state;
-        // G1 on the straight from x = 25 to 39: 5 m before it is (27, 58), facing +x
-        expect(s.x).toBeCloseTo(27, 6);
-        expect(s.z).toBeCloseTo(58, 6);
-        expect(s.yaw).toBeCloseTo(Math.PI / 2, 6);
+        // 5 m before G1 on the line, facing along it
+        const before = onLine(DOWNTOWN_LOOP, gateS[1] - 5);
+        expect(s.x).toBeCloseTo(before.x, 6);
+        expect(s.z).toBeCloseTo(before.z, 6);
+        expect(s.yaw).toBeCloseTo(before.yaw, 6);
         expect(room.racer(a.id)!.progress.passed).toBe(1);
     });
 });

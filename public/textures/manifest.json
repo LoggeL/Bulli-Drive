@@ -3,39 +3,6 @@
  "_doc": "Written by tools/textures/build.mjs. KTX2 files are encoded with flipY (sample like TextureLoader JPG/PNG). kind: color = sRGB, data/normal = linear.",
  "flipY": true,
  "textures": {
-  "generated/facade_albedo_tint": {
-   "file": "generated/facade_albedo_tint.ktx2",
-   "kind": "color",
-   "width": 1024,
-   "height": 1024,
-   "encoding": "etc1s",
-   "bytes": 362270,
-   "hash": "16988c4ba3efa26c",
-   "sourceHash": "71511190d2338acd",
-   "settings": "1:color:1024"
-  },
-  "generated/facade_arm": {
-   "file": "generated/facade_arm.ktx2",
-   "kind": "data",
-   "width": 512,
-   "height": 512,
-   "encoding": "etc1s",
-   "bytes": 27371,
-   "hash": "179fbfb789846647",
-   "sourceHash": "5b0d55a8183d2280",
-   "settings": "1:data:512"
-  },
-  "generated/facade_emissive": {
-   "file": "generated/facade_emissive.ktx2",
-   "kind": "color",
-   "width": 256,
-   "height": 256,
-   "encoding": "etc1s",
-   "bytes": 10243,
-   "hash": "aeb7a39dee7b0f59",
-   "sourceHash": "ee9106d39b474730",
-   "settings": "1:color:256"
-  },
   "generated/fan_fronds": {
    "file": "generated/fan_fronds.ktx2",
    "kind": "color",
@@ -91,17 +58,6 @@
    "sourceHash": "ee545528d45a5c93",
    "settings": "1:color:512"
   },
-  "generated/rock_normal": {
-   "file": "generated/rock_normal.ktx2",
-   "kind": "normal",
-   "width": 512,
-   "height": 512,
-   "encoding": "uastc",
-   "bytes": 341598,
-   "hash": "7f96be424005503c",
-   "sourceHash": "636f2dea1ababec0",
-   "settings": "1:normal:512"
-  },
   "generated/shrubs": {
    "file": "generated/shrubs.ktx2",
    "kind": "color",
@@ -111,28 +67,6 @@
    "bytes": 63737,
    "hash": "f707dadd5253bbdc",
    "sourceHash": "e9448eec76cf2290",
-   "settings": "1:color:512"
-  },
-  "generated/storefront_atlas": {
-   "file": "generated/storefront_atlas.ktx2",
-   "kind": "color",
-   "width": 1024,
-   "height": 512,
-   "encoding": "etc1s",
-   "bytes": 132433,
-   "hash": "7e2b8855e450e5c0",
-   "sourceHash": "4a0c6793fcf2cbe0",
-   "settings": "1:color:1024"
-  },
-  "generated/storefront_emissive": {
-   "file": "generated/storefront_emissive.ktx2",
-   "kind": "color",
-   "width": 512,
-   "height": 256,
-   "encoding": "etc1s",
-   "bytes": 4723,
-   "hash": "a09dfdd64b04fbe9",
-   "sourceHash": "a26d03c7b330e0b6",
    "settings": "1:color:512"
   },
   "generated/tree_cards": {
@@ -201,17 +135,6 @@
    "sourceHash": "cfa40bc9d9417d18",
    "settings": "1:color:512"
   },
-  "pbr/grass_arm": {
-   "file": "pbr/grass_arm.ktx2",
-   "kind": "data",
-   "width": 512,
-   "height": 512,
-   "encoding": "etc1s",
-   "bytes": 68788,
-   "hash": "10301157c6173724",
-   "sourceHash": "95432451cb269379",
-   "settings": "1:data:512"
-  },
   "pbr/grass_dry_albedo": {
    "file": "pbr/grass_dry_albedo.ktx2",
    "kind": "color",
@@ -243,17 +166,6 @@
    "bytes": 337938,
    "hash": "a0b67b6078fefef9",
    "sourceHash": "5afc122862b4c91f",
-   "settings": "1:normal:512"
-  },
-  "pbr/grass_normal": {
-   "file": "pbr/grass_normal.ktx2",
-   "kind": "normal",
-   "width": 512,
-   "height": 512,
-   "encoding": "uastc",
-   "bytes": 339845,
-   "hash": "87e3218304616f9b",
-   "sourceHash": "832328216adc0a7e",
    "settings": "1:normal:512"
   },
   "pbr/roof_gravel_albedo": {
@@ -288,39 +200,6 @@
    "hash": "32446d32a441f25e",
    "sourceHash": "7b88d5d9e36f9f59",
    "settings": "1:normal:256"
-  },
-  "pbr/roof_tiles_albedo": {
-   "file": "pbr/roof_tiles_albedo.ktx2",
-   "kind": "color",
-   "width": 512,
-   "height": 512,
-   "encoding": "etc1s",
-   "bytes": 78341,
-   "hash": "0811d27878e4da04",
-   "sourceHash": "227a062b38b170e0",
-   "settings": "1:color:512"
-  },
-  "pbr/roof_tiles_arm": {
-   "file": "pbr/roof_tiles_arm.ktx2",
-   "kind": "data",
-   "width": 512,
-   "height": 512,
-   "encoding": "etc1s",
-   "bytes": 59847,
-   "hash": "7d388c8f5f2b5efc",
-   "sourceHash": "da94d4ce78607c4c",
-   "settings": "1:data:512"
-  },
-  "pbr/roof_tiles_normal": {
-   "file": "pbr/roof_tiles_normal.ktx2",
-   "kind": "normal",
-   "width": 512,
-   "height": 512,
-   "encoding": "uastc",
-   "bytes": 271488,
-   "hash": "adf5174999cef48c",
-   "sourceHash": "1548d3ebce335a45",
-   "settings": "1:normal:512"
   },
   "pbr/sand_albedo": {
    "file": "pbr/sand_albedo.ktx2",
@@ -457,17 +336,6 @@
    "normal": "pbr/stucco_normal",
    "arm": "pbr/stucco_arm"
   },
-  "roof_tiles": {
-   "tileMeters": 2.5,
-   "source": "https://polyhaven.com/a/clay_roof_tiles_02",
-   "authors": [
-    "Amal Kumar"
-   ],
-   "license": "CC0-1.0",
-   "albedo": "pbr/roof_tiles_albedo",
-   "normal": "pbr/roof_tiles_normal",
-   "arm": "pbr/roof_tiles_arm"
-  },
   "roof_gravel": {
    "tileMeters": 2.2,
    "source": "https://polyhaven.com/a/tarred_gravel",
@@ -486,9 +354,7 @@
     "Charlotte Baglioni"
    ],
    "license": "CC0-1.0",
-   "albedo": "pbr/grass_albedo",
-   "normal": "pbr/grass_normal",
-   "arm": "pbr/grass_arm"
+   "albedo": "pbr/grass_albedo"
   },
   "grass_dry": {
    "tileMeters": 2,
@@ -537,32 +403,8 @@
   }
  },
  "generated": {
-  "facade_albedo_tint": {
-   "texture": "generated/facade_albedo_tint",
-   "note": "4 storey bands, alpha = stucco tint mask"
-  },
-  "facade_arm": {
-   "texture": "generated/facade_arm",
-   "note": null
-  },
-  "facade_emissive": {
-   "texture": "generated/facade_emissive",
-   "note": null
-  },
-  "storefront_atlas": {
-   "texture": "generated/storefront_atlas",
-   "note": "diner, surf shop, gas station fronts"
-  },
-  "storefront_emissive": {
-   "texture": "generated/storefront_emissive",
-   "note": null
-  },
   "rock_albedo": {
    "texture": "generated/rock_albedo",
-   "note": null
-  },
-  "rock_normal": {
-   "texture": "generated/rock_normal",
    "note": null
   },
   "palm_trunk": {

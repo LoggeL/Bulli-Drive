@@ -10,7 +10,7 @@
 // It is incremental: a later run only tests the mutants again whose code or
 // covering tests changed, so after the first full run it is quick.
 //
-// MUTATION_GROUP=sim|contact|net|world|rooms|race runs one group of files with
+// MUTATION_GROUP=sim|contact|net|world|rooms|race|map runs one group of files with
 // its own incremental file and report (the workflow runs the groups in
 // parallel). Without it every file is mutated. --mutate narrows further:
 //   npm run test:mutation -- --mutate "src/shared/sim/contact.ts"
@@ -38,6 +38,13 @@ const GROUPS = {
     race: [
         'src/shared/race/**/*.ts', 'src/shared/sim/slipstream.ts', 'src/server/race/**/*.ts',
         'src/server/rooms/RaceRoom.ts', 'src/server/rooms/TimeTrialRoom.ts'
+    ],
+    // Curated map (phase 3): road network, splines, heightfield, corridors,
+    // rails, routes, drivability, the pure parts of the bake tool, the map
+    // validation and the worldviewer's editor logic
+    map: [
+        'src/shared/map/**/*.ts', 'tools/map/baseTerrain.ts', 'tools/map/bakeTerrain.ts', 'tools/map/bakeSources.ts',
+        'tools/map/validateMap.ts', 'tools/worldviewer/logic/**/*.ts'
     ]
 };
 
@@ -63,9 +70,12 @@ export default {
 
     mutate: group
         ? GROUPS[group]
-        : ['src/shared/**/*.ts', 'src/server/rooms/**/*.ts', 'src/server/race/**/*.ts', '!src/**/*.d.ts'],
+        : ['src/shared/**/*.ts', 'src/server/rooms/**/*.ts', 'src/server/race/**/*.ts', ...GROUPS.map.slice(1), '!src/**/*.d.ts'],
+    // public/maps stays: the map data tests read the baked terrain; so does
+    // public/models (structures.test.ts checks KIT_FOOTPRINTS against the
+    // kit's manifest)
     ignorePatterns: [
-        'dist', 'public', 'test-results', 'playwright-report', 'reports',
+        'dist', 'public/*', '!public/maps', '!public/models', 'test-results', 'playwright-report', 'reports',
         'screenshots', 'output', 'tools/models', 'tools/textures'
     ],
 

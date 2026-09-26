@@ -1,4 +1,4 @@
-import { test, expect, joinGame, snapshot, debugCall, placeOnClearRunway, distance, v2 } from './fixtures.js';
+import { test, expect, FLOW_DRAW_FPS, joinGame, snapshot, debugCall, placeOnClearRunway, distance, v2 } from './fixtures.js';
 import type { BulliDebugSnapshot, CarInfo, WorldInfo } from '../../src/client/e2eHook.js';
 
 // A page whose assets do not arrive (CDN, network, transcoder all end up
@@ -16,7 +16,7 @@ test('without the car models and the world textures the game still joins and dri
     const { page } = player;
     await page.route('**/models/manifest.json', route => route.fulfill({ status: 404, body: 'gone' }));
     await page.route(/\/textures\/.*\.ktx2/, route => route.abort());
-    await joinGame(player, 'E2E No Assets');
+    await joinGame(player, 'E2E No Assets', FLOW_DRAW_FPS);
 
     // The procedural car
     const models = await debugCall<BulliDebugSnapshot['models']>(page, 'modelsSettled');

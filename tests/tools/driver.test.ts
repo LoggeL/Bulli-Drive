@@ -1,20 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { forwardSpeed, RoadDriver, steerForAngle } from '../../tools/bots/driver.js';
-import { longestRunway } from '../../tools/bots/runway.js';
+import { arenaRunway, freeRunway, longestRunway, RUNWAY_CLEARANCE } from '../../tools/bots/runway.js';
+import type { MapData } from '../../src/shared/map/mapData.js';
+import { COIN_PICKUP_RADIUS, POWERUP_PICKUP_RADIUS } from '../../src/shared/party/rules.js';
 import { mixTotal, parseMix, httpOrigin } from '../../tools/bots/swarm.js';
-import { randomSpawnPose } from '../../src/server/rooms/spawn.js';
+import { mapFor } from '../../src/server/maps.js';
+import { slotSpawn } from '../../src/server/rooms/spawn.js';
+import { pointInPolygon } from '../../src/shared/map/geometry.js';
+import { nearestRoad } from '../../src/shared/map/roadNetwork.js';
 import { mulberry32 } from '../../src/shared/math/rng.js';
 import type { CarClassId } from '../../src/shared/sim/types.js';
 import { createSimCar, spawnVehicle } from '../../src/shared/sim/vehicle.js';
 import { stepWorld } from '../../src/shared/sim/world.js';
-import { cityRoadGrid } from '../../src/shared/world/cityGen.js';
-import { createMapData } from '../../src/shared/world/mapData.js';
 
-// The bots' driving (docs/phase-1b-design.md, 15.2) against the sim alone:
-// pure pursuit over the city's road grid, the chase of mode ram, and the
-// mix syntax of npm run bots.
+// The bots' driving (docs/phase-1b-design.md, 15.2) against the sim alone
+// on Bulli Bay: pure pursuit over the road network in Free Roam, across the
+// arena in the Party, the chase of mode ram, the runway of the scripted
+// bumps and the mix syntax of npm run bots.
 
-const map = createMapData();
+const map = mapFor();
 
 beforeEach(() => {
     vi.spyOn(Math, 'random').mockImplementation(mulberry32(4242));
@@ -25,36 +29,144 @@ afterEach(() => {
 });
 
 describe('RoadDriver', () => {
-    it.each(['bulli', 'sport', 'jeep', 'beetle', 'pickup'] as CarClassId[])('drives the %s through the city for a minute', (classId) => {
+    it.each(['bulli', 'sport', 'jeep', 'beetle', 'pickup'] as CarClassId[])('drives the %s over the roads for a minute', (classId) => {
         const car = createSimCar('bot', classId);
-        const pose = randomSpawnPose(map.world.city, []);
+        // A Free Roam spawn; a different group per class
+        const pose = slotSpawn(map.spawns.freeRoam, classId.length, []);
         spawnVehicle(car.state, map.simWorld, pose.x, pose.z, pose.yaw);
-        const driver = new RoadDriver(cityRoadGrid(), mulberry32(classId.length));
-        let top = 0;
+        const driver = new RoadDriver(mulberry32(classId.length));
+        driver.setMap(map, false);
+        let top = 0, offRoad = 0;
         for (let t = 0; t < 60 * 60; t++) {
             driver.drive(car.state, car.params, car.input);
             stepWorld([car], map.simWorld);
             top = Math.max(top, forwardSpeed(car.state));
-            // Never far from the road grid
-            expect(Math.abs(car.state.x)).toBeLessThan(140);
-            expect(Math.abs(car.state.z)).toBeLessThan(140);
+            // Near a road's centre line (a lane is 3 m out, a bend a few more)
+            if (t % 30 === 0 && (nearestRoad(map.net, car.state.x, car.state.z, 12)?.distance ?? Infinity) > 10) offRoad++;
         }
-        // Cruising at 20-35 m/s with the corners and the odd back-off from
-        // a lamp post: well over 10 m/s on average
+        // Cruising at 20-35 m/s with the bends and junctions: well over 10 m/s on average
         expect(driver.distance).toBeGreaterThan(600);
         expect(top).toBeGreaterThan(18);
         expect(top).toBeLessThan(40);
+        // At most a few of the 120 half-second checks off the road, and a reset at most
+        expect(offRoad).toBeLessThanOrEqual(6);
         expect(driver.resets).toBeLessThanOrEqual(1);
     });
 
+    it('wanders the harbour yards round the arena from a yard slot, and stays in the Party\'s zone', () => {
+        const zone = map.partyZone;
+        const slots = map.spawns.party.filter(s => s.group === 'harbor');
+        for (const [i, slot] of [slots[0], slots[3], slots[6]].entries()) {
+            const car = createSimCar('bot', 'beetle');
+            spawnVehicle(car.state, map.partyWorld, slot.x, slot.z, slot.yaw);
+            const driver = new RoadDriver(mulberry32(7 + i));
+            driver.setMap(map, true);
+            for (let t = 0; t < 60 * 30; t++) {
+                driver.drive(car.state, car.params, car.input);
+                stepWorld([car], map.partyWorld);
+                const { x, z } = car.state;
+                expect(x > zone.minX && x < zone.maxX && z > zone.minZ && z < zone.maxZ, `${x} ${z}`).toBe(true);
+            }
+            // Along the roads and alleys (the freest way out, as no arena
+            // target has a clear way): 360-600 m measured from every yard slot
+            expect(driver.distance, `slot ${i}`).toBeGreaterThan(250);
+        }
+    });
+
+    it('wanders across the arena in the Party and stays behind its fence', () => {
+        const arena = map.net.areas.find(a => a.id === map.sources.pois.arena.area)!;
+        const car = createSimCar('bot', 'beetle');
+        const slot = map.spawns.party[0];
+        spawnVehicle(car.state, map.partyWorld, slot.x, slot.z, slot.yaw);
+        const driver = new RoadDriver(mulberry32(5));
+        driver.setMap(map, true);
+        for (let t = 0; t < 60 * 30; t++) {
+            driver.drive(car.state, car.params, car.input);
+            stepWorld([car], map.partyWorld);
+            expect(pointInPolygon(arena.polygon, car.state.x, car.state.z)).toBe(true);
+        }
+        expect(driver.distance).toBeGreaterThan(150);
+    });
+
+    it('does not chase a car behind a container in the arena, but drives on', () => {
+        // The containers at (-122, 566) and (-118.5, 566) stand along z (560-572);
+        // the ram bot east of them, its target west of them
+        const car = createSimCar('ram', 'bulli');
+        const target = createSimCar('target', 'bulli');
+        spawnVehicle(car.state, map.partyWorld, -110, 566, -Math.PI / 2);
+        spawnVehicle(target.state, map.partyWorld, -130, 566, 0);
+        car.state.ghostTicks = target.state.ghostTicks = 0;
+        const driver = new RoadDriver(mulberry32(3));
+        driver.setMap(map, true);
+        for (let t = 0; t < 60 * 4; t++) {
+            const s = target.state;
+            driver.drive(car.state, car.params, car.input, { x: s.x, z: s.z, vx: s.vx, vz: s.vz });
+            stepWorld([car, target], map.partyWorld);
+        }
+        // Chasing, it would push into the container: a few metres and a
+        // back-off in 4 s; wandering it drives off
+        expect(driver.backoffCount).toBe(0);
+        expect(driver.distance).toBeGreaterThan(25);
+    });
+
+    // A bulli in the Party's arena for `seconds`, chasing `target` (parked
+    // there) when given: the distance it drove and its back-offs
+    function arenaRun(x: number, z: number, yaw: number, seconds: number, seed: number, target?: [number, number, number]) {
+        const car = createSimCar('bot', 'bulli');
+        spawnVehicle(car.state, map.partyWorld, x, z, yaw);
+        const cars = [car];
+        if (target) {
+            cars.push(createSimCar('target', 'bulli'));
+            spawnVehicle(cars[1].state, map.partyWorld, ...target);
+        }
+        for (const c of cars) c.state.ghostTicks = 0;
+        const driver = new RoadDriver(mulberry32(seed));
+        driver.setMap(map, true);
+        for (let t = 0; t < 60 * seconds; t++) {
+            const s = cars[1]?.state;
+            driver.drive(car.state, car.params, car.input, s ? { x: s.x, z: s.z, vx: s.vx, vz: s.vz } : null);
+            stepWorld(cars, map.partyWorld);
+        }
+        return driver;
+    }
+
+    it.each([1, 2, 3, 4, 5])('turns round in three moves, nose against the arena fence (seed %i)', (seed) => {
+        // 3 m from the north fence (z 659.5), facing it: every target lies
+        // behind. Going forward only, it pushes into the fence and backs
+        // off; turning round it drives away (80-100 m in 8 s)
+        const driver = arenaRun(-195, 656.5, 0, 8, seed);
+        expect(driver.distance).toBeGreaterThan(70);
+        expect(driver.backoffCount).toBe(0);
+    });
+
+    it.each([1, 2, 3, 4, 5])('backs away from a container it faces, out the freest way (seed %i)', (seed) => {
+        // Nose at the west face of the container at x -241.5..-234.5,
+        // z 589.9..602.1, the arena's fence 17 m behind: no target keeps 3 m
+        // from both, so the bot takes the freest way and turns round for it
+        // (about 56 m in 8 s; stuck at the container: a few metres)
+        const driver = arenaRun(-242.4, 594.8, 72 * Math.PI / 180, 8, seed);
+        expect(driver.distance).toBeGreaterThan(45);
+        expect(driver.backoffCount).toBe(0);
+    });
+
+    it('gives up a chase that ends against the fence and drives on', () => {
+        // The target parked in the arena's north-west corner, the ram bot 10 m
+        // away heading for it: the bump, a back-off, then the chase is over
+        // (30-40 m in 8 s; chasing on it pushes into the corner: under 20 m)
+        const driver = arenaRun(-250, 650, -Math.PI * 0.75, 8, 1, [-257, 657, -Math.PI * 0.75]);
+        expect(driver.backoffCount).toBe(1);
+        expect(driver.distance).toBeGreaterThan(25);
+    });
+
     it('chases a car standing on a free road and runs into it', () => {
-        const runway = longestRunway(map.colliders);
+        const runway = longestRunway(map);
         const car = createSimCar('ram', 'bulli');
         const target = createSimCar('target', 'bulli');
         spawnVehicle(car.state, map.simWorld, runway.x, runway.z + 5, 0);
         spawnVehicle(target.state, map.simWorld, runway.x + 1, runway.z + 45, Math.PI / 2);
         car.state.ghostTicks = target.state.ghostTicks = 0;
-        const driver = new RoadDriver(cityRoadGrid(), mulberry32(3));
+        const driver = new RoadDriver(mulberry32(3));
+        driver.setMap(map, false);
         let impact = 0;
         for (let t = 0; t < 60 * 4 && impact === 0; t++) {
             const s = target.state;
@@ -68,7 +180,7 @@ describe('RoadDriver', () => {
     it('asks for the wheel angle the sim then steers to, standing and moving', () => {
         for (const speed of [0, 12]) {
             const car = createSimCar('p', 'bulli');
-            const runway = longestRunway(map.colliders);
+            const runway = longestRunway(map);
             spawnVehicle(car.state, map.simWorld, runway.x, runway.z + 5, 0);
             car.state.vz = speed;
             // A tenth of the lock: well below the counter-steer and the grip limit
@@ -82,6 +194,97 @@ describe('RoadDriver', () => {
             // The axis is quantised to 1/127 of the lock
             expect(Math.abs(car.state.steerAngle - want), `at ${speed} m/s`).toBeLessThan(car.params.steerLock / 127);
         }
+    });
+});
+
+describe('the runway of the scripted bumps', () => {
+    it('is a long free stretch on the road, driving towards +z', () => {
+        const runway = longestRunway(map);
+        expect(runway.free).toBeGreaterThanOrEqual(120);
+        // Free as far as it says: a car there drives it without hitting anything
+        const car = createSimCar('p', 'pickup');
+        spawnVehicle(car.state, map.simWorld, runway.x, runway.z, 0);
+        let wall = 0;
+        for (let t = 0; t < 60 * 6 && car.state.z < runway.z + runway.free - 10; t++) {
+            car.input.throttle = 255;
+            car.input.steer = 0;
+            stepWorld([car], map.simWorld);
+            wall = Math.max(wall, car.events.wallImpact);
+        }
+        expect(car.state.z).toBeGreaterThan(runway.z + 100);
+        expect(wall).toBe(0);
+    });
+
+    it('ends where a collider stands on the line', () => {
+        const runway = longestRunway(map);
+        // A post (r 0.5) 50 m ahead on the line cuts the free length to where
+        // the car's grown circle would touch it
+        const probe = { ...map, simWorld: { ...map.simWorld, colliders: [...map.simWorld.colliders, { kind: 'circle' as const, x: runway.x, z: runway.z + 50, r: 0.5, base: 0, top: Infinity }] } };
+        expect(freeRunway(probe, runway.x, runway.z)).toBeCloseTo(50 - 0.5 - RUNWAY_CLEARANCE, 9);
+    });
+});
+
+describe('the runway across the Party arena', () => {
+    it('crosses the arena towards +x, clear of its walls and of every pickup', () => {
+        const runway = arenaRunway(map);
+        const { minX, maxX, minZ, maxZ } = map.arenaBounds;
+        expect(runway.yaw).toBe(Math.PI / 2);
+        expect(runway.free).toBeGreaterThanOrEqual(120);
+        expect(runway.x).toBeGreaterThan(minX);
+        expect(runway.x + runway.free).toBeLessThan(maxX);
+        expect(runway.z).toBeGreaterThan(minZ);
+        expect(runway.z).toBeLessThan(maxZ);
+        // No coin or power-up is picked up on the way: each lies further
+        // from the line than its pickup radius or beyond its end
+        const items = [
+            ...map.items.coins.map(c => ({ ...c, r: COIN_PICKUP_RADIUS })),
+            ...map.items.powerups.map(p => ({ ...p, r: POWERUP_PICKUP_RADIUS }))
+        ];
+        for (const item of items) {
+            const onLine = item.x >= runway.x - item.r && item.x <= runway.x + runway.free + item.r;
+            if (onLine) expect(Math.abs(item.z - runway.z), `item at ${item.x}, ${item.z}`).toBeGreaterThanOrEqual(item.r);
+        }
+        // A car there drives it in the Party's world without touching a wall
+        const car = createSimCar('p', 'pickup');
+        spawnVehicle(car.state, map.partyWorld, runway.x, runway.z, runway.yaw);
+        let wall = 0;
+        for (let t = 0; t < 60 * 6 && car.state.x < runway.x + runway.free - 10; t++) {
+            car.input.throttle = 255;
+            car.input.steer = 0;
+            stepWorld([car], map.partyWorld);
+            wall = Math.max(wall, car.events.wallImpact);
+        }
+        expect(car.state.x).toBeGreaterThan(runway.x + 100);
+        expect(wall).toBe(0);
+    });
+
+    // A hand-made arena 100 m long and 12.5 m wide: with the clearance of
+    // 4.75 m (1.5 * MEGA_SCALE 2.5 + 1) plus the fence's 1 m, the lines run at
+    // z = 5.75, 6.25 and 6.75 from x = 5.75 to 94.25
+    const arena = (coins: { x: number; z: number }[], colliders: unknown[] = []) => ({
+        arenaBounds: { minX: 0, maxX: 100, minZ: 0, maxZ: 12.5 },
+        partyWorld: { colliders },
+        items: { coins: coins.map((c, id) => ({ id, ...c })), powerups: [] }
+    }) as unknown as MapData;
+
+    it('runs the full length where nothing is in the way', () => {
+        expect(RUNWAY_CLEARANCE).toBe(4.75);
+        expect(arenaRunway(arena([]))).toEqual({ x: 5.75, z: 5.75, yaw: Math.PI / 2, free: 88.5 });
+    });
+
+    it('ends before the pickup radius of a coin on the line', () => {
+        // The coin at (50, 6.25) with its 4 m radius: the outer lines, 0.5 m
+        // off its centre, meet the circle sqrt(16 - 0.25) = 3.9686 m before
+        // x = 50; the first of them wins
+        const runway = arenaRunway(arena([{ x: 50, z: 6.25 }]));
+        expect(runway.z).toBe(5.75);
+        expect(runway.free).toBeCloseTo(50 - Math.sqrt(15.75) - 5.75, 9);
+    });
+
+    it('ends before a collider grown by the clearance', () => {
+        // A post of 1 m radius at x = 30: its box grown by 4.75 m starts at 24.25
+        const post = { kind: 'circle', x: 30, z: 6.25, r: 1, base: 0, top: Infinity };
+        expect(arenaRunway(arena([], [post])).free).toBeCloseTo(24.25 - 5.75, 9);
     });
 });
 

@@ -6,7 +6,7 @@ import { AdaptiveDelay, createRemotePose, RemoteTrack, type RemotePose } from '.
 import type { PredictedRemote } from '../../shared/net/prediction.js';
 import type { Bulli } from '../entities/Bulli.js';
 import { state } from '../state.js';
-import { getTerrainHeight } from '../world/environment.js';
+import { groundHeight } from '../world/ground.js';
 import { netDriver } from './netDriver.js';
 
 // Remote cars on screen (docs/phase-1b-design.md, 8.6): far ones follow
@@ -157,7 +157,7 @@ export function updateRemoteCars(dt: number, now: number, alpha: number): void {
             scale = b.scale;
             speed = b.vx * Math.sin(b.yaw) + b.vz * Math.cos(b.yaw);
         }
-        const ground = getTerrainHeight(x, z);
+        const ground = groundHeight(x, z);
         remote.group.position.set(x, ground, z);
         remote.group.rotation.y = yaw;
         remote.group.scale.setScalar(Number.isFinite(scale) ? Math.max(0.5, Math.min(4, scale)) : 1);

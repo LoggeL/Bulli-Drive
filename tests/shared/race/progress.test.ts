@@ -25,7 +25,7 @@ const SQUARE: TrackDef = {
         { x: 100, z: 50, yaw: Math.PI, width: 20, visual: 'arch' },
         { x: 50, z: 0, yaw: -Math.PI / 2, width: 20, visual: 'arch' }
     ],
-    grid: [], hints: [], minimap: { minX: 0, maxX: 100, minZ: 0, maxZ: 100 }
+    grid: [], hints: [], minimap: { minX: 0, maxX: 100, minZ: 0, maxZ: 100 }, ramps: []
 };
 
 const SPRINT: TrackDef = {
@@ -54,6 +54,17 @@ function crossSquareGate(p: RaceProgress, course: Course, k: number, tick: numbe
     const fx = Math.sin(g.yaw), fz = Math.cos(g.yaw);
     return passGate(p, course, tick, START, g.x - fx, g.z - fz, g.x + fx, g.z + fz);
 }
+
+describe('createCourse', () => {
+    it('reads the surface under every point of the line from the world it is raced in, else none', () => {
+        const line = buildRacingLine(SQUARE);
+        expect(createCourse(SQUARE, line).surfaces).toBeNull();
+        // Sand west of x = 50, tarmac east of it
+        const course = createCourse(SQUARE, line, x => (x < 50 ? 6 : 0));
+        expect(course.surfaces).toHaveLength(line.points.length);
+        line.points.forEach((p, i) => expect(course.surfaces![i]).toBe(p.x < 50 ? 6 : 0));
+    });
+});
 
 describe('laps and gate order', () => {
     it('counts laps from the crossings: circuit min(laps, floor((passed - 1)/n) + 1), sprint 1', () => {
@@ -411,6 +422,40 @@ describe('resetBeforeNextGate (10.3)', () => {
         // A finished racer: nothing to check
         p.status = 'finished';
         s.x = 100; s.z = 70;
+        expect(resetBeforeNextGate(p, course, s, world)).toBe(false);
+    });
+
+    it('puts a car reset far behind its own place on the line (a parallel leg) back at that place', () => {
+        const p = createRaceProgress();
+        // G0 and G1 passed; on the way down x = 100 at z = 70 (s = 230),
+        // the next gate G2 at (100, 50), s = 250
+        crossSquareGate(p, course, 0, START + 1);
+        crossSquareGate(p, course, 1, START + 2);
+        // Tracked on the line (any index counts, the first one too)
+        p.lineIndex = 0;
+        p.sLine = 230;
+        const s = createVehicleState();
+        // The sim's reset took it to the nearest leg, x = 0 at z = 60 (s = 60):
+        // 170 m behind (more than RESET_BEHIND_MAX)
+        s.x = 0; s.z = 60; s.yaw = 0; s.vx = 2;
+        expect(resetBeforeNextGate(p, course, s, world)).toBe(true);
+        expect(Math.abs(s.x - 100)).toBeLessThan(LINE_TOLERANCE);
+        expect(Math.abs(s.z - 70)).toBeLessThan(LINE_TOLERANCE);
+        expect(s.yaw).toBeCloseTo(Math.PI, 9);
+        expect([s.vx, s.vz]).toEqual([0, 0]);
+        // Within RESET_BEHIND_MAX behind (s = 185: 45 m) it stays
+        s.x = 85; s.z = 100;
+        expect(resetBeforeNextGate(p, course, s, world)).toBe(false);
+        expect([s.x, s.z]).toEqual([85, 100]);
+        // Its place 2 m before the gate: back to RESET_BEFORE_GATE before it
+        p.sLine = 248;
+        s.x = 0; s.z = 60;
+        expect(resetBeforeNextGate(p, course, s, world)).toBe(true);
+        expect(Math.abs(s.x - 100)).toBeLessThan(LINE_TOLERANCE);
+        expect(Math.abs(s.z - 55)).toBeLessThan(LINE_TOLERANCE);
+        // Not tracked yet (right after the start): nothing to go back to
+        p.lineIndex = -1;
+        s.x = 0; s.z = 60;
         expect(resetBeforeNextGate(p, course, s, world)).toBe(false);
     });
 

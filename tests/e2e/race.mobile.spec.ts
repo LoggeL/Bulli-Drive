@@ -1,14 +1,18 @@
 import type { Page } from '@playwright/test';
 import type { RaceDebugSnapshot } from '../../src/client/e2eHook.js';
-import { HILL_SPRINT } from '../../src/shared/race/tracks/index.js';
-import { test, expect, openGame, joinFromSplash, debugCall } from './fixtures.js';
+import { mapFor } from '../../src/server/maps.js';
+import { createProjection, pointAt } from '../../src/shared/race/geometry.js';
+import { createCourse } from '../../src/shared/race/progress.js';
+import { racingLine } from '../../src/shared/race/racingLine.js';
+import { trackDef } from '../../src/shared/race/tracks/index.js';
+import { test, expect, FLOW_DRAW_FPS, openGame, joinFromSplash, debugCall } from './fixtures.js';
 
 // The race on a phone (docs/phase-2-design.md, 20.3), the one E2E test of
 // phase 2, in the "mobile" project (touch; the keyboard drives the same
 // UI in the desktop tests): RACE on the splash, the lobby with the Hill
 // Sprint and READY, the countdown with its lights and the GO zone, then
 // GO! (auto-gas starts one tick after green). The test hook puts the car
-// 30 m before the finish (the server counts the gates before it as
+// 20 m before the finish (the server counts the gates before it as
 // passed, E2E only), auto-gas drives it over the line: position, time,
 // FINISH, the results with the own name, REMATCH and the next race on the
 // same track. Everything behind it (the rules, the views, the taps) is
@@ -17,9 +21,14 @@ import { test, expect, openGame, joinFromSplash, debugCall } from './fixtures.js
 // tests/integration/race.test.ts; the way out of a room by the room chip
 // in mobile.spec.ts (the E2E job stays under 5 min, CLAUDE.md).
 
-const FINISH = HILL_SPRINT.gates[HILL_SPRINT.gates.length - 1];
-// 30 m before the finish gate, facing along it
-const BEFORE_FINISH = { x: FINISH.x - 30 * Math.sin(FINISH.yaw), z: FINISH.z - 30 * Math.cos(FINISH.yaw), yaw: FINISH.yaw };
+// 20 m before the Ridge Climb's finish gate on its racing line (past the
+// crest ramp before it), facing along it
+const BEFORE_FINISH = (() => {
+    const track = trackDef(mapFor(), 'hill-sprint');
+    const line = racingLine(track);
+    const p = pointAt(line, createCourse(track, line).gateS.at(-1)! - 20, createProjection());
+    return { x: p.x, z: p.z, yaw: Math.atan2(p.tx, p.tz) };
+})();
 
 function race(page: Page): Promise<RaceDebugSnapshot | null> {
     return debugCall<RaceDebugSnapshot | null>(page, 'race');
@@ -30,7 +39,7 @@ test('a race on the phone: splash, lobby, countdown, over the finish line, resul
     const { page } = player;
 
     // ---- Splash: RACE ----
-    await openGame(player);
+    await openGame(player, FLOW_DRAW_FPS);
     const raceOption = page.locator('.mode-option[data-room="race"]');
     expect((await raceOption.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     const id = await joinFromSplash(player, 'E2E Racer', 'race');

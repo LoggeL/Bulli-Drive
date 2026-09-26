@@ -123,6 +123,34 @@ jobs:
             test-results/
           retention-days: 14
 
+  engines:
+    name: Map determinism (WebKit, Chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('./node_modules/@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-webkit-chromium-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      - if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps webkit chromium
+      - if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps webkit chromium
+      # The map's heights, road samples, rail colliders, TrackDefs and bake
+      # in WebKit (Safari, iOS) and Chromium, bit for bit against Node
+      # (docs/phase-3-design.md, A28). No build, no server: about 10 s.
+      - run: npm run test:engines
+
   e2e-render:
     name: Render checks (Playwright)
     runs-on: ubuntu-latest

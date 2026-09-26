@@ -1,43 +1,46 @@
-import type { CityData, TerrainConfig, TreeData } from '../../shared/protocol.js';
-import { cityRoadGrid } from '../../shared/world/cityGen.js';
-import { buildWorldColliders } from '../../shared/world/colliderGen.js';
-import { createSimWorld, type ColliderInput, type SimWorld } from '../../shared/world/colliders.js';
+import type { MapData } from '../../shared/map/mapData.js';
+import type { RoomKind } from '../../shared/protocol.js';
+import { FLAT_TERRAIN } from '../../shared/sim/scenarios.js';
+import { createSimWorld, type SimWorld } from '../../shared/world/colliders.js';
 import { state } from '../state.js';
 
-// The static collision world of the v2 sim. The colliders come from the
-// shared generator (shared/world/colliderGen.ts), exactly the list the
-// server builds (docs/phase-1b-design.md, 6), never from what the client
-// happened to render.
+// The static collision world of the v2 sim: the map's own, built from the
+// same sources and terrain as the server's (shared/map/mapData.ts,
+// docs/phase-3-design.md, 14 M3), never from what the client happened to
+// render. Free Roam drives in the map's world, the Party in its zone's
+// (the arena and the harbour yards, fenced), a race room in its race world
+// (map + track).
 
-/**
- * Sets the colliders of the world (trees and city; city null offline).
- */
-export function setWorldColliders(world: { trees: readonly TreeData[]; city: CityData | null }): void {
-    state.worldColliders = buildWorldColliders(world);
-}
-
-let cachedWorld: SimWorld | null = null;
+let mapData: MapData | null = null;
+let roomWorld: SimWorld | null = null;
 // A race room drives in its race world (map + track, race/RaceClient.ts)
 let worldOverride: SimWorld | null = null;
+// Without a map (a unit test, the page before its map): flat and empty
+let fallback: SimWorld | null = null;
 
-/** The world of a race room (null: the map's own again). */
+/** The map is loaded: its colliders and ground become the client's. */
+export function setGameMapWorld(map: MapData): void {
+    mapData = map;
+    roomWorld = map.simWorld;
+    state.worldColliders = map.colliders;
+    state.groundHeight = map.simWorld.terrainHeight;
+}
+
+/** The world of a room kind (the Party: its zone); also the current world from now on. */
+export function roomSimWorld(kind: RoomKind): SimWorld {
+    roomWorld = mapData ? (kind === 'party' ? mapData.partyWorld : mapData.simWorld) : currentSimWorld();
+    return roomWorld;
+}
+
+/** The world of a race room (null: the room's own again). */
 export function setWorldOverride(world: SimWorld | null): void {
     worldOverride = world;
 }
-let cachedTerrain: TerrainConfig | null = null;
-let cachedColliders: readonly ColliderInput[] | null = null;
 
-/**
- * The sim world for the current terrain and collider list. Built once and
- * rebuilt only when either changes (the list is set with the server's
- * world, before the first tick normally). In a race room: its race world.
- */
-export function simWorldFor(terrain: TerrainConfig, colliders: readonly ColliderInput[]): SimWorld {
+/** The world the local car drives in now. */
+export function currentSimWorld(): SimWorld {
     if (worldOverride) return worldOverride;
-    if (!cachedWorld || terrain !== cachedTerrain || colliders !== cachedColliders) {
-        cachedWorld = createSimWorld(terrain, colliders, [], cityRoadGrid());
-        cachedTerrain = terrain;
-        cachedColliders = colliders;
-    }
-    return cachedWorld;
+    if (roomWorld) return roomWorld;
+    if (!fallback) fallback = createSimWorld(FLAT_TERRAIN, []);
+    return fallback;
 }

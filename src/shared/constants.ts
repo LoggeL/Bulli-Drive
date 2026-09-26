@@ -47,22 +47,7 @@ export const POWERUP_TYPES = [
     { type: 'ghost', color: 0x9966FF, label: 'Ghost' }
 ];
 
-export const CITY_LAYOUT = {
-    blockSize: 40,
-    roadWidth: 12,
-    gridSize: 4
-};
-
-// Shared client/server collision footprint for the authored props in Sunset
-// Plaza. The server uses these clearances for spawning; the client uses them
-// for vehicle collisions and rendering positions.
-export const PLAZA_PROP_LAYOUT = {
-    planterOffset: 13,
-    parasolOffset: 13 * 0.58,
-    planterRadius: 1.6,
-    parasolRadius: 0.9
-};
-
+// The sine terrain of the sandbox and of the sim's tests (world/terrain.ts)
 export const DEFAULT_TERRAIN_CONFIG = {
     size: 1000,
     segments: 128,
@@ -73,9 +58,3 @@ export const DEFAULT_TERRAIN_CONFIG = {
     frequency3: 0.045,
     amplitude3: 1.2
 };
-
-// Half the side of the playable area plus a margin (m): the rendered
-// terrain follows the shared height inside and rises to hills beyond it
-// (client/world/environment.ts). The server no longer checks positions,
-// it simulates the cars itself.
-export const WORLD_BOUND = DEFAULT_TERRAIN_CONFIG.size / 2 + 50;

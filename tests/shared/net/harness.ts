@@ -189,7 +189,8 @@ export class TestClient {
         this.events.push(msg);
         switch (msg.type) {
             case 'roomState':
-                this.net.enterRoom(mapFor().simWorld, msg.room.kind === 'party', msg.members, this.car, this.id);
+                const party = msg.room.kind === 'party';
+                this.net.enterRoom(party ? mapFor().partyWorld : mapFor().simWorld, party, msg.members, this.car, this.id);
                 if (msg.resume) this.net.resumeOwn(msg.resume);
                 this.net.clock.reset();
                 this.pingsSent = 0;

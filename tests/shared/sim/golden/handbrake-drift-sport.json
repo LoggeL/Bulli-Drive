@@ -34,7 +34,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 1,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         }
       }
     },
@@ -71,7 +72,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         }
       }
     },
@@ -108,7 +110,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         }
       }
     },
@@ -145,7 +148,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         }
       }
     },
@@ -182,7 +186,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         }
       }
     },
@@ -219,7 +224,8 @@
           "wasGhost": false,
           "scale": 1,
           "prevButtons": 0,
-          "draft": 0
+          "draft": 0,
+          "waterTicks": 0
         }
       }
     }

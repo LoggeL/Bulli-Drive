@@ -1,51 +1,37 @@
 import * as THREE from 'three';
-import { CITY_LAYOUT } from '../../shared/constants.js';
-import { roadLineCenter } from '../../shared/world/cityGen.js';
 import type { RenderTier } from '../effects/renderQuality.js';
 import { WORLD_UNIFORMS } from '../render/look.js';
-import { cloneWorldTexture, worldTexture } from './textures.js';
+import { worldTexture } from './textures.js';
 
 // Materials of the realistic world (graphics G1), ported from the world probe.
 //
 // Every world material goes through patchWorldMaterial(): a world position
 // varying, large scale color variation from the world noise against visible
-// tiling, cheap contact darkening at wall bases and optional blocks (road
-// wear, sidewalk joints, terrain splat, foliage translucency, alpha to
-// coverage). The height fog comes from the shared fog chunks (look.ts).
+// tiling, cheap contact darkening at wall bases and optional blocks (foliage
+// translucency, alpha to coverage, the finishes of street props). The height
+// fog comes from the shared fog chunks (look.ts). The map's ground, roads,
+// sea and kit build their own materials on it (terrain.ts, roads.ts, sea.ts,
+// kit.ts); this module has the shared ones: plants, props, the fountain.
 //
 // Tiers: desktop gets the full PBR sets (albedo, normal, ARM), phones (the
 // low tier) the same without normal maps, software WebGL Lambert materials
 // with albedo only (a CPU rasterizer cannot afford the PBR shading).
 
 export interface WorldMaterials {
-    asphalt: THREE.Material;
-    markings: THREE.Material;
-    sidewalk: THREE.Material;
-    lawn: THREE.Material;
-    sand: THREE.Material;
-    facade: THREE.Material;
     stucco: THREE.Material;
-    tiles: THREE.Material;
-    gravel: THREE.Material;
-    storefront: THREE.Material;
-    fabric: THREE.Material;
     furniture: THREE.Material;
-    pavers: THREE.Material;
-    terrain: THREE.Material;
-    rock: THREE.Material;
     trunk: THREE.Material;
     fan: THREE.Material;
     frond: THREE.Material;
     tree: THREE.Material;
     shrub: THREE.Material;
-    water: THREE.Material;
     fountainWater: THREE.Material;
     falls: THREE.Material;
 }
 
 /**
  * Fountain of the plaza for the fountain water shader: x, z of its axis and
- * the height of its foot (set by city.ts).
+ * the height of its foot (set by fountain.ts).
  */
 export const FOUNTAIN_UNIFORMS = {
     uFountain: { value: new THREE.Vector3() }
@@ -316,18 +302,6 @@ uniform float bulliEnvMapIntensity;
     return material;
 }
 
-// --- Road coordinates -------------------------------------------------------------
-
-// Offset from the nearest road center line across the road, or 99 in
-// intersections and away from roads (the grid of cityGen.ts)
-const ROAD_GLSL = /* glsl */`
-float roadAcross( vec3 wp ) {
-	vec2 o = mod( wp.xz - ${roadLineCenter(0, 'x').toFixed(1)} + ${(CITY_LAYOUT.blockSize + CITY_LAYOUT.roadWidth) / 2}.0, ${(CITY_LAYOUT.blockSize + CITY_LAYOUT.roadWidth).toFixed(1)} ) - ${(CITY_LAYOUT.blockSize + CITY_LAYOUT.roadWidth) / 2}.0;
-	bool onX = abs( o.x ) < ${(CITY_LAYOUT.roadWidth / 2).toFixed(1)};
-	bool onZ = abs( o.y ) < ${(CITY_LAYOUT.roadWidth / 2).toFixed(1)};
-	return onX && !onZ ? o.x : ( onZ && !onX ? o.y : 99.0 );
-}`;
-
 // --- Factory ------------------------------------------------------------------------
 
 interface PbrSet {
@@ -342,14 +316,7 @@ interface PbrSet {
 // large surfaces with it instead of sampling the textures, and it is the
 // placeholder texel of the albedo maps until they have loaded
 const MEAN_ALBEDO: Record<string, number> = {
-    asphalt: 0x55524e,
-    sidewalk: 0xb9b2a8,
-    grass: 0x6f7a44,
-    grass_dry: 0x9c8c62,
-    sand: 0xc9b596,
-    stucco: 0xdcd7cf,
-    roof_tiles: 0xa9573a,
-    roof_gravel: 0x8f887d
+    stucco: 0xdcd7cf
 };
 
 // What survives of the shader blocks on the software tier: only what the
@@ -414,289 +381,24 @@ export function createWorldMaterials(tier: RenderTier): WorldMaterials {
 
     const M = {} as WorldMaterials;
 
-    // Asphalt with wheel tracks, oil in the lane centers, dirt along the
-    // curbs and darker patches. Roads sit a little above the terrain; the
-    // polygon offset keeps the flat layers apart at any distance.
-    M.asphalt = patch(withPbr(pbr('asphalt'), {
-        normalScale: new THREE.Vector2(0.8, 0.8),
-        envMapIntensity: 0.55,
-        aoMapIntensity: 0.7,
-        polygonOffset: true,
-        polygonOffsetFactor: -2,
-        polygonOffsetUnits: -2
-    }), {
-        macro: 0.16,
-        macroScale: 45,
-        decl: ROAD_GLSL + '\nfloat wearMask = 0.0;',
-        color: /* glsl */`
-	{
-		float across = roadAcross( vWPos );
-		float a = abs( across );
-		vec4 n1 = texture2D( uNoise, vWPos.xz / 9.0 );
-		// Wheel tracks: two per lane
-		float tracks = exp( -pow( ( a - 2.2 ) / 0.35, 2.0 ) ) + exp( -pow( ( a - 3.8 ) / 0.35, 2.0 ) );
-		tracks *= 0.6 + 0.4 * n1.g;
-		wearMask = tracks;
-		diffuseColor.rgb *= 1.0 - 0.10 * tracks;
-		float oil = exp( -pow( ( a - 3.0 ) / 0.28, 2.0 ) ) * smoothstep( 0.45, 0.8, n1.b );
-		diffuseColor.rgb *= 1.0 - 0.22 * oil;
-		// Gutter: dirt and sand along the curb
-		float gutter = smoothstep( 5.3, 6.0, a ) * step( a, 50.0 );
-		diffuseColor.rgb = mix( diffuseColor.rgb, diffuseColor.rgb * vec3( 1.08, 1.0, 0.9 ) * 0.82, gutter * 0.8 );
-		// Patches of fresh, darker tar
-		vec4 n2 = texture2D( uNoise, vWPos.xz / 38.0 + 0.21 );
-		float patchMask = smoothstep( 0.58, 0.63, n2.a );
-		diffuseColor.rgb = mix( diffuseColor.rgb, diffuseColor.rgb * 0.72, patchMask * 0.85 );
-		wearMask += patchMask * 0.6;
-	}`,
-        rough: 'roughnessFactor = clamp( roughnessFactor * 0.88 - 0.18 * wearMask, 0.22, 1.0 );'
-    });
-
-    // Road paint, worn off in the wheel tracks
-    M.markings = patch(surface({
-        vertexColors: true,
-        roughness: 0.62,
-        metalness: 0,
-        envMapIntensity: 0.5,
-        polygonOffset: true,
-        polygonOffsetFactor: -4,
-        polygonOffsetUnits: -4
-    }), {
-        decl: ROAD_GLSL,
-        color: /* glsl */`
-	{
-		float a = abs( roadAcross( vWPos ) );
-		float tracks = a < 50.0 ? exp( -pow( ( a - 2.2 ) / 0.42, 2.0 ) ) + exp( -pow( ( a - 3.8 ) / 0.42, 2.0 ) ) : 0.3;
-		vec4 m = texture2D( uNoise, vWPos.xz / 17.0 + 0.5 );
-		vec4 n = texture2D( uNoise, vWPos.xz / 1.1 );
-		float wear = tracks * 0.5 + ( 1.0 - m.g ) * 0.42 + ( n.b - 0.5 ) * 0.18;
-		if ( wear > 0.74 ) discard;
-		diffuseColor.rgb *= mix( 1.0, 0.72, smoothstep( 0.35, 0.74, wear ) );
-	}`
-    });
-
-    // Broom finished concrete with the 1.5 m joint grid of US sidewalks
-    M.sidewalk = patch(withPbr(pbr('sidewalk'), {
-        vertexColors: true,
-        envMapIntensity: 0.6,
-        polygonOffset: true,
-        polygonOffsetFactor: -1,
-        polygonOffsetUnits: -1
-    }), {
-        macro: 0.12,
-        macroScale: 30,
-        baseAO: 0.9,
-        color: /* glsl */`
-	{
-		vec2 q = vWPos.xz / 1.52;
-		vec2 fw = fwidth( q ) * 1.2;
-		vec2 gd = abs( fract( q ) - 0.5 );
-		float joint = 1.0 - smoothstep( 0.5 - 0.012 - fw.x, 0.5 - 0.004, max( gd.x, gd.y ) );
-		diffuseColor.rgb *= mix( 0.62, 1.0, joint );
-		vec4 n = texture2D( uNoise, vWPos.xz / 11.0 );
-		diffuseColor.rgb *= 1.0 - 0.12 * n.a;
-	}`
-    });
-
-    M.lawn = patch(withPbr(pbr('grass'), {
-        vertexColors: true,
-        envMapIntensity: 0.5,
-        polygonOffset: true,
-        polygonOffsetFactor: -1,
-        polygonOffsetUnits: -1
-    }), { macro: 0.18, macroScale: 14 });
-
-    M.sand = patch(withPbr(pbr('sand'), {
-        vertexColors: true,
-        envMapIntensity: 0.55,
-        polygonOffset: true,
-        polygonOffsetFactor: -2,
-        polygonOffsetUnits: -2
-    }), { macro: 0.1, macroScale: 20 });
-
     const stucco = pbr('stucco');
 
-    // Facades: storey atlas (4 bands) with a tint mask in the alpha channel,
-    // stucco relief as bump, warm interior light behind some windows
-    {
-        const facadeMap = worldTexture('generated/facade_albedo_tint');
-        const arm = software ? undefined : worldTexture('generated/facade_arm');
-        // Atlas UV: 1 unit = 13.6 m, the stucco tiles every 2 m
-        let bump: THREE.Texture | undefined;
-        if (normals) {
-            bump = cloneWorldTexture(stucco.map!);
-            bump.repeat.set(6.8, 6.8);
-        }
-        M.facade = patch(surface({
-            map: facadeMap,
-            aoMap: arm,
-            roughnessMap: arm,
-            bumpMap: bump,
-            bumpScale: 1.6,
-            emissiveMap: software ? undefined : worldTexture('generated/facade_emissive'),
-            emissive: new THREE.Color(1, 0.75, 0.5),
-            emissiveIntensity: software ? 0 : 0.35,
-            vertexColors: true,
-            roughness: 1,
-            metalness: 0,
-            envMapIntensity: 0.95,
-            aoMapIntensity: 0.6
-        }), {
-            tintMask: true,
-            macro: 0.07,
-            macroScale: 25,
-            baseAO: 0.72,
-            color: /* glsl */`
-	{
-		// Lime plaster: blotchy, direction-free variation at two scales
-		// (the same scale along and across the wall)
-		vec2 wall = vec2( vWPos.x + vWPos.z, vWPos.y );
-		float blotch = texture2D( uNoise, wall / 3.1 ).b * 0.6 + texture2D( uNoise, wall / 0.83 + 0.4 ).g * 0.4;
-		diffuseColor.rgb *= mix( 0.93, 1.04, blotch );
-		// A few faint rain streaks, only in patches and fading downwards
-		float streak = texture2D( uNoise, vec2( wall.x / 1.7, wall.y / 9.0 ) ).b;
-		float streakPatch = smoothstep( 0.55, 0.75, texture2D( uNoise, wall / 23.0 + 0.7 ).a );
-		diffuseColor.rgb *= 1.0 - 0.06 * smoothstep( 0.6, 0.9, streak ) * streakPatch;
-	}`
-        });
-    }
-
-    // The walls cast their shadow from the faces towards the sun: with the
-    // default (back faces) the stored depth is the shaded wall itself, and
-    // the shadow bias (about 0.2 m at the 480 m depth range) left a lit strip
-    // of pavement along the foot of every wall on the shaded side
-    M.facade.shadowSide = THREE.FrontSide;
-
-    // Smooth plaster: ledges, cornices, parapets, eaves, fountain
+    // Smooth plaster: the fountain's stone
     M.stucco = patch(withPbr(stucco, {
         normalScale: new THREE.Vector2(0.6, 0.6),
         vertexColors: true,
         envMapIntensity: 0.95
     }), { macro: 0.08, macroScale: 20, baseAO: 0.72 });
 
-    M.tiles = patch(withPbr(pbr('roof_tiles'), {
-        vertexColors: true,
-        envMapIntensity: 0.6
-    }), { macro: 0.12, macroScale: 18 });
-
-    M.gravel = patch(withPbr(pbr('roof_gravel'), {
-        vertexColors: true,
-        envMapIntensity: 0.3
-    }), { macro: 0.15, macroScale: 15 });
-
-    // Shop fronts (diner, surf shop, service station) with neon
-    M.storefront = patch(surface({
-        map: worldTexture('generated/storefront_atlas', { repeat: false }),
-        emissiveMap: worldTexture('generated/storefront_emissive', { repeat: false }),
-        emissive: new THREE.Color(1, 1, 1),
-        emissiveIntensity: 2.2,
-        roughness: 0.55,
-        metalness: 0,
-        envMapIntensity: 0.9,
-        polygonOffset: true,
-        polygonOffsetFactor: -1,
-        polygonOffsetUnits: -2
-    }), {
-        baseAO: 0.8,
-        // Dark glass is glossy, painted wood and signs are rough
-        rough: 'roughnessFactor = mix( 0.12, 0.8, smoothstep( 0.18, 0.5, dot( diffuseColor.rgb, vec3( 0.33 ) ) ) );'
-    });
-
-    M.fabric = patch(surface({
-        vertexColors: true,
-        roughness: 0.85,
-        metalness: 0,
-        side: THREE.DoubleSide,
-        envMapIntensity: 0.6
-    }), { translucency: 0.35, macro: 0.08, macroScale: 5 });
-
-    // Street furniture (instanced kinds and the merged plaza/park props):
-    // color from the vertex colors, roughness, metalness, emission and
-    // traffic light lenses from the `surface` attribute (furniture.ts).
+    // Props (railings, fence posts, sunshades, the race dressing): colour
+    // from the vertex colors, roughness, metalness and emission from the
+    // `surface` attribute (furniture.ts)
     M.furniture = patch(surface({
         vertexColors: true,
         roughness: 1,
         metalness: 0,
         envMapIntensity: 1.0
     }), { surface: true, baseAO: 0.8, macro: 0.05, macroScale: 3 });
-
-    // Plaza: Saltillo style terracotta pavers, 60 cm, in the concrete PBR set
-    // with a per tile tint and mortar joints
-    M.pavers = patch(withPbr(pbr('sidewalk'), {
-        vertexColors: true,
-        envMapIntensity: 0.6,
-        polygonOffset: true,
-        polygonOffsetFactor: -1,
-        polygonOffsetUnits: -1
-    }), {
-        macro: 0.1,
-        macroScale: 24,
-        baseAO: 0.9,
-        decl: 'float paverJoint = 1.0;',
-        color: /* glsl */`
-	{
-		vec2 q = vWPos.xz / 0.61;
-		vec2 id = floor( q );
-		vec4 h = textureLod( uNoise, ( id + 0.5 ) / 256.0, 0.0 );
-		vec3 tile = mix( vec3( 0.66, 0.4, 0.26 ), vec3( 0.78, 0.55, 0.38 ), h.r );
-		tile = mix( tile, vec3( 0.56, 0.31, 0.18 ), smoothstep( 0.75, 0.95, h.g ) * 0.7 );
-		tile = mix( tile, vec3( 0.84, 0.68, 0.52 ), smoothstep( 0.8, 0.97, h.b ) * 0.6 );
-		vec2 fw = fwidth( q ) * 1.2;
-		vec2 gd = abs( fract( q ) - 0.5 );
-		paverJoint = 1.0 - smoothstep( 0.5 - 0.022 - fw.x, 0.5 - 0.006, max( gd.x, gd.y ) );
-		// Worn, darker edges of each tile
-		float edge = smoothstep( 0.3, 0.48, max( gd.x, gd.y ) );
-		tile *= 1.0 - 0.12 * edge;
-		diffuseColor.rgb = mix( diffuseColor.rgb * vec3( 0.93, 0.88, 0.8 ) * 0.85, diffuseColor.rgb * tile * 1.6, paverJoint );
-	}`,
-        rough: 'roughnessFactor = clamp( mix( 0.95, roughnessFactor * 0.85, paverJoint ), 0.3, 1.0 );'
-    });
-
-
-    // Terrain: dry golden grass with olive chaparral patches and bare earth
-    // (vertex colors carry the large scale splat), rock on steep slopes
-    {
-        const set = pbr('grass_dry');
-        const rock = software ? null : worldTexture('generated/rock_albedo');
-        M.terrain = patch(withPbr(set, {
-            vertexColors: true,
-            envMapIntensity: 0.5
-        }), {
-            macro: 0.16,
-            macroScale: 80,
-            uniforms: { tRock: { value: rock } },
-            decl: 'uniform sampler2D tRock;',
-            color: /* glsl */`
-	{
-		float n = texture2D( uNoise, vWPos.xz / 240.0 ).r * 0.6 + texture2D( uNoise, vWPos.xz / 64.0 ).g * 0.4;
-		float scrub = smoothstep( 0.4, 0.5, n ) * smoothstep( 1.0, 6.0, abs( vWPos.x ) + abs( vWPos.z ) - 150.0 );
-		diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.05, 0.085, 0.03 ) * ( 0.6 + 0.8 * texture2D( uNoise, vWPos.xz / 4.0 ).r ), scrub * 0.55 );
-		float fine = texture2D( uNoise, vWPos.xz / 9.0 ).b;
-		diffuseColor.rgb *= mix( 0.85, 1.1, fine );
-		float dirt = smoothstep( 0.62, 0.7, texture2D( uNoise, vWPos.xz / 140.0 + 0.3 ).a * 0.5 + texture2D( uNoise, vWPos.xz / 33.0 ).r * 0.5 );
-		diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.4, 0.31, 0.21 ), dirt * 0.45 );
-		// Rock on steep slopes (triplanar)
-		vec3 nw = normalize( cross( dFdx( vWPos ), dFdy( vWPos ) ) );
-		float slope = 1.0 - abs( nw.y );
-		vec3 blend = pow( abs( nw ), vec3( 4.0 ) );
-		blend /= ( blend.x + blend.y + blend.z );
-		vec3 rockColor = texture2D( tRock, vWPos.zy / 11.0 ).rgb * blend.x + texture2D( tRock, vWPos.xy / 11.0 ).rgb * blend.z + texture2D( tRock, vWPos.xz / 13.0 ).rgb * blend.y;
-		float rockMask = smoothstep( 0.22, 0.42, slope + ( texture2D( uNoise, vWPos.xz / 60.0 ).g - 0.5 ) * 0.25 );
-		diffuseColor.rgb = mix( diffuseColor.rgb, rockColor * vec3( 0.95, 0.9, 0.85 ), rockMask );
-	}`
-        });
-        // Tree shadows fade on grazing slopes and in the distance (lighting.ts)
-        M.terrain.defines = { ...M.terrain.defines, BULLI_GRAZING_SHADOW_FADE: '' };
-    }
-
-    M.rock = patch(surface({
-        map: worldTexture('generated/rock_albedo'),
-        normalMap: normals ? worldTexture('generated/rock_normal') : undefined,
-        vertexColors: true,
-        roughness: 0.9,
-        metalness: 0,
-        envMapIntensity: 0.6
-    }), { macro: 0.1, macroScale: 7 });
 
     // Palms and trees: cut-out cards with alpha to coverage where MSAA is on
     const card = (name: string, extra: THREE.MeshStandardMaterialParameters, translucency: number, cardMask = false, wind = false) => {
@@ -726,27 +428,6 @@ export function createWorldMaterials(tier: RenderTier): WorldMaterials {
     // Leaves scatter light into the shaded side of the crown: more ambient
     M.tree = card('generated/tree_cards', { alphaTest: 0.5, roughness: 0.85, envMapIntensity: 0.85 }, 0.4, true);
     M.shrub = card('generated/shrubs', { alphaTest: 0.45, roughness: 0.8 }, 0.5, true);
-
-    // Ponds and the fountain basin: dark, glossy water with moving normals
-    M.water = patch(surface({
-        color: new THREE.Color(0.03, 0.11, 0.12),
-        roughness: 0.08,
-        metalness: 0,
-        envMapIntensity: 0.9,
-        // Above the lawn under the pond (offset -1) at any distance
-        polygonOffset: true,
-        polygonOffsetFactor: -2,
-        polygonOffsetUnits: -2
-    }), {
-        normal: /* glsl */`
-	{
-		vec2 p = vWPos.xz;
-		vec2 g = vec2( cos( dot( p, vec2( 0.8, 0.6 ) ) * 1.9 + uTime * 1.6 ), cos( dot( p, vec2( -0.3, 0.95 ) ) * 2.7 + uTime * 2.1 ) ) * 0.06;
-		vec4 nz = texture2D( uNoise, p / 3.0 + vec2( uTime * 0.02, 0.0 ) ) - 0.5;
-		g += nz.gb * 0.12;
-		normal = normalize( ( viewMatrix * vec4( normalize( vec3( -g.x, 1.0, -g.y ) ), 0.0 ) ).xyz );
-	}`
-    });
 
     // Fountain water: rings of ripples and foam where the falling water hits
     // the basin, the lower bowl and the top bowl (heights above the foot)

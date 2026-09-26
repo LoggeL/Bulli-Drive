@@ -1,7 +1,7 @@
 import type { TrackId } from '../../shared/race/types.js';
 import {
     BOGGED_ACCEL, BOGGED_TICKS, DRAFT_ACCEL, DRAFT_FALL, DRAFT_FILL, DRAFT_RISE, DRAFT_TOP_ADD,
-    GHOST_PERSONAL_MAX, LAUNCH_ACCEL, LAUNCH_THROTTLE, LAUNCH_TICKS, LAUNCH_WINDOW_TICKS, RESET_BEFORE_GATE
+    GHOST_PERSONAL_MAX, LAUNCH_ACCEL, LAUNCH_THROTTLE, LAUNCH_TICKS, LAUNCH_WINDOW_TICKS, RESET_BEFORE_GATE, RESET_BEHIND_MAX
 } from '../../shared/race/rules.js';
 import { SIM_TUNING_DEFAULTS } from '../../shared/sim/constants.js';
 import type { AssistProfile, CarClassId } from '../../shared/sim/types.js';
@@ -64,6 +64,14 @@ export interface GhostStore {
     poses(run: GhostRun): Uint8Array;
     /** The run's pose track if it is at hand, never computed (null: poses() would replay). */
     cachedPoses(run: GhostRun): Uint8Array | null;
+    /**
+     * Drops every run whose key is not one of these (the process's tracks
+     * at their versions, the map's version and the sim hash): the ghosts of
+     * a changed or removed track, an older map or other tuning can never be
+     * offered again. Returns how many runs went. The server calls it at the
+     * start; a store that outlives the process (phase 4) frees them there.
+     */
+    retain(keys: readonly GhostKey[]): number;
 }
 
 /**
@@ -76,7 +84,7 @@ export function simHash(): string {
     const profiles = Object.fromEntries(PROFILE_IDS.map(id => [id, profileDefaults(id)]));
     const race = {
         BOGGED_ACCEL, BOGGED_TICKS, DRAFT_ACCEL, DRAFT_FALL, DRAFT_FILL, DRAFT_RISE, DRAFT_TOP_ADD,
-        LAUNCH_ACCEL, LAUNCH_THROTTLE, LAUNCH_TICKS, LAUNCH_WINDOW_TICKS, RESET_BEFORE_GATE
+        LAUNCH_ACCEL, LAUNCH_THROTTLE, LAUNCH_TICKS, LAUNCH_WINDOW_TICKS, RESET_BEFORE_GATE, RESET_BEHIND_MAX
     };
     return fnv1a(canonicalStringify({ sim: SIM_TUNING_DEFAULTS, classes, profiles, race }));
 }
@@ -196,6 +204,20 @@ export class MemoryGhostStore implements GhostStore {
         this.poseCache.delete(run);
         this.poseCache.set(run, poses);
         return poses;
+    }
+
+    retain(keys: readonly GhostKey[]): number {
+        const keep = new Set(keys.map(ghostKeyString));
+        let dropped = 0;
+        for (const [k, entry] of this.entries) {
+            if (keep.has(k)) continue;
+            const runs = new Set<GhostRun>(entry.personal.values());
+            if (entry.record) runs.add(entry.record);
+            for (const run of runs) this.poseCache.delete(run);
+            dropped += runs.size;
+            this.entries.delete(k);
+        }
+        return dropped;
     }
 
     private keepPoses(run: GhostRun, poses: Uint8Array): void {

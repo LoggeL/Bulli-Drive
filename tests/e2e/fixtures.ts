@@ -1,7 +1,8 @@
 import { test as base, expect, type BrowserContext, type Page } from '@playwright/test';
 import type { BulliDebugSnapshot, NetDebugSnapshot, V2Snapshot } from '../../src/client/e2eHook.js';
 import type { ColliderInput } from '../../src/shared/world/colliders.js';
-import { longestRunway } from '../../tools/bots/runway.js';
+import { arenaRunway, longestRunway } from '../../tools/bots/runway.js';
+import { mapFor } from '../../src/server/maps.js';
 
 export { expect };
 
@@ -80,6 +81,16 @@ export const test = base.extend<Fixtures>({
         expect(problems, 'console errors, page errors or failed requests').toEqual([]);
     }
 });
+
+/**
+ * For the paths that are about the flow, not the picture (touch controls,
+ * the race, missing assets, a server restart): the page draws 5 frames a second while the
+ * game, the netcode and the HUD run every frame (flags.ts). Software WebGL
+ * drawing every frame took half the CPU of the E2E job on a 4-core runner;
+ * the picture is measured in the render job (tests/e2e-render) and in the
+ * desktop path.
+ */
+export const FLOW_DRAW_FPS = '&drawfps=5';
 
 export function snapshot(page: Page): Promise<BulliDebugSnapshot> {
     return page.evaluate(() => (window as unknown as {
@@ -172,33 +183,13 @@ export async function waitFrames(page: Page, frames: number): Promise<void> {
 }
 
 /**
- * Mean colour of the rendered view without the HUD, decoded in the page
- * (no image library).
+ * Mean colour of the next frame the game draws, without the HUD (the
+ * canvas's drawing buffer, read back in the page right after the render).
  */
-export async function meanColor(page: Page): Promise<[number, number, number]> {
-    await page.addStyleTag({ content: 'body.mean-color-shot > *:not(canvas) { visibility: hidden !important; }' });
-    await page.evaluate(() => document.body.classList.add('mean-color-shot'));
-    const png = (await page.screenshot()).toString('base64');
-    await page.evaluate(() => document.body.classList.remove('mean-color-shot'));
-    return page.evaluate(async data => {
-        const image = new Image();
-        image.src = `data:image/png;base64,${data}`;
-        await image.decode();
-        const canvas = document.createElement('canvas');
-        canvas.width = image.width;
-        canvas.height = image.height;
-        const ctx = canvas.getContext('2d')!;
-        ctx.drawImage(image, 0, 0);
-        const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-        const sum = [0, 0, 0];
-        for (let i = 0; i < pixels.length; i += 4) {
-            sum[0] += pixels[i];
-            sum[1] += pixels[i + 1];
-            sum[2] += pixels[i + 2];
-        }
-        const n = pixels.length / 4;
-        return [sum[0] / n, sum[1] / n, sum[2] / n] as [number, number, number];
-    }, png);
+export function meanColor(page: Page): Promise<[number, number, number]> {
+    return page.evaluate(() => (window as unknown as {
+        __bulliDebug: { nextFrameMeanColor(): Promise<[number, number, number]> };
+    }).__bulliDebug.nextFrameMeanColor());
 }
 
 /** Whether the element under the middle of `selector` belongs to it (nothing covers it). */
@@ -230,12 +221,15 @@ export function distance(a: { x: number; z: number }, b: { x: number; z: number 
 }
 
 /**
- * The server spawns the car at a random spot, facing +z, and some spots face
- * a wall or a planter a few metres ahead. Driving tests start from the longest
- * free stretch of the north-south roads instead, so they do not depend on luck.
- * Returns where the car was put and how much room it has ahead.
+ * The server spawns the car at one of the map's slots, facing wherever the
+ * slot faces. Driving tests start from the longest free straight instead,
+ * so they do not depend on where they spawned: in Free Roam on a
+ * north-south road (heading +z), in the Party across the arena (heading +x,
+ * clear of every pickup). The runway is found in Node on the same map the
+ * page built (its collider list is the page's). Returns where the car was
+ * put, its heading and how much room it has ahead.
  */
-export async function placeOnClearRunway(page: Page, minLength = 120): Promise<{ x: number; z: number; free: number }> {
+export async function placeOnClearRunway(page: Page, minLength = 120): Promise<{ x: number; z: number; yaw: number; free: number }> {
     // Every test drives off the same runway: the cars of the pages an
     // earlier test closed wait there as idle ghosts for the grace time
     // (docs/phase-1b-design.md, 11.1) and have to be gone first
@@ -243,14 +237,16 @@ export async function placeOnClearRunway(page: Page, minLength = 120): Promise<{
     const colliders = await page.evaluate(() => (window as unknown as {
         __bulliDebug: { colliders(): ColliderInput[] };
     }).__bulliDebug.colliders());
-    expect(colliders.length, 'city colliders').toBeGreaterThan(0);
+    const map = mapFor();
+    expect(colliders.length, 'the page\'s map colliders').toBe(map.colliders.length);
 
-    const best = longestRunway(colliders);
-    expect(best.free, 'free runway on a north-south road').toBeGreaterThanOrEqual(minLength);
+    const party = (await snapshot(page)).room?.kind === 'party';
+    const best = party ? arenaRunway(map) : longestRunway(map);
+    expect(best.free, party ? 'free runway across the arena' : 'free runway on a north-south road').toBeGreaterThanOrEqual(minLength);
 
-    await page.evaluate(({ x, z }) => (window as unknown as {
+    await page.evaluate(({ x, z, yaw }) => (window as unknown as {
         __bulliDebug: { placeLocalCar(x: number, z: number, angle: number): void };
-    }).__bulliDebug.placeLocalCar(x, z, 0), best);
+    }).__bulliDebug.placeLocalCar(x, z, yaw), best);
     await expect.poll(async () => distance(best, (await snapshot(page)).local!)).toBeLessThan(0.01);
     return best;
 }

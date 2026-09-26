@@ -29,11 +29,11 @@ import { createSimCar, placeVehicle, spawnVehicle } from '../../shared/sim/vehic
 import { createVehicleParams, isCarClassId } from '../../shared/sim/vehicleClasses.js';
 import { stepWorld } from '../../shared/sim/world.js';
 import type { SimWorld } from '../../shared/world/colliders.js';
-import type { MapData } from '../../shared/world/mapData.js';
+import type { MapData, SpawnSlot } from '../../shared/map/mapData.js';
 import { CAR_CHANGE_INTERVAL_MS, HONK_INTERVAL_MS } from '../config.js';
 import type { Session } from '../session.js';
 import { InputBuffer } from './InputBuffer.js';
-import { randomSpawnPose, type SpawnKeepOut, type SpawnPoint, type SpawnPose } from './spawn.js';
+import { slotSpawn, type SpawnKeepOut, type SpawnPoint, type SpawnPose } from './spawn.js';
 
 // A room instance (docs/phase-1b-design.md, 2 and 5): its members, their
 // cars and everything that changes while they play. The map (MapData) is
@@ -146,6 +146,8 @@ export abstract class Room {
     private scoreboardDirty = false;
     private readonly pairContactTick = new Map<string, number>();
     private compact = new Uint8Array(COMPACT_BYTES * 32);
+    // Spawns handed out so far: the slot groups take turns (spawn.ts)
+    protected spawnTurn = 0;
     private readonly compactAt = new Map<RoomMember, number>();
 
     constructor(
@@ -313,12 +315,13 @@ export abstract class Room {
         const members = this.sorted.map(m => this.memberInfo(m));
         const health: Record<string, number> = {};
         for (const m of this.sorted) health[m.id] = this.healthOf(m);
-        const preview = randomSpawnPose(this.map.world.city, this.carPositions(), this.spawnKeepOut());
+        // Where the next car would spawn (the splash screen's view)
+        const preview = slotSpawn(this.spawnSlots(), this.spawnTurn, this.carPositions(), this.spawnKeepOut());
         return {
             type: 'roomState',
             room: this.info,
             tick: this.tick,
-            world: { seed: this.map.seed, mapVersion: this.map.mapVersion, worldHash: this.map.worldHash },
+            world: { mapId: this.map.mapId, mapVersion: this.map.mapVersion, worldHash: this.map.worldHash },
             members,
             items: this.roomStateItems(),
             scoreboard: this.scoreboard(),
@@ -794,7 +797,11 @@ export abstract class Room {
     // Where a member's car appears after 'ready' (grid: a race's grid slot);
     // null: no car (a spectator)
     protected spawnPose(member: RoomMember): (SpawnPose & { grid?: number }) | null {
-        return randomSpawnPose(this.map.world.city, this.carPositions(member), this.spawnKeepOut());
+        return slotSpawn(this.spawnSlots(), this.spawnTurn++, this.carPositions(member), this.spawnKeepOut());
+    }
+    // The spawn slots of the room's mode (pois.json): Free Roam's by default
+    protected spawnSlots(): readonly SpawnSlot[] {
+        return this.map.spawns.freeRoam;
     }
     // An e2e placement (debugPlace) moved the car at the end of tick
     protected onPlaced(_member: RoomMember, _tick: number): void { /* none */ }

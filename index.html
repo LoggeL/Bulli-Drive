@@ -406,9 +406,13 @@
                 <canvas id="race-track-preview" width="200" height="120" role="img" aria-label="Track map"></canvas>
                 <div class="race-field">
                     <span class="input-label">TRACK</span>
-                    <div class="race-segments" role="radiogroup" aria-label="Track">
-                        <button type="button" class="race-segment" role="radio" data-track="downtown-loop">DOWNTOWN LOOP<small>3 laps</small></button>
-                        <button type="button" class="race-segment" role="radio" data-track="hill-sprint">HILL SPRINT<small>sprint</small></button>
+                    <div class="race-segments race-tracks" role="radiogroup" aria-label="Track">
+                        <button type="button" class="race-segment" role="radio" data-track="downtown-loop">DOWNTOWN LOOP<small>3 laps · city</small></button>
+                        <button type="button" class="race-segment" role="radio" data-track="coast-sprint">COAST SPRINT<small>sprint · coast</small></button>
+                        <button type="button" class="race-segment" role="radio" data-track="hill-sprint">RIDGE CLIMB<small>sprint · uphill</small></button>
+                        <button type="button" class="race-segment" role="radio" data-track="harbor-circuit">HARBOR CIRCUIT<small>3 laps · harbor</small></button>
+                        <button type="button" class="race-segment" role="radio" data-track="dune-rally">DUNE RALLY<small>sprint · offroad</small></button>
+                        <button type="button" class="race-segment" role="radio" data-track="grand-tour">GRAND TOUR<small>sprint · 4.8 km</small></button>
                     </div>
                 </div>
                 <div class="race-field race-bots">

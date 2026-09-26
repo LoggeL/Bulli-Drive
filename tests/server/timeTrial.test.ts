@@ -13,12 +13,23 @@ import { createGhostPose, fromBase64, ghostSampleCount, readGhostPose } from '..
 import { LineDriver } from '../../src/shared/race/lineDriver.js';
 import { replayRun, RUN_INPUT_BYTES } from '../../src/shared/race/replay.js';
 import { COUNTDOWN_TICKS, GHOST_POSE_EVERY, RESULTS_TICKS, TIMETRIAL_PREP_TICKS } from '../../src/shared/race/rules.js';
-import { HILL_SPRINT } from '../../src/shared/race/tracks/index.js';
+import { createProjection, pointAt } from '../../src/shared/race/geometry.js';
+import { createCourse } from '../../src/shared/race/progress.js';
+import { racingLine } from '../../src/shared/race/racingLine.js';
+import { trackDef } from '../../src/shared/race/tracks/index.js';
 import { BTN_RESET } from '../../src/shared/sim/constants.js';
 import { copyVehicleState, createVehicleInput, createVehicleState, type VehicleInput, type VehicleState } from '../../src/shared/sim/types.js';
 import { roomOptions } from '../../src/server/rooms/Room.js';
 import { ghostRun } from './ghostStore.contract.js';
 import { fakeClock, fakeSession, feed, type FakeTransport } from './helpers.js';
+
+const HILL_SPRINT = trackDef(mapFor(), 'hill-sprint');
+// 20 m before the Ridge Climb's finish gate on its racing line, facing along it
+const BEFORE_FINISH = (() => {
+    const line = racingLine(HILL_SPRINT);
+    const p = pointAt(line, createCourse(HILL_SPRINT, line).gateS.at(-1)! - 20, createProjection());
+    return { x: p.x, z: p.z, yaw: Math.atan2(p.tx, p.tz) };
+})();
 
 // The time trial (docs/phase-2-design.md, 6.2, 15 and 20.1): a run driven
 // in the room with scripted inputs (a line driver on the server's own car,
@@ -74,7 +85,7 @@ function driveRun(
     const input = createVehicleInput();
     const atFinish = createVehicleState();
     let finished = false;
-    for (let i = 0; i < 4000 && room.phase !== 'results'; i++) {
+    for (let i = 0; i < 8000 && room.phase !== 'results'; i++) {
         driver.drive(car.state, car.params, room.tick + 1, room.startTick, [], input);
         const scripted = script(room.tick + 1, room.startTick!);
         feed(room, player, scripted ? { ...input, ...scripted } : input);
@@ -117,9 +128,10 @@ describe('time trial', () => {
         expect(replay.finishTicks).toBe(run.finishTicks);
         expect(replay.gateTicks).toEqual(run.gateTicks);
         expect(statesEqual(replay.state, atFinish)).toBe(true);
-        // A hard driver on the hill sprint: 20 to 40 s
-        expect(run.finishTicks / 60).toBeGreaterThan(20);
-        expect(run.finishTicks / 60).toBeLessThan(40);
+        // A hard driver on the Ridge Climb: the map's estimate for it is
+        // 56-65 s from the fastest to the slowest class (docs/phase-3-design.md, 4)
+        expect(run.finishTicks / 60).toBeGreaterThan(50);
+        expect(run.finishTicks / 60).toBeLessThan(75);
 
         // One tick of steering changed a second after the start
         const changed = run.inputs.slice();
@@ -152,7 +164,7 @@ describe('time trial', () => {
         driveRun(player, room, 7, (T, S) => {
             if (!placed && T === S + 30) {
                 placed = true;
-                send(player, { type: 'debugPlace', x: 356 - 20 * Math.sin(0.54), z: 30 - 20 * Math.cos(0.54), yaw: 0.54 });
+                send(player, { type: 'debugPlace', ...BEFORE_FINISH });
             }
             return null;
         });
@@ -208,7 +220,7 @@ describe('time trial', () => {
         const easy = new LineDriver(trackRuntime(room.map, 'hill-sprint').course, car.params, 'easy', mulberry32(3));
         easy.startRace(room.startTick!);
         const input = createVehicleInput();
-        for (let i = 0; i < 4000 && room.phase !== 'results'; i++) {
+        for (let i = 0; i < 8000 && room.phase !== 'results'; i++) {
             easy.drive(car.state, car.params, room.tick + 1, room.startTick, [], input);
             feed(room, player, input);
             room.step();
@@ -264,13 +276,13 @@ describe('time trial', () => {
         // and back it comes again (to the results by an e2e placement)
         stepUntil(() => room.phase === 'racing');
         roomOptions.allowDebugPlace = true;
-        send(player, { type: 'debugPlace', x: 356 - 20 * Math.sin(0.54), z: 30 - 20 * Math.cos(0.54), yaw: 0.54 });
+        send(player, { type: 'debugPlace', ...BEFORE_FINISH });
         stepUntil(() => room.phase === 'results', { throttle: 255 });
         send(player, { type: 'raceVote', choice: 'next' });
         room.step();
         expect(room.phase).toBe('lobby');
-        expect(player.transport.of('raceState').at(-1)!.trackId).toBe('downtown-loop');
-        // Back to the Hill Sprint before the voter's countdown starts
+        expect(player.transport.of('raceState').at(-1)!.trackId).toBe('harbor-circuit');
+        // Back to the Ridge Climb before the voter's countdown starts
         send(player, { type: 'raceConfig', track: 'hill-sprint' });
         expect(room.trackId).toBe('hill-sprint');
         room.step();
@@ -307,6 +319,41 @@ describe('time trial', () => {
         expect(replays).toBe(1);
         expect(player.transport.of('ghostData').at(-1)).toMatchObject({ kind: 'record', name: 'Name someone', finishTicks: 1800 });
         room.dispose();
+    });
+
+    it('drops the ghosts of the phase 2 tracks and of older track versions when the server starts', () => {
+        const map = mapFor();
+        const store = new MemoryGhostStore(() => new Uint8Array(13));
+        const hill = ghostKeyFor(map, 'hill-sprint');
+        const loop = ghostKeyFor(map, 'downtown-loop');
+        const coast = ghostKeyFor(map, 'coast-sprint');
+        // What a store that outlived the process would hold: the Hill Sprint
+        // of phase 2 (version 1 on the old city, map version 3), the Downtown
+        // Loop before its line began at the start (version 3), the Coast
+        // Sprint now, and a run under other tuning
+        const stale = [
+            { ...hill, trackVersion: 1, mapVersion: 3 },
+            { ...loop, trackVersion: loop.trackVersion - 1 },
+            { ...coast, simHash: 'tuned' }
+        ];
+        for (const key of stale) store.submit(ghostRun('old', 1500, key));
+        store.submit(ghostRun('now', 3000, coast));
+        expect(hill.mapVersion).toBe(map.mapVersion);
+        expect(map.mapVersion).toBeGreaterThan(3);
+        const manager = new RoomManager(map, { maxPlayersPerRoom: 32, emptyRoomTtlMs: 60_000, now: clock.now, ghosts: store });
+        for (const key of stale) expect(store.best(key)).toBeNull();
+        expect(store.best(coast)!.playerKey).toBe('now');
+        // A time trial on the Hill Sprint's port gets no ghost at its countdown
+        const player = fakeSession('Solo');
+        manager.join(player, 'timetrial', { track: 'hill-sprint' });
+        handleClientMessage(manager, player, { type: 'ready' }, clock.now());
+        const room = player.room as TimeTrialRoom;
+        room.step();
+        handleClientMessage(manager, player, { type: 'raceReady', ready: true }, clock.now());
+        for (let i = 0; i < 30; i++) room.step();
+        expect(room.phase).toBe('countdown');
+        expect(player.transport.of('ghostData')).toHaveLength(0);
+        for (const r of manager.list()) r.dispose();
     });
 
     it('sends the ghost again once it is a different run: a new record', () => {

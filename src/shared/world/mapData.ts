@@ -1,29 +1,7 @@
-// Immutable data of one map (docs/phase-1b-design.md, 2.1 and 6): the
-// generated world, its colliders, the sim world and a hash over both. The
-// server builds it once per map and every room of that map shares it; the
-// client builds the same collider world from the same shared functions.
+// Canonical serialisation and FNV-1a of the world data (docs/phase-1b-design.md,
+// 6): client and server hash the same map and track data and compare the
+// hashes strictly. The map itself is src/shared/map/mapData.ts (phase 3).
 
-import { DEFAULT_TERRAIN_CONFIG } from '../constants.js';
-import type { TerrainConfig } from '../protocol.js';
-import { buildWorldColliders } from './colliderGen.js';
-import { cityRoadGrid } from './cityGen.js';
-import { createSimWorld, type ColliderInput, type SimWorld } from './colliders.js';
-import { generateWorld, WORLD_SEED, type GeneratedWorld } from './worldGen.js';
-
-// Bumped whenever the map changes for the same seed (layout, props, colliders)
-export const MAP_VERSION = 2;
-
-export interface MapData {
-    seed: number;
-    mapVersion: number;
-    terrain: TerrainConfig;
-    // Layout and the initial item placement; rooms copy the items
-    world: GeneratedWorld;
-    colliders: readonly ColliderInput[];
-    simWorld: SimWorld;
-    // FNV-1a over the canonical world and collider list (hex, 8 digits)
-    worldHash: string;
-}
 
 // JSON with sorted keys and exact number spelling (Infinity included), so
 // the hash only changes when a value changes.
@@ -48,22 +26,4 @@ export function fnv1a(text: string): string {
         hash = Math.imul(hash, 0x01000193) >>> 0;
     }
     return hash.toString(16).padStart(8, '0');
-}
-
-export function worldHash(world: GeneratedWorld, colliders: readonly ColliderInput[]): string {
-    return fnv1a(canonicalStringify({ world, colliders }));
-}
-
-export function createMapData(seed: number = WORLD_SEED, terrain: TerrainConfig = DEFAULT_TERRAIN_CONFIG): MapData {
-    const world = generateWorld(seed);
-    const colliders = buildWorldColliders(world);
-    return {
-        seed,
-        mapVersion: MAP_VERSION,
-        terrain,
-        world,
-        colliders,
-        simWorld: createSimWorld(terrain, colliders, [], cityRoadGrid()),
-        worldHash: worldHash(world, colliders)
-    };
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_TERRAIN_CONFIG } from '../../src/shared/constants.js';
-import { CITY_TERRAIN_AREA, getTerrainHeight } from '../../src/shared/world/terrain.js';
+import { TERRAIN_FLAT_AREA, getTerrainHeight } from '../../src/shared/world/terrain.js';
 import { sha256OfFloats } from '../helpers.js';
 
 // Golden heights were recorded from getTerrainHeight in the untouched
@@ -43,11 +43,11 @@ describe('getTerrainHeight', () => {
         expect(sha256OfFloats(heights)).toBe('72caa9afcbc2b602bfa09876a4225a2d7947cfc8d2ec02d0f9f0f94bf125b592');
     });
 
-    it('keeps the golden city flattening area', () => {
-        expect(CITY_TERRAIN_AREA.centerX).toBe(6);
-        expect(CITY_TERRAIN_AREA.centerZ).toBe(6);
-        expect(CITY_TERRAIN_AREA.flatRadius).toBe(164.04877323527904);
-        expect(CITY_TERRAIN_AREA.halfExtent).toBe(116);
+    it('keeps the golden flat area (the old city footprint)', () => {
+        expect(TERRAIN_FLAT_AREA.centerX).toBe(6);
+        expect(TERRAIN_FLAT_AREA.centerZ).toBe(6);
+        expect(TERRAIN_FLAT_AREA.flatRadius).toBe(164.04877323527904);
+        expect(TERRAIN_FLAT_AREA.halfExtent).toBe(116);
     });
 
     it('treats a missing third octave as zero', () => {

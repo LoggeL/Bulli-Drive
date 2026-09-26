@@ -7,6 +7,8 @@ import { createSimCar } from '../../../src/shared/sim/vehicle.js';
 import { stepWorld } from '../../../src/shared/sim/world.js';
 import { mapFor } from '../../../src/server/maps.js';
 import { FrameProbe, input, run, TestClient, TestServer, type LinkOptions } from './harness.js';
+import { longestRunway } from '../../../tools/bots/runway.js';
+import { colliderBounds } from '../../../src/shared/world/colliders.js';
 
 // Reconciliation with simulated latency (docs/phase-1b-design.md, 15.1):
 // the real rooms and the shared client code, messages delayed in a seeded
@@ -211,7 +213,17 @@ describe('powerups with latency', () => {
         const tickMs = TICK_MS;
         server = new TestServer();
         const client = new TestClient(server, 'turbo', 'bulli', { latencyMs: 9 * tickMs, jitterMs: 0, loss: 0 }, 31, 'party');
-        const turbo = mapFor().world.powerups.find(p => p.type === 'speed' && Math.hypot(p.x, p.z) > 120)!;
+        // A Turbo in the arena whose 30 m run-up from the north is free:
+        // 2.5 m from every collider's bounding box, 8 m from other power-ups
+        const map = mapFor();
+        const clear = (x: number, z: number, self: number) =>
+            map.partyWorld.colliders.every(c => {
+                const [minX, minZ, maxX, maxZ] = colliderBounds(c);
+                return x < minX - 2.5 || x > maxX + 2.5 || z < minZ - 2.5 || z > maxZ + 2.5;
+            }) && map.items.powerups.every(q => q.id === self || Math.hypot(q.x - x, q.z - z) >= 8);
+        const turbo = map.items.powerups.find(p => p.type === 'speed'
+            && Array.from({ length: 21 }, (_, k) => k * 1.5).every(d => clear(p.x, p.z - d, p.id)))!;
+        expect(turbo).toBeDefined();
         start(client, turbo.x, turbo.z - 30);
         // Past the spawn ghost and the respawn shield standing still
         run(server, [client], 2000);
@@ -244,9 +256,11 @@ describe('bumping with latency', () => {
         a.sendJson({ type: 'ready' });
         b.sendJson({ type: 'ready' });
         run(server, [a, b], 600);
-        // Head-on on the open terrain, 60 m apart; after 2 s the spawn ghost is gone
-        a.sendJson({ type: 'debugPlace', x: 300, z: 240, yaw: 0 });
-        b.sendJson({ type: 'debugPlace', x: 300.5, z: 300, yaw: Math.PI });
+        // Head-on on a free straight road, 60 m apart and 1.2 m to the side
+        // (a glancing hit: the cars part again); after 2 s the spawn ghost is gone
+        const runway = longestRunway(mapFor());
+        a.sendJson({ type: 'debugPlace', x: runway.x, z: runway.z + 5, yaw: 0 });
+        b.sendJson({ type: 'debugPlace', x: runway.x + 1.2, z: runway.z + 65, yaw: Math.PI });
         run(server, [a, b], 2500);
         const missedBefore = a.net.stats.missedInputs + b.net.stats.missedInputs;
         a.script = () => input(255);

@@ -5,7 +5,7 @@ import { longestRunway } from '../../tools/bots/runway.js';
 import { BotSwarm, formatReport, type MixEntry, type SwarmOptions } from '../../tools/bots/swarm.js';
 import { CAR_IDLE, CAR_LAGGY } from '../../src/shared/net/codec.js';
 import { parseNetsimFlag } from '../../src/shared/net/netsim.js';
-import { createMapData } from '../../src/shared/world/mapData.js';
+import { mapFor } from '../../src/server/maps.js';
 import { PROTOCOL_VERSION } from '../../src/shared/protocol.js';
 import { startServer, type ServerProcess } from './serverProcess.js';
 
@@ -74,7 +74,7 @@ describe.each([
         await s.waitFor(() => a.driving && b.driving && !!a.lastSnapshot?.self && !!b.lastSnapshot?.self, 20_000, 'both cars');
 
         // A and B 20 m apart on a free road, facing each other; B stands
-        const runway = longestRunway(createMapData().colliders);
+        const runway = longestRunway(mapFor());
         expect(runway.free).toBeGreaterThan(60);
         const aStart = { x: runway.x, z: runway.z + 5 };
         const bStart = { x: runway.x, z: runway.z + 25 };

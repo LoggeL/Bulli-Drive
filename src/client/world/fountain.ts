@@ -72,11 +72,3 @@ export function buildFountain(stone: Batch, M: WorldMaterials, x: number, y: num
     fallsMesh.renderOrder = 1;
     return [waterMesh, fallsMesh];
 }
-
-/** Moulded stone coping around the pond of Palm Park (radius ~5.4 m). */
-export function addPondRim(stone: Batch, x: number, y: number, z: number, tier: RenderTier): void {
-    // Traced up the outer face, over the top, down the inner face (front
-    // faces outside the solid)
-    const profile: [number, number][] = [[5.66, 0.04], [5.62, 0.22], [5.5, 0.28], [5.2, 0.27], [5.12, 0.2], [5.1, 0.02]];
-    stone.add(lathe(profile, tier === 'desktop' ? 56 : 32, x, y, z), null, rgb(0xcbc1ae), { box: 1.5 });
-}

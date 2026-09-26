@@ -95,9 +95,9 @@ describe('the shipped KTX2 textures', () => {
             if (transfer !== expected) wrong.push(`${file}: transfer ${transfer}, expected ${expected}`);
         }
         expect(wrong).toEqual([]);
-        // At least the city's eight PBR sets (asphalt, grass, dry grass,
-        // gravel and tile roofs, sand, sidewalk, stucco), three maps each
-        expect(named).toBeGreaterThanOrEqual(24);
+        // At least the map's six full PBR sets (asphalt, dry grass, gravel,
+        // sand, sidewalk, stucco; three maps each) and the lawns' albedo
+        expect(named).toBeGreaterThanOrEqual(19);
     });
 
     it('match the manifest: colour space by kind, size, a full mip chain and the codec', () => {

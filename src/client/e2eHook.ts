@@ -4,7 +4,8 @@ import { focusLightingOn, lightingTier, whenSkyReady } from './render/lighting.j
 import { textureStats, whenWorldTexturesLoaded } from './world/textures.js';
 import { frameStats } from './render/frameStats.js';
 import { models } from './assets/gameModels.js';
-import { getTerrainHeight } from './world/environment.js';
+import { groundHeight } from './world/ground.js';
+import { kitStatus, mapDetail, mapScene } from './world/mapScene.js';
 import { palmStats, setPalmImpostorDistance, updatePalms, whenPalmImpostorsReady } from './world/palms.js';
 import { getKTX2Loader } from './assets/gltfLoader.js';
 import type { ModelCacheSnapshot } from './assets/ModelCache.js';
@@ -117,6 +118,16 @@ export interface ModelInfo {
     size: [number, number, number];
 }
 
+export interface MapWorldStats {
+    kitCells: number;
+    kitBuilt: number;
+    instances: Record<string, number>;
+    terrainTriangles: number;
+    detail: string;
+    kit: string;
+    groups: Record<string, { meshes: number; triangles: number }>;
+}
+
 // State of the realistic world look (render/look.ts, world/textures.ts)
 export interface WorldInfo {
     tier: string;
@@ -126,10 +137,8 @@ export interface WorldInfo {
     // Named top level scene objects of the world
     groups: string[];
     // Palms drawn as geometry and as impostors at the last frame, and
-    // whether the impostor atlas is baked (null before the city exists)
+    // whether the impostor atlas is baked (null before the map's world exists)
     palms: { near: number; impostors: number; baked: boolean } | null;
-    // Instances per street furniture kind
-    furniture: Record<string, number>;
 }
 
 function worldInfo(): WorldInfo {
@@ -138,9 +147,7 @@ function worldInfo(): WorldInfo {
         textures: { ...textureStats },
         environment: state.scene?.environment?.uuid ?? null,
         groups: (state.scene?.children ?? []).map(child => child.name).filter(Boolean),
-        palms: palmStats(),
-        furniture: Object.fromEntries((state.scene?.getObjectByName('furniture')?.children ?? [])
-            .map(mesh => [mesh.name.replace('furniture-', ''), (mesh as THREE.InstancedMesh).count]))
+        palms: palmStats()
     };
 }
 
@@ -205,7 +212,7 @@ const spawnedModels: THREE.Object3D[] = [];
 function spawnModel(id: string, lod: number, x: number, z: number, yaw = 0): boolean {
     const root = models.instantiate(id, lod);
     if (!root || !state.scene) return false;
-    root.position.set(x, getTerrainHeight(x, z), z);
+    root.position.set(x, groundHeight(x, z), z);
     root.rotation.y = yaw;
     state.scene.add(root);
     spawnedModels.push(root);
@@ -231,7 +238,7 @@ export interface SpawnCarOptions {
 function spawnCar(carType: CarType, color: number, x: number, z: number, yaw = 0, options: SpawnCarOptions = {}): CarInfo | null {
     if (!state.scene) return null;
     const model = new CarModel(color, carType);
-    model.group.position.set(x, getTerrainHeight(x, z), z);
+    model.group.position.set(x, groundHeight(x, z), z);
     model.group.rotation.y = yaw;
     model.gltf?.setSurfboard(options.surfboard ?? false);
     state.scene.add(model.group);
@@ -427,6 +434,26 @@ export interface CameraPose {
 let cameraOverride: CameraPose | null = null;
 const _overrideFocus = new THREE.Vector3();
 let renderPatched = false;
+// Waiting for the mean colour of the next frame the game camera draws
+let meanColorWaiters: Array<(rgb: [number, number, number]) => void> = [];
+
+// Mean colour of what the renderer just drew into the canvas (the drawing
+// buffer, before the page composites the HUD over it), read back right after
+// the render call while the buffer still holds the frame
+function drawnMeanColor(renderer: THREE.WebGLRenderer): [number, number, number] {
+    const gl = renderer.getContext();
+    const width = gl.drawingBufferWidth, height = gl.drawingBufferHeight;
+    const pixels = new Uint8Array(width * height * 4);
+    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+    const sum = [0, 0, 0];
+    for (let i = 0; i < pixels.length; i += 4) {
+        sum[0] += pixels[i];
+        sum[1] += pixels[i + 1];
+        sum[2] += pixels[i + 2];
+    }
+    const n = width * height;
+    return [sum[0] / n, sum[1] / n, sum[2] / n];
+}
 
 // Applies the override right before each render, after the chase camera ran,
 // so the game loop itself stays untouched.
@@ -452,6 +479,10 @@ function patchRenderForCameraOverride(): void {
             refreshCarLods(state.camera);
         }
         render(scene, camera);
+        if (meanColorWaiters.length && camera === state.camera && renderer.getRenderTarget() === null) {
+            const rgb = drawnMeanColor(renderer);
+            for (const resolve of meanColorWaiters.splice(0)) resolve(rgb);
+        }
     };
 }
 
@@ -614,7 +645,7 @@ export function installE2EHook(): void {
             }
             return { meshes, triangles };
         },
-        // The same as the sim's collider list (shared/world/colliderGen.ts)
+        // The same as the sim's collider list (shared/map/mapData.ts)
         colliders(): ColliderInput[] {
             return state.worldColliders.map(collider => ({ ...collider }));
         },
@@ -672,9 +703,30 @@ export function installE2EHook(): void {
             }
             return counts;
         },
+        // The map world: kit cells drawn and built, instances packed per
+        // kind, terrain triangles, and visible meshes and triangles per
+        // group of the map (draw call and triangle budgets)
+        mapWorldStats(): MapWorldStats | null {
+            const world = mapScene();
+            if (!world) return null;
+            const groups: Record<string, { meshes: number; triangles: number }> = {};
+            for (const group of world.group.children) {
+                let meshes = 0, triangles = 0;
+                group.traverseVisible(object => {
+                    const mesh = object as THREE.Mesh;
+                    if (!mesh.isMesh) return;
+                    meshes++;
+                    const index = mesh.geometry.index;
+                    const count = mesh.geometry.drawRange.count !== Infinity ? mesh.geometry.drawRange.count : (index ? index.count : mesh.geometry.attributes.position.count);
+                    triangles += count / 3 * ((mesh as THREE.InstancedMesh).isInstancedMesh ? (mesh as THREE.InstancedMesh).count : 1);
+                });
+                groups[group.name || group.type] = { meshes, triangles: Math.round(triangles) };
+            }
+            return { ...world.stats(), detail: mapDetail(), kit: kitStatus(), groups };
+        },
         // Rendered objects that stand on a collider (world/colliderTags.ts)
         colliderProps(): TaggedCollider[] {
-            return state.scene ? listTaggedColliders(state.scene) : [];
+            return listTaggedColliders();
         },
         // Puts the local car at rest at (x, z), facing angle. Online the
         // server places it (debugPlace, only with E2E=1) and the next
@@ -706,6 +758,14 @@ export function installE2EHook(): void {
         },
         // Where the local car is on screen (screenshot script: car size)
         localCarScreenBox,
+        // Mean colour (0-255 per channel) of the next frame drawn from the
+        // game camera, without the HUD: read back from the canvas's drawing
+        // buffer instead of a page screenshot, which on software WebGL
+        // waited seconds for the compositor
+        nextFrameMeanColor(): Promise<[number, number, number]> {
+            patchRenderForCameraOverride();
+            return new Promise(resolve => meanColorWaiters.push(resolve));
+        },
         // Renders from a fixed pose instead of the chase camera (null restores
         // the chase camera, which snaps back on the next frame).
         setCameraOverride(pose: CameraPose | null): void {

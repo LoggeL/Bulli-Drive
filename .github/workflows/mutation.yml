@@ -17,7 +17,7 @@ on:
       group:
         description: 'Group of stryker.config.mjs to run'
         type: choice
-        options: [all, sim, contact, net, world, rooms, race]
+        options: [all, sim, contact, net, world, rooms, race, map]
         default: all
       mutate:
         description: 'Only these files within the group (comma-separated globs, e.g. src/shared/sim/contact.ts); empty = the whole group'
@@ -46,7 +46,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group: [sim, contact, net, world, rooms, race]
+        group: [sim, contact, net, world, rooms, race, map]
     steps:
       - name: Skip groups that were not asked for
         id: pick

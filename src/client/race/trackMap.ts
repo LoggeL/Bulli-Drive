@@ -2,11 +2,11 @@ import { createCourse } from '../../shared/race/progress.js';
 import type { TrackDef } from '../../shared/race/types.js';
 import { gateEnds } from './trackLayout.js';
 
-// A track seen from above, north (+z) up (docs/phase-2-design.md, 17.3):
-// the frame that fits the track's minimap bounds into a canvas, and the
-// drawing of the racing line with its gates, used by the minimap in track
-// mode and the preview in the lobby. Seen from above with +z up, +x lies
-// to the left (a car facing +z has +x on its left).
+// A track seen from above, north up (docs/phase-2-design.md, 17.3, with
+// the compass of the curated map, docs/phase-3-design.md E2: north = -z up,
+// east = +x to the right): the frame that fits the track's minimap bounds
+// into a canvas, and the drawing of the racing line with its gates, used by
+// the minimap in track mode and the preview in the lobby.
 
 export interface MapFrame {
     scale: number;       // px per m
@@ -23,14 +23,14 @@ export function fitFrame(bounds: TrackDef['minimap'], width: number, height: num
 
 /** Canvas position of the world point (x, z). */
 export function toMap(frame: MapFrame, x: number, z: number): { px: number; py: number } {
-    return { px: frame.width / 2 - (x - frame.cx) * frame.scale, py: frame.height / 2 - (z - frame.cz) * frame.scale };
+    return { px: frame.width / 2 + (x - frame.cx) * frame.scale, py: frame.height / 2 + (z - frame.cz) * frame.scale };
 }
 
 /** Canvas angle (for ctx.rotate, 0 = pointing up) of a heading yaw. */
 export function mapHeading(yaw: number): number {
-    // Forward (sin yaw, cos yaw) is (-sin yaw, -cos yaw) on the canvas
-    // (px grows to the right with -x, py grows downwards with -z): up turned by -yaw
-    return -yaw;
+    // Forward (sin yaw, cos yaw) is (sin yaw, cos yaw) on the canvas (px
+    // grows with +x, py with +z); up (0, -1) turned clockwise by π - yaw
+    return Math.PI - yaw;
 }
 
 const lines = new Map<TrackDef['id'], { x: number; z: number }[]>();

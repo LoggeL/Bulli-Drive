@@ -14,12 +14,12 @@ import {
     MAX_RACERS, RACE_FIELD_TARGET, RACE_SNAPSHOT_EVERY, RACE_STATUS_EVERY, RESULTS_TICKS
 } from '../../shared/race/rules.js';
 import { computeStandings, gapAhead } from '../../shared/race/standings.js';
-import { nextTrack, TRACKS } from '../../shared/race/tracks/index.js';
+import { nextTrack, trackDef } from '../../shared/race/tracks/index.js';
 import type { BotLevel, RacePhase, RaceVote, TrackDef, TrackId } from '../../shared/race/types.js';
 import { stopInput } from '../../shared/sim/inputs.js';
 import type { SimCar, VehicleInput, VehicleState } from '../../shared/sim/types.js';
 import type { SimWorld } from '../../shared/world/colliders.js';
-import type { MapData } from '../../shared/world/mapData.js';
+import type { MapData } from '../../shared/map/mapData.js';
 import { BotSession, drawBots } from '../race/botRoster.js';
 import { Room, type BotController, type LeaveReason, type RoomMember, type RoomMessage } from './Room.js';
 import type { SpawnPose } from './spawn.js';
@@ -55,8 +55,10 @@ export function trackRuntime(map: MapData, id: TrackId): TrackRuntime {
     }
     let runtime = perMap.get(id);
     if (!runtime) {
-        const track = TRACKS[id];
-        runtime = { track, world: createRaceWorld(map, track), course: createCourse(track), hash: trackHash(track) };
+        const track = trackDef(map, id);
+        const world = createRaceWorld(map, track);
+        // The course knows the surfaces its bots race on
+        runtime = { track, world, course: createCourse(track, undefined, world.surfaceAt), hash: trackHash(track) };
         perMap.set(id, runtime);
     }
     return runtime;

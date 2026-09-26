@@ -21,6 +21,11 @@ export const LIGHTING = {
     // Anisotropic filtering of the world textures per tier
     anisotropy: { desktop: 8, mobile: 4, software: 1 } as Record<RenderTier, number>,
     shadow: {
+        // No shadow map on a CPU rasterizer: the shadow pass and the 3 x 3
+        // lookups in every lit pixel cost SwiftShader about a seventh of each
+        // frame, and the depth programs half a second of compiling per page
+        // (docs/phase-3-design.md A71). The contact shadows under the cars stay.
+        enabled: { desktop: true, mobile: true, software: false } as Record<RenderTier, boolean>,
         // Half size of the square the shadow map covers (in light space,
         // meters). On the ground it reaches 1 / sin(sunElevation) times as far
         // along the sun's direction.
@@ -89,7 +94,7 @@ export function setupLighting(scene: THREE.Scene, renderer: THREE.WebGLRenderer)
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = LOOK.exposure;
     const tier = renderTier = detectRenderTier(renderer);
-    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.enabled = LIGHTING.shadow.enabled[tier];
     // One filter for every tier (three r186 has no PCFSoftShadowMap): PCF
     // with the smooth 3 x 3 kernel of patchShadowFilter. Its nine hardware
     // lookups cost less than the 17 of r160's PCFShadowMap the software tier
@@ -130,7 +135,7 @@ export function setupLighting(scene: THREE.Scene, renderer: THREE.WebGLRenderer)
     shadowHalfExtent = shadow.halfExtent[tier];
     const mapSize = shadow.mapSize[tier];
     sun = new THREE.DirectionalLight(LOOK.sunColor, LOOK.sunIntensity);
-    sun.castShadow = true;
+    sun.castShadow = renderer.shadowMap.enabled;
     sun.shadow.mapSize.set(mapSize, mapSize);
     const camera = sun.shadow.camera;
     camera.left = -shadowHalfExtent;
