@@ -1,8 +1,30 @@
+/* The main menu (docs/ui.md 4) */
+@import "./ui/menu.css";
+
 /* ==========================================================================
    BULLI DRIVE — Retro California Surf Aesthetic
-   Typography: Righteous (display) + Quicksand (body) + Permanent Marker (accent)
+   Typography of the HUD: Righteous (display) + Quicksand (body)
    Palette: Warm sunset tones, vintage postcard colors
+   The loading screen and the main menu have their own look (docs/ui.md):
+   the loader's critical CSS, the --ui-* tokens and the Barlow faces are
+   inline in index.html, the menu's rules in ui/menu.css (imported here).
    ========================================================================== */
+
+/* Served from public/fonts (licences there), not from Google Fonts: the
+   game looks the same without that network (docs/ui.md 2) */
+@font-face {
+    font-family: 'Righteous';
+    font-weight: 400;
+    font-display: swap;
+    src: url(/fonts/righteous-400.woff2) format('woff2');
+}
+
+@font-face {
+    font-family: 'Quicksand';
+    font-weight: 300 700;
+    font-display: swap;
+    src: url(/fonts/quicksand-variable.woff2) format('woff2');
+}
 
 :root {
     --sunset-red: #E84545;
@@ -26,7 +48,6 @@
 
     --font-display: 'Righteous', cursive;
     --font-body: 'Quicksand', sans-serif;
-    --font-accent: 'Permanent Marker', cursive;
 
     --radius-sm: 6px;
     --radius-md: 12px;
@@ -61,432 +82,110 @@ canvas {
 }
 
 /* ==========================================================================
-   LOADING SCREEN
+   LOADING SCREEN: critical CSS inline in index.html; here only what the
+   game code switches (ui/loadingScreen.ts)
    ========================================================================== */
 
-#loading-screen {
-    position: fixed;
-    inset: 0;
-    background: var(--asphalt);
-    background-image:
-        radial-gradient(ellipse at 50% 120%, rgba(232, 69, 69, 0.15) 0%, transparent 60%),
-        radial-gradient(ellipse at 20% 80%, rgba(43, 122, 155, 0.1) 0%, transparent 50%);
-    z-index: 9999;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    transition: opacity 0.6s ease;
-}
-
-.loader {
-    text-align: center;
-    max-width: 300px;
-}
-
-/* Animated Bulli SVG Loader */
-.bulli-loader {
-    width: 180px;
-    margin: 0 auto 1.5rem;
-    position: relative;
-}
-
-.bulli-svg {
-    width: 100%;
-    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.4));
-}
-
-.bulli-svg .bulli-body {
-    animation: bulli-bounce 1.2s ease-in-out infinite;
-    transform-origin: 50% 56px;
-}
-
-@keyframes bulli-bounce {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-3px); }
-}
-
-.bulli-svg .wheel {
-    animation: wheel-spin 0.4s linear infinite;
-}
-
-.bulli-svg .wheel-front {
-    transform-origin: 78px 48px;
-}
-
-.bulli-svg .wheel-rear {
-    transform-origin: 28px 48px;
-}
-
-@keyframes wheel-spin {
-    to { transform: rotate(360deg); }
-}
-
-.bulli-svg .road-line {
-    animation: road-scroll 0.6s linear infinite;
-}
-
-@keyframes road-scroll {
-    to { stroke-dashoffset: -14; }
-}
-
-.loader-text {
-    font-family: var(--font-body);
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--text-muted);
-    letter-spacing: 0.5px;
-    transition: opacity 0.2s ease;
-    margin-bottom: 1.2rem;
-}
-
-.loader-bar {
-    width: 180px;
-    height: 4px;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 2px;
-    margin: 0 auto;
-    overflow: hidden;
-}
-
-.loader-bar-fill {
-    height: 100%;
-    width: 40%;
-    background: linear-gradient(90deg, var(--sunset-red), var(--sunset-orange));
-    border-radius: 2px;
-    animation: loader-slide 1.4s ease-in-out infinite;
-}
-
-@keyframes loader-slide {
-    0% { transform: translateX(-100%); }
-    100% { transform: translateX(350%); }
-}
-
-/* ==========================================================================
-   SPLASH SCREEN
-   ========================================================================== */
-
-#splash-screen {
-    position: fixed;
-    inset: 0;
-    z-index: 9000;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    opacity: 1;
-}
-
-#splash-screen.hidden {
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.6s ease;
-}
-
-.splash-bg {
-    position: absolute;
-    inset: 0;
-    background:
-        linear-gradient(180deg,
-            #1A1A2E 0%,
-            #16213E 25%,
-            #0F3460 45%,
-            #E84545 75%,
-            #F5A623 90%,
-            #FFD54F 100%
-        );
-    background-size: 100% 200%;
-    animation: sunset-shift 8s ease-in-out infinite alternate;
-}
-
-@keyframes sunset-shift {
-    0% { background-position: 50% 0%; }
-    100% { background-position: 50% 40%; }
-}
-
-.splash-bg::after {
+/* A light running along the empty bar: the page is at work, also while
+   a step has nothing to count yet (the code, the connection) */
+.loader-track::after {
     content: '';
     position: absolute;
     inset: 0;
-    background:
-        radial-gradient(circle at 50% 85%, rgba(255, 213, 79, 0.3) 0%, transparent 40%),
-        radial-gradient(circle at 30% 70%, rgba(232, 69, 69, 0.2) 0%, transparent 30%),
-        radial-gradient(circle at 70% 75%, rgba(245, 166, 35, 0.2) 0%, transparent 30%);
-    pointer-events: none;
+    width: 24%;
+    background: linear-gradient(90deg, rgba(243, 235, 221, 0), rgba(243, 235, 221, 0.45), rgba(243, 235, 221, 0));
+    animation: loader-sheen 2s linear infinite;
 }
 
-.splash-content {
-    position: relative;
-    text-align: center;
-    background: rgba(0, 0, 0, 0.4);
-    padding: 2.5rem 3rem;
-    border-radius: var(--radius-lg);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    box-shadow:
-        0 25px 60px rgba(0, 0, 0, 0.5),
-        inset 0 1px 0 rgba(255, 255, 255, 0.05);
-    max-width: 90%;
-    width: 420px;
-    animation: splash-appear 0.5s ease-out;
+@keyframes loader-sheen {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(420%); }
 }
 
-@keyframes splash-appear {
-    from {
-        opacity: 0;
-        transform: translateY(20px) scale(0.97);
+/* Why lite graphics (main.ts): a note in the corner away from the panel */
+.loader-notice {
+    position: absolute;
+    top: max(16px, env(safe-area-inset-top));
+    right: max(16px, env(safe-area-inset-right));
+    margin: 0;
+    padding: 6px 14px;
+    border: 1px solid var(--ui-line);
+    border-radius: 999px;
+    background: rgba(18, 20, 22, 0.64);
+    font-size: 13px;
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+    .loader-notice {
+        right: auto;
+        left: max(16px, env(safe-area-inset-left));
     }
 }
 
-.splash-badge {
-    display: inline-block;
-    font-family: var(--font-body);
-    font-size: 0.65rem;
-    font-weight: 700;
-    letter-spacing: 3px;
-    color: var(--sunset-gold);
-    border: 1px solid rgba(255, 213, 79, 0.3);
-    padding: 0.3rem 1rem;
-    border-radius: var(--radius-pill);
-    margin-bottom: 1rem;
-    background: rgba(255, 213, 79, 0.08);
+@media (prefers-reduced-motion: reduce) {
+    .loader-track::after {
+        display: none;
+    }
 }
 
-.splash-title {
-    margin-bottom: 0.5rem;
-    line-height: 1;
+/* WebGL refused: the key art alone stays as the backdrop of the notice
+   (contextLoss.ts), which says it all */
+#loading-screen.loader-stopped .loader-panel,
+#loading-screen.loader-stopped .loader-notice {
+    display: none;
 }
 
-.title-bulli {
-    display: block;
-    font-family: var(--font-accent);
-    font-size: 4rem;
-    color: var(--cream);
-    text-shadow:
-        3px 3px 0 var(--sunset-red),
-        6px 6px 0 rgba(232, 69, 69, 0.3);
-    letter-spacing: 2px;
-    transform: rotate(-2deg);
+#loading-screen.loader-stopped .loader-scrim {
+    background: rgba(18, 20, 22, 0.35);
 }
 
-.title-drive {
-    display: block;
-    font-family: var(--font-display);
-    font-size: 2rem;
-    color: var(--sunset-orange);
-    letter-spacing: 8px;
-    text-transform: uppercase;
-    text-shadow: 0 0 20px rgba(245, 166, 35, 0.4);
-}
-
-.splash-tagline {
-    font-size: 0.85rem;
-    color: var(--text-muted);
-    margin-bottom: 2rem;
-    letter-spacing: 0.5px;
-}
-
-.input-group {
-    margin-bottom: 1.5rem;
-}
-
-.input-label {
-    display: block;
-    font-size: 0.65rem;
-    font-weight: 700;
-    letter-spacing: 2px;
-    color: var(--text-muted);
-    margin-bottom: 0.5rem;
-    text-align: left;
-    padding-left: 1.5rem;
-}
-
-#splash-name-input {
-    width: 100%;
-    background: rgba(255, 255, 255, 0.06);
-    border: 2px solid rgba(255, 255, 255, 0.1);
-    border-radius: var(--radius-pill);
-    padding: 0.9rem 1.5rem;
-    color: white;
-    font-size: 1.05rem;
-    font-family: var(--font-body);
-    font-weight: 600;
-    text-align: center;
-    transition: all 0.3s ease;
-    outline: none;
-}
-
-#splash-name-input::placeholder {
-    color: rgba(255, 255, 255, 0.25);
-    font-weight: 400;
-}
-
-#splash-name-input:focus {
-    border-color: var(--sunset-orange);
-    background: rgba(255, 255, 255, 0.1);
-    box-shadow: 0 0 0 4px rgba(245, 166, 35, 0.15);
-}
-
-/* ==========================================================================
-   CAR SELECTOR
-   ========================================================================== */
-
-.car-selector {
-    margin-bottom: 1.5rem;
-}
-
-.car-selector .input-label {
-    margin-bottom: 0.7rem;
-}
-
-.car-selector-row {
+/* Waiting for the server: the status line says so, with a spinner */
+.loader-status.loader-waiting {
     display: flex;
-    gap: 0.5rem;
-    justify-content: center;
-    flex-wrap: wrap;
-}
-
-.car-card {
-    display: flex;
-    flex-direction: column;
     align-items: center;
-    gap: 0.3rem;
-    padding: 0.5rem 0.4rem 0.4rem;
-    border-radius: var(--radius-md);
-    border: 2px solid rgba(255, 255, 255, 0.08);
-    background: rgba(255, 255, 255, 0.04);
-    cursor: pointer;
-    transition: all 0.25s ease;
-    width: 68px;
-    color: var(--sunset-red);
+    gap: 10px;
+    color: var(--ui-danger);
 }
 
-.car-card:hover {
-    border-color: rgba(255, 255, 255, 0.2);
-    background: rgba(255, 255, 255, 0.08);
-    transform: translateY(-2px);
-}
-
-.car-card.selected {
-    border-color: var(--sunset-orange);
-    background: rgba(245, 166, 35, 0.12);
-    box-shadow: 0 0 16px rgba(245, 166, 35, 0.25), inset 0 0 8px rgba(245, 166, 35, 0.08);
-    transform: scale(1.08);
-}
-
-.car-icon {
-    width: 52px;
-    height: 32px;
-}
-
-/* Rendered car icons (WebP with alpha): a little lift so they sit like the
-   drawn icons of the other cars */
-.car-icon-render {
-    object-fit: contain;
-    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35));
-    user-select: none;
-    pointer-events: none;
-}
-
-.car-name {
-    font-family: var(--font-body);
-    font-size: 0.6rem;
-    font-weight: 700;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    color: var(--text-muted);
-}
-
-.car-card.selected .car-name {
-    color: var(--sunset-orange);
-}
-
-#start-btn {
-    background: linear-gradient(135deg, var(--sunset-red) 0%, #D63031 100%);
-    color: white;
-    border: none;
-    padding: 1rem 2.5rem;
-    font-size: 1.1rem;
-    font-weight: 700;
-    border-radius: var(--radius-pill);
-    cursor: pointer;
-    transition: all 0.25s ease;
-    box-shadow:
-        0 8px 25px rgba(232, 69, 69, 0.4),
-        0 2px 8px rgba(0, 0, 0, 0.2);
-    font-family: var(--font-display);
-    letter-spacing: 2px;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.6rem;
-    position: relative;
-    overflow: hidden;
-}
-
-#start-btn::before {
+.loader-status.loader-waiting::before {
     content: '';
-    position: absolute;
-    top: 0;
-    left: -100%;
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
-    transition: left 0.5s ease;
+    flex: none;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--ui-line);
+    border-top-color: var(--ui-danger);
+    border-radius: 50%;
+    animation: net-notice-spin 0.9s linear infinite;
 }
 
-#start-btn:hover {
-    transform: translateY(-3px);
-    box-shadow:
-        0 12px 35px rgba(232, 69, 69, 0.5),
-        0 4px 12px rgba(0, 0, 0, 0.3);
+/* Waiting for good: a reload, in the loader's own panel */
+.loader-reload {
+    margin-top: 12px;
+    min-height: 44px;
+    padding: 0 1.4rem;
+    border: none;
+    border-radius: 999px;
+    background: var(--ui-amber);
+    color: #1B1712;
+    font: 600 14px/1 var(--ui-font-display);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
 }
 
-#start-btn:hover::before {
-    left: 100%;
+.loader-reload[hidden] {
+    display: none;
 }
 
-#start-btn:active {
-    transform: translateY(0);
-    box-shadow:
-        0 4px 15px rgba(232, 69, 69, 0.4);
+.loader-reload:focus-visible {
+    outline: 2px solid var(--ui-paper);
+    outline-offset: 2px;
 }
 
-.btn-icon {
-    font-size: 0.8rem;
-}
-
-.splash-controls-preview {
-    margin-top: 1.5rem;
-    padding-top: 1rem;
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.preview-row {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.4rem;
-    flex-wrap: wrap;
-}
-
-.preview-keys {
-    font-family: var(--font-body);
-    font-weight: 700;
-    font-size: 0.7rem;
-    letter-spacing: 1px;
-    background: rgba(255, 255, 255, 0.1);
-    padding: 0.2rem 0.5rem;
-    border-radius: 4px;
-    color: rgba(255, 255, 255, 0.7);
-}
-
-.preview-desc {
-    font-size: 0.7rem;
-    color: rgba(255, 255, 255, 0.35);
-}
-
-.preview-sep {
-    color: rgba(255, 255, 255, 0.15);
-    margin: 0 0.2rem;
+@media (prefers-reduced-motion: reduce) {
+    .loader-status.loader-waiting::before {
+        animation: none;
+    }
 }
 
 /* ==========================================================================
@@ -1399,34 +1098,6 @@ canvas {
     #race-hud {
         top: max(0.5rem, env(safe-area-inset-top, 0.5rem));
     }
-
-    .splash-content {
-        padding: 2rem 1.8rem;
-        width: 360px;
-    }
-
-    .title-bulli {
-        font-size: 3rem;
-    }
-
-    .title-drive {
-        font-size: 1.5rem;
-        letter-spacing: 6px;
-    }
-
-    .car-card {
-        width: 56px;
-        padding: 0.35rem 0.3rem 0.3rem;
-    }
-
-    .car-icon {
-        width: 42px;
-        height: 26px;
-    }
-
-    .car-name {
-        font-size: 0.5rem;
-    }
 }
 
 /* ==========================================================================
@@ -2179,216 +1850,76 @@ canvas {
 }
 
 /* ==========================================================================
-   MODAL (unused but preserved for compatibility)
-   ========================================================================== */
-
-#modal-container {
-    position: fixed;
-    inset: 0;
-    z-index: 9100;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    opacity: 1;
-    transition: opacity 0.3s ease;
-}
-
-#modal-container.hidden {
-    pointer-events: none;
-    opacity: 0;
-}
-
-.modal-backdrop {
-    position: absolute;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(5px);
-}
-
-.modal-content {
-    position: relative;
-    width: 90%;
-    max-width: 600px;
-    background: rgba(30, 30, 30, 0.95);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: var(--radius-lg);
-    padding: 2rem;
-    transform: scale(1);
-    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.27);
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-}
-
-#modal-container.hidden .modal-content {
-    transform: scale(0.9);
-}
-
-.close-btn {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    background: none;
-    border: none;
-    color: rgba(255, 255, 255, 0.4);
-    font-size: 2rem;
-    cursor: pointer;
-    transition: color 0.2s;
-}
-
-.close-btn:hover {
-    color: white;
-}
-
-#modal-title {
-    font-family: var(--font-display);
-    font-size: 1.8rem;
-    margin-bottom: 1rem;
-    color: var(--sunset-orange);
-}
-
-#modal-body {
-    line-height: 1.6;
-    color: rgba(255, 255, 255, 0.75);
-    max-height: 65vh;
-    overflow-y: auto;
-}
-
-#about-link {
-    display: inline-block;
-    margin-top: 1rem;
-    font-family: var(--font-body);
-    font-size: 0.7rem;
-    font-weight: 700;
-    letter-spacing: 2px;
-    color: var(--text-muted);
-    text-decoration: none;
-    text-transform: uppercase;
-    transition: color 0.2s ease;
-}
-
-#about-link:hover {
-    color: var(--sunset-orange);
-}
-
-.modal-desc {
-    font-family: var(--font-body);
-    font-size: 0.95rem;
-    margin-bottom: 1.2rem;
-}
-
-.modal-section-title {
-    font-family: var(--font-display);
-    font-size: 1.1rem;
-    color: var(--sunset-gold);
-    margin: 1.2rem 0 0.6rem;
-}
-
-.modal-controls-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-}
-
-.modal-control-row {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    font-family: var(--font-body);
-    font-size: 0.9rem;
-}
-
-.modal-key {
-    display: inline-block;
-    min-width: 80px;
-    padding: 0.2rem 0.5rem;
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: 4px;
-    font-family: var(--font-body);
-    font-weight: 700;
-    font-size: 0.8rem;
-    letter-spacing: 0.1em;
-    text-align: center;
-    color: rgba(255, 255, 255, 0.9);
-}
-
-.modal-powerup-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-}
-
-.modal-powerup-item {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    font-family: var(--font-body);
-    font-size: 0.9rem;
-}
-
-.modal-powerup-item .powerup-icon {
-    width: 24px;
-    height: 24px;
-    min-width: 24px;
-    color: var(--sunset-gold);
-}
-
-/* ==========================================================================
    WEBGL CONTEXT LOSS NOTICE
    ========================================================================== */
 
 #context-lost {
     position: fixed;
     inset: 0;
+    /* Above the loading screen (9999), whose key art stays behind it */
     z-index: 10000;
     display: flex;
     justify-content: center;
     align-items: center;
     padding: 1rem;
-    background: rgba(0, 0, 0, 0.55);
+    background: rgba(18, 20, 22, 0.35);
 }
 
 #context-lost.hidden {
     display: none;
 }
 
+/* Glass card in the loading screen's look (docs/ui.md 2) */
 .context-lost-card {
-    max-width: 360px;
+    max-width: 380px;
     padding: 1.5rem 1.75rem;
     text-align: center;
-    color: var(--text);
-    background: rgba(30, 30, 30, 0.95);
-    border: 1px solid var(--glass-border);
-    border-radius: var(--radius-lg);
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    color: var(--ui-paper);
+    background: rgba(18, 20, 22, 0.86);
+    border: 1px solid var(--ui-line);
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+    font: 500 15px/1.45 var(--ui-font);
+}
+
+@supports ((backdrop-filter: blur(18px)) or (-webkit-backdrop-filter: blur(18px))) {
+    .context-lost-card {
+        background: rgba(18, 20, 22, 0.64);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+    }
 }
 
 .context-lost-card h2 {
-    font-family: var(--font-display);
-    font-weight: 400;
-    font-size: 1.4rem;
-    letter-spacing: 1px;
-    color: var(--sunset-gold);
-    margin-bottom: 0.5rem;
+    font: 600 1.3rem/1.2 var(--ui-font-display);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ui-paper);
+    margin-bottom: 0.6rem;
 }
 
 .context-lost-card p {
-    font-family: var(--font-body);
-    font-size: 0.95rem;
-    color: var(--text-muted);
+    color: var(--ui-paper-2);
 }
 
 .context-lost-reload {
     margin-top: 1.25rem;
-    padding: 0.7rem 1.8rem;
+    min-height: 44px;
+    padding: 0 1.8rem;
     border: none;
-    border-radius: var(--radius-pill);
-    background: linear-gradient(135deg, var(--sunset-red) 0%, #D63031 100%);
-    color: white;
-    font-family: var(--font-display);
-    font-size: 1rem;
-    letter-spacing: 1px;
+    border-radius: 999px;
+    background: var(--ui-amber);
+    color: #1B1712;
+    font: 600 1rem/1 var(--ui-font-display);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
     cursor: pointer;
+}
+
+.context-lost-reload:focus-visible,
+.net-notice-reload:focus-visible {
+    outline: 2px solid var(--ui-paper);
+    outline-offset: 2px;
 }
 
 .context-lost-reload[hidden] {
@@ -2427,21 +1958,6 @@ canvas {
 /* ==========================================================================
    DRIVE HUD AND TOUCH BUTTONS
    ========================================================================== */
-
-/* Splash: touch controls instead of the keys on phones */
-.preview-touch {
-    display: none;
-}
-
-@media (pointer: coarse) {
-    .preview-keyboard {
-        display: none;
-    }
-
-    .preview-touch {
-        display: flex;
-    }
-}
 
 .hint-text {
     font-family: var(--font-display);
@@ -2908,85 +2424,6 @@ body.room-race .nametag-hp {
     display: none !important;
 }
 
-/* Splash: two large options, easy to hit with a thumb */
-#splash-screen {
-    overflow-y: auto;
-    align-items: flex-start;
-}
-
-.splash-content {
-    /* Centred while it fits, scrollable from the top when it does not */
-    margin: auto;
-}
-
-.mode-selector {
-    margin-bottom: 1.5rem;
-}
-
-.mode-selector .input-label {
-    margin-bottom: 0.7rem;
-}
-
-.mode-selector-row {
-    display: flex;
-    gap: 0.5rem;
-}
-
-.mode-option,
-.room-option {
-    flex: 1 1 0;
-    min-height: 56px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 0.15rem;
-    padding: 0.45rem 0.5rem;
-    color: var(--text-muted);
-    background: rgba(255, 255, 255, 0.04);
-    border: 2px solid rgba(255, 255, 255, 0.08);
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    font-family: var(--font-body);
-    touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent;
-    transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
-}
-
-.mode-option:hover,
-.room-option:hover:not(:disabled) {
-    border-color: rgba(255, 255, 255, 0.2);
-    background: rgba(255, 255, 255, 0.08);
-}
-
-.mode-option[aria-checked="true"],
-.room-option[aria-current="true"] {
-    color: var(--sunset-orange);
-    border-color: var(--sunset-orange);
-    background: rgba(245, 166, 35, 0.12);
-    box-shadow: 0 0 16px rgba(245, 166, 35, 0.2);
-}
-
-.mode-option:focus-visible,
-.room-option:focus-visible {
-    outline: 2px solid var(--sunset-gold);
-    outline-offset: 2px;
-}
-
-.mode-name {
-    font-family: var(--font-display);
-    font-size: 0.95rem;
-    letter-spacing: 1.5px;
-    line-height: 1.1;
-}
-
-.mode-desc {
-    font-size: 0.62rem;
-    font-weight: 600;
-    letter-spacing: 0.3px;
-    color: var(--text-muted);
-}
-
 /* In the game: room chip below the rank chip (desktop), beside it (touch) */
 #player-list {
     display: flex;
@@ -3004,11 +2441,12 @@ body.room-race .nametag-hp {
     align-items: center;
     justify-content: center;
     gap: 0.05rem;
-    color: var(--cream);
-    background: linear-gradient(145deg, rgba(31, 49, 42, 0.91), rgba(24, 32, 30, 0.82));
-    border: 1px solid rgba(243, 210, 142, 0.68);
-    border-radius: 16px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.26), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    /* The menu's glass (docs/ui.md 2): ink, a paper edge, amber when open */
+    color: var(--ui-paper);
+    background: rgba(18, 20, 22, 0.66);
+    border: 1px solid rgba(243, 235, 221, 0.22);
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.26);
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
     cursor: pointer;
@@ -3020,8 +2458,8 @@ body.room-race .nametag-hp {
 #room-chip:hover,
 #room-chip:focus-visible,
 #room-chip[aria-expanded="true"] {
-    background: linear-gradient(145deg, rgba(45, 67, 58, 0.96), rgba(29, 39, 36, 0.9));
-    border-color: rgba(255, 213, 79, 0.9);
+    background: rgba(18, 20, 22, 0.82);
+    border-color: var(--ui-amber);
     outline: none;
 }
 
@@ -3030,18 +2468,20 @@ body.room-race .nametag-hp {
 }
 
 #room-chip-mode {
-    font-family: var(--font-display);
+    font-family: var(--ui-font-display);
+    font-weight: 600;
     font-size: 0.9rem;
-    letter-spacing: 1px;
+    letter-spacing: 0.12em;
     line-height: 1.1;
     white-space: nowrap;
 }
 
 #room-chip-index {
-    font-size: 0.6rem;
-    font-weight: 700;
-    letter-spacing: 1.5px;
-    color: rgba(255, 248, 231, 0.65);
+    font-family: var(--ui-font);
+    font-size: 0.62rem;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    color: var(--ui-paper-2);
     white-space: nowrap;
 }
 
@@ -3054,13 +2494,14 @@ body.room-race .nametag-hp {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-    color: var(--cream);
-    background: linear-gradient(145deg, rgba(31, 49, 42, 0.96), rgba(17, 25, 23, 0.94));
-    border: 1px solid rgba(243, 210, 142, 0.48);
-    border-radius: 16px;
-    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.36);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
+    color: var(--ui-paper);
+    background: rgba(18, 20, 22, 0.8);
+    border: 1px solid var(--ui-line);
+    border-radius: 12px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.38);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    font-family: var(--ui-font);
 }
 
 #room-panel[hidden] {
@@ -3069,18 +2510,88 @@ body.room-race .nametag-hp {
 
 #room-panel h3 {
     margin: 0;
-    padding: 0 0 0.5rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    font-family: var(--font-display);
-    font-size: 0.86rem;
-    font-weight: 400;
-    letter-spacing: 0.08em;
+    padding: 0.1rem 0.2rem 0.45rem;
+    color: var(--ui-paper-2);
+    font: 600 12px/1.2 var(--ui-font-display);
+    letter-spacing: 0.18em;
     text-transform: uppercase;
 }
 
+/* The menu's mode cards (ui/menu.css) */
 .room-option {
     flex: 0 0 auto;
     min-height: 52px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 2px;
+    padding: 8px 12px;
+    text-align: left;
+    color: var(--ui-paper);
+    background: rgba(30, 34, 38, 0.6);
+    border: 1px solid var(--ui-line);
+    border-radius: 10px;
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    transition: border-color 0.18s var(--ui-ease), background 0.18s var(--ui-ease);
+}
+
+.room-option:hover:not(:disabled) {
+    background: rgba(30, 34, 38, 0.85);
+    border-color: rgba(243, 235, 221, 0.28);
+}
+
+.room-option[aria-current="true"] {
+    border-color: var(--ui-amber);
+    background: rgba(224, 168, 74, 0.1);
+    box-shadow: inset 3px 0 0 var(--ui-amber);
+}
+
+.room-option[aria-current="true"] .mode-name {
+    color: var(--ui-amber);
+}
+
+.room-option:focus-visible,
+.room-settings:focus-visible {
+    outline: 2px solid var(--ui-paper);
+    outline-offset: 2px;
+}
+
+.room-option .mode-name {
+    font: 600 14px/1.1 var(--ui-font-display);
+    letter-spacing: 0.14em;
+}
+
+.room-option .mode-desc {
+    color: var(--ui-paper-2);
+    font-size: 12px;
+    line-height: 1.3;
+}
+
+.room-settings {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    margin-top: 0.2rem;
+    padding: 0 12px;
+    color: var(--ui-paper);
+    background: transparent;
+    border: 0;
+    border-top: 1px solid var(--ui-line);
+    border-radius: 0;
+    cursor: pointer;
+    font: 600 13px/1 var(--ui-font-display);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+}
+
+.room-settings .ui-icon {
+    width: 20px;
+    height: 20px;
+    stroke-width: 1.7;
 }
 
 .room-option:disabled {
@@ -3120,9 +2631,6 @@ body.room-race .nametag-hp {
         overflow: auto;
     }
 
-    .mode-option {
-        min-height: 52px;
-    }
 }
 
 /* Phones upright: the boost meter sits top centre, so the room chip goes
@@ -3143,21 +2651,6 @@ body.room-race .nametag-hp {
     }
 }
 
-/* Short screens (phones in landscape): a slimmer splash */
-@media (max-height: 480px) {
-    .mode-selector {
-        margin-bottom: 1rem;
-    }
-
-    .mode-option {
-        min-height: 44px;
-    }
-
-    .mode-desc {
-        display: none;
-    }
-}
-
 /* ==========================================================================
    CONNECTION NOTICE: the server closed the connection or turned it away
    (network/websocket.ts). Reconnecting comes with phase 1b step 9
@@ -3174,13 +2667,13 @@ body.room-race .nametag-hp {
     gap: 0.8rem;
     max-width: calc(100vw - 2rem);
     padding: 0.6rem 0.7rem 0.6rem 1.2rem;
-    border-radius: var(--radius-pill);
-    background: rgba(20, 20, 20, 0.85);
-    border: 1px solid var(--glass-border);
-    color: var(--text);
-    font-family: var(--font-display);
-    font-size: 0.95rem;
-    letter-spacing: 0.5px;
+    border-radius: 999px;
+    /* Glass in the loading screen's look (docs/ui.md 2): it also shows over the loader */
+    background: rgba(18, 20, 22, 0.86);
+    border: 1px solid var(--ui-line);
+    color: var(--ui-paper);
+    font: 500 0.95rem/1.3 var(--ui-font);
+    letter-spacing: 0.01em;
     /* Above the loader (9999) and the splash (9000): a notice that comes
        before the first room state must not be hidden behind them */
     z-index: 10001;
@@ -3208,8 +2701,8 @@ body.room-race .nametag-hp {
     flex: none;
     width: 1rem;
     height: 1rem;
-    border: 2px solid rgba(255, 255, 255, 0.25);
-    border-top-color: var(--text);
+    border: 2px solid var(--ui-line);
+    border-top-color: var(--ui-amber);
     border-radius: 50%;
     animation: net-notice-spin 0.9s linear infinite;
 }
@@ -3244,26 +2737,13 @@ body.room-race .nametag-hp {
     min-height: 44px;
     padding: 0 1.1rem;
     border: none;
-    border-radius: var(--radius-pill);
-    background: linear-gradient(135deg, var(--sunset-red), #D63031);
-    color: white;
-    font-family: var(--font-display);
-    font-size: 0.9rem;
+    border-radius: 999px;
+    background: var(--ui-amber);
+    color: #1B1712;
+    font: 600 0.9rem/1 var(--ui-font-display);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
     cursor: pointer;
-}
-
-/* Start button while the world textures and car models finish loading */
-#start-btn.loading {
-    cursor: progress;
-    filter: saturate(0.6);
-}
-
-#start-btn.loading .btn-icon {
-    animation: start-btn-pulse 1s ease-in-out infinite;
-}
-
-@keyframes start-btn-pulse {
-    50% { opacity: 0.35; }
 }
 
 /* ==========================================================================
@@ -3629,6 +3109,17 @@ body.room-race.race-results-open #mobile-controls {
     display: flex;
     flex-direction: column;
     gap: 0.7rem;
+}
+
+.race-sheet .input-label {
+    display: block;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: var(--text-muted);
+    margin-bottom: 0.5rem;
+    text-align: left;
+    padding-left: 1.5rem;
 }
 
 .race-field {

@@ -1,8 +1,8 @@
 import { state } from '../state.js';
 import { CONFIG } from '../config.js';
 import {
-    PROTOCOL_VERSION,
     type GameEvent,
+    type ProfileId,
     type MemberInfo,
     type ServerMessage
 } from '../../shared/protocol.js';
@@ -28,11 +28,13 @@ import { releaseKeyboardInputs } from '../controls/keyboard.js';
 import { resetMobileControls } from '../controls/mobile.js';
 import { sendToServer, setSocketNetsim } from './socket.js';
 import { createSocketNetsim } from '../net/netsim.js';
-import { hideConnectionOverlay, reconnectingText, showConnectionNotice, showReconnecting } from '../ui/connectionOverlay.js';
+import { hideConnectionOverlay, loaderWaitingText, reconnectingText, showConnectionNotice, showReconnecting } from '../ui/connectionOverlay.js';
 import { roomSimWorld, setGameMapWorld } from '../vehicle/simWorldClient.js';
 import { assistProfileForDevice } from '../vehicle/LocalVehicle.js';
 import { startNetPump } from '../vehicle/v2Driver.js';
 import { preferredRoomKind, setCurrentRoom } from '../ui/roomMenu.js';
+import { onOwnPaint } from '../ui/menu/paintSync.js';
+import { helloFor } from './hello.js';
 import { netDriver, placeholderCar } from '../net/netDriver.js';
 import { reloadOnce } from './reloadOnce.js';
 import { applyResumeOutcome, resumeOutcome } from './resumeOutcome.js';
@@ -40,6 +42,8 @@ import { hideRespawnOverlay, showRespawnOverlay } from '../ui/respawnOverlay.js'
 import { clearRemoteViews, forgetRemote, noteSnapshotCars, setRemoteDead } from '../net/remotes.js';
 import { raceClient } from '../race/RaceClient.js';
 import { mapFeaturesGroup } from '../race/TrackDressing.js';
+import { clearLoaderWaiting, loadingScreenCovers, loadProgress, showLoaderWaiting } from '../ui/loadingScreen.js';
+import { mapWorldBuilt } from '../assets/loadSteps.js';
 
 // The connection to the game server on protocol v2 (docs/phase-1b-design.md,
 // 3 and 11): the handshake, the map's world, the room state, the
@@ -128,7 +132,12 @@ export function initWebSocket() {
     // The map first (sources and terrain), then the socket: 'roomState'
     // needs the map to check the world and to predict
     const tryLoad = (attempt: number): void => {
-        loadGameMap().then(() => connect()).catch(error => {
+        loadProgress()?.start('map');
+        loadGameMap().then(() => {
+            // The files are in; building the world is the other half
+            loadProgress()?.report('map', 0.5);
+            connect();
+        }).catch(error => {
             // A map from a newer deploy: this page cannot read it, reload
             if (reloadForMap(error)) return;
             console.error('Map failed to load', error);
@@ -142,6 +151,7 @@ function connect() {
     window.clearTimeout(reconnectTimer);
     reconnectTimer = 0;
     const generation = ++socketGeneration;
+    loadProgress()?.start('connect');
     const ws = new WebSocket(CONFIG.serverUrl);
     ws.binaryType = 'arraybuffer';
     state.ws = ws;
@@ -179,21 +189,20 @@ function connect() {
 }
 
 function sendHello() {
-    const savedName = localStorage.getItem('bulli-player-name') || '';
+    let storage: Storage | null = null;
+    try {
+        storage = localStorage;
+    } catch { /* storage blocked: the defaults */ }
     const sessionToken = storageGet(SESSION_KEY);
     const resume = storageGet(RESUME_KEY);
-    sendToServer({
-        type: 'hello',
-        protocolVersion: PROTOCOL_VERSION,
+    sendToServer(helloFor(storage, {
         build: pageBuild(),
         connId,
-        ...(sessionToken ? { sessionToken } : {}),
-        ...(resume ? { resume } : {}),
-        name: savedName,
-        carType: localStorage.getItem('bulli-car-type') || 'bulli',
-        profile: assistProfileForDevice(),
+        sessionToken,
+        resume,
+        profile: assistProfileForDevice() as ProfileId,
         room: state.room?.kind ?? preferredRoomKind()
-    });
+    }));
 }
 
 function onFrame(data: string | ArrayBuffer) {
@@ -235,12 +244,13 @@ function onClosed(code: number, reason: string) {
             showConnectionNotice('Disconnected after a long break', 'Continue', reconnectNow);
             return;
         case 'reconnect': {
-            // Never connected yet: the loader stays and the banner says why
-            const text = reconnectingText(code, everOpened);
+            // Still loading: the loader's status line says why it waits,
+            // else the banner
             const delay = Math.max(restartDelayMs ?? reconnectDelayMs(reconnectAttempt, Math.random), holdReconnectUntil - now);
             restartDelayMs = null;
             reconnectAttempt++;
-            showReconnecting(disconnectedAt, text);
+            if (loadingScreenCovers()) showLoaderWaiting(loaderWaitingText(code), disconnectedAt);
+            else showReconnecting(disconnectedAt, reconnectingText(code, everOpened));
             reconnectTimer = window.setTimeout(connect, delay);
             return;
         }
@@ -287,11 +297,14 @@ function handleServerMessage(data: ServerMessage) {
             reconnectAttempt = 0;
             disconnectedAt = -1;
             hideConnectionOverlay();
+            clearLoaderWaiting();
             // A new deploy with the same protocol: load the new client once
             const build = pageBuild();
             if (build && data.serverBuild && build !== data.serverBuild && reloadOnce(BUILD_RELOAD_KEY, data.serverBuild)) return;
             state.myId = data.playerId;
             state.myColor = data.color;
+            // The menu's paint chips show the paint the server gave
+            onOwnPaint(data.color);
             state.myName = data.name;
             // The own car carries the player id in the sim (contacts, order)
             if (state.bulli?.vehicle) state.bulli.vehicle.car.id = data.playerId;
@@ -380,6 +393,12 @@ function enterRoom(data: Extract<ServerMessage, { type: 'roomState' }>) {
         // The map's world: terrain, sea, roads, buildings, plants (once per page)
         createMapScene(map);
         initMinimap(map);
+        // The loading screen: connected, the world stands, its textures load
+        const progress = loadProgress();
+        if (progress) {
+            progress.done('connect');
+            mapWorldBuilt(progress, { renderer: state.renderer, scene: state.scene, camera: state.camera });
+        }
     } else {
         checkWorld(map, data.world);
     }
@@ -391,6 +410,7 @@ function enterRoom(data: Extract<ServerMessage, { type: 'roomState' }>) {
     clearPowerupMarkers();
 
     setCurrentRoom(data.room);
+    state.preview = { x: data.preview.x, z: data.preview.z, yaw: data.preview.yaw };
     setMapSceneRoom(data.room.kind);
     const party = data.room.kind === 'party';
     if (data.items) {
@@ -428,7 +448,7 @@ function enterRoom(data: Extract<ServerMessage, { type: 'roomState' }>) {
     const firstJoin = !state.bulli;
     if (firstJoin) {
         createLocalPlayer(state.myColor ?? 0xD32F2F, state.myName, data.preview);
-        removeLoader();
+        // The loader goes once the rest of its steps are in (main.ts)
     } else if (!resumedCar) {
         // Until the spawn the car waits at the preview spot
         placeLocalCarVisual(data.preview.x, data.preview.z, data.preview.yaw);
@@ -465,7 +485,8 @@ function updateMember(data: Extract<ServerMessage, { type: 'playerUpdated' }>) {
         ...member,
         ...(data.name !== undefined ? { name: data.name } : {}),
         ...(data.carType !== undefined ? { carType: data.carType } : {}),
-        ...(data.profile !== undefined ? { profile: data.profile } : {})
+        ...(data.profile !== undefined ? { profile: data.profile } : {}),
+        ...(data.color !== undefined ? { color: data.color } : {})
     };
     netDriver.setMember(next);
     const remote = state.remotePlayers[data.id] as unknown as Bulli | undefined;
@@ -478,6 +499,9 @@ function updateMember(data: Extract<ServerMessage, { type: 'playerUpdated' }>) {
         // A new body: rebuild the model where the old one stood
         removeRemotePlayer(data.id);
         addRemotePlayer(next);
+    } else if (remote && data.color !== undefined) {
+        // Only the paint: the same model, its paint material recoloured
+        remote.setPaint(data.color);
     }
     updateScoreboardUI();
 }
@@ -703,30 +727,5 @@ export function removeRemotePlayer(id: string) {
         delete state.remotePlayers[id];
         forgetRemote(id);
         updateScoreboardUI();
-    }
-}
-
-export function removeLoader() {
-    const loader = document.getElementById('loading-screen');
-    const splash = document.getElementById('splash-screen');
-
-    // Setup splash input with saved name
-    const savedName = localStorage.getItem('bulli-player-name');
-    const splashInput = document.getElementById('splash-name-input') as HTMLInputElement;
-    if (splashInput && savedName) {
-        splashInput.value = savedName;
-    }
-
-    // Show splash screen immediately behind loader
-    if (splash) {
-        splash.classList.remove('hidden');
-        if (splashInput) splashInput.focus();
-    }
-
-    if (loader) {
-        loader.style.opacity = '0';
-        setTimeout(() => {
-            loader.remove();
-        }, 500);
     }
 }

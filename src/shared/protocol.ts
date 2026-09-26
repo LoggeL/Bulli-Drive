@@ -2,6 +2,7 @@
 // Field shapes must match what is actually serialized on each side.
 
 import * as v from 'valibot';
+import { PAINT_IDS } from './paints.js';
 import {
     BOT_LEVELS, RACE_VOTES, TRACK_IDS,
     type BotLevel, type RacePhase, type RacerStatus, type TrackId
@@ -18,7 +19,9 @@ import {
 // v5 (docs/phase-1a-design.md, 26): no jump. The suspension in the self
 // block and the compact record (instead of the flip), no jump cooldown,
 // flip, previous buttons or Super Jump bits; the jump button bit is dropped.
-export const PROTOCOL_VERSION = 5;
+// v6 (docs/ui.md 5): the car paint from the menu (hello.paint, 'setPaint',
+// playerUpdated.color); an older server would drop 'setPaint'.
+export const PROTOCOL_VERSION = 6;
 
 // ---------- DTOs ----------
 
@@ -129,7 +132,12 @@ export const HelloSchema = v.object({
     // Unknown car types fall back to the Bulli (VALID_CAR_TYPES)
     carType: shortString(32),
     profile: v.picklist(ASSIST_PROFILE_IDS),
-    room: v.picklist(ROOM_KINDS)
+    room: v.picklist(ROOM_KINDS),
+    // The paint picked in the menu (shared/paints.ts). Like carType it
+    // may name a paint this server does not know (a palette changed with a
+    // deploy): the server then picks one from the palette, the hello stays
+    // good. 'setPaint' takes palette paints only
+    paint: v.optional(shortString(32))
 });
 
 export type HelloMessage = v.InferOutput<typeof HelloSchema>;
@@ -147,6 +155,8 @@ export const ClientMessageSchema = v.variant('type', [
         fresh: v.optional(v.boolean()), track: v.optional(v.picklist(TRACK_IDS))
     }),
     v.object({ type: v.literal('setCar'), carType: shortString(32), profile: v.picklist(ASSIST_PROFILE_IDS) }),
+    // Another paint from the menu (docs/ui.md 5): shown to the room like a car change
+    v.object({ type: v.literal('setPaint'), paint: v.picklist(PAINT_IDS) }),
     v.object({ type: v.literal('rename'), name: shortString(200) }),
     v.object({ type: v.literal('honk') }),
     v.object({ type: v.literal('shoot'), targetId: shortString(64) }),
@@ -317,7 +327,7 @@ export type ServerMessage =
     }
     | { type: 'playerJoined'; member: MemberInfo }
     | { type: 'playerLeft'; id: string; reason: LeaveReason }
-    | { type: 'playerUpdated'; id: string; name?: string; carType?: string; profile?: ProfileId }
+    | { type: 'playerUpdated'; id: string; name?: string; carType?: string; profile?: ProfileId; color?: number }
     // Clock sync: the room tick and how far (0..1) the running tick interval is
     | { type: 'pong'; t: number; tick: number; sub: number }
     | { type: 'events'; tick: number; list: GameEvent[] }

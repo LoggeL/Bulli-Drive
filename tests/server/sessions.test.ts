@@ -175,6 +175,29 @@ describe('grace time and resume', () => {
         expect(reloaded.transport.events('spawn').map(e => e.id)).toContain(a.session.id);
     });
 
+    it('takes the paint of the page over on a reload and on a resume, and shows a resumed one to the room', () => {
+        const a = driving({ paint: 'sea' });
+        const b = driving({ connId: 'page-2', name: 'Bob' });
+        expect(a.session.color).toBe(0x5E8C7A);
+        // The same page after a short drop, now in Ochre (docs/ui.md 5)
+        drop(a.transport, 0);
+        const resumed = join({ sessionToken: a.transport.of('welcome')[0].sessionToken, paint: 'ochre' });
+        expect(resumed.resumed).toBe(true);
+        expect(resumed.session.color).toBe(0xB8862F);
+        expect(resumed.transport.of('welcome')[0].color).toBe(0xB8862F);
+        steps(b.session.room!, 1, 60_000);
+        expect(b.transport.of('playerUpdated').at(-1)).toEqual({ type: 'playerUpdated', id: a.session.id, color: 0xB8862F });
+        // A reload without a wish keeps the paint
+        drop(resumed.transport, 1000);
+        const reloaded = join({ sessionToken: a.transport.of('welcome')[0].sessionToken, connId: 'page-reloaded' });
+        expect(reloaded.session.color).toBe(0xB8862F);
+        // So does one with a paint this palette does not know
+        drop(reloaded.transport, 2000);
+        const unknown = join({ sessionToken: a.transport.of('welcome')[0].sessionToken, connId: 'page-3', paint: 'neon' });
+        expect(unknown.resumed).toBe(true);
+        expect(unknown.session.color).toBe(0xB8862F);
+    });
+
     it('never resumes a kicked session', () => {
         const a = driving();
         a.session.kicked = true;

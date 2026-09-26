@@ -1,5 +1,44 @@
 import { state } from '../state.js';
 
+// Sound on or off (the menu's settings and its quick switch, docs/ui.md
+// 4.3): every sound goes through one master gain, which the setting mutes.
+// Kept under SOUND_KEY for the next visit.
+export const SOUND_KEY = 'bulli-sound';
+let master: GainNode | null = null;
+let soundOn = readSoundSetting();
+
+function readSoundSetting(): boolean {
+    try {
+        return typeof localStorage === 'undefined' || localStorage.getItem(SOUND_KEY) !== 'off';
+    } catch {
+        return true;
+    }
+}
+
+/** The master gain of the page's audio context (created on first use). */
+function soundOutput(context: AudioContext): AudioNode {
+    if (!master || master.context !== context) {
+        master = context.createGain();
+        master.gain.value = soundOn ? 1 : 0;
+        master.connect(context.destination);
+    }
+    return master;
+}
+
+/** Whether the game makes sound. */
+export function soundEnabled(): boolean {
+    return soundOn;
+}
+
+/** Switches all sound on or off, now and for the next visit. */
+export function setSoundEnabled(on: boolean): void {
+    soundOn = on;
+    try {
+        localStorage.setItem(SOUND_KEY, on ? 'on' : 'off');
+    } catch { /* private mode: for this page only */ }
+    if (master) master.gain.setTargetAtTime(on ? 1 : 0, master.context.currentTime, 0.03);
+}
+
 // Engine sound state
 let engineBuffer: AudioBuffer | null = null;
 let engineSource: AudioBufferSourceNode | null = null;
@@ -93,7 +132,7 @@ export function playHonkSound(pitch: number = 1.0): number {
     // osc3 is the sub-harmonic body; bypass the bandpass so the low end isn't carved out
     gain3.connect(masterGain);
     filter.connect(masterGain);
-    masterGain.connect(ctx.destination);
+    masterGain.connect(soundOutput(ctx));
 
     osc1.start(t);
     osc2.start(t);
@@ -117,7 +156,7 @@ export function startEngineSound() {
     engineGain.gain.value = 0;
     
     engineSource.connect(engineGain);
-    engineGain.connect(state.audioCtx.destination);
+    engineGain.connect(soundOutput(state.audioCtx));
     
     engineSource.start();
 }
@@ -175,7 +214,7 @@ export function playCollectSound() {
     const gain = state.audioCtx.createGain();
 
     osc.connect(gain);
-    gain.connect(state.audioCtx.destination);
+    gain.connect(soundOutput(state.audioCtx));
 
     osc.type = 'triangle';
     osc.frequency.setValueAtTime(440, curTime);
@@ -199,7 +238,7 @@ export function playShootSound() {
     const gain = state.audioCtx.createGain();
 
     osc.connect(gain);
-    gain.connect(state.audioCtx.destination);
+    gain.connect(soundOutput(state.audioCtx));
 
     osc.type = 'square';
     osc.frequency.setValueAtTime(880, curTime);
@@ -222,7 +261,7 @@ export function playHitSound() {
     const gain = state.audioCtx.createGain();
 
     osc.connect(gain);
-    gain.connect(state.audioCtx.destination);
+    gain.connect(soundOutput(state.audioCtx));
 
     osc.type = 'sawtooth';
     osc.frequency.setValueAtTime(300, curTime);
@@ -244,7 +283,7 @@ export function playCollisionSound(intensity: number) {
     const gain = state.audioCtx.createGain();
 
     osc.connect(gain);
-    gain.connect(state.audioCtx.destination);
+    gain.connect(soundOutput(state.audioCtx));
 
     osc.type = 'sawtooth';
     osc.frequency.setValueAtTime(100 + Math.random() * 50, curTime);

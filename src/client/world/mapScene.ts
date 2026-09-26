@@ -1,6 +1,7 @@
 import type * as THREE from 'three';
 import type { MapData } from '../../shared/map/mapData.js';
 import type { RoomKind } from '../../shared/protocol.js';
+import { FetchTally } from '../assets/fetchTally.js';
 import { lightingTier } from '../render/lighting.js';
 import { state } from '../state.js';
 import { loadKit, type KitCatalog } from './kit.js';
@@ -17,13 +18,15 @@ let world: MapWorld | null = null;
 let kit: Promise<KitCatalog | null> = Promise.resolve(null);
 let kitStarted = false;
 let kitFailed = false;
+// The kit's downloads (bytes and files) for the loading screen
+const kitTally = new FetchTally();
 let detail: WorldDetail = 'high';
 
 /** Starts loading the building kit (idempotent). A failed kit leaves the map without buildings, not broken. */
 export function startKitPreload(renderer: THREE.WebGLRenderer): void {
     if (kitStarted) return;
     kitStarted = true;
-    kit = loadKit(renderer, lightingTier()).catch(error => {
+    kit = loadKit(renderer, lightingTier(), kitTally).catch(error => {
         kitFailed = true;
         console.warn('Building kit failed to load, the map stays without buildings', error);
         return null;
@@ -33,6 +36,11 @@ export function startKitPreload(renderer: THREE.WebGLRenderer): void {
 /** Resolves once the kit has loaded (or failed). */
 export function whenKitReady(): Promise<void> {
     return kit.then(() => undefined);
+}
+
+/** The kit's downloads: bytes and files (GLB groups and atlas maps) fetched; nothing expected before its manifest. */
+export function kitProgress(): FetchTally {
+    return kitTally;
 }
 
 export function kitStatus(): 'none' | 'loading' | 'ready' | 'failed' {

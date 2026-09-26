@@ -108,21 +108,37 @@ describe('a lost WebGL context', () => {
 });
 
 describe('WebGL refused at start', () => {
-    it('replaces the endless loading screen with an explanation and switches to lite graphics', async () => {
+    it('stops the loading screen behind an explanation and switches to lite graphics', async () => {
         const { showGraphicsUnavailable } = await import('../../src/client/ui/contextLoss.js');
         const { isSafeMode } = await import('../../src/client/render/safeMode.js');
         localStorage.clear();
         const loader = document.createElement('div');
         loader.id = 'loading-screen';
+        loader.innerHTML = '<p class="loader-status">Loading the game</p>';
         document.body.appendChild(loader);
 
         showGraphicsUnavailable(new Error('Error creating WebGL context.'));
 
-        expect(document.getElementById('loading-screen')).toBeNull();
+        // The key art stays as the backdrop, its bar stops and says why
+        expect(loader.isConnected).toBe(true);
+        expect(loader.classList.contains('loader-stopped')).toBe(true);
+        expect(loader.querySelector('.loader-status')!.textContent).toBe('3D graphics unavailable');
         const dialog = document.querySelector('[role="alertdialog"][aria-labelledby="graphics-unavailable-title"]');
         expect(dialog?.textContent).toContain('3D graphics unavailable');
+        // A first refusal: WebGL is off, a crash is not the likely cause
+        expect(dialog?.textContent).toContain('hardware acceleration');
+        expect(dialog?.textContent).not.toContain('crashed');
+        // Over the loader: later in the page at the same position (z-index in style.css)
+        expect(loader.compareDocumentPosition(dialog!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
         expect(isSafeMode()).toBe(true);
         dialog?.remove();
+        // Refused again within the lite days after that trouble: the crash is the likely cause
+        showGraphicsUnavailable(new Error('Error creating WebGL context.'));
+        const again = document.querySelector('[aria-labelledby="graphics-unavailable-title"]');
+        expect(again?.textContent).toContain('crashed');
+        expect(again?.textContent).not.toContain('hardware acceleration');
+        again?.remove();
+        loader.remove();
         localStorage.clear();
     });
 });

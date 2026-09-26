@@ -1,5 +1,5 @@
 import type { WebGLRenderer } from 'three';
-import { isSafeMode } from '../render/safeMode.js';
+import { highGraphics, isSafeMode } from '../render/safeMode.js';
 
 const MIN_PIXEL_RATIO = 0.75;
 const MAX_PIXEL_RATIO = 2;
@@ -43,8 +43,11 @@ const SOFTWARE_RENDERER = /swiftshader|llvmpipe|softpipe|software|basic render/i
 export function detectRenderTier(renderer?: WebGLRenderer): RenderTier {
     const forced = tierOverride();
     if (forced) return forced;
-    // Lite graphics after a lost or refused WebGL context (render/safeMode.ts)
+    // Lite graphics after a lost or refused WebGL context, or picked in the
+    // menu (render/safeMode.ts)
     if (isSafeMode()) return 'software';
+    // High picked in the menu: the desktop look on any device (docs/ui.md 7)
+    if (highGraphics()) return 'desktop';
     if (renderer && isSoftwareRendererName(glRendererName(renderer.getContext()))) return 'software';
     const coarse = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
     return coarse ? 'mobile' : 'desktop';
@@ -68,6 +71,8 @@ function glRendererName(gl: WebGLRenderingContext | WebGL2RenderingContext): str
  */
 export function wantsAntialias(): boolean {
     if (typeof document === 'undefined') return true;
+    // High picked in the menu: MSAA whatever the device (docs/ui.md 7)
+    if (highGraphics()) return true;
     const canvas = document.createElement('canvas');
     const gl = canvas.getContext('webgl2') ?? canvas.getContext('webgl');
     if (!gl) return true;
@@ -183,6 +188,18 @@ export class AdaptiveRenderQuality {
         }
 
         this.resetSampleWindow(frameTime);
+    }
+
+    /**
+     * A frame that is no measure of the GPU (the menu holds the frame rate
+     * down): nothing is sampled, and the next measured frame starts over
+     * with the warm-up.
+     */
+    pause(): void {
+        this.previousFrameTime = -1;
+        this.sampleWindowStart = 0;
+        this.sampledFrameTime = 0;
+        this.sampledFrames = 0;
     }
 
     private resetSampleWindow(frameTime: number): void {

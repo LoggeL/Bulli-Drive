@@ -4,8 +4,8 @@ import {
     ClientMessage, HelloSchema, InputPacketSchema, isRoomKind, parseClientMessage, PROTOCOL_VERSION
 } from '../../src/shared/protocol.js';
 
-// Protocol v5 (docs/phase-1b-design.md, 3; docs/phase-2-design.md, 16;
-// docs/phase-3-design.md, M3; docs/phase-1a-design.md, 26): the
+// Protocol v6 (docs/phase-1b-design.md, 3; docs/phase-2-design.md, 16;
+// docs/phase-3-design.md, M3; docs/phase-1a-design.md, 26; docs/ui.md 5): the
 // JSON messages of the client and the schema of the decoded binary input
 // packet.
 
@@ -20,6 +20,11 @@ const REAL_CLIENT_MESSAGES: Record<string, ClientMessage> = {
     hello: {
         type: 'hello', protocolVersion: PROTOCOL_VERSION, build: '0123456789abcdef', connId: 'k2x9q1',
         name: 'SurfKing42', carType: 'bulli', profile: 'standard', room: 'party'
+    },
+    // A player who picked a paint in the menu (docs/ui.md 5)
+    helloPaint: {
+        type: 'hello', protocolVersion: PROTOCOL_VERSION, build: '0123456789abcdef', connId: 'k2x9q1',
+        name: 'SurfKing42', carType: 'beetle', profile: 'standard', room: 'race', paint: 'ochre'
     },
     // Vite dev server: no build stamp; a phone that played Free Roam last
     helloDev: {
@@ -37,6 +42,8 @@ const REAL_CLIENT_MESSAGES: Record<string, ClientMessage> = {
     renameUnicode: { type: 'rename', name: 'Jürgen 🚐' },
     // main.ts start
     setCar: { type: 'setCar', carType: 'beetle', profile: 'touch' },
+    // ui/menu/menu.ts paint chips
+    setPaint: { type: 'setPaint', paint: 'anthracite' },
     // world/projectiles.ts hits
     shoot: { type: 'shoot', targetId: '4f1c2c7e-3a5b-4a0e-9d8e-1b2c3d4e5f60' },
     // ui/roomMenu.ts (splash start and the in-game mode switch)
@@ -59,8 +66,8 @@ const REAL_CLIENT_MESSAGES: Record<string, ClientMessage> = {
 };
 
 describe('PROTOCOL_VERSION', () => {
-    it('is 5 since the suspension replaced the jump in the self block and the compact record', () => {
-        expect(PROTOCOL_VERSION).toBe(5);
+    it('is 6 since the menu sends the car paint (hello.paint, setPaint), which an older server drops', () => {
+        expect(PROTOCOL_VERSION).toBe(6);
     });
 });
 
@@ -88,7 +95,7 @@ describe('parseClientMessage accepts every real client message', () => {
         const types = new Set(Object.values(REAL_CLIENT_MESSAGES).map(m => m.type));
         expect([...types].sort()).toEqual([
             'debugPlace', 'hello', 'honk', 'joinRoom', 'ping', 'raceConfig', 'raceReady', 'raceVote', 'ready', 'rename',
-            'setCar', 'shoot', 'timeTrialRestart', 'visibility'
+            'setCar', 'setPaint', 'shoot', 'timeTrialRestart', 'visibility'
         ]);
     });
 
@@ -138,6 +145,10 @@ describe('parseClientMessage rejects invalid messages', () => {
         ['debugPlace with NaN', overTheWire({ ...debugPlace, x: NaN })],
         ['rename with number', { type: 'rename', name: 5 }],
         ['setCar without profile', { type: 'setCar', carType: 'jeep' }],
+        ['hello with a colour code as paint', { ...hello, paint: 0xff00ff }],
+        ['setPaint without paint', { type: 'setPaint' }],
+        ['setPaint outside the palette', { type: 'setPaint', paint: 'gold' }],
+        ['setPaint with a colour code', { type: 'setPaint', paint: 0x5E8C7A }],
         ['shoot without target', { type: 'shoot' }],
         ['shoot with object target', { type: 'shoot', targetId: { id: 'x' } }],
         ['visibility with a string', { type: 'visibility', hidden: 'yes' }],

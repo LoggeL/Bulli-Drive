@@ -42,7 +42,8 @@ function pollGamepad(): void {
 }
 
 inputManager.onAction = (action) => {
-    if (state.isModalOpen || state.dead) return;
+    // Not in the menu: its LB/RB change the car, X nothing
+    if (state.isModalOpen || state.inMenu || state.dead) return;
     if (action === 'shoot') state.inputs.e = true;
     else state.inputs.f = true;
 };

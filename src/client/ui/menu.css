@@ -1,0 +1,1540 @@
+/* ==========================================================================
+   MAIN MENU (docs/ui.md 4; ui/menu/menu.ts)
+   A calm glass overlay over the live showroom: the chosen car at the head
+   of the pier. The --ui-* tokens and the Barlow faces are inline in
+   index.html (the loading screen paints with them before this file).
+   Three layouts: desktop (panel left, car right), phones upright (the car
+   above, a sheet below) and phones held sideways (the car left, a
+   scrolling panel right). Parts that sit beside the car rather than in the
+   panel are position: fixed, so the panel keeps the order of the tab key
+   (name, car, paint, mode, DRIVE) while the layout moves them.
+   ========================================================================== */
+
+:root {
+    --ui-ink-2: #1E2226;
+    --ui-on-amber: #1B1712;
+    --ui-glass: rgba(18, 20, 22, 0.64);
+    --ui-glass-solid: rgba(18, 20, 22, 0.86);
+    --ui-gutter: max(16px, env(safe-area-inset-left, 0px));
+    --menu-panel-width: 360px;
+    --menu-panel-left: max(32px, 3.5vw, env(safe-area-inset-left, 0px));
+}
+
+#splash-screen.menu {
+    position: fixed;
+    inset: 0;
+    z-index: 9000;
+    color: var(--ui-paper);
+    font: 500 15px/1.4 var(--ui-font);
+    -webkit-font-smoothing: antialiased;
+    letter-spacing: 0.01em;
+    opacity: 1;
+    transition: opacity 0.24s var(--ui-ease);
+}
+
+#splash-screen.menu.hidden {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.24s var(--ui-ease), visibility 0s linear 0.24s;
+}
+
+#splash-screen.menu * {
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+#splash-screen.menu input {
+    user-select: text;
+}
+
+/* Buttons and fields take the menu's type (browsers give them their own);
+   no specificity, so every rule that sets a font still wins */
+:where(#splash-screen, .menu-dialog) :where(button, input) {
+    font: inherit;
+}
+
+/* DRIVE was pressed: the pick stands while the start waits for its assets */
+#splash-screen.menu.starting .menu-panel > :not(.menu-drive) {
+    opacity: 0.55;
+    transition: opacity 0.24s var(--ui-ease);
+}
+
+/* The HUD waits under the menu and comes in at the end of the way into the
+   game (docs/ui.md 6); the other players' name tags stay out of the showroom */
+body.in-menu #ui-overlay,
+body.in-menu #mobile-controls,
+body.in-menu .nametag,
+body.in-menu #killfeed {
+    opacity: 0 !important;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+#ui-overlay,
+#mobile-controls {
+    transition: opacity 0.3s var(--ui-ease);
+}
+
+/* ---- Backdrop ---- */
+
+/* The free area the car is framed in (the showroom camera centres the car
+   in it); swiping on it changes the car */
+.menu-stage {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: calc(var(--menu-panel-left) + var(--menu-panel-width));
+    right: 0;
+    touch-action: pan-y;
+}
+
+.menu-scrim {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background:
+        linear-gradient(90deg, rgba(18, 20, 22, 0.55) 0, rgba(18, 20, 22, 0.3) 28%, rgba(18, 20, 22, 0) 50%),
+        linear-gradient(0deg, rgba(18, 20, 22, 0.62) 0, rgba(18, 20, 22, 0.22) 22%, rgba(18, 20, 22, 0) 38%);
+}
+
+/* ---- Glass ---- */
+
+.menu-panel::before,
+.menu-paint::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    background: var(--ui-glass-solid);
+    border: 1px solid var(--ui-line);
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.32);
+}
+
+@supports ((backdrop-filter: blur(18px)) or (-webkit-backdrop-filter: blur(18px))) {
+    .menu-panel::before,
+    .menu-paint::before {
+        background: var(--ui-glass);
+        backdrop-filter: blur(18px) saturate(1.1);
+        -webkit-backdrop-filter: blur(18px) saturate(1.1);
+    }
+}
+
+/* ---- Panel ---- */
+
+.menu-panel {
+    position: absolute;
+    left: var(--menu-panel-left);
+    top: 0;
+    bottom: 0;
+    margin: auto 0;
+    height: max-content;
+    max-height: calc(100% - 48px);
+    width: var(--menu-panel-width);
+    padding: 30px 28px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    border-radius: 12px;
+    isolation: isolate;
+}
+
+.menu-brand .wordmark {
+    display: block;
+    width: 250px;
+    height: auto;
+    color: var(--ui-paper);
+}
+
+.menu-label {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin: 0 0 8px;
+    color: var(--ui-paper-2);
+    font: 600 12px/1.2 var(--ui-font-display);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+}
+
+.menu-field {
+    min-width: 0;
+}
+
+#splash-name-input {
+    width: 100%;
+    height: 46px;
+    padding: 0 14px;
+    color: var(--ui-paper);
+    background: rgba(30, 34, 38, 0.72);
+    border: 1px solid var(--ui-line);
+    border-radius: 10px;
+    font: 500 16px/1 var(--ui-font);
+    outline: none;
+    transition: border-color 0.18s var(--ui-ease), background 0.18s var(--ui-ease);
+}
+
+#splash-name-input::placeholder {
+    color: rgba(243, 235, 221, 0.4);
+}
+
+/* The caret and an amber edge show the focus (no second ring) */
+#splash-screen #splash-name-input:focus-visible,
+#splash-name-input:focus {
+    outline: none;
+    border-color: var(--ui-amber);
+    box-shadow: 0 0 0 1px var(--ui-amber);
+    background: rgba(30, 34, 38, 0.9);
+}
+
+/* ---- Paint ---- */
+
+.paint-name {
+    color: var(--ui-paper);
+    letter-spacing: 0.08em;
+}
+
+.paint-chips {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 2px;
+}
+
+.paint-chip {
+    position: relative;
+    height: 44px;
+    min-width: 36px;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+    border-radius: 999px;
+    touch-action: manipulation;
+}
+
+.paint-chip::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: var(--paint);
+    box-shadow: inset 0 -5px 8px rgba(0, 0, 0, 0.28), inset 0 3px 5px rgba(255, 255, 255, 0.22), 0 0 0 1px rgba(243, 235, 221, 0.18);
+    transition: transform 0.18s var(--ui-ease);
+}
+
+.paint-chip::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    transition: border-color 0.18s var(--ui-ease);
+}
+
+.paint-chip:hover::before {
+    transform: scale(1.08);
+}
+
+.paint-chip[aria-checked="true"]::after {
+    border-color: var(--ui-amber);
+}
+
+/* ---- Modes ---- */
+
+.mode-selector-row {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.mode-option {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    min-height: 60px;
+    padding: 10px 14px 11px;
+    text-align: left;
+    color: var(--ui-paper);
+    background: rgba(30, 34, 38, 0.55);
+    border: 1px solid var(--ui-line);
+    border-radius: 10px;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: border-color 0.18s var(--ui-ease), background 0.18s var(--ui-ease);
+}
+
+.mode-option:hover {
+    background: rgba(30, 34, 38, 0.8);
+    border-color: rgba(243, 235, 221, 0.28);
+}
+
+.mode-option[aria-checked="true"] {
+    border-color: var(--ui-amber);
+    background: rgba(224, 168, 74, 0.1);
+    box-shadow: inset 3px 0 0 var(--ui-amber);
+}
+
+.mode-name {
+    font: 600 15px/1.1 var(--ui-font-display);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+}
+
+.mode-option[aria-checked="true"] .mode-name {
+    color: var(--ui-amber);
+}
+
+.mode-desc {
+    color: var(--ui-paper-2);
+    font-size: 13px;
+    line-height: 1.3;
+}
+
+.mode-note {
+    display: none;
+    margin: 10px 0 0;
+    padding-left: 12px;
+    border-left: 2px solid rgba(224, 168, 74, 0.6);
+    color: var(--ui-paper-2);
+    font-size: 13px;
+    line-height: 1.35;
+}
+
+#splash-screen[data-mode="race"] .mode-note {
+    display: block;
+}
+
+/* ---- DRIVE ---- */
+
+#start-btn {
+    position: relative;
+    width: 100%;
+    height: 56px;
+    overflow: hidden;
+    border: 0;
+    border-radius: 999px;
+    color: var(--ui-on-amber);
+    background: var(--ui-amber);
+    box-shadow: 0 10px 28px rgba(224, 168, 74, 0.22);
+    cursor: pointer;
+    font: 600 18px/1 var(--ui-font-display);
+    letter-spacing: 0.32em;
+    text-indent: 0.32em;
+    touch-action: manipulation;
+    transition: background 0.18s var(--ui-ease), transform 0.12s var(--ui-ease), box-shadow 0.18s var(--ui-ease);
+}
+
+#start-btn:hover {
+    background: #E8B45C;
+    box-shadow: 0 12px 32px rgba(224, 168, 74, 0.32);
+}
+
+#start-btn:active {
+    transform: scale(0.985);
+}
+
+.btn-fill {
+    position: absolute;
+    inset: 0;
+    background: var(--ui-amber);
+    transform: scaleX(var(--progress, 1));
+    transform-origin: 0 50%;
+    transition: transform 0.25s linear;
+}
+
+.btn-label {
+    position: relative;
+}
+
+/* Still loading (the other cars, whatever the loader gave up on): the
+   button fills from the left and says how far */
+#start-btn.loading {
+    color: var(--ui-paper);
+    background: rgba(224, 168, 74, 0.18);
+    box-shadow: inset 0 0 0 1px rgba(224, 168, 74, 0.5);
+    cursor: progress;
+    letter-spacing: 0.18em;
+    text-indent: 0.18em;
+}
+
+#start-btn.loading .btn-fill {
+    background: rgba(224, 168, 74, 0.55);
+}
+
+/* ---- Car ---- */
+
+.menu-showcase {
+    position: fixed;
+    left: calc(var(--menu-panel-left) + var(--menu-panel-width) + 32px);
+    right: max(32px, 3vw);
+    bottom: max(56px, 7vh);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    pointer-events: none;
+}
+
+.menu-showcase > * {
+    pointer-events: auto;
+}
+
+.car-carousel {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    max-width: 100%;
+}
+
+.car-strip {
+    display: flex;
+    gap: 8px;
+    min-width: 0;
+}
+
+.car-card {
+    position: relative;
+    width: clamp(92px, 8.6vw, 136px);
+    padding: 6px 6px 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    color: var(--ui-paper-2);
+    background: rgba(18, 20, 22, 0.5);
+    border: 1px solid var(--ui-line);
+    border-radius: 10px;
+    cursor: pointer;
+    touch-action: manipulation;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    transition: border-color 0.18s var(--ui-ease), background 0.18s var(--ui-ease), color 0.18s var(--ui-ease);
+}
+
+.car-card img {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 16 / 9;
+    pointer-events: none;
+    /* The renders carry the factory paint; the paint is picked apart and
+       shows on the car itself, so the cards show the body alone, in the
+       paper tone of the menu (docs/ui.md D30) */
+    filter: grayscale(1) sepia(0.18) brightness(1.04);
+    opacity: 0.8;
+    transition: opacity 0.18s var(--ui-ease);
+}
+
+.car-card:hover img,
+.car-card[aria-current="true"] img {
+    opacity: 1;
+}
+
+/* The renders load once the menu shows: they fade in, no pop */
+.car-card img:not(.loaded) {
+    opacity: 0;
+}
+
+.car-card:hover {
+    color: var(--ui-paper);
+    background: rgba(18, 20, 22, 0.7);
+}
+
+.car-card[aria-current="true"] {
+    color: var(--ui-paper);
+    border-color: var(--ui-amber);
+    background: rgba(18, 20, 22, 0.72);
+}
+
+.car-name {
+    font: 600 12px/1.2 var(--ui-font-display);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+}
+
+.car-arrow {
+    flex: 0 0 auto;
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    color: var(--ui-paper);
+    background: rgba(18, 20, 22, 0.55);
+    border: 1px solid var(--ui-line);
+    border-radius: 50%;
+    cursor: pointer;
+    touch-action: manipulation;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.car-arrow:hover {
+    background: rgba(18, 20, 22, 0.78);
+}
+
+.car-arrow .ui-icon {
+    width: 20px;
+    height: 20px;
+    stroke-width: 2;
+}
+
+.car-prev .ui-icon {
+    transform: rotate(-90deg);
+}
+
+.car-next .ui-icon {
+    transform: rotate(90deg);
+}
+
+/* Phones: one car at a time with its name and dots */
+.car-title {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.car-title-name {
+    font: 600 20px/1.1 var(--ui-font-display);
+    letter-spacing: 0.2em;
+    text-indent: 0.2em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    text-shadow: 0 1px 10px rgba(18, 20, 22, 0.6);
+}
+
+.car-dots {
+    display: flex;
+    gap: 6px;
+}
+
+.car-dots i {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: rgba(243, 235, 221, 0.35);
+    transition: background 0.18s var(--ui-ease), transform 0.18s var(--ui-ease);
+}
+
+.car-dots i.on {
+    background: var(--ui-amber);
+    transform: scale(1.25);
+}
+
+.car-stats {
+    display: flex;
+    justify-content: center;
+    gap: 28px;
+    margin: 0;
+    padding: 10px 20px;
+    border-radius: 10px;
+    background: rgba(18, 20, 22, 0.5);
+    border: 1px solid var(--ui-line);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.car-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 0;
+}
+
+.car-stat dt {
+    color: var(--ui-paper-2);
+    font: 600 11px/1.2 var(--ui-font-display);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+}
+
+.car-stat dd {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    min-height: 20px;
+    font-variant-numeric: tabular-nums;
+}
+
+.stat-value {
+    font: 600 17px/1 var(--ui-font-display);
+    letter-spacing: 0.04em;
+}
+
+.stat-unit {
+    color: var(--ui-paper-2);
+    font-size: 12px;
+}
+
+.stat-bar {
+    position: relative;
+    width: 96px;
+    height: 4px;
+    margin-left: 4px;
+    border-radius: 2px;
+    background: rgba(243, 235, 221, 0.16);
+    overflow: hidden;
+}
+
+.stat-bar i {
+    position: absolute;
+    inset: 0;
+    background: var(--ui-amber);
+    transform: scaleX(var(--value, 0.5));
+    transform-origin: 0 50%;
+    transition: transform 0.3s var(--ui-ease);
+}
+
+.car-stat:nth-child(2) .stat-bar {
+    margin-left: 0;
+    margin-top: 8px;
+}
+
+.car-character {
+    margin: -6px 0 0;
+    color: var(--ui-paper-2);
+    font-size: 13px;
+    text-shadow: 0 1px 8px rgba(18, 20, 22, 0.7);
+}
+
+/* ---- Paint card (desktop: beside the car) ---- */
+
+.menu-paint {
+    position: fixed;
+    right: max(32px, 3vw);
+    top: 18vh;
+    width: 212px;
+    padding: 16px 16px 14px;
+    border-radius: 12px;
+    isolation: isolate;
+}
+
+.menu-paint .paint-chips {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px 2px;
+}
+
+.menu-paint .menu-label {
+    flex-direction: column;
+    gap: 4px;
+}
+
+/* ---- Tools ---- */
+
+.menu-tools {
+    position: fixed;
+    top: max(20px, env(safe-area-inset-top, 0px));
+    right: max(24px, 2.5vw, env(safe-area-inset-right, 0px));
+    display: flex;
+    gap: 10px;
+}
+
+.menu-tool {
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    color: var(--ui-paper);
+    background: rgba(18, 20, 22, 0.55);
+    border: 1px solid var(--ui-line);
+    border-radius: 50%;
+    cursor: pointer;
+    touch-action: manipulation;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    transition: background 0.18s var(--ui-ease);
+}
+
+.menu-tool:hover {
+    background: rgba(18, 20, 22, 0.8);
+}
+
+.menu-tool .ui-icon {
+    width: 21px;
+    height: 21px;
+    stroke-width: 1.7;
+}
+
+.menu-tool .icon-fill,
+.menu-dialog .icon-fill {
+    fill: currentColor;
+    stroke: none;
+}
+
+#menu-sound .icon-sound-off,
+#menu-sound[aria-pressed="false"] .icon-sound-on {
+    display: none;
+}
+
+#menu-sound[aria-pressed="false"] .icon-sound-off {
+    display: block;
+}
+
+/* ---- Controls hint ---- */
+
+.menu-hint {
+    position: fixed;
+    left: calc(var(--menu-panel-left) + var(--menu-panel-width) + 32px);
+    right: max(32px, 3vw);
+    bottom: max(18px, env(safe-area-inset-bottom, 0px));
+    margin: 0;
+    text-align: center;
+    color: var(--ui-paper-2);
+    font-size: 13px;
+    white-space: nowrap;
+    text-shadow: 0 1px 8px rgba(18, 20, 22, 0.8);
+    pointer-events: none;
+}
+
+.preview-row {
+    display: none;
+}
+
+.preview-keys {
+    color: var(--ui-paper);
+    font: 600 12px/1 var(--ui-font-display);
+    letter-spacing: 0.1em;
+}
+
+.preview-sep {
+    margin: 0 0.55em;
+    color: rgba(243, 235, 221, 0.4);
+}
+
+#splash-screen:not([data-input]) .preview-keyboard,
+#splash-screen[data-input="keyboard"] .preview-keyboard,
+#splash-screen[data-input="touch"] .preview-touch,
+#splash-screen[data-input="gamepad"] .preview-gamepad {
+    display: inline;
+}
+
+#splash-screen:not([data-mode="party"]) .preview-party {
+    display: none;
+}
+
+@media (pointer: coarse) {
+    #splash-screen:not([data-input]) .preview-keyboard {
+        display: none;
+    }
+
+    #splash-screen:not([data-input]) .preview-touch {
+        display: inline;
+    }
+}
+
+/* ---- Focus: a ring in paper, always on the keyboard's and the gamepad's focus ---- */
+
+#splash-screen :focus-visible,
+.menu-dialog :focus-visible {
+    outline: 2px solid var(--ui-paper);
+    outline-offset: 2px;
+}
+
+.paint-chip:focus-visible {
+    outline-offset: -2px;
+}
+
+/* ---- Dialogs ---- */
+
+.menu-dialog {
+    position: fixed;
+    inset: 0;
+    margin: auto;
+    width: min(480px, calc(100vw - 32px));
+    max-height: min(640px, calc(100dvh - 32px));
+    padding: 0;
+    overflow: auto;
+    color: var(--ui-paper);
+    background: var(--ui-glass-solid);
+    border: 1px solid var(--ui-line);
+    border-radius: 12px;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+    font: 500 15px/1.45 var(--ui-font);
+    -webkit-font-smoothing: antialiased;
+}
+
+.menu-dialog[open] {
+    display: flex;
+    flex-direction: column;
+    animation: menu-dialog-in 0.2s var(--ui-ease);
+}
+
+@supports ((backdrop-filter: blur(18px)) or (-webkit-backdrop-filter: blur(18px))) {
+    .menu-dialog {
+        background: rgba(18, 20, 22, 0.78);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+    }
+}
+
+.menu-dialog::backdrop {
+    background: rgba(18, 20, 22, 0.45);
+}
+
+@keyframes menu-dialog-in {
+    from { opacity: 0; transform: translateY(8px); }
+}
+
+.dialog-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 18px 18px 6px 24px;
+}
+
+.dialog-head h2 {
+    margin: 0;
+    font: 600 20px/1.2 var(--ui-font-display);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+}
+
+.dialog-close {
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    color: var(--ui-paper);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.dialog-close:hover {
+    border-color: var(--ui-line);
+}
+
+.dialog-close .ui-icon {
+    width: 20px;
+    height: 20px;
+}
+
+.dialog-body {
+    padding: 8px 24px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+}
+
+.dialog-body p {
+    margin: 0;
+    color: var(--ui-paper-2);
+}
+
+.setting .menu-label {
+    margin-bottom: 10px;
+}
+
+.setting-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.setting-row .menu-label {
+    margin: 0;
+}
+
+.segmented,
+.tabs {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    gap: 4px;
+    padding: 4px;
+    border-radius: 12px;
+    background: rgba(30, 34, 38, 0.72);
+    border: 1px solid var(--ui-line);
+}
+
+.segmented button,
+.tabs button {
+    min-height: 40px;
+    padding: 0 10px;
+    color: var(--ui-paper-2);
+    background: transparent;
+    border: 0;
+    border-radius: 8px;
+    cursor: pointer;
+    font: 600 13px/1 var(--ui-font-display);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.segmented button[aria-checked="true"],
+.tabs button[aria-selected="true"] {
+    color: var(--ui-on-amber);
+    background: var(--ui-amber);
+}
+
+.setting-note {
+    margin-top: 8px !important;
+    font-size: 13px;
+    min-height: 1.4em;
+}
+
+.menu-button {
+    margin-top: 10px;
+    min-height: 44px;
+    padding: 0 20px;
+    color: var(--ui-on-amber);
+    background: var(--ui-amber);
+    border: 0;
+    border-radius: 999px;
+    cursor: pointer;
+    font: 600 14px/1 var(--ui-font-display);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+}
+
+.menu-button[hidden] {
+    display: none;
+}
+
+.switch {
+    position: relative;
+    width: 56px;
+    height: 32px;
+    padding: 0;
+    border: 1px solid var(--ui-line);
+    border-radius: 999px;
+    background: rgba(30, 34, 38, 0.9);
+    cursor: pointer;
+    transition: background 0.18s var(--ui-ease);
+}
+
+.switch span {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--ui-paper-2);
+    transition: transform 0.18s var(--ui-ease), background 0.18s var(--ui-ease);
+}
+
+.switch[aria-checked="true"] {
+    background: rgba(224, 168, 74, 0.35);
+    border-color: rgba(224, 168, 74, 0.7);
+}
+
+.switch[aria-checked="true"] span {
+    transform: translateX(24px);
+    background: var(--ui-amber);
+}
+
+.controls-table {
+    margin: 12px 0 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.controls-table[hidden] {
+    display: none;
+}
+
+.controls-table div {
+    display: grid;
+    grid-template-columns: minmax(80px, 30%) 1fr;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(243, 235, 221, 0.08);
+}
+
+.controls-table dt {
+    font: 600 13px/1.4 var(--ui-font-display);
+    letter-spacing: 0.1em;
+}
+
+.controls-table dd {
+    margin: 0;
+    color: var(--ui-paper-2);
+    font-size: 14px;
+}
+
+.powerup-list {
+    list-style: none;
+    margin: -10px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.powerup-list li {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--ui-paper-2);
+    font-size: 14px;
+}
+
+.powerup-list strong {
+    margin-right: 6px;
+    color: var(--ui-paper);
+    font-weight: 500;
+}
+
+.powerup-list .ui-icon {
+    width: 22px;
+    height: 22px;
+    color: var(--ui-amber);
+}
+
+.about-credits,
+.about-version {
+    font-size: 13px;
+}
+
+/* ==========================================================================
+   Narrow desktop windows
+   ========================================================================== */
+
+@media (orientation: landscape) and (max-width: 1100px) and (min-height: 521px) {
+    :root {
+        --menu-panel-width: 320px;
+        --menu-panel-left: 24px;
+    }
+
+    .menu-panel {
+        padding: 24px 22px 22px;
+        gap: 18px;
+    }
+
+    .menu-brand .wordmark {
+        width: 220px;
+    }
+
+    .menu-paint {
+        right: 20px;
+        width: 188px;
+    }
+
+    .car-stats {
+        gap: 18px;
+    }
+
+    .stat-bar {
+        width: 72px;
+    }
+}
+
+/* ==========================================================================
+   Phones upright: the car above, a sheet below (DRIVE in the thumb's reach)
+   ========================================================================== */
+
+@media (orientation: portrait) {
+    .menu-scrim {
+        background: linear-gradient(180deg, rgba(18, 20, 22, 0.5) 0, rgba(18, 20, 22, 0) 16%);
+    }
+
+    .menu-panel {
+        position: fixed;
+        top: auto;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        margin: 0;
+        width: auto;
+        height: auto;
+        max-height: none;
+        padding: 18px max(16px, env(safe-area-inset-right, 0px)) max(14px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+        gap: 14px;
+        border-radius: 18px 18px 0 0;
+    }
+
+    .menu-panel::before {
+        background: rgba(18, 20, 22, 0.8);
+        border-width: 1px 0 0;
+    }
+
+    .menu-panel > .menu-field,
+    .menu-panel > .menu-drive,
+    .menu-panel > .menu-hint {
+        width: 100%;
+        max-width: 480px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+
+    .menu-brand {
+        position: fixed;
+        top: max(18px, env(safe-area-inset-top, 0px));
+        left: max(18px, env(safe-area-inset-left, 0px));
+        width: auto !important;
+    }
+
+    .menu-brand .wordmark {
+        width: 150px;
+        filter: drop-shadow(0 1px 8px rgba(18, 20, 22, 0.5));
+    }
+
+    .menu-tools {
+        top: max(10px, env(safe-area-inset-top, 0px));
+        right: max(10px, env(safe-area-inset-right, 0px));
+        gap: 4px;
+    }
+
+    .menu-tool {
+        background: rgba(18, 20, 22, 0.35);
+    }
+
+    /* The paint joins the sheet as its first row */
+    .menu-paint {
+        position: static;
+        width: 100%;
+        padding: 0;
+    }
+
+    .menu-paint::before {
+        display: none;
+    }
+
+    .menu-paint .menu-label {
+        flex-direction: row;
+        margin-bottom: 2px;
+    }
+
+    .menu-paint .paint-chips {
+        grid-template-columns: repeat(8, 1fr);
+        gap: 0;
+    }
+
+    .menu-label {
+        margin-bottom: 6px;
+    }
+
+    #splash-name-input {
+        height: 44px;
+    }
+
+    #splash-screen[data-mode="race"] .mode-note {
+        display: none;
+    }
+
+    /* The car: name, arrows, dots and numbers under it, over the showroom */
+    .menu-stage {
+        left: 0;
+        bottom: var(--menu-sheet-height, 55%);
+    }
+
+    .menu-showcase {
+        left: max(10px, env(safe-area-inset-left, 0px));
+        right: max(10px, env(safe-area-inset-right, 0px));
+        bottom: calc(var(--menu-sheet-height, 55%) + 12px);
+        gap: 10px;
+    }
+
+    .car-carousel {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .car-strip {
+        display: none;
+    }
+
+    .car-title {
+        display: flex;
+    }
+
+    .car-arrow {
+        background: rgba(18, 20, 22, 0.4);
+    }
+
+    /* The numbers in one line: the car gets the height (docs/ui.md 4.2) */
+    .car-stats {
+        gap: 14px;
+        padding: 6px 14px;
+        background: rgba(18, 20, 22, 0.42);
+    }
+
+    .car-stat {
+        flex-direction: row;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .car-stat:nth-child(2) .stat-bar {
+        margin-top: 0;
+        width: 48px;
+    }
+
+    .car-stat:first-child .stat-bar {
+        display: none;
+    }
+
+    .stat-value {
+        font-size: 15px;
+    }
+
+    .car-character {
+        display: none;
+    }
+
+    #start-btn {
+        height: 56px;
+    }
+
+    .menu-hint {
+        position: static;
+        order: 10;
+        margin-top: -4px;
+        font-size: 12px;
+        white-space: normal;
+        text-shadow: none;
+    }
+
+    .menu-hint .preview-keys {
+        font-size: 11px;
+    }
+}
+
+/* Phones: the modes as a segmented control */
+@media (orientation: portrait), (orientation: landscape) and (max-height: 520px) {
+    .mode-selector-row {
+        flex-direction: row;
+        gap: 4px;
+        padding: 4px;
+        border-radius: 12px;
+        background: rgba(30, 34, 38, 0.72);
+        border: 1px solid var(--ui-line);
+    }
+
+    .mode-option {
+        flex: 1 1 0;
+        min-height: 44px;
+        align-items: center;
+        justify-content: center;
+        padding: 0 4px;
+        background: transparent;
+        border: 0;
+        border-radius: 8px;
+        box-shadow: none;
+    }
+
+    .mode-option[aria-checked="true"] {
+        background: var(--ui-amber);
+        box-shadow: none;
+    }
+
+    .mode-option[aria-checked="true"] .mode-name {
+        color: var(--ui-on-amber);
+    }
+
+    .mode-name {
+        font-size: 13px;
+        letter-spacing: 0.12em;
+        white-space: nowrap;
+    }
+
+    .mode-option .mode-desc {
+        display: none;
+    }
+
+    /* The picked mode in one line under the control (the cards' text) */
+    .menu-modes::after {
+        display: block;
+        margin-top: 6px;
+        min-height: 1.35em;
+        color: var(--ui-paper-2);
+        font-size: 13px;
+        line-height: 1.35;
+    }
+
+    #splash-screen[data-mode="party"] .menu-modes::after {
+        content: 'Coins, powerups, shooting – bump everyone.';
+    }
+
+    #splash-screen[data-mode="freeroam"] .menu-modes::after {
+        content: 'Cruise the bay. Bumping allowed.';
+    }
+
+    #splash-screen[data-mode="race"] .menu-modes::after {
+        content: 'Six tracks – pick track and bots in the lobby.';
+    }
+}
+
+/* Upright phones below 700 px: a tighter sheet */
+@media (orientation: portrait) and (max-height: 700px) {
+    .menu-panel {
+        gap: 10px;
+        padding-top: 14px;
+    }
+
+    .menu-modes::after {
+        margin-top: 4px;
+        font-size: 12px;
+    }
+}
+
+/* Phones: the numbers in their short form (dt data-short) */
+@media (orientation: portrait), (orientation: landscape) and (max-height: 520px) {
+    .car-stat dt[data-short] {
+        font-size: 0;
+        letter-spacing: 0;
+    }
+
+    .car-stat dt[data-short]::before {
+        content: attr(data-short);
+        font-size: 10px;
+        letter-spacing: 0.14em;
+    }
+
+    .car-stats {
+        gap: 14px;
+    }
+}
+
+/* ==========================================================================
+   Phones held sideways: the car left, a panel right that scrolls inside,
+   DRIVE sticky at its foot
+   ========================================================================== */
+
+@media (orientation: landscape) and (max-height: 520px) {
+    :root {
+        --menu-panel-width: min(320px, 46vw);
+    }
+
+    .menu-scrim {
+        background:
+            linear-gradient(180deg, rgba(18, 20, 22, 0.45) 0, rgba(18, 20, 22, 0) 22%),
+            linear-gradient(0deg, rgba(18, 20, 22, 0.55) 0, rgba(18, 20, 22, 0) 32%);
+    }
+
+    .menu-panel {
+        position: fixed;
+        left: auto;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        margin: 0;
+        height: auto;
+        max-height: none;
+        width: calc(var(--menu-panel-width) + env(safe-area-inset-right, 0px));
+        padding: max(12px, env(safe-area-inset-top, 0px)) max(14px, env(safe-area-inset-right, 0px)) 0 14px;
+        gap: 12px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        border-radius: 0;
+    }
+
+    .menu-panel::before {
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        right: 0;
+        left: auto;
+        width: calc(var(--menu-panel-width) + env(safe-area-inset-right, 0px));
+        border-radius: 0;
+        border-width: 0 0 0 1px;
+        background: rgba(18, 20, 22, 0.78);
+    }
+
+    .menu-brand {
+        position: fixed;
+        top: max(12px, env(safe-area-inset-top, 0px));
+        left: max(16px, env(safe-area-inset-left, 0px));
+    }
+
+    .menu-brand .wordmark {
+        width: 132px;
+        filter: drop-shadow(0 1px 8px rgba(18, 20, 22, 0.5));
+    }
+
+    .menu-tools {
+        top: max(8px, env(safe-area-inset-top, 0px));
+        right: auto;
+        left: calc(100vw - var(--menu-panel-width) - env(safe-area-inset-right, 0px) - 150px);
+        gap: 2px;
+    }
+
+    .menu-tool {
+        background: rgba(18, 20, 22, 0.35);
+    }
+
+    .menu-stage {
+        left: 0;
+        right: calc(var(--menu-panel-width) + env(safe-area-inset-right, 0px));
+    }
+
+    .menu-paint {
+        position: static;
+        width: 100%;
+        padding: 0;
+    }
+
+    .menu-paint::before {
+        display: none;
+    }
+
+    .menu-paint .menu-label {
+        flex-direction: row;
+        margin-bottom: 0;
+    }
+
+    /* Two rows of four: every chip a 44 px target (docs/ui.md 4.4) */
+    .menu-paint .paint-chips {
+        grid-template-columns: repeat(4, minmax(44px, 1fr));
+        gap: 0;
+    }
+
+    .paint-chip::before {
+        width: 28px;
+        height: 28px;
+    }
+
+    .paint-chip::after {
+        width: 36px;
+        height: 36px;
+    }
+
+    .menu-label {
+        margin-bottom: 4px;
+        font-size: 11px;
+    }
+
+    #splash-name-input {
+        height: 44px;
+    }
+
+    .menu-modes::after {
+        margin-top: 3px;
+        font-size: 12px;
+    }
+
+    /* No room under the sticky DRIVE: the lobby explains itself */
+    #splash-screen[data-mode="race"] .mode-note {
+        display: none;
+    }
+
+    .menu-panel {
+        gap: 8px;
+        padding-top: max(8px, env(safe-area-inset-top, 0px));
+    }
+
+    .menu-drive {
+        position: sticky;
+        bottom: 0;
+        margin: 0 -14px;
+        padding: 6px 14px max(8px, env(safe-area-inset-bottom, 0px));
+        background: linear-gradient(0deg, rgba(18, 20, 22, 0.94) 60%, rgba(18, 20, 22, 0));
+    }
+
+    #start-btn {
+        height: 50px;
+    }
+
+    .menu-showcase {
+        left: max(12px, env(safe-area-inset-left, 0px));
+        right: calc(var(--menu-panel-width) + env(safe-area-inset-right, 0px) + 12px);
+        bottom: 30px;
+        gap: 6px;
+    }
+
+    .car-carousel {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .car-strip {
+        display: none;
+    }
+
+    .car-title {
+        display: flex;
+    }
+
+    .car-title-name {
+        font-size: 17px;
+    }
+
+    .car-arrow {
+        background: rgba(18, 20, 22, 0.4);
+    }
+
+    .car-stats {
+        gap: 12px;
+        padding: 5px 10px;
+        background: rgba(18, 20, 22, 0.42);
+    }
+
+    .car-stat {
+        flex-direction: row;
+        align-items: center;
+        gap: 5px;
+    }
+
+    .car-stat:nth-child(2) .stat-bar {
+        margin-top: 0;
+        width: 36px;
+    }
+
+    .car-stat dt {
+        font-size: 10px;
+        letter-spacing: 0.08em;
+    }
+
+    .stat-value {
+        font-size: 14px;
+    }
+
+    .car-stat:first-child .stat-bar {
+        display: none;
+    }
+
+    .car-character {
+        display: none;
+    }
+
+    .menu-hint {
+        left: max(12px, env(safe-area-inset-left, 0px));
+        right: calc(var(--menu-panel-width) + env(safe-area-inset-right, 0px) + 12px);
+        bottom: max(8px, env(safe-area-inset-bottom, 0px));
+        font-size: 11px;
+    }
+
+    .menu-hint .preview-keys {
+        font-size: 10px;
+    }
+}
+
+/* Narrow sideways phones: a smaller wordmark keeps clear of the tools */
+@media (orientation: landscape) and (max-height: 520px) and (max-width: 640px) {
+    .menu-brand .wordmark {
+        width: 104px;
+    }
+}
+
+/* Very short sideways phones (568 x 320): the arrows only, no dots */
+@media (orientation: landscape) and (max-height: 340px) {
+    .car-dots {
+        display: none;
+    }
+
+    .menu-showcase {
+        bottom: 24px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #splash-screen.menu,
+    #splash-screen.menu *,
+    .menu-dialog {
+        transition: none !important;
+        animation: none !important;
+    }
+}

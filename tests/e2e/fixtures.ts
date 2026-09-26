@@ -36,10 +36,6 @@ export const test = base.extend<Fixtures>({
             const context = await browser.newContext({
                 baseURL, viewport, userAgent, isMobile, hasTouch, deviceScaleFactor
             });
-            // Keep the run hermetic: the web fonts come from Google, which is
-            // neither under test nor always reachable from CI.
-            await context.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, route =>
-                route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
 
             const page = await context.newPage();
             const player: Player = { page, sentMessages: [], binarySent: 0, binaryReceived: 0 };
@@ -118,9 +114,9 @@ async function tap(page: Page, selector: string): Promise<void> {
 }
 
 /**
- * Opens the game up to the splash screen: the loader is removed once the
- * server's room state has built the world. extraQuery is appended to the
- * URL, e.g. '&drawfps=2'.
+ * Opens the game up to the main menu (docs/ui.md 4): the loader is removed
+ * once the first showroom frame is complete (world built, textures, kit,
+ * own car, shaders). extraQuery is appended to the URL, e.g. '&drawfps=2'.
  */
 export async function openGame(player: Player, extraQuery = '', origin = ''): Promise<void> {
     const { page } = player;
@@ -132,8 +128,8 @@ export async function openGame(player: Player, extraQuery = '', origin = ''): Pr
 }
 
 /**
- * The splash screen of an opened game: the road name (and the game mode,
- * when given), START ENGINE. Resolves with the player's server id.
+ * The main menu of an opened game: the driver name (and the game mode,
+ * when given), DRIVE. Resolves with the player's server id.
  */
 export async function joinFromSplash(player: Player, name: string, mode?: 'party' | 'freeroam' | 'race'): Promise<string> {
     const { page } = player;
@@ -143,6 +139,8 @@ export async function joinFromSplash(player: Player, name: string, mode?: 'party
         await tap(page, `.mode-option[data-room="${mode}"]`);
         await expect(page.locator(`.mode-option[data-room="${mode}"]`)).toHaveAttribute('aria-checked', 'true');
     }
+    // DRIVE is in view and nothing covers it, on every screen (no scrolling)
+    expect(await topmostAtCenter(page, '#start-btn'), 'DRIVE in view and on top').toBe(true);
     await tap(page, '#start-btn');
 
     // The start waits for the world textures and car models (ui/assetGate.ts)
@@ -162,7 +160,7 @@ export async function joinFromSplash(player: Player, name: string, mode?: 'party
     return (await snapshot(page)).myId!;
 }
 
-/** The whole join flow: loading screen, splash screen, START ENGINE. */
+/** The whole join flow: loading screen, main menu, DRIVE. */
 export async function joinGame(player: Player, name: string, extraQuery = '', mode?: 'party' | 'freeroam' | 'race', origin = ''): Promise<string> {
     await openGame(player, extraQuery, origin);
     return joinFromSplash(player, name, mode);

@@ -45,7 +45,14 @@ export function e2eDrawIntervalMs(search: string): number {
     return Number.isFinite(fps) && fps > 0 ? 1000 / fps : 0;
 }
 
+// ?debug=load (also in a comma list): the loading screen logs when each of
+// its steps starts and ends (ui/loadingScreen.ts), to calibrate the weights
+export function isLoadDebugEnabled(search: string): boolean {
+    return new URLSearchParams(search).getAll('debug').flatMap(value => value.split(',')).includes('load');
+}
+
 export const SANDBOX = isSandbox(pageSearch());
+export const LOAD_DEBUG = isLoadDebugEnabled(pageSearch());
 export const TUNE_REQUESTED = isTuneRequested(pageSearch());
 export const TUNE_PANEL = isTunePanelEnabled(pageSearch());
 export const E2E_DRAW_INTERVAL_MS = e2eDrawIntervalMs(pageSearch());

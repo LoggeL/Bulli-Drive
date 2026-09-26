@@ -441,10 +441,15 @@ export interface CameraPose {
     position: [number, number, number];
     lookAt: [number, number, number];
     fov?: number;
+    // Where lookAt lands in the frame (fractions from the top left, default
+    // the middle): a shifted projection (setViewOffset), not a turned camera,
+    // like the menu's showroom (docs/ui.md 4.1; key art, tools/ui/keyart.ts)
+    center?: [number, number];
 }
 
 let cameraOverride: CameraPose | null = null;
 const _overrideFocus = new THREE.Vector3();
+const _overrideSize = new THREE.Vector2();
 let renderPatched = false;
 // Waiting for the mean colour of the next frame the game camera draws
 let meanColorWaiters: Array<(rgb: [number, number, number]) => void> = [];
@@ -480,6 +485,12 @@ function patchRenderForCameraOverride(): void {
             state.camera.position.set(...pose.position);
             state.camera.lookAt(...pose.lookAt);
             if (pose.fov) state.camera.fov = pose.fov;
+            if (pose.center) {
+                const { width, height } = renderer.getSize(_overrideSize);
+                state.camera.setViewOffset(width, height, (0.5 - pose.center[0]) * width, (0.5 - pose.center[1]) * height, width, height);
+            } else {
+                state.camera.clearViewOffset();
+            }
             state.camera.updateProjectionMatrix();
             state.camera.updateMatrixWorld();
             // Sky dome and shadows followed the chase camera; move them to
@@ -789,7 +800,10 @@ export function installE2EHook(): void {
         setCameraOverride(pose: CameraPose | null): void {
             patchRenderForCameraOverride();
             cameraOverride = pose;
-            if (!pose) state.cameraSnapPending = true;
+            if (!pose) {
+                state.camera?.clearViewOffset();
+                state.cameraSnapPending = true;
+            }
         }
     };
 }

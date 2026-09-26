@@ -68,6 +68,14 @@ export function reconnectingText(code: number, everOpened: boolean): string {
 }
 
 /**
+ * What the loading screen's status line says while it waits for the
+ * server (instead of the banner, which would sit on the key art's car).
+ */
+export function loaderWaitingText(code: number): string {
+    return code === CLOSE_FULL ? 'The server is full · retrying' : 'Waiting for the server · retrying';
+}
+
+/**
  * The connection is gone since sinceMs (performance.now) and the client is
  * trying again: the banner shows OVERLAY_AFTER_MS after that, and offers a
  * reload RELOAD_OFFER_MS after it.

@@ -2,15 +2,15 @@ import type { RandomSource } from '../../shared/math/rng.js';
 import type { CarClassId } from '../../shared/sim/types.js';
 import { CAR_CLASS_IDS } from '../../shared/sim/vehicleClasses.js';
 import { Session, type Transport } from '../session.js';
+import { randomPaint } from '../../shared/paints.js';
 
 // The race bots as room members (docs/phase-2-design.md, 6.3): a real
 // Session on a null transport (open, sends nothing, no round trip), so slot
 // allocation, snapshots, member info, stepWorld and events need no special
-// paths. Names, classes and colours come from a seed per room and race.
+// paths. Names, classes and paints come from a seed per room and race.
 
 export const BOT_NAMES: readonly string[] = ['Kalle', 'Uschi', 'Hotte', 'Gabi', 'Manni', 'Heike', 'Jupp'];
 
-const BOT_COLORS: readonly number[] = [0xd94a38, 0x2f7fd8, 0xe8b830, 0x3fa34d, 0x8a4fc0, 0xe07a1f, 0x2aa8a0];
 
 class NullTransport implements Transport {
     readonly readyState = 1;
@@ -49,7 +49,8 @@ export function drawBots(count: number, random: RandomSource): BotIdentity[] {
     for (let i = 0; i < count; i++) {
         out.push({
             name: names[i % names.length],
-            color: BOT_COLORS[Math.floor(random() * BOT_COLORS.length)],
+            // The players' palette (docs/ui.md 5)
+            color: randomPaint(random).hex,
             carType: CAR_CLASS_IDS[Math.floor(random() * CAR_CLASS_IDS.length)]
         });
     }

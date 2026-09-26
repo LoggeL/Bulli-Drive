@@ -25,6 +25,10 @@ export const state = {
     myId: null as string | null,
     // The room the server put this client in (null offline and in the sandbox)
     room: null as RoomInfo | null,
+    // Where the room's server will spawn the own car (roomState.preview)
+    preview: null as { x: number; z: number; yaw: number } | null,
+    // The main menu is up (ui/menu/menu.ts): the drive keys stay with it
+    inMenu: false,
     myColor: null as number | null,
     myName: "Player",
     myCarType: "bulli",

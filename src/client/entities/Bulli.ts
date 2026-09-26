@@ -87,6 +87,12 @@ export class Bulli {
         this.model.setDriveState(speed, steerAngle, braking);
     }
 
+    /** Another paint (menu, playerUpdated.color). */
+    setPaint(colorCode: number): void {
+        this.colorCode = colorCode;
+        this.model.setPaint(colorCode);
+    }
+
     /** AFK players are shown greyed out. */
     setAfkVisual(active: boolean): void {
         this.model.setAfkVisual(active);
@@ -151,7 +157,7 @@ export class Bulli {
 
     // Honk (F) and shoot (E) pulses from keyboard, touch and gamepad
     handleActions() {
-        if (state.dead || state.isModalOpen) {
+        if (state.dead || state.isModalOpen || state.inMenu) {
             state.inputs.e = state.inputs.f = false;
             return;
         }

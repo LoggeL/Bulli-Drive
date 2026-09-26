@@ -21,6 +21,13 @@ describe('drawBots', () => {
         expect(new Set(draws.map(d => d.carType)).size).toBe(CAR_CLASS_IDS.length);
         expect(new Set(draws.map(d => d.color)).size).toBeGreaterThan(4);
     });
+
+    it('paints the bots from the players\' palette', () => {
+        // The eight paints of docs/ui.md 5
+        const palette = [0x5E8C7A, 0xE6DFCC, 0x8E2A28, 0x5C7C95, 0xB8862F, 0xC8612A, 0x9A9FA3, 0x2A2C2E];
+        const draws = Array.from({ length: 40 }, (_, seed) => drawBots(3, mulberry32(seed))).flat();
+        for (const bot of draws) expect(palette).toContain(bot.color);
+    });
 });
 
 describe('BotSession', () => {

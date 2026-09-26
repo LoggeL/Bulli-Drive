@@ -187,7 +187,7 @@ export class CarModel {
     // Wheels below their rest spot on the body (m, the suspension)
     private _wheelDrop = 0;
     readonly carType: CarType;
-    readonly colorCode: number;
+    colorCode: number;
     readonly local: boolean;
     shieldMesh?: THREE.Mesh;
     // Wheel groups of a procedural body (empty with a GLB body, whose pivots
@@ -205,6 +205,7 @@ export class CarModel {
     private _ownedTextures = new Set<THREE.Texture>();
     private _body: THREE.Object3D[] = [];
     private _taillight: THREE.MeshStandardMaterial | null = null;
+    private _paint: THREE.MeshStandardMaterial | null = null;
     private _disposed = false;
     // Drive look: set per frame by the simulation (setDriveState) or derived
     private _driveSet = false;
@@ -253,6 +254,18 @@ export class CarModel {
 
     get ghostVisualOn(): boolean {
         return this._ghostVisualOn;
+    }
+
+    /** Repaints the body (the menu's paint chips, another player's setPaint). */
+    setPaint(colorCode: number): void {
+        if (colorCode === this.colorCode) return;
+        this.colorCode = colorCode;
+        // An AFK car stays grey; it takes the new paint when it wakes up
+        const afk = this._afkVisualOn;
+        if (afk) this.applyAfk(false);
+        this.gltf?.setPaint(colorCode);
+        if (this._paint) carPaintColor(colorCode, this._paint.color);
+        if (afk) this.applyAfk(true);
     }
 
     /** Width and length of the body for the contact shadow (unscaled by Mega) */
@@ -513,6 +526,7 @@ export class CarModel {
         this.disposeOwned();
         this.wheels.length = 0;
         this._taillight = null;
+        this._paint = null;
         this.buildGltf();
         if (this.shieldMesh && shieldLook) {
             const material = this.shieldMesh.material as THREE.MeshStandardMaterial;
@@ -529,6 +543,7 @@ export class CarModel {
     buildCar() {
         const m = createCarMaterials(this.colorCode);
         this._taillight = m.taillight;
+        this._paint = m.paint;
         const before = new Set(this.bodyGroup.children);
 
         switch (this.carType) {

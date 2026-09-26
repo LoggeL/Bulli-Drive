@@ -39,8 +39,9 @@ export function driveKeyFor(key: string): DriveKey | undefined {
 
 function onKeyDown(e: KeyboardEvent) {
     if (document.activeElement?.tagName === 'INPUT') return;
-    // Don't register new driving inputs while a modal/overlay is open.
-    if (state.isModalOpen) return;
+    // Don't register new driving inputs while a modal/overlay or the menu
+    // is open (the arrows walk the menu there)
+    if (state.isModalOpen || state.inMenu) return;
     // Let focused native/custom buttons handle Space themselves. Otherwise the
     // same press could both activate the button and queue vehicle recovery.
     if (spaceActivatesButton(e)) return;

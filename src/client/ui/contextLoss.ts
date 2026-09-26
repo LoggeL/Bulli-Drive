@@ -1,7 +1,8 @@
 import { releaseKeyboardInputs } from '../controls/keyboard.js';
 import { resetMobileControls } from '../controls/mobile.js';
 import { sendClientReport } from '../net/clientReport.js';
-import { isSafeMode, markGraphicsTrouble } from '../render/safeMode.js';
+import { isSafeMode, markGraphicsTrouble, safeModeReason } from '../render/safeMode.js';
+import { stopLoadingScreen } from './loadingScreen.js';
 
 // The browser can take the WebGL context away at any time (GPU reset, driver
 // update, a mobile tab backgrounded under memory pressure). three.js already
@@ -93,16 +94,27 @@ function hideOverlay() {
     overlay?.classList.add('hidden');
 }
 
+/** Why the browser refused 3D graphics, as far as the page can tell. */
+export function unavailableText(afterTrouble: boolean): string {
+    return afterTrouble
+        ? 'Your browser did not allow 3D graphics right now. This often happens after the graphics crashed: close this tab (or the browser) completely and open the game again.'
+        : 'Your browser has 3D graphics (WebGL) turned off or blocked. Switch on hardware acceleration in the browser\'s settings, or try another browser.';
+}
+
 /**
  * The browser refused a WebGL context (no GPU, WebGL switched off, or
- * blocked for the site after a GPU crash): instead of a loading screen that
- * never ends, say so and offer lite graphics.
+ * blocked for the site after a GPU crash): instead of a loading bar that
+ * never ends, say so over the stopped loading screen and offer lite graphics.
  */
 export function showGraphicsUnavailable(error: unknown): void {
     const detail = error instanceof Error ? error.message : String(error);
+    // Refused again after trouble on this device (a crash): lite graphics
+    // may help; the first refusal is rather WebGL switched off
+    const afterTrouble = safeModeReason() === 'trouble';
     markGraphicsTrouble();
     sendClientReport('webgl-unavailable', detail);
-    document.getElementById('loading-screen')?.remove();
+    // The loading screen's key art stays behind the notice
+    stopLoadingScreen('3D graphics unavailable');
 
     const screen = document.createElement('div');
     screen.id = 'context-lost';
@@ -114,7 +126,7 @@ export function showGraphicsUnavailable(error: unknown): void {
     title.id = 'graphics-unavailable-title';
     title.textContent = '3D graphics unavailable';
     const text = document.createElement('p');
-    text.textContent = 'Your browser did not allow 3D graphics right now. This often happens after the graphics crashed: close this tab (or the browser) completely, open the game again, and it starts with lite graphics.';
+    text.textContent = unavailableText(afterTrouble);
     const retry = document.createElement('button');
     retry.type = 'button';
     retry.className = 'context-lost-reload';

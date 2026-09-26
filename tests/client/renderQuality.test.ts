@@ -63,6 +63,28 @@ describe('the adaptive render quality', () => {
         vi.unstubAllGlobals();
     });
 
+    it('counts no frame while the menu holds the frame rate down, and warms up again after it', () => {
+        // A phone (mobile tier, 3x screen: 1.5 at most) in the menu at 30 fps for a minute
+        vi.stubGlobal('window', { devicePixelRatio: 3, matchMedia: () => ({ matches: true }) });
+        const target = renderer();
+        const quality = new AdaptiveRenderQuality(target as never, 390, 844, 'mobile');
+        let t = 0;
+        for (; t < 60_000; t += 1000 / 30) quality.pause();
+        expect(target.setDrawingBufferSize).not.toHaveBeenCalled();
+        expect(quality.struggling).toBe(false);
+        // The game at 60 fps: the warm-up starts over, nothing stepped down
+        t = run(quality, t, 1000 / 60, 3 + 4.1 * 3);
+        expect(target.setDrawingBufferSize).not.toHaveBeenCalled();
+        // The same 30 fps measured (as before): 1.5 steps down to the floor
+        // and the GPU counts as struggling within 30 s
+        const measured = renderer();
+        const control = new AdaptiveRenderQuality(measured as never, 390, 844, 'mobile');
+        run(control, 0, 1000 / 30, 30);
+        expect(measured.setDrawingBufferSize.mock.calls.map(call => call[2])).toEqual([1.25, 1, 0.75]);
+        expect(control.struggling).toBe(true);
+        vi.unstubAllGlobals();
+    });
+
     it('does not call a GPU struggling that is fast again at the floor', () => {
         vi.stubGlobal('window', { devicePixelRatio: 1, matchMedia: () => ({ matches: false }) });
         const quality = new AdaptiveRenderQuality(renderer() as never, 800, 600, 'desktop');

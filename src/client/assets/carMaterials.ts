@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { paintByHex } from '../../shared/paints.js';
 
 // Shader patches of the car GLB materials (tools/models/README.md). They are
 // installed on the cached templates (ModelCache.prepareTemplate), so the
@@ -106,13 +107,16 @@ export function cloneCarMaterial(material: THREE.Material): THREE.Material {
 const _hsl = { h: 0, s: 0, l: 0 };
 
 /**
- * A player's colour as car paint. The server hands out any RGB colour; real
- * paints (and the calm, natural look of the world) are less saturated and
- * never neon or pitch black, so saturation and lightness are pulled into a
- * paint range while the hue - the player's identity - stays.
+ * A player's colour as car paint. The palette paints of the menu
+ * (shared/paints.ts) are paints already, tuned against the showroom light
+ * and the Blender renders, and pass as they are. Any other colour (an older
+ * resume ticket, a test car) is pulled into a paint range: real paints (and
+ * the calm, natural look of the world) are less saturated and never neon
+ * or pitch black, while the hue - the player's identity - stays.
  */
 export function carPaintColor(colorCode: number, target = new THREE.Color()): THREE.Color {
     target.setHex(colorCode, THREE.SRGBColorSpace);
+    if (paintByHex(colorCode)) return target;
     target.getHSL(_hsl, THREE.SRGBColorSpace);
     const saturation = Math.min(_hsl.s * 0.8, 0.58);
     const lightness = 0.2 + _hsl.l * 0.42;
