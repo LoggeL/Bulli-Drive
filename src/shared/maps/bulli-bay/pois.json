@@ -12,7 +12,7 @@
     {"id":"gas-station","kind":"gasStation","name":"Seaside Service","x":640,"z":-5,"yaw":0,"area":"gas-station"},
     {"id":"party-arena","kind":"partyArena","name":"Cannery Lot","x":-170,"z":590,"area":"cannery-lot"},
     {"id":"cannery","kind":"cannery","name":"Cannery Hall","x":-395,"z":460,"yaw":1.5708},
-    {"id":"harbor-light","kind":"lighthouse","name":"Harbor Light","x":-628,"z":690},
+    {"id":"harbor-light","kind":"lighthouse","name":"Harbor Light","x":-664,"z":652},
     {"id":"water-tower","kind":"waterTower","name":"Bulli Bay Water Tower","x":150,"z":-150},
     {"id":"lifeguard-1","kind":"lifeguardTower","name":"Tower 1","x":-588,"z":-250,"yaw":-1.5708},
     {"id":"lifeguard-2","kind":"lifeguardTower","name":"Tower 2","x":-640,"z":60,"yaw":-1.5708},
@@ -20,7 +20,7 @@
     {"id":"old-barn","kind":"barn","name":"Old Barn","x":505,"z":738},
     {"id":"marina","kind":"harbor","name":"Marina","x":-560,"z":500},
     {"id":"crane-1","kind":"crane","name":"Quay Crane 1","x":-484,"z":470,"yaw":-1.5708},
-    {"id":"crane-2","kind":"crane","name":"Quay Crane 2","x":-484,"z":575,"yaw":-1.5708},
+    {"id":"crane-2","kind":"crane","name":"Quay Crane 2","x":-484,"z":545,"yaw":-1.5708},
     {"id":"light-mast-1","kind":"lightMast","name":"Light Mast","x":-252,"z":528,"area":"cannery-lot"},
     {"id":"light-mast-2","kind":"lightMast","name":"Light Mast","x":-88,"z":652,"area":"cannery-lot"},
     {"id":"bulli-beach","kind":"beach","name":"Bulli Beach","x":-640,"z":-130},
@@ -41,10 +41,10 @@
       {"group":"beach","x":-618,"z":-92,"yaw":1.5708},
       {"group":"beach","x":-636,"z":-58,"yaw":1.5708},
       {"group":"beach","x":-618,"z":-58,"yaw":1.5708},
-      {"group":"lookout","x":652.66,"z":-765.13,"yaw":3.1416},
-      {"group":"lookout","x":664.66,"z":-765.13,"yaw":3.1416},
-      {"group":"lookout","x":676.66,"z":-765.13,"yaw":3.1416},
-      {"group":"lookout","x":688.66,"z":-765.13,"yaw":3.1416}
+      {"group":"lookout","x":654.66,"z":-769.13,"yaw":-1.05},
+      {"group":"lookout","x":666.66,"z":-769.13,"yaw":-1.05},
+      {"group":"lookout","x":654.66,"z":-785.13,"yaw":-1.05},
+      {"group":"lookout","x":666.66,"z":-785.13,"yaw":-1.05}
     ],
     "party": [
       {"x":-236,"z":530,"yaw":0.833},
@@ -111,5 +111,8 @@
     {"id":"ranch-knoll","x":720,"z":640,"yaw":3.141593,"width":8,"length":14,"height":2.2,"look":"earth"},
     {"id":"chaparral-flat","x":-146,"z":-644,"yaw":-1.570796,"width":8,"length":12,"height":2,"look":"earth"},
     {"id":"diner-lot","x":650,"z":125,"yaw":1.570796,"width":6,"length":10,"height":1.2,"look":"steel"}
+  ],
+  "moles": [
+    {"id":"light-mole","line":[[-627,691],[-657,659]]}
   ]
 }

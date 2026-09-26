@@ -78,7 +78,7 @@ const CurveSchema = v.variant('type', [
     })
 ]);
 
-export const RAIL_KINDS = ['wbeam', 'concrete', 'wood', 'fence'] as const;
+export const RAIL_KINDS = ['wbeam', 'concrete', 'wood', 'fence', 'bollard'] as const;
 
 const RailRangeSchema = v.strictObject({
     // Left / right in edge direction
@@ -115,12 +115,16 @@ const RoadEdgeSchema = v.strictObject({
 
 // Railing along the outline of an area (5.5, 7): the polygon's sides from
 // vertex `from` to vertex `to` (wrapping past the last vertex; from = to is
-// the whole outline), `offset` metres inside it
+// the whole outline), `offset` metres inside it. `flare` [along, out]: an
+// open railing's ends go on `along` m past the end vertex, bending `out` m
+// outwards (a pier narrower than its road: the ends guide a car on the
+// road's edge onto the deck instead of meeting it head-on)
 const AreaRailSchema = v.strictObject({
     from: v.pipe(v.number(), v.integer(), v.minValue(0)),
     to: v.pipe(v.number(), v.integer(), v.minValue(0)),
     kind: v.picklist(RAIL_KINDS),
-    offset: v.optional(NonNegative)
+    offset: v.optional(NonNegative),
+    flare: v.optional(v.tuple([Positive, NonNegative]))
 });
 
 const RoadAreaSchema = v.strictObject({

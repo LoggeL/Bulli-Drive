@@ -9,6 +9,7 @@ import {
 import { parseMapFile, parsePoisFile, parseTracksFile, parseZonesFile } from '../../../src/shared/map/mapFiles.js';
 import { buildRoadNetwork, roadSurfaceAt } from '../../../src/shared/map/roadNetwork.js';
 import { parseRoadNetwork } from '../../../src/shared/map/roadSchema.js';
+import type { Vec2 } from '../../../src/shared/map/geometry.js';
 import { leftNormal } from '../../../src/shared/map/spline.js';
 import { sunDirection } from '../../../src/shared/map/lighting.js';
 import { routeToTrack } from '../../../src/shared/map/routeToTrack.js';
@@ -222,7 +223,8 @@ describe('Bulli Bay terrain.bhf', () => {
         expect(waterDepth(hf, -700, 0)).toBeGreaterThan(0);
         expect(heightAt(hf, -760, -800)).toBeGreaterThan(35);
         expect(heightAt(hf, -700, 830)).toBeGreaterThan(20);
-        // Lookout car park on the ridge, cut in at 130 m (3.1, start value)
+        // Lookout car park on the ridge at 130 m (3.1, start value), the knoll
+        // towards the bay cut below it (A76)
         expect(heightAt(hf, 660, -777)).toBeCloseTo(130, 1);
         // Party arena "Cannery Lot": concrete, arena zone (E10)
         expect(surfaceAt(hf, -170, 590)).toBe(SURFACE.concrete);
@@ -234,6 +236,61 @@ describe('Bulli Bay terrain.bhf', () => {
         expect(zoneAt(hf, -400, 0)).toBe(ZONE.downtown);
         // Dunes of sand between the beach and the PCH
         expect(surfaceAt(hf, -660, -470)).toBe(SURFACE.sand);
+    });
+
+    it('breaks the north cliffs into a steep face with bays, headlands and a varied crest (review: a smooth wall)', () => {
+        // 76 profiles, 5 m apart, across the cliff line from z = -1000 to
+        // -670, inland: where the ground passes 5 and 37 m, and the highest
+        // point within 20 m beyond the edge. Before (a uniform 1 : 1.5 fill
+        // of the coast road down the face): 30 m from 5 to 37 m on average,
+        // the edge within 3 m, the crest 42 m everywhere
+        const line: Vec2[] = [[-765, -1000], [-795, -900], [-830, -825], [-822, -770], [-785, -715], [-750, -670]];
+        const runs: number[] = [], edges: number[] = [], crests: number[] = [];
+        for (let k = 0; k + 1 < line.length; k++) {
+            const [ax, az] = line[k], [bx, bz] = line[k + 1];
+            const length = Math.hypot(bx - ax, bz - az);
+            const tx = (bx - ax) / length, tz = (bz - az) / length;
+            // Inland is east (+x)
+            const nx = Math.abs(tz), nz = tz < 0 ? tx : -tx;
+            for (let s = 0; s < length; s += 5) {
+                const x = ax + tx * s, z = az + tz * s;
+                let foot = NaN, edge = NaN;
+                for (let d = -60; d <= 150 && Number.isNaN(edge); d += 0.5) {
+                    const h = heightAt(hf, x + nx * d, z + nz * d);
+                    if (Number.isNaN(foot) && h > 5) foot = d;
+                    if (h > 37) edge = d;
+                }
+                let crest = -Infinity;
+                for (let d = edge; d <= edge + 20; d++) crest = Math.max(crest, heightAt(hf, x + nx * d, z + nz * d));
+                runs.push(edge - foot);
+                edges.push(edge);
+                crests.push(crest);
+            }
+        }
+        expect(runs.length).toBeGreaterThan(70);
+        expect(runs.reduce((a, b) => a + b, 0) / runs.length).toBeLessThan(18);
+        expect(Math.max(...edges) - Math.min(...edges)).toBeGreaterThan(8);
+        expect(Math.max(...crests) - Math.min(...crests)).toBeGreaterThan(8);
+    });
+
+    it('opens the lookout\'s view to the bay (A66): from the telescopes\' corner the sea shows over the ground', () => {
+        // Eye 1.5 m over the lot's south-west corner, looking at the pier:
+        // no ground rises above the line to the sea 300 m out from the beach
+        // (before: a knoll 12 m above it 50 m out)
+        const pier = parsePoisFile(readJson('pois.json'));
+        if (!pier.ok) throw new Error(pier.errors.join('\n'));
+        const target = pier.value.landmarks.find(l => l.kind === 'pier')!;
+        const ex = 638.5, ez = -757, ey = heightAt(hf, ex, ez) + 1.5;
+        const length = Math.hypot(target.x - ex, target.z - ez);
+        const dx = (target.x - ex) / length, dz = (target.z - ez) / length;
+        let sea = 0;
+        for (let d = 2; d < length + 400 && !sea; d += 2) if (heightAt(hf, ex + dx * d, ez + dz * d) <= 0) sea = d;
+        expect(sea).toBeGreaterThan(1000);
+        const far = sea + 300;
+        expect(heightAt(hf, ex + dx * far, ez + dz * far)).toBeLessThan(-2);
+        let worst = -Infinity;
+        for (let d = 4; d < far; d += 2) worst = Math.max(worst, heightAt(hf, ex + dx * d, ez + dz * d) - (ey - ey * d / far));
+        expect(worst).toBeLessThan(0);
     });
 
     it('sets the evening sun over the Pacific (finding 13): 1 km from the pier towards it is open sea', () => {

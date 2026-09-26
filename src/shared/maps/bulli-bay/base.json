@@ -19,9 +19,15 @@
   "flats": [
     {"id":"harbor","x":-260,"z":520,"radii":[420,250],"height":3,"strength":1}
   ],
+  "moles": [
+    {"id":"light-mole","line":[[-624,694],[-668,648]],"height":1.6,"width":7}
+  ],
+  "views": [
+    {"id":"lookout","from":[690,-777],"to":[-700,-20],"height":133,"slope":0.1,"spread":0.5,"length":380}
+  ],
   "cliffs": [
-    {"id":"north-cliffs","line":[[-745,-1200],[-765,-1000],[-795,-900],[-830,-825],[-822,-770],[-785,-715],[-750,-670]],"height":42,"face":18,"plateau":50,"fade":220},
-    {"id":"south-cliffs","line":[[-640,705],[-675,770],[-725,830],[-770,870],[-772,915],[-745,965],[-720,1030],[-705,1200]],"height":30,"face":15,"plateau":50,"fade":160}
+    {"id":"north-cliffs","line":[[-745,-1200],[-765,-1000],[-795,-900],[-830,-825],[-822,-770],[-785,-715],[-750,-670]],"height":42,"face":18,"plateau":50,"fade":220,"vary":{"face":0.45,"wavelength":90,"gullies":4,"gullyWavelength":40,"headlands":14,"height":0.5,"heightWavelength":75,"heightReach":35}},
+    {"id":"south-cliffs","line":[[-640,705],[-675,770],[-725,830],[-770,870],[-772,915],[-745,965],[-720,1030],[-705,1200]],"height":30,"face":15,"plateau":50,"fade":160,"vary":{"face":0.45,"wavelength":80,"gullies":3,"gullyWavelength":35,"headlands":12,"height":0.5,"heightWavelength":65,"heightReach":30}}
   ],
   "noise": {"amplitude":2.5,"wavelength":420,"octaves":5,"gain":0.5,"ridged":0.35,"warp":{"amplitude":90,"wavelength":350},"regions":[{"id":"bulli-ridge","polygon":[[430,-960],[960,-960],[960,-150],[640,-60],[440,-160]],"amplitude":12,"blend":160},{"id":"north-wilds","polygon":[[-560,-960],[300,-960],[300,-560],[-150,-540],[-520,-600]],"amplitude":11,"blend":150},{"id":"ranch","polygon":[[180,300],[960,120],[960,960],[180,960]],"amplitude":8,"blend":200}]},
   "regions": [

@@ -2,9 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { buildRoadNetwork } from '../../src/shared/map/roadNetwork.js';
 import type { RoadArea } from '../../src/shared/map/roadSchema.js';
 import {
-    areaFrame, buildRoadGeometry, CENTRE_CODE, cornerCurve, edgeRuns, edgeStations, END_CODE, MAX_STATION_STEP, ROAD_FLAG,
-    ROAD_LIFT, splitByChunk, triangulatePolygon, MeshArrays
+    AREA_LIFT, AREA_WALL_DEPTH, areaFrame, buildRoadGeometry, CENTRE_CODE, cornerCurve, edgeRuns, edgeStations, END_CODE, MAX_STATION_STEP, ROAD_FLAG,
+    groundNormal, ROAD_LIFT, splitByChunk, triangulatePolygon, MeshArrays
 } from '../../src/client/world/roadGeometry.js';
+import { roadBlock } from '../../src/client/world/roads.js';
 import { edge, network, node, PROFILE } from '../shared/map/fixtures.js';
 
 // The road meshes (src/client/world/roadGeometry.ts, docs/phase-3-design.md
@@ -41,6 +42,29 @@ function triangles(mesh: MeshArrays): { area: number; allUp: boolean } {
     }
     return { area, allUp };
 }
+
+describe('ground normals and road blocks', () => {
+    it('takes the ground normal from central differences: on a plane, its normalised gradient', () => {
+        // y = 0.1 x - 0.2 z + 3: the normal (-0.1, 1, 0.2) normalised
+        const l = Math.sqrt(0.01 + 1 + 0.04);
+        const [nx, ny, nz] = groundNormal((x, z) => 0.1 * x - 0.2 * z + 3, 7, -3);
+        expect(nx).toBeCloseTo(-0.1 / l, 12);
+        expect(ny).toBeCloseTo(1 / l, 12);
+        expect(nz).toBeCloseTo(0.2 / l, 12);
+    });
+
+    it('cuts the 2 km square into 4 × 4 blocks of 500 m, row by row from the north-west', () => {
+        expect(roadBlock(-1000, -1000)).toBe(0);
+        expect(roadBlock(-501, -999)).toBe(0);
+        expect(roadBlock(-499, -999)).toBe(1);
+        expect(roadBlock(999, -999)).toBe(3);
+        expect(roadBlock(-999, -499)).toBe(4);
+        expect(roadBlock(1, 1)).toBe(10);
+        expect(roadBlock(999, 999)).toBe(15);
+        // Beyond the square: the border blocks
+        expect(roadBlock(-1200, 1300)).toBe(12);
+    });
+});
 
 describe('a straight road', () => {
     // 40 m along +x, 10 m wide, two dead ends
@@ -188,6 +212,37 @@ describe('lots', () => {
         expect(vertices(layers.walk).some(v => v.x >= 200 && v.y > 0.1)).toBe(true);
         // Nothing drawn over the pier (its deck is the kit's)
         for (const layer of Object.values(layers)) expect(vertices(layer).some(v => v.x > 290)).toBe(false);
+    });
+
+    it('draw an area at a fixed height level at it, whatever the ground at its outline (a quay\'s walls)', () => {
+        // A concrete quay at y = 1.4 on walls; the ground falls away beyond
+        // x = 110 (the sea), so at its outline it leans down
+        const quay: RoadArea = { id: 'quay', polygon: [[100, 0], [120, 0], [120, 30], [100, 30]], surface: 'concrete', curb: false, y: 1.4, walls: true, connects: [] };
+        const net = buildRoadNetwork(network([node('a', 0, 0), node('b', 40, 0)], [edge('ab', 'a', 'b')], { areas: [quay] }));
+        const ground = (x: number) => (x > 110 ? 1.4 - (x - 110) : 1.4);
+        const mesh = buildRoadGeometry(net, ground).concrete;
+        const concrete = vertices(mesh).map((v, i) => ({ ...v, i })).filter(v => v.x >= 100);
+        const top = concrete.filter(v => v.y > 0);
+        expect(top.length).toBeGreaterThan(4);
+        for (const v of top) expect(v.y).toBeCloseTo(1.4 + AREA_LIFT, 12);
+        // Its walls go down AREA_WALL_DEPTH, each facing out: the east wall +x
+        const walls = concrete.filter(v => v.y < 0);
+        expect(walls.length).toBeGreaterThan(4);
+        for (const v of walls) expect(v.y).toBeCloseTo(1.4 + AREA_LIFT - AREA_WALL_DEPTH, 12);
+        const east = walls.filter(v => v.x === 120 && v.z > 0 && v.z < 30);
+        expect(east.length).toBeGreaterThan(0);
+        for (const v of east) expect([mesh.normals[v.i * 3], mesh.normals[v.i * 3 + 1], Math.abs(mesh.normals[v.i * 3 + 2])]).toEqual([1, 0, 0]);
+        // Its triangles wind to face out as well (front faces drawn): the
+        // cross product of each wall triangle points along its normal
+        for (let t = 0; t < mesh.index.length; t += 3) {
+            const [i, j, k] = [mesh.index[t], mesh.index[t + 1], mesh.index[t + 2]];
+            const p = (n: number) => [mesh.positions[n * 3], mesh.positions[n * 3 + 1], mesh.positions[n * 3 + 2]];
+            const [a, b, c] = [p(i), p(j), p(k)];
+            if (a[1] >= 0 && b[1] >= 0 && c[1] >= 0) continue;
+            const e = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], f = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+            const cross = [e[1] * f[2] - e[2] * f[1], e[2] * f[0] - e[0] * f[2], e[0] * f[1] - e[1] * f[0]];
+            expect(cross[0] * mesh.normals[i * 3] + cross[2] * mesh.normals[i * 3 + 2]).toBeGreaterThan(0);
+        }
     });
 });
 

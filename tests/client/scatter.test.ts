@@ -71,12 +71,24 @@ describe('the scatter on Bulli Bay', () => {
 
 // A small map for the props beside the grid: an east-west track from
 // (-90, 0) to (90, 0), 6 m wide with 0.5 m shoulders, dead ends (trim 0)
-function smallMap(zone: number, buildings: MapData['buildings'] = []): MapData {
-    const net = buildRoadNetwork(network([node('w', -90, 0), node('e', 90, 0)], [edge('track', 'w', 'e')], {
+function smallMap(zone: number, buildings: MapData['buildings'] = [], lane = false, height: (x: number, z: number) => number = () => 5): MapData {
+    // lane: a second track from the north ending on the first at x = 0.5
+    const nodes = [node('w', -90, 0), node('e', 90, 0), ...(lane ? [node('n', 0.5, -90), node('m', 0.5, -3)] : [])];
+    const edges = [edge('track', 'w', 'e'), ...(lane ? [edge('lane', 'n', 'm')] : [])];
+    const net = buildRoadNetwork(network(nodes, edges, {
         profiles: { road: { ...PROFILE, width: 6, surface: 'dirt', shoulder: 0.5 } }
     }));
-    return { hf: makeHeightfield(() => 5, () => zone), net, buildings, structures: [] } as unknown as MapData;
+    return { hf: makeHeightfield(height, () => zone), net, buildings, structures: [], plants: [] } as unknown as MapData;
 }
+
+describe('the scatter on slopes', () => {
+    it('puts no bush or shrub on ground steeper than 45°', () => {
+        // West of x = 0 the ground rises 0.9 m per metre (42°), east of it 1.2 (50°)
+        const spots = scatterDecor(smallMap(ZONE.wild, [], false, x => 100 + (x < 0 ? 0.9 : 1.2) * x));
+        expect(spots.filter(s => s.x < -2).length).toBeGreaterThan(20);
+        expect(spots.filter(s => s.x > 2)).toEqual([]);
+    });
+});
 
 describe('mailboxes', () => {
     it('stand in front of every house in the residential zone, towards the street, facing it', () => {
@@ -86,6 +98,14 @@ describe('mailboxes', () => {
         expect(mailboxSpots(smallMap(ZONE.residential, [house]))).toEqual([{ x: 2.2, y: 5, z: -14.6, yaw: 0 }]);
         // Not in Downtown
         expect(mailboxSpots(smallMap(ZONE.downtown, [house]))).toEqual([]);
+    });
+
+    it('leave out a mailbox that would stand on the road', () => {
+        // A house with its front 8 m from the track's centre line: its mailbox
+        // at z = -2.6, inside the track (3 m half width + 0.5 m shoulder)
+        const near = { piece: 'spanish_w12_f2_rect', x: 30, z: -8, ux: 0, uz: 1 } as MapData['buildings'][number];
+        const house = { piece: 'spanish_w12_f2_rect', x: 0, z: -20, ux: 0, uz: 1 } as MapData['buildings'][number];
+        expect(mailboxSpots(smallMap(ZONE.residential, [house, near]))).toEqual([{ x: 2.2, y: 5, z: -14.6, yaw: 0 }]);
     });
 });
 
@@ -114,5 +134,15 @@ describe('ranch fences', () => {
         expect(north[0].at(-1)![0]).toBeLessThanOrEqual(-7);
         expect(north[1][0][0]).toBeGreaterThanOrEqual(7);
         expect(ranchFences(smallMap(ZONE.hills))).toEqual([]);
+    });
+
+    it('stop where a post would stand on another road', () => {
+        // The lane ends on the track without a junction; the north fence line
+        // (z = -6, posts at x = -82 + 3 k) crosses it at x = 0.5, whose
+        // corridor (3 + 0.5 m, 0.5 m margin) takes the posts at -1 and 2
+        const north = ranchFences(smallMap(ZONE.ranch, [], true)).filter(run => run.every(([, z]) => Math.abs(z + 6) < 1e-9));
+        expect(north).toHaveLength(2);
+        expect(north[0].at(-1)![0]).toBeCloseTo(-4, 9);
+        expect(north[1][0][0]).toBeCloseTo(5, 9);
     });
 });

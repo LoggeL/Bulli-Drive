@@ -10,6 +10,7 @@
 import { POWERUP_TYPES } from '../constants.js';
 import type { CoinData, PowerupData } from '../protocol.js';
 import type { VehicleState } from '../sim/types.js';
+import { WATER_DEPTH } from '../sim/vehicle.js';
 import {
     createSimWorld, rampEdgeColliders, type ColliderInput, type GroundModel, type RampDef, type SimWorld
 } from '../world/colliders.js';
@@ -20,7 +21,7 @@ import { heightAt, surfaceAt, type Heightfield } from './heightfield.js';
 import type { Landmark, PoisFile } from './mapFiles.js';
 import type { MapSources } from './mapSources.js';
 import { placePlants, PLANT_COLLIDERS, type Plant } from './plants.js';
-import { benchBox, FURNITURE_COLLIDERS, placeFurniture, type Furniture } from './furniture.js';
+import { benchBox, FURNITURE_COLLIDERS, litLots, placeFurniture, type Furniture } from './furniture.js';
 import { networkRailColliders, RAIL_RADIUS, type SegmentCollider } from './rails.js';
 import { buildRoadNetwork, nearestRoad, type RoadHit, type RoadNetwork } from './roadNetwork.js';
 import { AXIS_SNAP, snapYaw } from './routeToTrack.js';
@@ -124,7 +125,7 @@ export const LANDMARK_PIECES: Partial<Record<Landmark['kind'], KitPieceId>> = {
     waterTower: 'landmark_water_tower',
     lifeguardTower: 'lifeguard_tower',
     lightMast: 'arena_floodlight',
-    cannery: 'industrial_b8_d36',
+    cannery: 'industrial_b8_d36_cannery',
     barn: 'industrial_b4_d24',
     restaurant: 'beach_w11_f2_shop',
     surfShop: 'beach_w9_f1_shop'
@@ -134,9 +135,10 @@ export const FOUNTAIN_RADIUS = 5;
 export const FOUNTAIN_TOP = 1.5;
 // Shipping containers stand on the arena's concrete; a car can land on one
 export const CONTAINER_TOP = 2.6;
-// Places kept free of buildings and plants: around the jump ramps and their
-// landings, around the spawns
+// Places kept free of buildings and plants: around the jump ramps, their
+// landings and a straight run-up behind them, around the spawns
 export const JUMP_LANDING = 45;
+export const JUMP_RUNUP = 30;
 export const JUMP_SIDE = 4;
 export const SPAWN_KEEP = 8;
 
@@ -160,19 +162,33 @@ function segmentChain(a: Vec2, b: Vec2, piece: number, top: number, out: Segment
     }
 }
 
+// The border fence probes the ground under a piece every metre (half a cell
+// of the heightfield)
+const FENCE_PROBE_STEP = 1;
+
 /**
  * The drivable boundary (8.3) as a fence of capsules that cannot be jumped
  * over, except where it runs over the sea: there the water reset holds the
- * cars back.
+ * cars back. A car drives on through water shallower than WATER_DEPTH
+ * (vehicle.ts), so a piece stays wherever the ground under it anywhere
+ * lies above that depth.
  */
 export function boundaryFence(boundary: readonly Vec2[], hf: Heightfield): SegmentCollider[] {
     const out: SegmentCollider[] = [];
     const pieces: SegmentCollider[] = [];
+    const drivable = hf.spec.waterLevel - WATER_DEPTH;
     for (let i = 0; i < boundary.length; i++) {
         pieces.length = 0;
         segmentChain(boundary[i], boundary[(i + 1) % boundary.length], FENCE_PIECE, Infinity, pieces);
         for (const piece of pieces) {
-            if (heightAt(hf, (piece.ax + piece.bx) / 2, (piece.az + piece.bz) / 2) > hf.spec.waterLevel) out.push(piece);
+            const dx = piece.bx - piece.ax, dz = piece.bz - piece.az;
+            const n = Math.max(1, Math.ceil(Math.sqrt(dx * dx + dz * dz) / FENCE_PROBE_STEP));
+            for (let k = 0; k <= n; k++) {
+                if (heightAt(hf, piece.ax + dx * k / n, piece.az + dz * k / n) > drivable) {
+                    out.push(piece);
+                    break;
+                }
+            }
         }
     }
     return out;
@@ -291,13 +307,13 @@ function mapRamps(pois: PoisFile): MapRamp[] {
     return [...jumps, ...arena];
 }
 
-// A ramp with the ground beyond its front edge where cars land
-function jumpZone(ramp: RampDef): OBox {
+/** A ramp with its straight run-up behind it and the ground beyond its front edge where cars land. */
+export function jumpZone(ramp: RampDef): OBox {
     const [ux, uz] = yawAxis(ramp.yaw);
-    const forward = JUMP_LANDING / 2;
+    const forward = (JUMP_LANDING - JUMP_RUNUP) / 2;
     return {
         x: ramp.x + ux * forward, z: ramp.z + uz * forward,
-        hw: ramp.width / 2 + JUMP_SIDE, hd: ramp.length / 2 + forward,
+        hw: ramp.width / 2 + JUMP_SIDE, hd: ramp.length / 2 + (JUMP_LANDING + JUMP_RUNUP) / 2,
         ux, uz
     };
 }
@@ -375,9 +391,15 @@ export function createMapData(sources: MapSources, hf: Heightfield): MapData {
     const buildings = placeBuildings({ net, hf, areas: net.areas, reserved });
     const buildingIndex = new BoxIndex();
     for (const lot of buildings) buildingIndex.add(placementBox(lot));
-    const plants = placePlants({ net, hf, areas: net.areas, boundary: map.boundary, buildings: buildingIndex, reserved });
+    const plants = placePlants({
+        net, hf, areas: net.areas, boundary: map.boundary, buildings: buildingIndex, reserved,
+        moles: (pois.moles ?? []).map(mole => mole.line)
+    });
     const fountains = pois.landmarks.filter(landmark => landmark.kind === 'fountain').map(({ x, z }): [number, number] => [x, z]);
-    const furniture = placeFurniture({ net, hf, areas: net.areas, boundary: map.boundary, buildings: buildingIndex, reserved, plants, fountains });
+    const furniture = placeFurniture({
+        net, hf, areas: net.areas, boundary: map.boundary, buildings: buildingIndex, reserved, plants, fountains,
+        lots: litLots(net.areas, pois.arena.area)
+    });
 
     // The colliders, in a fixed order (it decides the order of the
     // collision response): rails, the border, the arena fence, landmarks

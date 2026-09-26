@@ -2,6 +2,7 @@ import { hashMix, hashUnit } from '../../shared/map/buildings.js';
 import { pointInPolygon } from '../../shared/map/geometry.js';
 import { heightAt, surfaceAt, zoneAt } from '../../shared/map/heightfield.js';
 import type { MapData } from '../../shared/map/mapData.js';
+import { groundGrade } from '../../shared/map/plants.js';
 import { insideCorridor, junctionRadius } from '../../shared/map/roadNetwork.js';
 import { leftNormal, pointAt } from '../../shared/map/spline.js';
 import { BoxIndex, placementBox } from '../../shared/map/structures.js';
@@ -64,6 +65,9 @@ const PLANT_CLEARANCE = 1.5;
 const BUILDING_CLEARANCE = 1;
 // Sunshades only on dry sand above the water line
 const SUNSHADE_MIN_HEIGHT = 1;
+// Steepest ground under a bush or a shrub: tan 45° (on a cliff face it
+// would stand out from the wall)
+export const DECOR_MAX_GRADE = 1;
 
 const SURFACE_OK: Record<DecorKind, (surface: number) => boolean> = {
     chaparral: s => s === SURFACE.grass || s === SURFACE.rock,
@@ -122,6 +126,7 @@ export function scatterDecor(map: MapData, density = 1): DecorSpot[] {
                 const z = spec.originZ + (j + 0.1 + 0.8 * hashUnit(hashMix(h, 2))) * rule.cell;
                 if (zoneAt(hf, x, z) !== rule.zone) continue;
                 if (!SURFACE_OK[rule.kind](surfaceAt(hf, x, z))) continue;
+                if (groundGrade(hf, x, z) > DECOR_MAX_GRADE) continue;
                 const y = heightAt(hf, x, z);
                 if (y < spec.waterLevel + (rule.kind === 'sunshade' || rule.kind === 'volleyball' ? SUNSHADE_MIN_HEIGHT : 0.4)) continue;
                 const size = rule.size[0] + (rule.size[1] - rule.size[0]) * hashUnit(hashMix(h, 3));

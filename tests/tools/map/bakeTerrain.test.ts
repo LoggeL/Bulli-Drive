@@ -3,7 +3,8 @@ import { decodeHeightfield, heightAt, surfaceAt, zoneAt, type GridSpec } from '.
 import type { MapFile, ZonesFile } from '../../../src/shared/map/mapFiles.js';
 import type { RoadNetworkFile } from '../../../src/shared/map/roadSchema.js';
 import { SURFACE, SURFACE_PRIORITY, ZONE } from '../../../src/shared/map/types.js';
-import { bakeTerrain, type BakeInput } from '../../../tools/map/bakeTerrain.js';
+import { bakeTerrain, terrainKeep, type BakeInput } from '../../../tools/map/bakeTerrain.js';
+import { buildRoadNetwork } from '../../../src/shared/map/roadNetwork.js';
 import { fnv1a128, toHex } from '../../../tools/map/hash.js';
 import { encodePng } from '../../../tools/map/png.js';
 import { inflateSync } from 'node:zlib';
@@ -165,6 +166,77 @@ describe('bakeTerrain', () => {
         expect(zoneAt(hf, 0, 0)).toBe(ZONE.downtown);
         expect(zoneAt(hf, 45, -45)).toBe(ZONE.downtown);
         expect(zoneAt(hf, 150, 150)).toBe(ZONE.wild);
+    });
+});
+
+describe('terrainKeep (the variations of the base terrain stay off the roads and areas)', () => {
+    // A road along x at z = 0; a lot without a height at x 40..80, z 40..80;
+    // one with y = 5 at x -80..-40, z 40..80
+    const keep = () => terrainKeep(buildRoadNetwork(network([node('a', -100, 0), node('b', 100, 0)], [edge('ab', 'a', 'b')], {
+        areas: [
+            { id: 'free', polygon: [[40, 40], [80, 40], [80, 80], [40, 80]], surface: 'asphalt', curb: false, connects: [] },
+            { id: 'fixed', polygon: [[-80, 40], [-40, 40], [-40, 80], [-80, 80]], y: 5, surface: 'asphalt', curb: false, connects: [] }
+        ]
+    })));
+
+    it('is 0 within 3 m of a road\'s centre line (its profile samples the ground there), 1 from 6 m on', () => {
+        const k = keep();
+        expect(k(0, 0)).toBe(0);
+        expect(k(10, 3)).toBe(0);
+        expect(k(10, 4.5)).toBeCloseTo(0.5, 12);
+        expect(k(10, -6)).toBe(1);
+        expect(k(0, 30)).toBe(1);
+    });
+
+    it('is 0 in and within 6 m of an area without a height (its mean ground), 1 from 22 m; an area with y takes any ground', () => {
+        const k = keep();
+        expect(k(60, 60)).toBe(0);
+        expect(k(86, 60)).toBe(0);
+        // 14 m out: halfway between 6 and 22
+        expect(k(94, 60)).toBeCloseTo(0.5, 12);
+        expect(k(102, 60)).toBe(1);
+        expect(k(-60, 60)).toBe(1);
+    });
+});
+
+describe('bakeTerrain at a cliff', () => {
+    // The coast at x = -150 with a cliff 30 m high over a 10 m face; a deck
+    // at y = 35 on the plateau (x -138..-130, z 60..100) and a road along
+    // the plateau at x = -122, within the cliff's height variation (by up
+    // to 40 %, easing out 10 + 30 m inland)
+    const bakeCliff = (height?: number) => bakeTerrain({
+        ...INPUT,
+        roads: network([node('p0', -122, -150), node('p1', -122, 150)], [edge('plateau', 'p0', 'p1')], {
+            areas: [{ id: 'deck', polygon: [[-138, 60], [-130, 60], [-130, 100], [-138, 100]], y: 35, surface: 'concrete', curb: false, connects: [] }]
+        }),
+        base: {
+            ...FLAT_COAST,
+            cliffs: [{
+                id: 'c', line: [[-150, -300], [-150, 300]], height: 30, face: 10, plateau: 40, fade: 20,
+                vary: { face: 0, wavelength: 90, gullies: 0, gullyWavelength: 40, ...(height ? { height, heightWavelength: 60, heightReach: 30 } : {}) }
+            }]
+        }
+    });
+
+    it('does not fill the deck\'s embankment down the face: the face keeps its natural height', () => {
+        const { heights, heightfield } = bakeCliff();
+        const spec = heightfield.spec;
+        const at = (x: number, z: number) => heights[((z - spec.originZ) / 2) * spec.cols + (x - spec.originX) / 2];
+        // 8 m from the deck (fill 35 - 4/1.5 = 32.3 m) on the face, 4 m
+        // from its foot: the face's own 30 · S(0.4) = 10.56 m
+        expect(at(-146, 80)).toBeCloseTo(30 * 0.352, 9);
+        // Off the face, 2 m from the deck (in its 4 m flat margin): the
+        // deck's height over the 30 m plateau
+        expect(at(-140, 80)).toBeCloseTo(35, 9);
+    });
+
+    it('keeps the road\'s profile where the cliff\'s height varies (the variation stays off its centre line)', () => {
+        const plain = bakeCliff(), varied = bakeCliff(0.4);
+        expect(Array.from(varied.edgeHeights.get('plateau')!)).toEqual(Array.from(plain.edgeHeights.get('plateau')!));
+        // The plateau beside the deck and road does vary
+        let differs = 0;
+        for (let k = 0; k < plain.heights.length; k++) if (Math.abs(plain.heights[k] - varied.heights[k]) > 1) differs++;
+        expect(differs).toBeGreaterThan(100);
     });
 });
 

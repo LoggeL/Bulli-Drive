@@ -393,6 +393,8 @@ const MAX_REACH = 240;
 export class TerrainShaper {
     readonly lo: Float64Array;
     readonly hi: Float64Array;
+    // 1 where a flat zone (a road's, an area's) fixes the height
+    readonly flat: Uint8Array;
     // Stamped surface ID per grid point, -1 = none
     readonly surface: Int16Array;
     private readonly blockMin: Float64Array;
@@ -403,6 +405,7 @@ export class TerrainShaper {
         const n = grid.cols * grid.rows;
         this.lo = new Float64Array(n).fill(-Infinity);
         this.hi = new Float64Array(n).fill(Infinity);
+        this.flat = new Uint8Array(n);
         this.surface = new Int16Array(n).fill(-1);
         this.blockCols = Math.ceil(grid.cols / BLOCK);
         const blockRows = Math.ceil(grid.rows / BLOCK);
@@ -459,6 +462,7 @@ export class TerrainShaper {
     private bound(k: number, y: number, d: number): void {
         const lo = d > 0 ? y - d / this.run : y;
         const hi = d > 0 ? y + d / this.run : y;
+        if (d <= 0) this.flat[k] = 1;
         if (lo > this.lo[k]) this.lo[k] = lo;
         if (hi < this.hi[k]) this.hi[k] = hi;
     }
@@ -555,13 +559,20 @@ export class TerrainShaper {
 
     // The shaped terrain: the natural height clamped into [lo, hi], the
     // midpoint where the corridors disagree
-    finish(): { heights: Float64Array; conflicts: ConflictReport; conflictMask: Uint8Array } {
+    /**
+     * The shaped heights. `noFill` (optional, per grid point): where it is
+     * set, the embankments do not fill (a cliff face and the sea at its
+     * foot: the fill of a road on the edge would spread down the face as one
+     * smooth 1 : 1.5 slope); flat zones and cuts still apply.
+     */
+    finish(noFill?: Uint8Array): { heights: Float64Array; conflicts: ConflictReport; conflictMask: Uint8Array } {
         const g = this.grid;
         const heights = new Float64Array(this.natural.length);
         const conflictMask = new Uint8Array(this.natural.length);
         const conflicts: ConflictReport = { count: 0, maxGap: 0, worstX: 0, worstZ: 0 };
         for (let k = 0; k < heights.length; k++) {
-            const lo = this.lo[k], hi = this.hi[k];
+            const hi = this.hi[k];
+            const lo = noFill && noFill[k] && !this.flat[k] ? -Infinity : this.lo[k];
             if (lo > hi) {
                 const gap = lo - hi;
                 if (gap > CONFLICT_TOLERANCE) {

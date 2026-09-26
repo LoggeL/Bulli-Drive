@@ -108,6 +108,197 @@ describe('baseHeight', () => {
         // Still sea in front of the cliff
         expect(baseHeight(base, -175, 0)).toBe(-5);
     });
+
+    it('varies a cliff\'s face along the coast only within its plain width: headlands, bays and gullies', () => {
+        // Face 10 m: the edge comes up to 35 % closer to the sea (6.5 .. 10 m
+        // from the coast), the foot up to 4 m inland; the coast is x = -150
+        const vary = { face: 0.35, wavelength: 90, gullies: 4, gullyWavelength: 40 };
+        const base: BaseTerrain = {
+            ...FLAT_COAST,
+            cliffs: [{ id: 'c', line: [[-150, -300], [-150, 300]], height: 30, face: 10, plateau: 20, fade: 20, vary }]
+        };
+        const edges: number[] = [], feet: number[] = [];
+        for (let z = -250; z <= 250; z += 5) {
+            // Metres from the coast where the face reaches the top and leaves the foot
+            let edge = -1, foot = -1, last = -Infinity;
+            for (let d = 0; d <= 12; d += 0.1) {
+                const h = baseHeight(base, -150 + d, z);
+                expect(h).toBeGreaterThanOrEqual(last - 1e-9);
+                last = h;
+                if (h <= 1e-9) foot = d;
+                if (edge < 0 && h >= 30 - 1e-9) edge = d;
+            }
+            edges.push(edge);
+            feet.push(foot);
+            // At and beyond the plain face width the plateau is untouched
+            expect(baseHeight(base, -140, z)).toBeCloseTo(30, 9);
+            expect(baseHeight(base, -130, z)).toBeCloseTo(30, 9);
+        }
+        for (const edge of edges) expect(edge).toBeGreaterThanOrEqual(6.5 - 0.1);
+        for (const edge of edges) expect(edge).toBeLessThanOrEqual(10 + 1e-9);
+        for (const foot of feet) expect(foot).toBeLessThanOrEqual(4 + 1e-9);
+        // It does vary: headlands and bays more than a metre apart, gullies
+        expect(Math.max(...edges) - Math.min(...edges)).toBeGreaterThan(1);
+        expect(Math.max(...feet) - Math.min(...feet)).toBeGreaterThan(1);
+    });
+});
+
+describe('the irregular cliff: headlands, height, the face weight', () => {
+    // Coast x = -150, cliff 30 m high over a 10 m face, 20 m plateau
+    const cliff = (vary: NonNullable<BaseTerrain['cliffs'][number]['vary']>): BaseTerrain => ({
+        ...FLAT_COAST,
+        cliffs: [{ id: 'c', line: [[-150, -300], [-150, 300]], height: 30, face: 10, plateau: 20, fade: 20, vary }]
+    });
+    const plain = { face: 0.35, wavelength: 90, gullies: 0, gullyWavelength: 40 };
+
+    it('lets the foot reach up to `headlands` m into the sea where the edge comes out, the sea floor elsewhere', () => {
+        const base = cliff({ ...plain, headlands: 8 });
+        let headland = 0, open = 0;
+        for (let z = -250; z <= 250; z += 5) {
+            // 4 m out into the sea: land on a headland, the sea floor else
+            const h = baseHeight(base, -154, z);
+            if (h > 0) headland++;
+            else { expect(h).toBe(baseHeight(FLAT_COAST, -154, z)); open++; }
+            // Never beyond the headlands' reach
+            expect(baseHeight(base, -158.5, z)).toBe(baseHeight(FLAT_COAST, -158.5, z));
+        }
+        expect(headland).toBeGreaterThan(5);
+        expect(open).toBeGreaterThan(5);
+        // Without headlands the sea stays sea
+        for (let z = -250; z <= 250; z += 5) expect(baseHeight(cliff(plain), -154, z)).toBe(baseHeight(FLAT_COAST, -154, z));
+    });
+
+    it('varies the height by up to its share on the face and the edge, back to the plain height `heightReach` m inland', () => {
+        const base = cliff({ ...plain, height: 0.4, heightWavelength: 60, heightReach: 15 });
+        const tops: number[] = [];
+        for (let z = -250; z <= 250; z += 5) {
+            // 12 m inland: beyond every edge (at most 10 m), within the reach
+            const h = baseHeight(base, -138, z);
+            expect(h).toBeGreaterThanOrEqual(30 * 0.6 - 1e-9);
+            expect(h).toBeLessThanOrEqual(30 * 1.4 + 1e-9);
+            tops.push(h);
+            // From face (10) + reach (15) = 25 m inland on: the plain cliff
+            expect(baseHeight(base, -125, z)).toBe(baseHeight(cliff(plain), -125, z));
+            expect(baseHeight(base, -115, z)).toBe(baseHeight(cliff(plain), -115, z));
+        }
+        expect(Math.max(...tops) - Math.min(...tops)).toBeGreaterThan(6);
+    });
+
+    it('keeps the height where the bake\'s keep weight is 0 (roads), half of it at 0.5', () => {
+        const base = cliff({ ...plain, height: 0.4, heightWavelength: 60, heightReach: 15 });
+        for (let z = -250; z <= 250; z += 25) {
+            expect(baseSample(base, -138, z, () => 0).height).toBeCloseTo(30, 9);
+            const full = baseSample(base, -138, z).height - 30;
+            expect(baseSample(base, -138, z, () => 0.5).height - 30).toBeCloseTo(full / 2, 9);
+        }
+    });
+
+    it('weighs a point as cliff face (no embankment fill) on the face and at its foot, not on the plateau', () => {
+        const base = cliff(plain);
+        // At the foot (coast 0) and in the sea beside the line: 1
+        expect(baseSample(base, -150, 0).cliff).toBe(1);
+        expect(baseSample(base, -170, 0).cliff).toBe(1);
+        // On the plateau beyond the face: 0
+        expect(baseSample(base, -130, 0).cliff).toBe(0);
+        // Far from the line (60 m beyond its 20 m plateau, 40 m fade): 0
+        expect(baseSample(base, -150, 0).cliff).toBe(1);
+        expect(baseSample(FLAT_COAST, -150, 0).cliff).toBe(0);
+        expect(baseSample({ ...base, cliffs: [{ ...base.cliffs[0], line: [[-150, -300], [-150, -100]] }] }, -150, 20).cliff).toBe(0);
+    });
+});
+
+describe('views kept open, slanting and away from the origin', () => {
+    it('measure along and across the wedge from its start', () => {
+        // From (100, 50) towards (700, 850): along (0.6, 0.8), left (-0.8, 0.6)
+        const view = { id: 'v', from: [100, 50] as [number, number], to: [700, 850] as [number, number], height: 20, slope: 0.1, spread: 0.5, length: 200 };
+        const base: BaseTerrain = { ...FLAT_COAST, land: { base: 34, tilt: [0, 0], tiltOrigin: [0, 0] }, views: [view] };
+        const at = (along: number, across: number) => baseHeight(base, 100 + 0.6 * along - 0.8 * across, 50 + 0.8 * along + 0.6 * across);
+        expect(at(50, 0)).toBeCloseTo(15, 9);
+        // 20 m aside at 50 m (half width 25): still the full cap, on both sides
+        expect(at(50, 20)).toBeCloseTo(15, 9);
+        expect(at(50, -20)).toBeCloseTo(15, 9);
+        // Behind the start
+        expect(at(-5, 0)).toBeCloseTo(34, 9);
+    });
+});
+
+describe('the cliff face weight and headlands away from the cliff line', () => {
+    const cliff: BaseTerrain = {
+        ...FLAT_COAST,
+        cliffs: [{ id: 'c', line: [[-150, -300], [-150, 300]], height: 30, face: 10, plateau: 20, fade: 20, vary: { face: 0.35, wavelength: 90, gullies: 0, gullyWavelength: 40, headlands: 8 } }]
+    };
+
+    it('fades the face weight out over 40 m beyond the plateau', () => {
+        // In the sea 40 m from the line (20 m beyond its plateau): halfway
+        expect(baseSample(cliff, -190, 0).cliff).toBeCloseTo(0.5, 12);
+        expect(baseSample(cliff, -220, 0).cliff).toBe(0);
+    });
+
+    it('lets a headland beyond the plateau fade with the cliff (near < 1)', () => {
+        // The same coast, the line 25 m inland: at the shore the cliff's
+        // share 2 m out to sea (27 m from the line) is 1 - S(7/20); on a headland the height is that share of
+        // the full one over the sea floor
+        const inland: BaseTerrain = { ...cliff, cliffs: [{ ...cliff.cliffs[0], line: [[-125, -300], [-125, 300]] }] };
+        const near = 1 - smoothstep(7 / 20);
+        let checked = 0;
+        for (let z = -250; z <= 250; z += 5) {
+            const full = baseHeight(cliff, -152, z), floor = baseHeight(FLAT_COAST, -152, z);
+            if (full <= floor) continue;
+            // Full in the plain cliff (near 1 there), faded here
+            expect(baseHeight(inland, -152, z)).toBeCloseTo(floor + (full - floor) * near, 9);
+            checked++;
+        }
+        expect(checked).toBeGreaterThan(3);
+    });
+});
+
+describe('breakwaters', () => {
+    it('raise a spit over the sea floor along their line: the crest at `height`, down to the floor over `width` m', () => {
+        // A mole from the coast (x = -150) 40 m out along z = 0, crest 1.5 m, 6 m wide
+        const base: BaseTerrain = { ...FLAT_COAST, moles: [{ id: 'm', line: [[-150, 0], [-190, 0]], height: 1.5, width: 6 }] };
+        const floor = (x: number) => baseHeight(FLAT_COAST, x, 0);
+        expect(baseHeight(base, -170, 0)).toBeCloseTo(1.5, 12);
+        // 3 m aside: halfway between the floor there and the crest (bell 0.5)
+        expect(baseHeight(base, -170, 3)).toBeCloseTo(baseHeight(FLAT_COAST, -170, 3) + (1.5 - baseHeight(FLAT_COAST, -170, 3)) * 0.5, 12);
+        expect(baseHeight(base, -170, 6)).toBe(baseHeight(FLAT_COAST, -170, 6));
+        // Beyond its end the sea floor
+        expect(baseHeight(base, -200, 0)).toBe(floor(-200));
+        // Never below the ground: on the beach higher than the crest it stays
+        const high: BaseTerrain = { ...base, moles: [{ id: 'm', line: [[-150, 0], [-100, 0]], height: 0.5, width: 6 }] };
+        expect(baseHeight(high, -110, 0)).toBe(baseHeight(FLAT_COAST, -110, 0));
+    });
+});
+
+describe('views kept open', () => {
+    // From (0, 0) towards +x: the ground below 20 - 0.1 · along in a wedge of
+    // half width 0.5 · along, out to 200 m
+    const view = { id: 'v', from: [0, 0] as [number, number], to: [1000, 0] as [number, number], height: 20, slope: 0.1, spread: 0.5, length: 200 };
+    // Land at 34 m, level: the base 4 m plus a 30 m hill all round
+    const high: BaseTerrain = { ...FLAT_COAST, land: { base: 34, tilt: [0, 0], tiltOrigin: [0, 0] } };
+    const base: BaseTerrain = { ...high, views: [view] };
+
+    it('caps the ground on the wedge\'s axis at height - slope · along, leaves it behind and beyond', () => {
+        expect(baseHeight(base, 50, 0)).toBeCloseTo(15, 9);
+        expect(baseHeight(base, 100, 0)).toBeCloseTo(10, 9);
+        // Behind the start and past the length: untouched
+        expect(baseHeight(base, -10, 0)).toBeCloseTo(34, 9);
+        expect(baseHeight(base, 210, 0)).toBeCloseTo(34, 9);
+        // In the last 30 % the cap eases out: at 170 m halfway
+        expect(baseHeight(base, 170, 0)).toBeCloseTo(34 - (34 - 3) * 0.5, 9);
+    });
+
+    it('keeps its full cap within the half width, eases out over half width + 20 m beside it, and leaves lower ground alone', () => {
+        // along 100: half width 50, the cap 10
+        expect(baseHeight(base, 100, 49)).toBeCloseTo(10, 9);
+        // 50 + (50 + 20) / 2 = 85 m across: halfway
+        expect(baseHeight(base, 100, -85)).toBeCloseTo(34 - 24 * 0.5, 9);
+        expect(baseHeight(base, 100, 121)).toBeCloseTo(34, 9);
+        // Ground already below the cap stays
+        const low: BaseTerrain = { ...FLAT_COAST, land: { base: 6, tilt: [0, 0], tiltOrigin: [0, 0] }, views: [view] };
+        expect(baseHeight(low, 50, 0)).toBeCloseTo(6, 9);
+        // Not on a road: the keep weight
+        expect(baseSample(base, 50, 0, () => 0).height).toBeCloseTo(34, 9);
+    });
 });
 
 describe('ridges and canyons', () => {

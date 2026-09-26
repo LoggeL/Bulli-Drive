@@ -115,6 +115,9 @@ export const PoisFileSchema = v.strictObject({
         width: Positive, length: Positive, height: Positive,
         look: v.picklist(RAMP_LOOKS)
     }))),
+    // Breakwaters: a rock armour along each line (plants.ts moleRocks); the
+    // spit under it is base.json's (moles)
+    moles: v.optional(v.array(v.strictObject({ id: Id, line: v.pipe(v.array(v.tuple([Finite, Finite])), v.minLength(2)) }))),
     // Party arena "Cannery Lot" (12)
     arena: v.strictObject({
         // roads.json area of the lot

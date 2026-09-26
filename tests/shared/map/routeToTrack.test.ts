@@ -200,7 +200,7 @@ describe('snapYaw and oblique branches', () => {
         expect(junctionBarriers(net, route)).toEqual([{ kind: 'barrier', x: 0, z: 7, yaw: 0, length: 17 }]);
     });
 
-    it('keeps a barrier across a 45° branch oblique (it needs the obox collider of M3)', () => {
+    it('keeps a barrier across a 45° branch oblique, pushed into the branch until it is off the route\'s roadway', () => {
         const net = buildRoadNetwork(network(
             [node('w', -100, 0), node('j', 0, 0, 'junction'), node('e', 100, 0), node('ne', 70, -70)],
             [edge('we', 'w', 'j'), edge('ej', 'j', 'e'), edge('diag', 'j', 'ne')]
@@ -212,7 +212,12 @@ describe('snapYaw and oblique branches', () => {
         // North-east: forward (sin yaw, cos yaw) = (0.707, -0.707), yaw 3π/4
         expect(barrier).toMatchObject({ kind: 'barrier', yaw: 2.356194, length: 10 });
         expect(barrier.kind === 'barrier' && isAxisYaw(barrier.yaw)).toBe(false);
-        expect(barrier.kind === 'barrier' && Math.hypot(barrier.x, barrier.z)).toBeCloseTo(7, 3);
+        // At the trim radius (7 m) its eastern end would stand on the straight
+        // route (z > -5.5: half its 10 m width plus the 0.5 m clearance). A
+        // row d m into the branch, 10 m long and 0.6 m deep, reaches up to
+        // z = -0.707 d + 5 × 0.707 + 0.3 × 0.707 = -0.707 d + 3.748, off the
+        // roadway from d = 9.248 / 0.707 = 13.08 m: in 0.5 m steps from 7 m, 13.5 m
+        expect(barrier.kind === 'barrier' && Math.hypot(barrier.x, barrier.z)).toBeCloseTo(13.5, 3);
     });
 });
 

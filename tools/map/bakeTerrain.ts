@@ -13,18 +13,18 @@ import {
     DEFAULT_MAX_GRADE, FLAT_MARGIN, flatHalfWidths, longitudinalProfile, movingAverage,
     PROFILE_SMOOTH_WINDOW, TerrainShaper, type ConflictReport, type CorridorLine, type ProfilePin
 } from '../../src/shared/map/corridor.js';
-import { pointInPolygon } from '../../src/shared/map/geometry.js';
+import { pointInPolygon, polygonEdgeDistance } from '../../src/shared/map/geometry.js';
 import {
     encodeHeightfield, quantizeHeight, zoneCols, zoneRows, type GridSpec, type Heightfield
 } from '../../src/shared/map/heightfield.js';
 import {
-    buildRoadNetwork, junctionRadius, roadChains, type RoadChain, type RoadEdgeData, type RoadNetwork
+    buildRoadNetwork, junctionRadius, nearestRoad, roadChains, type RoadChain, type RoadEdgeData, type RoadNetwork
 } from '../../src/shared/map/roadNetwork.js';
 import type { MapFile, ZonesFile } from '../../src/shared/map/mapFiles.js';
 import type { RoadNetworkFile } from '../../src/shared/map/roadSchema.js';
 import { pointAt } from '../../src/shared/map/spline.js';
 import { SURFACE, ZONE } from '../../src/shared/map/types.js';
-import { baseSample, regionSurface, type BaseTerrain } from './baseTerrain.js';
+import { baseSample, regionSurface, smoothstep, type BaseTerrain, type KeepWeight } from './baseTerrain.js';
 
 // Bumped whenever the bake's algorithm changes its output; part of the
 // sourceHash, so a stale terrain.bhf is detected
@@ -320,6 +320,47 @@ export function areaMeanHeight(spec: GridSpec, natural: Float64Array, polygon: r
     return count ? sum / count : sampleGrid(spec, natural, polygon[0][0], polygon[0][1]);
 }
 
+// The cliffs' height variation and the views (baseTerrain.ts) stay off the
+// roads' centre lines and the areas without a fixed height. A road's
+// profile samples the natural ground on its centre line only (bilinear on
+// the 2 m grid): no variation within KEEP_ROAD_NEAR m of it, all of it from
+// KEEP_ROAD_FAR m on (the corridor's flat zone and embankments shape the
+// ground beside it as ever). An area without `y` takes the mean of the
+// ground inside: none within KEEP_AREA_NEAR m of it, all from
+// KEEP_AREA_FAR m on; an area with `y` stays at it whatever the ground.
+export const KEEP_ROAD_NEAR = 3;
+export const KEEP_ROAD_FAR = 6;
+export const KEEP_AREA_NEAR = 6;
+export const KEEP_AREA_FAR = 22;
+// Beside a road the embankments fill even on a cliff face, within this
+// many m of its flat zone (the road's shoulder rests on the fill)
+export const FILL_ROAD_CLEAR = 8;
+// A point counts as on a cliff's face (no fill) from this weight on
+// (BaseSample.cliff)
+export const CLIFF_NO_FILL = 0.5;
+
+// Whether (x, z) lies within FILL_ROAD_CLEAR m of a road's flat zone
+function besideRoad(net: RoadNetwork, x: number, z: number): boolean {
+    const hit = nearestRoad(net, x, z, net.maxHalfWidth + 8 + FILL_ROAD_CLEAR);
+    if (!hit) return false;
+    const flat = flatHalfWidths(hit.edge.profile);
+    return hit.distance <= Math.max(flat.left, flat.right) + FILL_ROAD_CLEAR;
+}
+
+export function terrainKeep(net: RoadNetwork): KeepWeight {
+    return (x, z) => {
+        let keep = 1;
+        const hit = nearestRoad(net, x, z, KEEP_ROAD_FAR);
+        if (hit) keep = smoothstep((hit.distance - KEEP_ROAD_NEAR) / (KEEP_ROAD_FAR - KEEP_ROAD_NEAR));
+        for (const area of net.areas) {
+            if (area.y !== undefined) continue;
+            const d = pointInPolygon(area.polygon, x, z) ? 0 : polygonEdgeDistance(area.polygon, x, z);
+            keep = Math.min(keep, smoothstep((d - KEEP_AREA_NEAR) / (KEEP_AREA_FAR - KEEP_AREA_NEAR)));
+        }
+        return keep;
+    };
+}
+
 export function bakeTerrain(input: BakeInput): BakeResult {
     const { spec, base, map, zones: zoneFile } = input;
     const timings: Record<string, number> = {};
@@ -330,15 +371,19 @@ export function bakeTerrain(input: BakeInput): BakeResult {
     lap('network');
 
     // 1. Natural ground
+    const keep = terrainKeep(net);
     const n = spec.cols * spec.rows;
     const natural = new Float64Array(n);
     const coast = new Float64Array(n);
+    // The cliffs' faces and the sea at their foot: no embankment fill
+    const noFill = new Uint8Array(n);
     for (let j = 0; j < spec.rows; j++) {
         const z = spec.originZ + j * spec.cellSize;
         for (let i = 0; i < spec.cols; i++) {
-            const sample = baseSample(base, spec.originX + i * spec.cellSize, z);
+            const sample = baseSample(base, spec.originX + i * spec.cellSize, z, keep);
             natural[j * spec.cols + i] = sample.height;
             coast[j * spec.cols + i] = sample.coast;
+            if (sample.cliff > CLIFF_NO_FILL && !besideRoad(net, spec.originX + i * spec.cellSize, z)) noFill[j * spec.cols + i] = 1;
         }
     }
     lap('natural');
@@ -356,7 +401,7 @@ export function bakeTerrain(input: BakeInput): BakeResult {
         polygon: area.polygon, y: areaHeights[i], margin: FLAT_MARGIN,
         walls: area.walls ?? false, surface: SURFACE[area.surface]
     }));
-    const { heights, conflicts, conflictMask } = shaper.finish();
+    const { heights, conflicts, conflictMask } = shaper.finish(noFill);
     lap('corridors');
 
     // 4. Surfaces

@@ -2,7 +2,7 @@
   "mapId": "bulli-bay",
   "mapVersion": 4,
   "bakeVersion": 2,
-  "sourceHash": "daef5a29b8751adc8952ce58721275e2",
+  "sourceHash": "7e6c975c7a95572c29405e49c1ea9d81",
   "grid": {
     "cols": 1001,
     "rows": 1001,
@@ -17,13 +17,13 @@
   "files": {
     "terrain": {
       "path": "terrain.bhf",
-      "hash": "a143177cba83d0a4",
+      "hash": "a10605748c4b8471",
       "bytes": 3068567,
-      "gzipBytes": 360592,
-      "brotliBytes": 307207,
+      "gzipBytes": 362747,
+      "brotliBytes": 307915,
       "layers": {
-        "heights": 297313,
-        "surface": 7995,
+        "heights": 299432,
+        "surface": 7831,
         "zones": 279
       }
     }
@@ -31,10 +31,10 @@
   "stats": {
     "edges": 122,
     "nodes": 88,
-    "areas": 11,
-    "roadKm": 19.361,
+    "areas": 12,
+    "roadKm": 19.367,
     "minHeight": -12,
-    "maxHeight": 143.38,
+    "maxHeight": 136.94,
     "conflicts": 0,
     "maxConflictGap": 0.05,
     "infeasibleChains": 0,

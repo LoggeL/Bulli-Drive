@@ -50,14 +50,59 @@ export const BaseTerrainSchema = v.strictObject({
     // Cliff edge along the coast: within `plateau` metres of the line the
     // land is at least `height`, dropping to the sea over `face` metres of
     // coast distance; the effect fades out over `fade` metres beyond
+    // An irregular face (`vary`, optional): its edge comes up to `face` of
+    // the face width closer to the sea (value noise of `wavelength` m along
+    // the coast: bays and headlands), gullies cut its foot up to `gullies` m
+    // inland (noise of `gullyWavelength` m), and on the headlands (where the
+    // edge comes out) the foot reaches up to `headlands` m into the sea.
+    // `height` (optional) varies the cliff's height by up to that share
+    // (two octaves of noise of `heightWavelength` m): full on the face,
+    // easing back to `height` over `heightReach` m inland of the plain face
+    // width, and only as far as the bake's keep weight allows (none on and
+    // next to the roads and areas, bakeTerrain.ts terrainKeep), so the roads
+    // on the plateau keep their profile.
     cliffs: v.array(v.strictObject({
         id: v.string(),
         line: v.pipe(v.array(Point), v.minLength(2)),
         height: Positive,
         face: Positive,
         plateau: NonNegative,
-        fade: Positive
+        fade: Positive,
+        vary: v.optional(v.strictObject({
+            face: v.pipe(v.number(), v.minValue(0), v.maxValue(0.9)),
+            wavelength: Positive,
+            gullies: NonNegative,
+            gullyWavelength: Positive,
+            headlands: v.optional(NonNegative),
+            height: v.optional(v.pipe(v.number(), v.minValue(0), v.maxValue(0.6))),
+            heightWavelength: v.optional(Positive),
+            heightReach: v.optional(Positive)
+        }))
     })),
+    // Breakwaters: a spit along `line` reaching `height` on its crest, down
+    // to the ground (or the sea floor) over `width` m to each side with the
+    // bell profile; the highest ground wins
+    moles: v.optional(v.array(v.strictObject({
+        id: v.string(),
+        line: v.pipe(v.array(Point), v.minLength(2)),
+        height: Finite,
+        width: Positive
+    }))),
+    // A view kept open (a lookout): in the wedge from `from` towards `to`
+    // (half width `spread` · the distance along it, easing out beyond),
+    // out to `length` m (easing out over its last 30 %), the
+    // ground stays below `height` - `slope` · the distance along the wedge
+    // (after the noise), as far as the bake's keep weight allows (not on
+    // the roads)
+    views: v.optional(v.array(v.strictObject({
+        id: v.string(),
+        from: Point,
+        to: Point,
+        height: Finite,
+        slope: NonNegative,
+        spread: Positive,
+        length: Positive
+    }))),
     // Ridges: a crest along `line` ([x, z, height] per vertex; the line is
     // smoothed as a centripetal Catmull-Rom spline, the height interpolated
     // along it), falling to 0 at `width` metres with the bell profile of the
@@ -369,11 +414,28 @@ export interface BaseSample {
     height: number;
     // Signed distance to the coastline, positive on land
     coast: number;
+    // How much (0..1) the point lies on a cliff's face or at its foot (the
+    // bake does not fill embankments there)
+    cliff: number;
 }
 
-export function baseSample(base: BaseTerrain, x: number, z: number): BaseSample {
+/**
+ * Weight (0..1) of the terrain variations the bake keeps off its roads and
+ * areas at (x, z): 1 far from them, 0 on and next to them.
+ */
+export type KeepWeight = (x: number, z: number) => number;
+
+const KEEP_ALL: KeepWeight = () => 1;
+
+export function baseSample(base: BaseTerrain, x: number, z: number, keep: KeepWeight = KEEP_ALL): BaseSample {
     const coast = signedPolygonDistance(base.coast, x, z);
-    if (coast <= 0) return { height: base.sea.floor * smoothstep(-coast / base.sea.shelf), coast };
+    if (coast <= 0) {
+        const floor = base.sea.floor * smoothstep(-coast / base.sea.shelf);
+        // A headland of a cliff reaching into the sea
+        const headland = cliffHeadland(base, x, z, coast, keep);
+        const ground = headland === null ? floor : floor + (headland.height - floor) * headland.near;
+        return { height: moleHeight(base, x, z, ground), coast, cliff: cliffNear(base, x, z) };
+    }
 
     let land = base.land.base
         + base.land.tilt[0] * (x - base.land.tiltOrigin[0])
@@ -396,16 +458,106 @@ export function baseSample(base: BaseTerrain, x: number, z: number): BaseSample 
     const inland = smoothstep((coast - base.beach.width) / base.beach.blend);
     const amplitude = noiseAmplitude(base.noise, x, z);
     if (amplitude > 0) land += amplitude * inland * terrainNoise(base.noise, base.seed, x, z);
+    for (const view of base.views ?? []) land = viewCap(view, x, z, land, keep);
 
     const beach = base.beach.top * smoothstep(coast / base.beach.width);
     let height = beach + (land - beach) * inland;
-    for (const cliff of base.cliffs) {
+    let face = 0;
+    base.cliffs.forEach((cliff, i) => {
         const near = 1 - smoothstep((polylineDistance(cliff.line, x, z) - cliff.plateau) / cliff.fade);
-        if (near <= 0) continue;
-        const cliffHeight = smoothstep(coast / cliff.face) * Math.max(land, cliff.height);
+        if (near <= 0) return;
+        const shape = cliffShape(base, i, x, z, coast, keep);
+        const cliffHeight = shape.rise * Math.max(land, shape.height);
         height += (cliffHeight - height) * near;
+        face = Math.max(face, faceNear(cliff, x, z) * (1 - shape.rise));
+    });
+    return { height: moleHeight(base, x, z, height), coast, cliff: face };
+}
+
+// The ground with the breakwaters' spits over it
+function moleHeight(base: BaseTerrain, x: number, z: number, ground: number): number {
+    for (const mole of base.moles ?? []) {
+        const d = polylineDistance(mole.line, x, z);
+        if (d >= mole.width) continue;
+        const h = ground + (mole.height - ground) * bell(d / mole.width);
+        if (h > ground) ground = h;
     }
-    return { height, coast };
+    return ground;
+}
+
+// The cliff face's share of a point by its distance to the cliff line: 1
+// within the plateau, gone FACE_FADE m beyond it (the cliff's own fade is
+// the long run-out of its height)
+const FACE_FADE = 40;
+function faceNear(cliff: BaseTerrain['cliffs'][number], x: number, z: number): number {
+    return 1 - smoothstep((polylineDistance(cliff.line, x, z) - cliff.plateau) / FACE_FADE);
+}
+
+// How near (0..1) a point over the sea lies to a cliff face
+function cliffNear(base: BaseTerrain, x: number, z: number): number {
+    let near = 0;
+    for (const cliff of base.cliffs) near = Math.max(near, faceNear(cliff, x, z));
+    return near;
+}
+
+// The ground under a view's wedge (base.json views); its sides ease out
+// over its half width plus VIEW_EDGE m
+const VIEW_EDGE = 20;
+function viewCap(view: NonNullable<BaseTerrain['views']>[number], x: number, z: number, land: number, keep: KeepWeight): number {
+    const ex = view.to[0] - view.from[0], ez = view.to[1] - view.from[1];
+    const el = Math.sqrt(ex * ex + ez * ez);
+    const dx = ex / el, dz = ez / el;
+    const px = x - view.from[0], pz = z - view.from[1];
+    const along = px * dx + pz * dz;
+    if (along <= 0 || along >= view.length) return land;
+    const cap = view.height - view.slope * along;
+    if (land <= cap) return land;
+    const across = Math.abs(px * dz - pz * dx);
+    const half = view.spread * along;
+    const w = (1 - smoothstep((across - half) / (half + VIEW_EDGE))) * (1 - smoothstep((along - 0.7 * view.length) / (0.3 * view.length)));
+    return w > 0 ? land - (land - cap) * w * keep(x, z) : land;
+}
+
+// Seed offset of a cliff's noises (per cliff: base seed + CLIFF_SEED · (index + 1))
+export const CLIFF_SEED = 4099;
+
+// A cliff at coast distance `coast`: how far up its face (0 at the foot, 1
+// at the edge and beyond) and its height there
+function cliffShape(base: BaseTerrain, i: number, x: number, z: number, coast: number, keep: KeepWeight): { rise: number; height: number } {
+    const cliff = base.cliffs[i];
+    const vary = cliff.vary;
+    if (!vary) return { rise: smoothstep(coast / cliff.face), height: cliff.height };
+    const seed = base.seed + CLIFF_SEED * (i + 1);
+    // The edge only moves towards the sea, the foot inland in the gullies
+    // and out into the sea on the headlands (where the edge comes out):
+    // beyond `face` metres of the coast the plateau stays
+    const out = 0.5 + 0.5 * valueNoise(x / vary.wavelength, z / vary.wavelength, seed);
+    const top = cliff.face * (1 - vary.face * out);
+    const foot = vary.gullies * (0.5 + 0.5 * valueNoise(x / vary.gullyWavelength, z / vary.gullyWavelength, seed + 1))
+        - (vary.headlands ?? 0) * smoothstep(2 * out - 1);
+    let height = cliff.height;
+    if (vary.height) {
+        const reach = 1 - smoothstep((coast - cliff.face) / (vary.heightReach ?? cliff.face));
+        const w = reach > 0 ? reach * keep(x, z) : 0;
+        if (w > 0) height *= 1 + vary.height * w * fbm(x, z, seed + 2, vary.heightWavelength ?? vary.wavelength, 2, 0.5);
+    }
+    return { rise: smoothstep((coast - foot) / Math.max(1, top - foot)), height };
+}
+
+// The highest headland of the cliffs over the sea at (x, z) (coast ≤ 0),
+// with its weight near the cliff line; null where none reaches out
+function cliffHeadland(base: BaseTerrain, x: number, z: number, coast: number, keep: KeepWeight): { height: number; near: number } | null {
+    let best: { height: number; near: number } | null = null;
+    base.cliffs.forEach((cliff, i) => {
+        if (!cliff.vary?.headlands || -coast >= cliff.vary.headlands) return;
+        const near = 1 - smoothstep((polylineDistance(cliff.line, x, z) - cliff.plateau) / cliff.fade);
+        if (near <= 0) return;
+        const shape = cliffShape(base, i, x, z, coast, keep);
+        if (shape.rise <= 0) return;
+        const height = shape.rise * shape.height;
+        if (!best || height * near > best.height * best.near) best = { height, near };
+    });
+    return best;
 }
 
 export function baseHeight(base: BaseTerrain, x: number, z: number): number {

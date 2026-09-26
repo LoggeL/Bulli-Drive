@@ -395,8 +395,8 @@ async function captureDesktop(browser: Browser, baseURL: string, options: Option
 
     // A hairpin of the Ridge Road (chase camera), the lookout over the bay
     await chase('ridge', [471.3, -390.1, -3.133]);
-    // (from the knoll above its lot, behind the coin telescopes)
-    await still('lookout', [690, -790, 0], view([617.6, 3.5, -747.6], [-300, 60, 100], 55));
+    // (from its lot's railing, behind the coin telescopes, towards the pier)
+    await still('lookout', [690, -790, 0], view([648, 3.2, -761], [-640, 0, -20], 50));
 
     // The harbour: Harbor Boulevard with its halls (chase camera), the
     // quay cranes from the beach

@@ -72,12 +72,13 @@ void roadMarkings() {
 	float across = vRoad.x, along = vRoad.y, a = abs( across );
 	float hw = vRoadB.x;
 	if ( vRoadA.w >= 7.5 ) {
-		// A lot: stalls along both long sides (u along, v inwards)
+		// A lot: stalls along both long sides (u along, v inwards), from
+		// 1.4 m inside the rim (the arena's fence stands 0.5 m inside it)
 		float u = vRoad.x, v = vRoad.y, depth = vRoadB.x, len = vRoadB.w;
 		float row = min( v, depth - v );
 		float inside = step( 2.5, u ) * step( u, len - 2.5 );
-		float stall = roadLine( mod( u + 1.35, 2.7 ) - 1.35, 0.12 ) * step( 0.8, row ) * step( row, 5.6 );
-		paintMask = max( paintMask, inside * max( stall, roadLine( row - 5.6, 0.12 ) ) );
+		float stall = roadLine( mod( u + 1.35, 2.7 ) - 1.35, 0.12 ) * step( 1.4, row ) * step( row, 6.2 );
+		paintMask = max( paintMask, inside * max( stall, roadLine( row - 6.2, 0.12 ) ) );
 		return;
 	}
 	if ( vRoadA.x < -0.5 || a > 50.0 ) return;
@@ -177,8 +178,8 @@ const CONCRETE_COLOR = /* glsl */`
 			diffuseColor.rgb *= 1.0 - 0.35 * joint;
 		}
 		vec4 n = texture2D( uNoise, vWPos.xz / 13.0 );
-		diffuseColor.rgb *= mix( 0.86, 1.06, n.r );
-		diffuseColor.rgb = mix( diffuseColor.rgb, diffuseColor.rgb * vec3( 0.8, 0.76, 0.7 ), smoothstep( 0.62, 0.7, n.a ) * 0.6 );
+		diffuseColor.rgb *= mix( 0.9, 1.06, n.r );
+		diffuseColor.rgb = mix( diffuseColor.rgb, diffuseColor.rgb * vec3( 0.86, 0.85, 0.83 ), smoothstep( 0.6, 0.72, n.a ) * 0.5 );
 	}`;
 
 // Dirt, gravel and sand tracks: ruts in the wheel tracks, a ragged edge
@@ -263,11 +264,13 @@ const LOOKS: Record<RoadLayer, LayerLook> = {
         maps: () => pbr('asphalt'), period: 4, albedo: 0x55524e, color: ASPHALT_COLOR, envMapIntensity: 0.55, offset: -2, paint: true,
         rough: 'roughnessFactor = clamp( roughnessFactor * 0.9 - 0.12 * wearMask - 0.2 * paintMask, 0.42, 1.0 );'
     },
-    concrete: { maps: () => pbr('sidewalk'), period: 3, albedo: 0xa9a39a, color: CONCRETE_COLOR, envMapIntensity: 0.6, offset: -2, paint: true },
+    // Concrete and sidewalks a little cool: under the warm evening sun
+    // (look.ts) they read as pale grey, not as the earth's brown
+    concrete: { maps: () => pbr('sidewalk'), period: 3, albedo: 0xc8e2e6, tint: [1.1, 1.33, 1.42], color: CONCRETE_COLOR, envMapIntensity: 0.7, offset: -2, paint: true },
     dirt: { maps: () => pbr('sand'), period: 3, albedo: 0x8a7458, tint: [0.72, 0.58, 0.45], color: TRACK_COLOR, envMapIntensity: 0.4, offset: -2, paint: false },
     gravel: { maps: () => pbr('roof_gravel'), period: 2.5, albedo: 0x8f887d, tint: [0.92, 0.88, 0.82], color: TRACK_COLOR, envMapIntensity: 0.4, offset: -2, paint: false },
     sand: { maps: () => pbr('sand'), period: 3, albedo: 0xc9b596, tint: [0.95, 0.93, 0.9], color: TRACK_COLOR, envMapIntensity: 0.45, offset: -2, paint: false },
-    walk: { maps: () => pbr('sidewalk'), period: 2, albedo: 0xb9b2a8, color: WALK_COLOR, envMapIntensity: 0.6, offset: -1, paint: false },
+    walk: { maps: () => pbr('sidewalk'), period: 2, albedo: 0xcee6ea, tint: [1.1, 1.33, 1.42], color: WALK_COLOR, envMapIntensity: 0.7, offset: -1, paint: false },
     pavers: { maps: () => pbr('sidewalk'), period: 2, albedo: 0xb9b2a8, color: PAVER_COLOR, envMapIntensity: 0.6, offset: -1, paint: false }
 };
 
@@ -337,7 +340,7 @@ function toGeometry(arrays: MeshArrays): THREE.BufferGeometry {
 
 // The 4 × 4 blocks of 500 m over the map's data square (-1000 to 1000 m)
 const BLOCK_SIZE = 500;
-function roadBlock(x: number, z: number): number {
+export function roadBlock(x: number, z: number): number {
     const i = Math.min(3, Math.max(0, Math.floor((x + 1000) / BLOCK_SIZE)));
     const j = Math.min(3, Math.max(0, Math.floor((z + 1000) / BLOCK_SIZE)));
     return j * 4 + i;

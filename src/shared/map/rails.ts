@@ -31,12 +31,15 @@ export const RAIL_RADIUS = 0.15;
 export const RAIL_MAX_SEGMENT = 8;
 export const RAIL_MAX_SAGITTA = 0.05;
 export const DEFAULT_RAIL_OFFSET = 0.5;
-// Fences (the arena, the pier railing) cannot be jumped over
+// Fences (the arena, the pier railing) cannot be jumped over; a quay's
+// bollards with their chain stand lower
+export const BOLLARD_TOP = 0.7;
 export const RAIL_TOPS: Record<RailKind, number> = {
     wbeam: RAIL_TOP,
     concrete: RAIL_TOP,
     wood: RAIL_TOP,
-    fence: Infinity
+    fence: Infinity,
+    bollard: BOLLARD_TOP
 };
 
 // A rail keeps out of a junction: it starts this far beyond the junction's
@@ -161,8 +164,8 @@ export function areaRailSides(area: RoadArea, rail: Pick<AreaRail, 'from' | 'to'
 
 // The railing's line: the polygon's sides from vertex `from` to `to`,
 // moved `offset` inwards; inner corners are mitred (the moved sides meet),
-// the two ends move straight in. A rail round the whole outline is closed
-// (its last point is its first).
+// the two ends move straight in, then flare out if the rail says so. A
+// rail round the whole outline is closed (its last point is its first).
 export function areaRailLine(area: RoadArea, rail: AreaRail): Vec2[] {
     const polygon = area.polygon;
     const n = polygon.length;
@@ -195,6 +198,19 @@ export function areaRailLine(area: RoadArea, rail: AreaRail): Vec2[] {
         const dot = ax * bx + az * bz;
         const scale = offset / (1 + dot > 1e-6 ? (1 + dot) : 1);
         points.push([polygon[vertex][0] + (ax + bx) * scale, polygon[vertex][1] + (az + bz) * scale]);
+    }
+    if (rail.flare && !closed) {
+        const [along, out] = rail.flare;
+        // Past each end along its side's direction, then outwards (against
+        // the inward normal)
+        const end = (side: number, vertex: Vec2, sign: number): Vec2 => {
+            const a = polygon[side], b = polygon[(side + 1) % n];
+            const len = length2(b[0] - a[0], b[1] - a[1]);
+            const [nx, nz] = normal(side);
+            return [vertex[0] + (b[0] - a[0]) / len * along * sign - nx * out, vertex[1] + (b[1] - a[1]) / len * along * sign - nz * out];
+        };
+        points.unshift(end(sides[0], points[0], -1));
+        points.push(end(sides[sides.length - 1], points[points.length - 1], 1));
     }
     return points;
 }

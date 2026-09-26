@@ -17,7 +17,7 @@ import { PLANT_COLLIDERS } from './plants.js';
 import type { RoadArea } from './roadSchema.js';
 import { insideCorridor, isOnRoad, junctionRadius, JUNCTION_TRIM_EXTRA, type RoadEdgeData, type RoadNetwork } from './roadNetwork.js';
 import { leftNormal, pointAt } from './spline.js';
-import { boxContains, toMillimetre, type BoxIndex, type OBox } from './structures.js';
+import { boxContains, toMicro, toMillimetre, type BoxIndex, type OBox } from './structures.js';
 import { isPaved, SURFACE, ZONE } from './types.js';
 
 export type FurnitureKind = 'lamp' | 'signal' | 'hydrant' | 'trashCan' | 'bench';
@@ -64,6 +64,14 @@ export const FOUNTAIN_BENCHES = 8;
 export const FOUNTAIN_BENCH_RING = 11;
 // The narrowest sidewalk with furniture
 export const MIN_SIDEWALK = 1.5;
+// Lights round the large lots (parking, the gas station): every
+// LOT_LAMP_SPACING m along the rim, LOT_LAMP_INSET m inside it, the arm
+// over the lot, clear of the road entering it by LOT_LAMP_ROAD_CLEAR m
+export const LOT_LAMP_SPACING = 30;
+export const LOT_LAMP_INSET = 1;
+export const LOT_LAMP_ROAD_CLEAR = 2;
+// A lot of at least this area (m²) gets lights
+export const LIT_LOT_AREA = 3000;
 // Clearances (m) round a piece's collider
 const CLEAR_BUILDING = 0.2;
 const CLEAR_OTHER = 0.6;
@@ -78,6 +86,21 @@ export interface FurnitureContext {
     plants: readonly Plant[];
     // Fountains on a square, with a ring of benches round them
     fountains: readonly Vec2[];
+    // Lots with lights round their rim (litLots)
+    lots?: readonly RoadArea[];
+}
+
+// Twice the signed area of a polygon (positive counter-clockwise in x-z)
+function signedArea2(polygon: readonly Vec2[]): number {
+    let sum = 0;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) sum += polygon[j][0] * polygon[i][1] - polygon[i][0] * polygon[j][1];
+    return sum;
+}
+
+/** The lots that get lights: paved, not a square, at least LIT_LOT_AREA large, not the arena (it has its masts). */
+export function litLots(areas: readonly RoadArea[], arena: string): RoadArea[] {
+    return areas.filter(area => area.id !== arena && area.markings !== 'plazaPavers' && (area.surface === 'asphalt' || area.surface === 'concrete')
+        && Math.abs(signedArea2(area.polygon)) / 2 >= LIT_LOT_AREA);
 }
 
 /** Radius of a piece's footprint (the bench: its half length). */
@@ -172,10 +195,57 @@ function fountainBenches(ctx: FurnitureContext, out: Furniture[]): void {
     }
 }
 
+// Lights round each lit lot: along every side, LOT_LAMP_INSET inside,
+// the arm (local +x) pointing into the lot; not on the road that enters
+// it, the spawns, a jump's run-up or landing, a landmark, a plant or
+// another piece
+function lotLamps(ctx: FurnitureContext, out: Furniture[]): void {
+    for (const area of ctx.lots ?? []) {
+        const polygon = area.polygon;
+        const inward = signedArea2(polygon) > 0 ? 1 : -1;
+        for (let i = 0; i < polygon.length; i++) {
+            const [ax, az] = polygon[i], [bx, bz] = polygon[(i + 1) % polygon.length];
+            const length = Math.sqrt((bx - ax) * (bx - ax) + (bz - az) * (bz - az));
+            const tx = (bx - ax) / length, tz = (bz - az) / length;
+            // Inward normal: left of the side's direction on a counter-clockwise polygon
+            const nx = -tz * inward, nz = tx * inward;
+            const count = Math.floor(length / LOT_LAMP_SPACING);
+            const first = (length - (count - 1) * LOT_LAMP_SPACING) / 2;
+            for (let k = 0; k < count; k++) {
+                const s = first + k * LOT_LAMP_SPACING;
+                const x = toMillimetre(ax + tx * s + nx * LOT_LAMP_INSET), z = toMillimetre(az + tz * s + nz * LOT_LAMP_INSET);
+                if (!lotLampFits(ctx, out, x, z)) continue;
+                // Local x = (uz, -ux) = the inward normal
+                out.push({ kind: 'lamp', x, z, ux: toMicro(-nz), uz: toMicro(nx) });
+            }
+        }
+    }
+}
+
+function lotLampFits(ctx: FurnitureContext, placed: readonly Furniture[], x: number, z: number): boolean {
+    const r = FURNITURE_COLLIDERS.lamp.r;
+    if (!pointInPolygon(ctx.boundary, x, z)) return false;
+    if (insideCorridor(ctx.net, x, z, LOT_LAMP_ROAD_CLEAR + r)) return false;
+    if (ctx.buildings.contains(x, z, r + CLEAR_BUILDING)) return false;
+    for (const box of ctx.reserved) if (boxContains(box, x, z, r)) return false;
+    for (const plant of ctx.plants) {
+        const reach = r + PLANT_COLLIDERS[plant.kind].r * plant.size + CLEAR_OTHER;
+        const dx = plant.x - x, dz = plant.z - z;
+        if (dx * dx + dz * dz < reach * reach) return false;
+    }
+    for (const piece of placed) {
+        const reach = r + furnitureRadius(piece.kind) + CLEAR_OTHER;
+        const dx = piece.x - x, dz = piece.z - z;
+        if (dx * dx + dz * dz < reach * reach) return false;
+    }
+    return true;
+}
+
 /**
  * Every piece of street furniture: the signals at the signalled junctions
  * (nodes in id order), then per edge (id order) a hydrant, the lights, the
- * benches with their trash cans, then the benches round the fountains.
+ * benches with their trash cans, then the benches round the fountains and
+ * the lights round the lots.
  */
 export function placeFurniture(ctx: FurnitureContext): Furniture[] {
     const out: Furniture[] = [];
@@ -223,5 +293,6 @@ export function placeFurniture(ctx: FurnitureContext): Furniture[] {
         }
     }
     fountainBenches(ctx, out);
+    lotLamps(ctx, out);
     return out;
 }

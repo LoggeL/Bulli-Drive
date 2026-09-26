@@ -380,6 +380,41 @@ describe('TerrainShaper: a level road across a 20 % slope', () => {
     });
 });
 
+describe('TerrainShaper: no fill on a cliff face', () => {
+    // A level road (y = 0) along x at z = 0 on a plateau, the ground dropping
+    // 2 m per m beyond z = -12 (a face steeper than the 1 : 1.5 fill); the
+    // face from z = -14 on is marked no-fill
+    const shape = (mark: boolean) => {
+        const natural = plane((_, z) => (z < -12 ? 2 * (z + 12) : 0));
+        const noFill = Uint8Array.from(plane((_, z) => (z <= -14 ? 1 : 0)));
+        const shaper = new TerrainShaper(GRID, natural);
+        shaper.addLine(straight(-200, 0, 200, 0, () => 0));
+        return { natural, ...shaper.finish(mark ? noFill : undefined) };
+    };
+
+    it('leaves the face as it is where marked, fills at 1 : 1.5 elsewhere', () => {
+        const filled = shape(false), kept = shape(true);
+        // The fill at 1 : 1.5 from the flat zone (half 9): at z = -16, 7 m
+        // out, -7/1.5 instead of the face's -8
+        expect(at(filled.heights, 20, -16)).toBeCloseTo(-7 / 1.5, 12);
+        expect(at(kept.heights, 20, -16)).toBe(-8);
+        expect(at(kept.heights, 20, -30)).toBe(-36);
+        // Unmarked ground next to it still takes the fill; the flat zone stays
+        expect(at(kept.heights, 20, -12)).toBe(at(filled.heights, 20, -12));
+        for (const z of [-8, 0, 8]) expect(at(kept.heights, 20, z)).toBeCloseTo(0, 12);
+    });
+
+    it('still keeps a flat zone on marked ground', () => {
+        // Everything marked: the road's flat zone stays level, the fill goes
+        const natural = plane((_, z) => -0.5 * Math.abs(z));
+        const shaper = new TerrainShaper(GRID, natural);
+        shaper.addLine(straight(-200, 0, 200, 0, () => 0));
+        const { heights } = shaper.finish(new Uint8Array(GRID.cols * GRID.rows).fill(1));
+        for (const z of [-8, 0, 8]) expect(at(heights, 20, z)).toBeCloseTo(0, 12);
+        expect(at(heights, 20, 12)).toBe(-6);
+    });
+});
+
 describe('TerrainShaper: a road climbing a 20 % slope', () => {
     // Built inside each test, not while collecting them: Stryker only
     // activates a mutant while a test runs

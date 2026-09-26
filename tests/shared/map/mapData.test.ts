@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { mapFor } from '../../../src/server/maps.js';
-import { LOT_RULES, placeBuildings } from '../../../src/shared/map/buildings.js';
-import { pointInPolygon, type Vec2 } from '../../../src/shared/map/geometry.js';
+import { LOT_RULES, LOT_SNAP, placeBuildings, type BuildingLot } from '../../../src/shared/map/buildings.js';
+import { pointInPolygon, polylineDistance, type Vec2 } from '../../../src/shared/map/geometry.js';
 import { heightAt, zoneAt } from '../../../src/shared/map/heightfield.js';
 import {
     arenaFence, boundaryFence, CONTAINER_TOP, createMapData, FENCE_PIECE, FOUNTAIN_RADIUS, FOUNTAIN_TOP, heightfieldHash,
-    JUMP_LANDING, JUMP_SIDE, LANDMARK_PIECES, roadResetPose, zoneFence
+    JUMP_LANDING, JUMP_RUNUP, JUMP_SIDE, LANDMARK_PIECES, roadResetPose, zoneFence
 } from '../../../src/shared/map/mapData.js';
-import { PLANT_COLLIDERS, plantFits } from '../../../src/shared/map/plants.js';
-import { networkRailColliders } from '../../../src/shared/map/rails.js';
+import { atRockFoot, groundGrade, MOLE_FLANK, placePlants, PLANT_COLLIDERS, PLANT_MAX_GRADE, plantFits, TALUS_MIN_HEIGHT } from '../../../src/shared/map/plants.js';
+import { networkRailColliders, type SegmentCollider } from '../../../src/shared/map/rails.js';
 import { buildRoadNetwork, insideCorridor, roadSurfaceIdAt } from '../../../src/shared/map/roadNetwork.js';
 import type { RoadArea } from '../../../src/shared/map/roadSchema.js';
 import { BoxIndex, boxContains, boxesOverlap, boxSamples, KIT_FOOTPRINTS, placementBox } from '../../../src/shared/map/structures.js';
@@ -16,11 +16,32 @@ import { SURFACE, ZONE } from '../../../src/shared/map/types.js';
 import { createVehicleState } from '../../../src/shared/sim/types.js';
 import { createSimCar, spawnVehicle } from '../../../src/shared/sim/vehicle.js';
 import { stepWorld } from '../../../src/shared/sim/world.js';
+import type { Collider, ColliderInput } from '../../../src/shared/world/colliders.js';
 import { edge, makeHeightfield, network, node, PROFILE } from './fixtures.js';
 
 // The map's runtime data (src/shared/map/mapData.ts, docs/phase-3-design.md,
 // 8, 11 and 12): on small hand-built maps with expectations from the rules,
 // and invariants of Bulli Bay's own data.
+
+// Whether a car's centre at (x, z) stands inside a collider's footprint
+function colliderHolds(c: ColliderInput | Collider, x: number, z: number): boolean {
+    switch (c.kind) {
+        case 'circle':
+            return (x - c.x) ** 2 + (z - c.z) ** 2 < c.r * c.r;
+        case 'box':
+            return Math.abs(x - c.x) < c.hw && Math.abs(z - c.z) < c.hd;
+        case 'obox': {
+            const dx = x - c.x, dz = z - c.z;
+            return Math.abs(dx * c.uz - dz * c.ux) < c.hw && Math.abs(dx * c.ux + dz * c.uz) < c.hd;
+        }
+        case 'segment': {
+            const ex = c.bx - c.ax, ez = c.bz - c.az;
+            const t = Math.max(0, Math.min(1, ((x - c.ax) * ex + (z - c.az) * ez) / (ex * ex + ez * ez)));
+            return Math.hypot(x - (c.ax + t * ex), z - (c.az + t * ez)) < c.r;
+        }
+    }
+    return false;
+}
 
 // An east-west road from (-90, 0) to (90, 0), 10 m wide, 3 m sidewalks
 function straightRoad(surface: 'asphalt' | 'dirt' = 'asphalt') {
@@ -33,6 +54,7 @@ describe('placeBuildings', () => {
     it('puts closed rows of downtown houses on both sides, their fronts 0.3 m behind the sidewalk, facing the road', () => {
         const net = straightRoad();
         const lots = placeBuildings({ net, hf: makeHeightfield(() => 1), areas: [], reserved: [] });
+        const rule = LOT_RULES[ZONE.downtown]!;
         expect(lots.length).toBeGreaterThan(10);
         for (const side of ['left', 'right'] as const) {
             const row = lots.filter(l => l.side === side).sort((a, b) => a.x - b.x);
@@ -43,18 +65,35 @@ describe('placeBuildings', () => {
             for (const lot of row) {
                 expect(lot.z).toBeCloseTo(out * 8.3, 9);
                 expect([lot.ux, lot.uz]).toEqual([0, -out]);
-                expect(LOT_RULES[ZONE.downtown]!.pieces).toContain(lot.piece);
+                expect([...rule.pieces, ...rule.corners!]).toContain(lot.piece);
             }
-            // Gapless: each house starts where the one before ends (a gap of 2 m
-            // steps only where a house did not fit, at the ends of the road)
-            let closed = 0;
-            for (let i = 1; i < row.length; i++) {
-                const a = KIT_FOOTPRINTS[row[i - 1].piece], b = KIT_FOOTPRINTS[row[i].piece];
-                const gap = row[i].x - row[i - 1].x - ((a.maxX - a.minX) + (b.maxX - b.minX)) / 2;
-                expect(Math.abs(gap) < 0.01 || gap >= 2 - 0.01, `gap ${gap}`).toBe(true);
-                if (Math.abs(gap) < 0.01) closed++;
+            // The road's ends end the rows: a corner building at each end,
+            // flush with them (the lots beside the road clear its corridor)
+            const width = (lot: BuildingLot) => KIT_FOOTPRINTS[lot.piece].maxX - KIT_FOOTPRINTS[lot.piece].minX;
+            expect(rule.corners).toContain(row[0].piece);
+            expect(rule.corners).toContain(row.at(-1)!.piece);
+            expect(row[0].x - width(row[0]) / 2).toBeCloseTo(-90, 6);
+            expect(row.at(-1)!.x + width(row.at(-1)!) / 2).toBeCloseTo(90, 6);
+            // Gapless: each house starts where the one before ends, but for one
+            // gap narrower than the narrowest house (8 m) before the last
+            const gaps: number[] = [];
+            for (let i = 1; i < row.length; i++) gaps.push(row[i].x - row[i - 1].x - (width(row[i - 1]) + width(row[i])) / 2);
+            const open = gaps.filter(gap => Math.abs(gap) > 0.01);
+            expect(open.length, `gaps ${gaps}`).toBeLessThanOrEqual(1);
+            for (const gap of open) expect(gap).toBeLessThan(8);
+        }
+        // The same on roads of other names (other pieces drawn): where the
+        // drawn piece is too wide for the rest of the row, a narrower one
+        for (const id of ['high', 'ocean', 'elm', 'pine', 'bay', 'palm']) {
+            const other = buildRoadNetwork(network([node('w', -90, 0), node('e', 90, 0)], [edge(id, 'w', 'e')], {
+                profiles: { road: { ...PROFILE, sidewalk: { left: 3, right: 3 } } }
+            }));
+            for (const side of ['left', 'right'] as const) {
+                const row = placeBuildings({ net: other, hf: makeHeightfield(() => 1), areas: [], reserved: [] }).filter(l => l.side === side).sort((a, b) => a.x - b.x);
+                const width = (lot: BuildingLot) => KIT_FOOTPRINTS[lot.piece].maxX - KIT_FOOTPRINTS[lot.piece].minX;
+                const covered = row.reduce((sum, lot) => sum + width(lot), 0);
+                expect(180 - covered, `${id} ${side}`).toBeLessThan(8);
             }
-            expect(closed).toBeGreaterThan((row.length - 1) / 2);
         }
         // No lot reaches into the corridor or past the edge's ends
         for (const lot of lots) {
@@ -63,6 +102,33 @@ describe('placeBuildings', () => {
                 expect(insideCorridor(net, x, z, 0.2)).toBe(false);
                 expect(Math.abs(x)).toBeLessThanOrEqual(90 + 1e-9);
             }
+        }
+    });
+
+    it('starts a row with a corner building right behind a junction\'s cross street, and ends it with one before the next', () => {
+        // A cross street through (0, 0) north to south; the main road from
+        // (-90, 0) through the junction to (90, 0): the rows east of the
+        // junction start behind the cross street's corridor (5 + 3 m and the
+        // lots' 0.25 m margin: x = 8.25) within LOT_SNAP
+        const net = buildRoadNetwork(network(
+            [node('w', -90, 0), node('j', 0, 0, 'junction'), node('e', 90, 0), node('n', 0, -90), node('s', 0, 90)],
+            [edge('a-west', 'w', 'j'), edge('b-east', 'j', 'e'), edge('c-north', 'n', 'j'), edge('d-south', 'j', 's')],
+            { profiles: { road: { ...PROFILE, sidewalk: { left: 3, right: 3 } } } }
+        ));
+        const lots = placeBuildings({ net, hf: makeHeightfield(() => 1), areas: [], reserved: [] });
+        const rule = LOT_RULES[ZONE.downtown]!;
+        for (const side of ['left', 'right'] as const) {
+            const east = lots.filter(l => l.edge === 'b-east' && l.side === side).sort((a, b) => a.x - b.x);
+            const first = east[0], last = east.at(-1)!;
+            const half = (lot: BuildingLot) => (KIT_FOOTPRINTS[lot.piece].maxX - KIT_FOOTPRINTS[lot.piece].minX) / 2;
+            expect(rule.corners, side).toContain(first.piece);
+            expect(rule.corners, side).toContain(last.piece);
+            // (The edges go in id order: b-east's rows take the corners before
+            // the cross street's)
+            const start = first.x - half(first);
+            expect(start, side).toBeGreaterThanOrEqual(8.25 - 1e-6);
+            expect(start, side).toBeLessThanOrEqual(8.25 + LOT_SNAP);
+            expect(last.x + half(last)).toBeCloseTo(90, 6);
         }
     });
 
@@ -135,6 +201,156 @@ describe('plantFits', () => {
     });
 });
 
+describe('plantFits on slopes', () => {
+    // A slope rising to the east by 0.6 m per metre west of x = 0 (31°) and
+    // by 0.8 m per metre east of it (39°); the plant limit is tan 35° = 0.7
+    const hf = makeHeightfield(x => (x < 0 ? 40 + 0.6 * x : 40 + 0.8 * x), () => ZONE.wild);
+    const ctx = {
+        net: straightRoad(), hf, areas: [], buildings: new BoxIndex(), reserved: [],
+        boundary: [[-95, -95], [-95, 95], [95, 95], [95, -95]] as Vec2[]
+    };
+
+    it('measures the gradient over ±1 m and keeps trees off ground steeper than 35°', () => {
+        expect(groundGrade(hf, -30, 40)).toBeCloseTo(0.6, 2);
+        expect(groundGrade(hf, 30, 40)).toBeCloseTo(0.8, 2);
+        expect(PLANT_MAX_GRADE).toBeCloseTo(Math.tan(35 * Math.PI / 180), 2);
+        expect(plantFits(ctx, -30, 40, 0.5, true)).toBe(true);
+        expect(plantFits(ctx, 30, 40, 0.5, true)).toBe(false);
+    });
+});
+
+// The talus of the test face as placed when the test was written
+const TALUS_LOCK = { count: 10, boulders: 6 };
+
+describe('talus at the foot of a rock face', () => {
+    // A cliff face along z: ground at 0.2 m west of x = 0 (the downtown zone:
+    // no zone plants), rising 2.5 m per metre to a plateau of 20 m at x = 8,
+    // surface rock where it is steep; a road across it along z = 0
+    const height = (x: number) => (x < 0 ? 0.2 : x < 8 ? 0.2 + 2.475 * x : 20);
+    const hf = makeHeightfield(height, () => ZONE.downtown, x => (x >= 0 && x < 8 ? SURFACE.rock : SURFACE.sand));
+    const ctx = () => ({
+        net: buildRoadNetwork(network([node('a', -90, 0), node('b', 90, 0)], [edge('ab', 'a', 'b')])),
+        hf, areas: [], buildings: new BoxIndex(), reserved: [],
+        boundary: [[-95, -95], [-95, 95], [95, 95], [95, -95]] as Vec2[]
+    });
+
+    it('finds the foot: rock at least 4 m higher within 8 m (probed at 2, 4.5 and 7 m), not further out, not on the plateau', () => {
+        // The face passes 4.2 m (the ground's 0.2 + 4) at x = 1.62
+        expect(atRockFoot(hf, -2, 30)).toBe(true);
+        expect(atRockFoot(hf, -4, 30)).toBe(true);
+        expect(atRockFoot(hf, -6, 30)).toBe(false);
+        expect(atRockFoot(hf, -11, 30)).toBe(false);
+        expect(atRockFoot(hf, 20, 30)).toBe(false);
+    });
+
+    it('scatters rocks and boulders along the foot only, clear of each other and of the road', () => {
+        const plants = placePlants(ctx());
+        expect(plants.length).toBeGreaterThan(5);
+        for (const p of plants) {
+            expect(['rock', 'boulder']).toContain(p.kind);
+            // Within the reach west of the face, on its gentle ground
+            expect(p.x).toBeGreaterThan(-5.5);
+            expect(p.x).toBeLessThan(0);
+            expect(p.size).toBeGreaterThanOrEqual(0.6);
+            expect(p.size).toBeLessThanOrEqual(1.2);
+            // The road (5 m half width, 0.5 m shoulders) and 2 m beyond stay clear
+            expect(Math.abs(p.z)).toBeGreaterThan(7.5);
+        }
+        for (let i = 0; i < plants.length; i++) {
+            for (let j = i + 1; j < plants.length; j++) {
+                const a = plants[i], b = plants[j];
+                const reach = PLANT_COLLIDERS[a.kind].r * a.size + PLANT_COLLIDERS[b.kind].r * b.size;
+                expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeGreaterThanOrEqual(reach - 1e-9);
+            }
+        }
+        // Regression lock of the seeded placement (6 m cells, 80 % of them,
+        // 40 % boulders): the count and the mix of this foot
+        expect(plants.length).toBe(TALUS_LOCK.count);
+        expect(plants.filter(p => p.kind === 'boulder').length).toBe(TALUS_LOCK.boulders);
+    });
+
+    it('keeps the talus out of areas, buildings, reserved places and off the map', () => {
+        // Without them the foot has rocks at z = 37..47, -35.5, 53.8 and
+        // 71; a lot over z 34..49, a building at z -35.5, a reserved box at
+        // z 53.8 and the map's edge at z = 65 take them
+        const free = placePlants(ctx());
+        const box = (z: number) => ({ x: -3, z, hw: 4, hd: 2, ux: 0, uz: 1 });
+        const buildings = new BoxIndex();
+        buildings.add(box(-35.5));
+        const area: RoadArea = { id: 'lot', polygon: [[-20, 34], [-1, 34], [-1, 49], [-20, 49]], surface: 'asphalt', curb: false, connects: [] };
+        const placed = placePlants({
+            ...ctx(), areas: [area], buildings, reserved: [box(53.8)],
+            boundary: [[-95, -95], [-95, 65], [95, 65], [95, -95]] as Vec2[]
+        });
+        const within = (list: typeof free, z0: number, z1: number) => list.filter(p => p.z > z0 && p.z < z1).length;
+        for (const [z0, z1] of [[34, 49], [-37.5, -33.5], [51.8, 55.8], [65, 95]]) {
+            expect(within(free, z0, z1), `${z0}..${z1}`).toBeGreaterThan(0);
+            expect(within(placed, z0, z1), `${z0}..${z1}`).toBe(0);
+        }
+        // Elsewhere the same rocks
+        expect(placed.filter(p => p.z < 30 && p.z > -30 || p.z < -40)).toEqual(free.filter(p => p.z < 30 && p.z > -30 || p.z < -40));
+    });
+});
+
+describe('a breakwater\'s armour', () => {
+    it('lays a boulder on the crest every 2.6 m and a rock on each flank 2.8 m out, a quarter and three quarters of a step on', () => {
+        // A mole along x from (-60, -40) to (-34, -40) in the shallows; a road
+        // across its far end (x = -38) takes the stones within its corridor
+        const hf = makeHeightfield(() => -0.5, () => ZONE.wild, () => SURFACE.water);
+        const net = buildRoadNetwork(network([node('a', -38, -90), node('b', -38, 90)], [edge('ab', 'a', 'b')]));
+        const plants = placePlants({
+            net, hf, areas: [], buildings: new BoxIndex(), reserved: [],
+            boundary: [[-95, -95], [-95, 95], [95, 95], [95, -95]] as Vec2[], moles: [[[-60, -40], [-34, -40]]]
+        });
+        const crest = plants.filter(p => p.kind === 'boulder').map(p => [p.x, p.z]);
+        // Steps at s = 0, 2.6, ... 26; within 9.2 to 9.9 m of the road (its
+        // half width 5, the margin 2 and the boulder's 2.2 to 2.9 m) they go:
+        // x = -47 (9 m) and beyond
+        expect(crest).toEqual([[-60, -40], [-57.4, -40], [-54.8, -40], [-52.2, -40], [-49.6, -40]]);
+        const flanks = plants.filter(p => p.kind === 'rock');
+        expect(flanks.slice(0, 2).map(p => [p.x, p.z])).toEqual([[-59.35, -37.2], [-58.05, -42.8]]);
+        for (const p of plants) expect(p.size).toBeGreaterThanOrEqual(p.kind === 'boulder' ? 1 : 0.8);
+        for (const p of plants) expect(p.size).toBeLessThanOrEqual(p.kind === 'boulder' ? 1.3 : 1.1);
+    });
+
+    it('follows a slanting line, left and right of it, and keeps out of areas, buildings and reserved places', () => {
+        // From (10, 10) along (0.6, 0.8), 20 m: boulders every 2.6 m from s = 0
+        // to 18.2; the first left flank rock (left: (-0.8, 0.6)) a quarter
+        // step on, the first right one three quarters
+        const hf = makeHeightfield(() => -0.5, () => ZONE.wild, () => SURFACE.water);
+        const net = buildRoadNetwork(network([node('a', -90, -90), node('b', -80, -90)], [edge('ab', 'a', 'b')]));
+        const base = {
+            net, hf, areas: [] as RoadArea[], buildings: new BoxIndex(), reserved: [] as { x: number; z: number; hw: number; hd: number; ux: number; uz: number }[],
+            boundary: [[-95, -95], [-95, 95], [95, 95], [95, -95]] as Vec2[], moles: [[[10, 10], [22, 26]] as Vec2[]]
+        };
+        const plants = placePlants(base);
+        const at = (s: number, across: number) => [+(10 + 0.6 * s - 0.8 * across).toFixed(3), +(10 + 0.8 * s + 0.6 * across).toFixed(3)];
+        expect(plants.filter(p => p.kind === 'boulder').map(p => [p.x, p.z])).toEqual([0, 1, 2, 3, 4, 5, 6, 7].map(k => at(k * 2.6, 0)));
+        const rocks = plants.filter(p => p.kind === 'rock').map(p => [p.x, p.z]);
+        expect(rocks[0]).toEqual(at(0.65, 2.8));
+        expect(rocks[1]).toEqual(at(1.95, -2.8));
+        // An area, a building and a reserved box each take the stones near
+        // them: the boulders at s = 0, 2.6 and 7.8, not those 7.8 m on
+        const buildings = new BoxIndex();
+        buildings.add({ ...at(2.6, 0).reduce((o, v, i) => ({ ...o, [i ? 'z' : 'x']: v }), {} as { x: number; z: number }), hw: 0.5, hd: 0.5, ux: 0, uz: 1 });
+        const [rx, rz] = at(7.8, 0);
+        const [ax, az] = at(0, 0);
+        const has = (list: typeof plants, [x, z]: number[]) => list.some(p => p.kind === 'boulder' && p.x === x && p.z === z);
+        const withArea = placePlants({ ...base, areas: [{ id: 'a', polygon: [[ax - 0.5, az - 0.5], [ax + 0.5, az - 0.5], [ax + 0.5, az + 0.5], [ax - 0.5, az + 0.5]], surface: 'asphalt', curb: false, connects: [] }] });
+        expect(has(withArea, at(0, 0))).toBe(false);
+        expect(has(withArea, at(7.8, 0))).toBe(true);
+        const withBuilding = placePlants({ ...base, buildings });
+        expect(has(withBuilding, at(2.6, 0))).toBe(false);
+        expect(has(withBuilding, at(10.4, 0))).toBe(true);
+        const withReserved = placePlants({ ...base, reserved: [{ x: rx, z: rz, hw: 0.5, hd: 0.5, ux: 0, uz: 1 }] });
+        expect(has(withReserved, at(7.8, 0))).toBe(false);
+        expect(has(withReserved, at(15.6, 0))).toBe(true);
+        // Size and looks from a hash of the mole and the step: another mole index, other sizes
+        const second = placePlants({ ...base, moles: [[[-50, -50], [-49, -50]] as Vec2[], ...base.moles] });
+        expect(second.filter(p => p.x > 0).map(p => p.size)).not.toEqual(plants.map(p => p.size));
+    });
+});
+
 describe('arenaFence', () => {
     it('fences the lot 0.5 m inside its outline with a gap for the gate, and borders the Party there', () => {
         const area: RoadArea = { id: 'lot', polygon: [[-260, 520], [-260, 660], [-80, 660], [-80, 520]], surface: 'concrete', curb: false, connects: [] };
@@ -189,7 +405,10 @@ describe('boundaryFence', () => {
         const pieces = boundaryFence(boundary, hf);
         for (const piece of pieces) {
             expect(Math.hypot(piece.bx - piece.ax, piece.bz - piece.az)).toBeLessThanOrEqual(FENCE_PIECE + 1e-9);
-            expect((piece.ax + piece.bx) / 2).toBeGreaterThan(-50);
+            // Some ground under the piece above the drivable depth: at x = -50
+            // the ground rises from -5 to 2 m within the 2 m cell west of it,
+            // past -0.6 m at x = -50.63
+            expect(Math.max(piece.ax, piece.bx)).toBeGreaterThan(-50.63);
             expect(piece.top).toBe(Infinity);
         }
         // The west side is sea: 3 sides of 180 m in 12 pieces each, and the
@@ -198,20 +417,31 @@ describe('boundaryFence', () => {
         expect(pieces.some(p => p.ax === -90 && p.bx === -90)).toBe(false);
     });
 
-    it('cuts each side into the fewest equal pieces and keeps a piece by the ground under its middle', () => {
+    it('cuts each side into the fewest equal pieces and keeps a piece wherever its ground lies above the sea', () => {
         // The sea west of x = -50 and south of z = -60
         const hf = makeHeightfield((x, z) => (x < -50 || z < -60 ? -5 : 2));
-        // Sides of 160 m: exactly ten pieces of 16 m each; on the east side
-        // (x = 80) the last one, its middle at z = -72, lies over the sea
+        // Sides of 160 m: exactly ten pieces of 16 m each. On the east side
+        // (x = 80) the last one, from z = -64 to -80, lies over the sea
         const pieces = boundaryFence([[-80, -80], [-80, 80], [80, 80], [80, -80]], hf);
         const east = pieces.filter(p => p.ax === 80 && p.bx === 80);
         expect(east).toHaveLength(9);
         for (const p of east) expect(Math.abs(p.bz - p.az)).toBeCloseTo(16, 9);
-        // North side (z = 80) from x = -80: middles at -72, -56, -40, ...,
-        // 72; the first two lie over the sea
-        expect(pieces.filter(p => p.az === 80 && p.bz === 80)).toHaveLength(8);
+        // North side (z = 80) from x = -80: pieces from -80, -64, -48, ...;
+        // the first lies over the sea from end to end, the second reaches land at -50
+        expect(pieces.filter(p => p.az === 80 && p.bz === 80)).toHaveLength(9);
         // The south side (z = -80) is all sea
         expect(pieces.some(p => p.az === -80 && p.bz === -80)).toBe(false);
+    });
+
+    it('fences shallow water a car still drives through, not water deep enough for the reset', () => {
+        // West of x = -50 the sea floor lies 0.3 m deep (a car drives on up
+        // to 0.6 m, vehicle.ts WATER_DEPTH), west of x = -70 2 m deep
+        const hf = makeHeightfield(x => (x < -70 ? -2 : x < -50 ? -0.3 : 2));
+        const pieces = boundaryFence([[-90, -90], [-90, 90], [90, 90], [90, -90]], hf);
+        // The north side (z = 90) from x = -90 in 12 pieces of 15 m: only the
+        // first (-90 .. -75) lies over deep water from end to end
+        expect(pieces.filter(p => p.az === 90 && p.bz === 90).map(p => p.ax)).toEqual([-75, -60, -45, -30, -15, 0, 15, 30, 45, 60, 75]);
+        expect(pieces.some(p => p.ax === -90 && p.bx === -90)).toBe(false);
     });
 });
 
@@ -309,8 +539,13 @@ describe('heightfieldHash', () => {
 
 describe('Bulli Bay', () => {
     const map = mapFor();
+    // A build of the whole map takes about 0.5 s here, but several seconds on
+    // a 4-core CI runner with every worker busy: the tests that build it
+    // again or sweep every building get this timeout (the default 5 s timed
+    // out there)
+    const WHOLE_MAP_TIMEOUT = 30_000;
 
-    it('builds the same world twice, and a moved coin or height changes its hash', () => {
+    it('builds the same world twice, and a moved coin or height changes its hash', { timeout: WHOLE_MAP_TIMEOUT }, () => {
         expect(createMapData(map.sources, map.hf).worldHash).toBe(map.worldHash);
         const pois = structuredClone(map.sources.pois);
         pois.arena.coins[0][0] += 1;
@@ -336,7 +571,7 @@ describe('Bulli Bay', () => {
         expect(map.plants.length).toBeGreaterThan(1500);
     });
 
-    it('keeps every building clear of the corridors and areas, in its zone, on level dry ground, apart from the others', () => {
+    it('keeps every building clear of the corridors and areas, in its zone, on level dry ground, apart from the others', { timeout: WHOLE_MAP_TIMEOUT }, () => {
         const boxes = map.buildings.map(placementBox);
         for (const [i, lot] of map.buildings.entries()) {
             let low = Infinity, high = -Infinity;
@@ -359,9 +594,11 @@ describe('Bulli Bay', () => {
         for (const structure of map.structures) expect(boxes.some(b => boxesOverlap(b, placementBox(structure)))).toBe(false);
     });
 
-    it('keeps every plant off the roads, out of the areas and the buildings, and above the water', () => {
+    it('keeps every plant off the roads, out of the areas and the buildings, and above the water (talus down into the shallows)', () => {
         const buildings = new BoxIndex();
         for (const lot of map.buildings) buildings.add(placementBox(lot));
+        let talus = 0, mole = 0;
+        const moles = (map.sources.pois.moles ?? []).map(m => m.line);
         for (const plant of map.plants) {
             // Street palms stand on the sidewalk, every other plant beyond it;
             // none on the drivable road
@@ -371,8 +608,18 @@ describe('Bulli Bay', () => {
             }
             for (const area of map.net.areas) expect(pointInPolygon(area.polygon, plant.x, plant.z)).toBe(false);
             expect(buildings.contains(plant.x, plant.z, PLANT_COLLIDERS[plant.kind].r * plant.size)).toBe(false);
-            expect(heightAt(map.hf, plant.x, plant.z)).toBeGreaterThan(0.5);
+            // Rocks at the foot of a rock face may lie in the shallow water
+            // at its foot, a breakwater's armour on the sea floor beside
+            // its spit; everything else stands on dry ground
+            const stone = plant.kind === 'rock' || plant.kind === 'boulder';
+            const armour = stone && moles.some(line => polylineDistance(line, plant.x, plant.z) <= MOLE_FLANK + 0.1);
+            const rock = stone && !armour && atRockFoot(map.hf, plant.x, plant.z);
+            if (rock && heightAt(map.hf, plant.x, plant.z) <= 0.5) talus++;
+            if (armour) mole++;
+            expect(heightAt(map.hf, plant.x, plant.z)).toBeGreaterThan(armour ? -3 : rock ? TALUS_MIN_HEIGHT : 0.5);
         }
+        expect(talus).toBeGreaterThan(10);
+        expect(mole).toBeGreaterThan(20);
     });
 
     it('fences the Party\'s zone round the arena and the harbour yards, the gate open, and a Party ghost stops at its border', () => {
@@ -474,19 +721,70 @@ describe('Bulli Bay', () => {
         }
     });
 
-    it('keeps the landing zone beyond every jump free of buildings and plants', () => {
+    it('keeps a 30 m run-up behind and the landing zone beyond every jump free of buildings and plants', () => {
+        expect(JUMP_LANDING).toBe(45);
+        expect(JUMP_RUNUP).toBe(30);
+        expect(JUMP_SIDE).toBe(4);
         for (const ramp of map.ramps) {
-            // From the ramp's rear edge to 45 m beyond its front edge, 4 m to each side
+            // From 30 m behind the ramp's rear edge to 45 m beyond its front
+            // edge, 4 m to each side
             const fx = Math.sin(ramp.yaw), fz = Math.cos(ramp.yaw);
             const zone = {
-                x: ramp.x + fx * JUMP_LANDING / 2, z: ramp.z + fz * JUMP_LANDING / 2,
-                hw: ramp.width / 2 + JUMP_SIDE, hd: ramp.length / 2 + JUMP_LANDING / 2, ux: fx, uz: fz
+                x: ramp.x + fx * 7.5, z: ramp.z + fz * 7.5,
+                hw: ramp.width / 2 + 4, hd: ramp.length / 2 + 37.5, ux: fx, uz: fz
             };
-            expect(JUMP_LANDING).toBe(45);
-            expect(JUMP_SIDE).toBe(4);
             for (const plant of map.plants) expect(boxContains(zone, plant.x, plant.z), `${plant.kind} at ${plant.x}, ${plant.z} on ${ramp.id}`).toBe(false);
             for (const lot of map.buildings) expect(boxesOverlap(zone, placementBox(lot)), `${lot.edge} on ${ramp.id}`).toBe(false);
         }
+    });
+
+    it('leaves a straight run-up of 30 m behind every jump of pois.json free of colliders and deep water', () => {
+        // The ramp's width, every metre along and across it, against every
+        // collider near it but the ramp's own edge walls (a car on the ground)
+        const jumps = map.ramps.slice(0, (map.sources.pois.jumps ?? []).length);
+        const found = new Int32Array(map.colliders.length);
+        const blocked: string[] = [];
+        for (const [i, ramp] of jumps.entries()) {
+            const fx = Math.sin(ramp.yaw), fz = Math.cos(ramp.yaw);
+            for (let back = 0; back <= 30; back++) {
+                for (let across = -ramp.width / 2; across <= ramp.width / 2; across++) {
+                    const d = ramp.length / 2 + back;
+                    const x = ramp.x - fx * d + fz * across, z = ramp.z - fz * d - fx * across;
+                    if (map.ground.height(x, z) <= -0.6) blocked.push(`${ramp.id}: deep water ${back} m behind`);
+                    const count = map.simWorld.grid.query(x - 1, z - 1, x + 1, z + 1, found);
+                    for (let k = 0; k < count; k++) {
+                        const c = map.simWorld.colliders[found[k]];
+                        if (c.kind === 'box' && c.ramp === i) continue;
+                        if (colliderHolds(c, x, z)) blocked.push(`${ramp.id} ${back} m behind: ${c.kind} ${found[k]}`);
+                    }
+                }
+            }
+        }
+        expect(blocked).toEqual([]);
+    });
+
+    it('fences every stretch of its boundary a car can reach through shallow water', () => {
+        // Every metre of the boundary with ground above the drivable depth
+        // (0.6 m under the water level) lies on a fence capsule
+        const fence = map.colliders.filter((c): c is SegmentCollider => c.kind === 'segment' && c.top === Infinity);
+        const boundary = map.sources.map.boundary;
+        let gaps = 0, at = '';
+        for (let i = 0; i < boundary.length; i++) {
+            const [ax, az] = boundary[i], [bx, bz] = boundary[(i + 1) % boundary.length];
+            const n = Math.ceil(Math.hypot(bx - ax, bz - az));
+            for (let k = 0; k <= n; k++) {
+                const x = ax + (bx - ax) * k / n, z = az + (bz - az) * k / n;
+                if (map.ground.height(x, z) <= -0.6) continue;
+                const fenced = fence.some(c => {
+                    if (Math.min(c.ax, c.bx) > x + 1 || Math.max(c.ax, c.bx) < x - 1 || Math.min(c.az, c.bz) > z + 1 || Math.max(c.az, c.bz) < z - 1) return false;
+                    const ex = c.bx - c.ax, ez = c.bz - c.az;
+                    const t = Math.max(0, Math.min(1, ((x - c.ax) * ex + (z - c.az) * ez) / (ex * ex + ez * ez)));
+                    return Math.hypot(x - (c.ax + t * ex), z - (c.az + t * ez)) < 0.01;
+                });
+                if (!fenced) { gaps++; at = `${x.toFixed(1)} ${z.toFixed(1)}`; }
+            }
+        }
+        expect(gaps, at).toBe(0);
     });
 
     it('puts the arena\'s items first, then the yards\', none collected, the power-ups taking turns', () => {
@@ -504,7 +802,7 @@ describe('Bulli Bay', () => {
         expect(map.ground.grid).toEqual({ origin: -1000, cellSize: 16, cells: 125 });
     });
 
-    it('without a Party zone closes the arena\'s gate and plays the Party inside the arena', () => {
+    it('without a Party zone closes the arena\'s gate and plays the Party inside the arena', { timeout: WHOLE_MAP_TIMEOUT }, () => {
         const { party: _party, ...pois } = map.sources.pois;
         const arenaOnly = createMapData({ ...map.sources, pois }, map.hf);
         expect(arenaOnly.partyZone).toEqual(arenaOnly.arenaBounds);
@@ -514,13 +812,9 @@ describe('Bulli Bay', () => {
         expect(arenaOnly.items.coins).toHaveLength(pois.arena.coins.length);
         expect(arenaOnly.items.powerups).toHaveLength(pois.arena.powerups.length);
         expect(arenaOnly.worldHash).not.toBe(map.worldHash);
-        // A moved Party zone changes the hash too
-        const moved = structuredClone(map.sources.pois);
-        moved.party!.zone.minX -= 8;
-        expect(createMapData({ ...map.sources, pois: moved }, map.hf).worldHash).not.toBe(map.worldHash);
     });
 
-    it('fences the Party zone through a container but not through a landmark', () => {
+    it('fences the Party zone through a container but not through a landmark, and hashes the moved zone', { timeout: WHOLE_MAP_TIMEOUT }, () => {
         // The zone's west side through the middle of container 1 (-222 | 566,
         // lengthwise along z), its east side through light mast 2 (-88 | 652)
         const pois = structuredClone(map.sources.pois);
@@ -533,13 +827,15 @@ describe('Bulli Bay', () => {
         // A landmark is a wall: the fence stops at it
         expect(covers(-88, 652)).toBe(false);
         expect(covers(-88, 640)).toBe(true);
+        // A moved Party zone changes the hash
+        expect(fenced.worldHash).not.toBe(map.worldHash);
     });
 
-    it('builds a map without jumps or a fountain', () => {
+    it('builds a map without jumps and without a fountain', { timeout: WHOLE_MAP_TIMEOUT }, () => {
         const { jumps: _jumps, ...noJumps } = map.sources.pois;
-        expect(createMapData({ ...map.sources, pois: noJumps }, map.hf).ramps.map(r => r.id)).toEqual(['arena-ramp-1', 'arena-ramp-2']);
-        const noFountain = { ...map.sources.pois, landmarks: map.sources.pois.landmarks.filter(l => l.kind !== 'fountain') };
-        const plain = createMapData({ ...map.sources, pois: noFountain }, map.hf);
+        const pois = { ...noJumps, landmarks: noJumps.landmarks.filter(l => l.kind !== 'fountain') };
+        const plain = createMapData({ ...map.sources, pois }, map.hf);
+        expect(plain.ramps.map(r => r.id)).toEqual(['arena-ramp-1', 'arena-ramp-2']);
         const fountain = map.sources.pois.landmarks.find(l => l.kind === 'fountain')!;
         expect(plain.colliders.some(c => c.kind === 'circle' && c.x === fountain.x && c.z === fountain.z && c.r === FOUNTAIN_RADIUS)).toBe(false);
     });

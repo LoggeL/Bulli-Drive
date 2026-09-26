@@ -16,12 +16,14 @@ import { pointInPolygon, polygonEdgeDistance, segmentDistanceSq, type Vec2 } fro
 import { FLAT_MARGIN, flatHalfWidths } from '../../src/shared/map/corridor.js';
 import { heightAt, meshDeviation, waterDepth, type Heightfield } from '../../src/shared/map/heightfield.js';
 import type { MapFile, PoisFile, TracksFile, ZonesFile } from '../../src/shared/map/mapFiles.js';
-import { areaRailSides, DEFAULT_AREA_RAIL_OFFSET } from '../../src/shared/map/rails.js';
+import { JUMP_RUNUP } from '../../src/shared/map/mapData.js';
+import { areaRailLine, areaRailSides, DEFAULT_AREA_RAIL_OFFSET, networkRailColliders } from '../../src/shared/map/rails.js';
+import { WATER_DEPTH } from '../../src/shared/sim/vehicle.js';
 import { AXIS_SNAP, isAxisYaw, routeBends, routeToTrack, snapYaw, type MapTrackDef } from '../../src/shared/map/routeToTrack.js';
 import type { RampDef } from '../../src/shared/world/colliders.js';
 import { SIM_TUNING_DEFAULTS } from '../../src/shared/sim/constants.js';
 import {
-    junctionRadius, roadSurfaceAt, type RoadEdgeData, type RoadNetwork
+    junctionRadius, nearestRoad, roadSurfaceAt, type RoadEdgeData, type RoadNetwork
 } from '../../src/shared/map/roadNetwork.js';
 import { leftNormal, pointAt } from '../../src/shared/map/spline.js';
 import { resolveRoute, routePointAt, type ResolvedRoute } from '../../src/shared/map/trackRoute.js';
@@ -129,6 +131,9 @@ function sampleAt(edge: RoadEdgeData, s: number) {
 
 // ---- Network ----
 
+// A node an area connects lies at most this far off the area's outline (m)
+export const AREA_CONNECT_TOLERANCE = 1;
+
 // One connected network: every edge reachable from every other, areas
 // either connected through their nodes or touching a road
 export function checkConnectivity(net: RoadNetwork): Finding[] {
@@ -160,6 +165,15 @@ export function checkConnectivity(net: RoadNetwork): Finding[] {
         if (area.connects.length) {
             if (main >= 0 && find(net.nodeById.get(area.connects[0])!.index) !== main) {
                 findings.push(finding('connectivity', `area ${area.id} connects to a separate part of the network`));
+            }
+            // The road reaches the area: each node it connects lies on its
+            // outline or inside it (else bare ground lies between them)
+            for (const id of area.connects) {
+                const node = net.nodeById.get(id)!;
+                const gap = pointInPolygon(area.polygon, node.x, node.z) ? 0 : polygonEdgeDistance(area.polygon, node.x, node.z);
+                if (gap > AREA_CONNECT_TOLERANCE) {
+                    findings.push(finding('connectivity', `area ${area.id}: node ${id} lies ${gap.toFixed(1)} m off its outline`, node));
+                }
             }
             continue;
         }
@@ -390,6 +404,19 @@ export function checkRails(net: RoadNetwork, hf: Heightfield): Finding[] {
 export function checkAreaRails(net: RoadNetwork, hf: Heightfield): Finding[] {
     const findings: Finding[] = [];
     for (const area of net.areas) {
+        // An open railing's ends stay off every road's drivable width: a car
+        // along the road's edge would meet the end head-on (a flare guides it)
+        for (const rail of area.rails ?? []) {
+            if (rail.from === rail.to) continue;
+            const line = areaRailLine(area, rail);
+            for (const [x, z] of [line[0], line[line.length - 1]]) {
+                const hit = nearestRoad(net, x, z, net.maxHalfWidth + 1);
+                // Only beside the road, not beyond its end
+                if (hit && hit.distance - Math.abs(hit.lateral) < 0.05 && Math.abs(hit.lateral) < hit.edge.halfWidth) {
+                    findings.push(finding('rails', `area ${area.id}: a railing ends on the drivable width of ${hit.edge.id}`, { x: round(x), z: round(z) }));
+                }
+            }
+        }
         if (area.tags?.includes('noRail')) continue;
         const polygon = area.polygon;
         const n = polygon.length;
@@ -899,15 +926,32 @@ export function checkPois(net: RoadNetwork, hf: Heightfield, map: MapFile, pois:
     // Jump ramps of the map: inside the boundary, working, and a landing on
     // dry ground inside the map for a car at JUMP_CHECK_SPEED
     const seen = new Set<string>();
+    const rails = networkRailColliders(net);
     for (const jump of pois.jumps ?? []) {
         const label = `jump ${jump.id}`;
         if (seen.has(jump.id)) findings.push(finding(check, `${label}: duplicate id`));
         seen.add(jump.id);
         const corners = boxCorners(jump.x, jump.z, jump.yaw, jump.length, jump.width);
-        if (corners.some(([x, z]) => !pointInPolygon(map.boundary, x, z))) findings.push(finding(check, `${label} reaches beyond the boundary`, jump));
+        const outside = corners.some(([x, z]) => !pointInPolygon(map.boundary, x, z));
+        if (outside) findings.push(finding(check, `${label} reaches beyond the boundary`, jump));
         const rampFindings = checkRamp(label, jump, hf);
         findings.push(...rampFindings);
         if (rampFindings.length) continue;
+        // A straight run-up behind the ramp: inside the map, out of the
+        // water, clear of the network's rails (buildings and plants keep
+        // off it by themselves, mapData.ts jumpZone)
+        const fx = Math.sin(jump.yaw), fz = Math.cos(jump.yaw);
+        let runUp: string | null = null;
+        for (let back = 0; back <= JUMP_RUNUP && !runUp && !outside; back += 2) {
+            for (let across = -jump.width / 2; across <= jump.width / 2 + 1e-9 && !runUp; across += jump.width / 4) {
+                const d = jump.length / 2 + back;
+                const x = jump.x - fx * d + fz * across, z = jump.z - fz * d - fx * across;
+                if (!pointInPolygon(map.boundary, x, z)) runUp = `leaves the map ${back} m behind the ramp`;
+                else if (waterDepth(hf, x, z) >= WATER_DEPTH) runUp = `runs into deep water ${back} m behind the ramp`;
+                else if (rails.some(r => segmentDistanceSq(x, z, r.ax, r.az, r.bx, r.bz) < (r.r + 1) ** 2)) runUp = `crosses a rail ${back} m behind the ramp`;
+            }
+        }
+        if (runUp) findings.push(finding(check, `${label}: the ${JUMP_RUNUP} m run-up ${runUp}`, jump));
         const flight = rampFlight(jump, rampLip(hf, jump), JUMP_CHECK_SPEED / KMH_PER_MS);
         const reach = jump.length / 2 + flight.distance;
         const lx = jump.x + Math.sin(jump.yaw) * reach, lz = jump.z + Math.cos(jump.yaw) * reach;

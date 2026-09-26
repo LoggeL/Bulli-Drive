@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { mapFor } from '../../src/server/maps.js';
 import { heightAt } from '../../src/shared/map/heightfield.js';
 import { nearestRoad } from '../../src/shared/map/roadNetwork.js';
-import { TERRAIN_GRID } from '../../src/client/world/terrain.js';
+import { groundUnderDecks, TERRAIN_GRID } from '../../src/client/world/terrain.js';
+import { SURFACE, ZONE } from '../../src/shared/map/types.js';
+import { makeHeightfield } from '../shared/map/fixtures.js';
 import {
     createLevelArrays, fillLevelIndex, fillLevelVertices, horizonHeight, levelCentre, levelSpacing, levelSquare,
     MIN_HALF, RECENTRE_SPACINGS, type HeightFn, type LevelArrays, type TerrainGridConfig
@@ -233,11 +235,48 @@ describe('the ground beyond the map', () => {
         expect(height(-900, 0)).toBe(-12);
     });
 
+    it('eases the hills in over 120 m from a coast along the border, no wedge above the shore line', () => {
+        // Sea west of x = 0, land east of it; beyond the north border (z < -100)
+        const wide = { ...square, minX: -500, maxX: 500 };
+        const coast = horizonHeight((x) => (x < 0 ? -12 : 20), wide);
+        const flat = horizonHeight(() => 20, wide);
+        const rise = (x: number) => coast(x, -600) - 20;
+        // The sea along the border probed every 10 m: 120 m and more inland
+        // the full hills; at the shore line (the sea 10 m off) and 60 m
+        // inland (70 m off) the smoothstep of 10/120 and 70/120
+        const eased = (x: number, off: number) => (flat(x, -600) - 20) * (off / 120) ** 2 * (3 - 2 * off / 120);
+        expect(rise(120)).toBeCloseTo(flat(120, -600) - 20, 9);
+        expect(rise(0)).toBeCloseTo(eased(0, 10), 9);
+        expect(rise(0)).toBeLessThan(2);
+        expect(rise(60)).toBeCloseTo(eased(60, 70), 9);
+        // Beyond the sea: the sea floor
+        expect(coast(-50, -600)).toBe(-12);
+    });
+
     it('rises into hills beyond a land border, from the border height on', () => {
         const height = horizonHeight(() => 20, square);
         expect(height(100, 0)).toBe(20);
         // Right beyond the border it has hardly risen, 600 m out it is tens of metres higher
         expect(height(102, 0) - 20).toBeLessThan(0.1);
         for (const z of [-80, 0, 80]) expect(height(700, z) - 20).toBeGreaterThan(40);
+    });
+});
+
+describe('the ground under the pier (terrain mesh only)', () => {
+    it('drops the deck\'s grid points to the beach round them, so the mesh beside the pier stays down', () => {
+        // A deck 5 m high on the grid points x ≥ 0, |z| ≤ 4 (wood), the beach
+        // at 1.5 m, sloping to 1 m at z = ±20
+        const beach = (z: number) => 1.5 - Math.max(0, Math.abs(z) - 4) / 32;
+        const hf = makeHeightfield((x, z) => (x >= 0 && Math.abs(z) <= 4 ? 5 : beach(z)), () => ZONE.beach,
+            (x, z) => (x >= 0 && Math.abs(z) <= 4 ? SURFACE.wood : SURFACE.sand));
+        // The sim's ground half a cell beside the deck: halfway up to it
+        expect(heightAt(hf, 20, 5)).toBeCloseTo((5 + beach(6)) / 2, 2);
+        const decks = groundUnderDecks(hf);
+        // The mesh's ground there: the lowest beach point round the deck's
+        // edge (z = ±6: 1.4375 m) on both corners of the cell
+        expect(heightAt(decks, 20, 5)).toBeCloseTo((beach(6) + beach(6)) / 2, 2);
+        // Away from the deck, and on the sim's copy, nothing changes
+        expect(heightAt(decks, 20, 11)).toBe(heightAt(hf, 20, 11));
+        expect(heightAt(hf, 20, 0)).toBeCloseTo(5, 2);
     });
 });

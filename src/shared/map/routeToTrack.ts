@@ -7,6 +7,7 @@
 // it is computed with exactly rounded operations and rounded to whole
 // millimetres (positions) and micro-radians (yaws, trackRoute.ts).
 
+import { BARRIER_DEPTH } from '../race/raceWorld.js';
 import type { GateDef, GridSlot, TrackDef, TrackHint, TrackRamp, Vec2 } from '../race/types.js';
 import type { TrackRoute } from './mapFiles.js';
 import { toMillimetres } from './rails.js';
@@ -55,23 +56,87 @@ export function isAxisYaw(yaw: number): boolean {
     return Math.abs(quarter - Math.round(quarter)) <= 1e-9;
 }
 
+// Barrier rows (BARRIER_DEPTH deep, raceWorld.ts) keep its faces this far
+// off the route's roadway; where the branch leaves at an acute angle, the
+// row at the trim radius would reach into the route's roadway (on the
+// inside of the turn), so it moves into the branch in steps until it is
+// clear, at most BARRIER_MAX_PUSH beyond the trim radius.
+export const BARRIER_ROUTE_CLEARANCE = 0.5;
+export const BARRIER_PUSH_STEP = 0.5;
+export const BARRIER_MAX_PUSH = 30;
+// Probes along a row (m)
+const BARRIER_PROBE_STEP = 0.25;
+
+interface RouteSegment { ax: number; az: number; bx: number; bz: number; reach2: number }
+
+// The route's centre line segments near (x, z), each with the squared
+// distance within which a point lies on its roadway (plus the clearance)
+function routeSegmentsNear(route: ResolvedRoute, x: number, z: number, radius: number): RouteSegment[] {
+    const pts = route.points;
+    const out: RouteSegment[] = [];
+    const count = route.closed ? pts.length : pts.length - 1;
+    for (let i = 0; i < count; i++) {
+        const a = pts[i], b = pts[(i + 1) % pts.length];
+        if (Math.min(Math.abs(a.x - x), Math.abs(b.x - x)) > radius || Math.min(Math.abs(a.z - z), Math.abs(b.z - z)) > radius) continue;
+        const reach = Math.max(a.halfWidth, b.halfWidth) + BARRIER_ROUTE_CLEARANCE;
+        out.push({ ax: a.x, az: a.z, bx: b.x, bz: b.z, reach2: reach * reach });
+    }
+    return out;
+}
+
+function onRoute(segments: readonly RouteSegment[], x: number, z: number): boolean {
+    for (const seg of segments) {
+        const ex = seg.bx - seg.ax, ez = seg.bz - seg.az;
+        const len2 = ex * ex + ez * ez;
+        let t = len2 > 0 ? ((x - seg.ax) * ex + (z - seg.az) * ez) / len2 : 0;
+        if (t < 0) t = 0; else if (t > 1) t = 1;
+        const dx = x - (seg.ax + t * ex), dz = z - (seg.az + t * ez);
+        if (dx * dx + dz * dz < seg.reach2) return true;
+    }
+    return false;
+}
+
+// Whether a row centred at (x, z), across the direction (fx, fz), `length`
+// long, keeps both faces off the route's roadway
+function rowClear(segments: readonly RouteSegment[], x: number, z: number, fx: number, fz: number, length: number): boolean {
+    const n = Math.ceil(length / BARRIER_PROBE_STEP);
+    const half = BARRIER_DEPTH / 2;
+    for (let k = 0; k <= n; k++) {
+        const t = -length / 2 + length * k / n;
+        // Along the row: the left axis (-fz, fx)
+        const px = x - fz * t, pz = z + fx * t;
+        if (onRoute(segments, px + fx * half, pz + fz * half) || onRoute(segments, px - fx * half, pz - fz * half)) return false;
+    }
+    return true;
+}
+
 // Barrier rows across every branch of a passed junction the route does not
-// use, at the branch's trimmed end, spanning its road, sidewalks and verges
+// use, spanning the branch's road, sidewalks and verges: at the branch's
+// trimmed end, or deeper in the branch where the row would stand on the
+// route's roadway there
 export function junctionBarriers(net: RoadNetwork, route: ResolvedRoute): TrackHint[] {
     const out: TrackHint[] = [];
     for (const pass of route.junctions) {
         const trim = junctionRadius(net, pass.node);
         for (const end of pass.others) {
             const edge = net.edges[end.edge];
-            const p = pointAt(edge.samples, end.atStart ? trim : edge.length - trim);
-            const sign = end.atStart ? 1 : -1;
             const profile = edge.profile;
+            const length = profile.width + profile.sidewalk.left + profile.sidewalk.right + 2 * profile.shoulder;
+            const segments = routeSegmentsNear(route, pass.node.x, pass.node.z, trim + BARRIER_MAX_PUSH + length);
+            const sign = end.atStart ? 1 : -1;
+            const deepest = Math.min(trim + BARRIER_MAX_PUSH, edge.length / 2);
+            let at = trim;
+            let p = pointAt(edge.samples, end.atStart ? at : edge.length - at);
+            while (!rowClear(segments, p.x, p.z, p.tx * sign, p.tz * sign, length) && at + BARRIER_PUSH_STEP <= deepest) {
+                at += BARRIER_PUSH_STEP;
+                p = pointAt(edge.samples, end.atStart ? at : edge.length - at);
+            }
             out.push({
                 kind: 'barrier',
                 x: toMillimetres(p.x), z: toMillimetres(p.z),
                 // Into the branch; the row runs across it (phase 2: along the left axis)
                 yaw: snapYaw(yawOf(p.tx * sign, p.tz * sign), AXIS_SNAP),
-                length: profile.width + profile.sidewalk.left + profile.sidewalk.right + 2 * profile.shoulder
+                length
             });
         }
     }

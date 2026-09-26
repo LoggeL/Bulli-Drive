@@ -207,21 +207,39 @@ export interface HorizonOptions {
     landFrom: number;
 }
 
+// Beyond a coast the hills ease in over COAST_EASE m from the shore line
+// along the border (probed every COAST_STEP m) instead of rising as a
+// sharp wedge above it
+export const COAST_EASE = 120;
+const COAST_STEP = 10;
+
 /**
  * Height of the rendered ground: the sim's ground on the map, and beyond
  * its data the border height rising into hills over the first few hundred
- * metres (only where the border is land; the sea stays the sea).
+ * metres (only where the border is land, easing in over COAST_EASE m from
+ * a coast; the sea stays the sea).
  */
 export function horizonHeight(ground: HeightFn, options: HorizonOptions): HeightFn {
+    const clampX = (x: number) => (x < options.minX ? options.minX : x > options.maxX ? options.maxX : x);
+    const clampZ = (z: number) => (z < options.minZ ? options.minZ : z > options.maxZ ? options.maxZ : z);
+    const isLand = (x: number, z: number) => smooth(options.landFrom, options.landFrom + 10, ground(x, z));
     return (x, z) => {
-        const cx = x < options.minX ? options.minX : x > options.maxX ? options.maxX : x;
-        const cz = z < options.minZ ? options.minZ : z > options.maxZ ? options.maxZ : z;
+        const cx = clampX(x);
+        const cz = clampZ(z);
         const border = ground(cx, cz);
         if (cx === x && cz === z) return border;
         const dx = x - cx, dz = z - cz;
         const d = Math.sqrt(dx * dx + dz * dz);
-        const land = smooth(options.landFrom, options.landFrom + 10, border);
-        if (land <= 0) return border;
+        const here = isLand(cx, cz);
+        if (here <= 0) return border;
+        // The nearest sea along the border: x where z lies beyond it, z where x does
+        let shore = COAST_EASE;
+        for (let o = COAST_STEP; o < shore; o += COAST_STEP) {
+            const sea = (cz !== z && (isLand(clampX(cx + o), cz) <= 0 || isLand(clampX(cx - o), cz) <= 0))
+                || (cx !== x && (isLand(cx, clampZ(cz + o)) <= 0 || isLand(cx, clampZ(cz - o)) <= 0));
+            if (sea) shore = o;
+        }
+        const land = here * smooth(0, COAST_EASE, shore);
         const ridge = 1 - Math.abs(fbm(x / 900 + 3.1, z / 900 - 1.7, 3) * 2 - 1);
         const hills = smooth(0, 700, d) * (50 + 170 * fbm(x / 520, z / 520) * (0.55 + 0.9 * ridge));
         return border + land * hills;

@@ -53,7 +53,7 @@ async function place(page: Page, view: { x: number; z: number; yaw: number }): P
     }).toBeLessThan(0.5);
 }
 
-test('the phone tier stays within 150 draw calls and 500 k triangles including shadows on Bulli Bay', async ({ openPlayer }) => {
+test('the phone tier stays within 150 draw calls and 500 k triangles including shadows on Bulli Bay, its ground colours apart', async ({ openPlayer }) => {
     const player = await openPlayer('world-low');
     await joinGame(player, 'E2E World Low', '&tier=low', 'freeroam');
     const { page } = player;
@@ -103,6 +103,9 @@ test('the phone tier stays within 150 draw calls and 500 k triangles including s
     expect(others.every(car => car.gltf && car.lod >= 1 && car.shadowCasters === 0)).toBe(true);
     expect(party.calls, `${alone} calls alone`).toBeLessThanOrEqual(150);
     expect(party.triangles).toBeLessThanOrEqual(500_000);
+
+    // On the same page (a second join would cost the job 10 s)
+    await checkGroundColours(page);
 });
 
 test('without its KTX2 textures the world is plainly shaded, not black', async ({ openPlayer }) => {
@@ -130,3 +133,39 @@ test('without its KTX2 textures the world is plainly shaded, not black', async (
     // above 45, the old threshold, which let exactly that pass)
     expect((r + g + b) / 3, `mean color ${r}, ${g}, ${b}`).toBeGreaterThan(80);
 });
+
+// CIE L*a*b* of an sRGB colour (0-255, D65)
+function lab([r, g, b]: [number, number, number]): [number, number, number] {
+    const lin = (c: number) => (c / 255 <= 0.04045 ? c / 255 / 12.92 : ((c / 255 + 0.055) / 1.055) ** 2.4);
+    const [lr, lg, lb] = [lin(r), lin(g), lin(b)];
+    const x = (0.4124 * lr + 0.3576 * lg + 0.1805 * lb) / 0.95047;
+    const y = 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
+    const z = (0.0193 * lr + 0.1192 * lg + 0.9505 * lb) / 1.08883;
+    const f = (t: number) => (t > 216 / 24389 ? Math.cbrt(t) : (24389 / 27 * t + 16) / 116);
+    return [116 * f(y) - 16, 500 * (f(x) - f(y)), 200 * (f(y) - f(z))];
+}
+
+// The concrete of the lots and the dry sand read apart from the ground
+// round them (review: one brown). Straight down from 12 m (the frame all
+// one surface) under the evening sun: the gas station's lot, the dry grass
+// east of it, the dry sand of the beach. Before (a warm concrete under the
+// G1 light, the sand like the earth): ΔE 13 between lot and ground, 12
+// between sand and ground; now 26 and 20 (SwiftShader, phone tier)
+async function checkGroundColours(page: Page): Promise<void> {
+    const down = async (x: number, z: number) => {
+        await debugCall(page, 'placeLocalCar', x - 30, z - 30, 0);
+        const y = ground(x, z);
+        await debugCall(page, 'setCameraOverride', { position: [x, y + 12, z], lookAt: [x, y, z + 0.05], fov: 50 });
+        await waitFrames(page, 3);
+        return lab(await meanColor(page));
+    };
+    const lot = await down(640, 12), grass = await down(720, 12), sand = await down(-620, -120);
+    await debugCall(page, 'setCameraOverride', null);
+    const dE = (a: number[], b: number[]) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+    const at = `lot ${lot.map(v => v.toFixed(1))}, sand ${sand.map(v => v.toFixed(1))}, ground ${grass.map(v => v.toFixed(1))}`;
+    expect(dE(lot, grass), at).toBeGreaterThan(18);
+    expect(dE(sand, grass), at).toBeGreaterThan(15);
+    // The concrete greyer than the ground (chroma), the sand lighter
+    expect(Math.hypot(lot[1], lot[2]), at).toBeLessThan(Math.hypot(grass[1], grass[2]));
+    expect(sand[0], at).toBeGreaterThan(grass[0] + 10);
+}

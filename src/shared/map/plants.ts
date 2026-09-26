@@ -73,6 +73,16 @@ export const PLANT_AREA_MARGIN = 2;
 export const PLANT_BUILDING_MARGIN = 1.5;
 // Lowest ground above the water
 const PLANT_MIN_HEIGHT = 0.5;
+// Steepest ground under a plant: the gradient over ±1 m, tan 35° (a trunk
+// on a cliff face would float over the ground below it)
+export const PLANT_MAX_GRADE = 0.7;
+
+/** The ground's gradient at (x, z): the height change per metre from central differences over ±1 m. */
+export function groundGrade(hf: Heightfield, x: number, z: number): number {
+    const gx = (heightAt(hf, x + 1, z) - heightAt(hf, x - 1, z)) / 2;
+    const gz = (heightAt(hf, x, z + 1) - heightAt(hf, x, z - 1)) / 2;
+    return Math.sqrt(gx * gx + gz * gz);
+}
 
 export interface PlantContext {
     net: RoadNetwork;
@@ -81,6 +91,8 @@ export interface PlantContext {
     boundary: readonly Vec2[];
     buildings: BoxIndex;
     reserved: readonly OBox[];
+    // Breakwater lines (pois.json moles): rock armour along them
+    moles?: readonly (readonly Vec2[])[];
 }
 
 function pick(rule: PlantRule, u: number): PlantKind {
@@ -114,6 +126,7 @@ export function plantFits(ctx: PlantContext, x: number, z: number, r: number, co
     if (heightAt(ctx.hf, x, z) < ctx.hf.spec.waterLevel + PLANT_MIN_HEIGHT) return false;
     const surface = surfaceAt(ctx.hf, x, z);
     if (surface === SURFACE.water || surface === SURFACE.wetSand) return false;
+    if (groundGrade(ctx.hf, x, z) > PLANT_MAX_GRADE) return false;
     if (corridor && insideCorridor(ctx.net, x, z, PLANT_CORRIDOR_MARGIN + r)) return false;
     for (const area of ctx.areas) if (!clearOfArea(area, x, z, PLANT_AREA_MARGIN + r)) return false;
     if (ctx.buildings.contains(x, z, PLANT_BUILDING_MARGIN + r)) return false;
@@ -147,7 +160,95 @@ function streetPalms(ctx: PlantContext, out: Plant[]): void {
     }
 }
 
-/** Every plant with a collider: street palms, then the zones in PLANT_RULES order, row by row. */
+// Talus at the foot of the rock faces (the cliffs): on a TALUS_CELL m
+// jittered grid, a rock where the ground is gentle (at most TALUS_MAX_GRADE)
+// and rock stands TALUS_DROP m higher within TALUS_REACH m (in one of eight
+// directions), down into the shallow water at the foot
+export const TALUS_CELL = 6;
+export const TALUS_DENSITY = 0.8;
+export const TALUS_REACH = 8;
+export const TALUS_DROP = 4;
+export const TALUS_MAX_GRADE = 0.5;
+export const TALUS_MIN_HEIGHT = -0.8;
+const TALUS_DIRECTIONS: readonly Vec2[] = [[1, 0], [0.7071, 0.7071], [0, 1], [-0.7071, 0.7071], [-1, 0], [-0.7071, -0.7071], [0, -1], [0.7071, -0.7071]];
+
+/** Whether (x, z) lies at the foot of a rock face: rock at least TALUS_DROP m higher within TALUS_REACH m. */
+export function atRockFoot(hf: Heightfield, x: number, z: number): boolean {
+    const h = heightAt(hf, x, z);
+    for (const [dx, dz] of TALUS_DIRECTIONS) {
+        for (let d = 2; d <= TALUS_REACH; d += 2.5) {
+            const px = x + dx * d, pz = z + dz * d;
+            if (surfaceAt(hf, px, pz) === SURFACE.rock && heightAt(hf, px, pz) >= h + TALUS_DROP) return true;
+        }
+    }
+    return false;
+}
+
+function talusRocks(ctx: PlantContext, out: Plant[]): void {
+    const spec = ctx.hf.spec;
+    const extent = (spec.cols - 1) * spec.cellSize;
+    const cells = Math.floor(extent / TALUS_CELL);
+    for (let j = 0; j < cells; j++) {
+        for (let i = 0; i < cells; i++) {
+            const h = hashMix(hashMix(0x7a105, i), j);
+            if (hashUnit(h) >= TALUS_DENSITY) continue;
+            const x = toMillimetre(spec.originX + (i + 0.1 + 0.8 * hashUnit(hashMix(h, 1))) * TALUS_CELL);
+            const z = toMillimetre(spec.originZ + (j + 0.1 + 0.8 * hashUnit(hashMix(h, 2))) * TALUS_CELL);
+            const ground = heightAt(ctx.hf, x, z);
+            if (ground < spec.waterLevel + TALUS_MIN_HEIGHT) continue;
+            if (groundGrade(ctx.hf, x, z) > TALUS_MAX_GRADE || !atRockFoot(ctx.hf, x, z)) continue;
+            const kind: PlantKind = hashUnit(hashMix(h, 3)) < 0.4 ? 'boulder' : 'rock';
+            const size = toMillimetre(0.6 + 0.6 * hashUnit(hashMix(h, 4)));
+            const r = PLANT_COLLIDERS[kind].r * size;
+            if (!pointInPolygon(ctx.boundary, x, z)) continue;
+            if (insideCorridor(ctx.net, x, z, PLANT_CORRIDOR_MARGIN + r)) continue;
+            if (ctx.areas.some(area => !clearOfArea(area, x, z, PLANT_AREA_MARGIN + r))) continue;
+            if (ctx.buildings.contains(x, z, PLANT_BUILDING_MARGIN + r)) continue;
+            if (ctx.reserved.some(box => boxContains(box, x, z, r))) continue;
+            // Clear of the plants placed so far
+            if (out.some(p => {
+                const reach = r + PLANT_COLLIDERS[p.kind].r * p.size;
+                return (p.x - x) * (p.x - x) + (p.z - z) * (p.z - z) < reach * reach;
+            })) continue;
+            out.push({ kind, x, z, size, seed: hashMix(h, 5) % 100000 });
+        }
+    }
+}
+
+// A breakwater's armour: every MOLE_STEP m along the line a boulder on the
+// crest and a rock on each flank MOLE_FLANK m out (a quarter and three
+// quarters of a step further on), sizes drawn from a hash of the mole and
+// the step; a pile, so they may touch
+export const MOLE_STEP = 2.6;
+export const MOLE_FLANK = 2.8;
+
+function moleRocks(ctx: PlantContext, out: Plant[]): void {
+    (ctx.moles ?? []).forEach((line, m) => {
+        let k = 0;
+        for (let i = 1; i < line.length; i++) {
+            const [ax, az] = line[i - 1], [bx, bz] = line[i];
+            const dx = bx - ax, dz = bz - az;
+            const length = Math.sqrt(dx * dx + dz * dz);
+            const tx = dx / length, tz = dz / length;
+            for (let s = i === 1 ? 0 : MOLE_STEP / 2; s <= length; s += MOLE_STEP, k++) {
+                const h = hashMix(hashMix(0x3013, m), k);
+                for (const [across, kind, min, ahead] of [[0, 'boulder', 1, 0], [MOLE_FLANK, 'rock', 0.8, 0.25], [-MOLE_FLANK, 'rock', 0.8, 0.75]] as const) {
+                    const along = s + ahead * MOLE_STEP;
+                    const x = toMillimetre(ax + tx * along - tz * across), z = toMillimetre(az + tz * along + tx * across);
+                    const size = toMillimetre(min + 0.3 * hashUnit(hashMix(h, across === 0 ? 1 : across > 0 ? 2 : 3)));
+                    const r = PLANT_COLLIDERS[kind].r * size;
+                    // Not on a road, an area, a building or a reserved place
+                    if (!pointInPolygon(ctx.boundary, x, z) || insideCorridor(ctx.net, x, z, PLANT_CORRIDOR_MARGIN + r)) continue;
+                    if (ctx.areas.some(area => !clearOfArea(area, x, z, PLANT_AREA_MARGIN + r))) continue;
+                    if (ctx.buildings.contains(x, z, PLANT_BUILDING_MARGIN + r) || ctx.reserved.some(box => boxContains(box, x, z, r))) continue;
+                    out.push({ kind, x, z, size, seed: hashMix(h, across === 0 ? 4 : across > 0 ? 5 : 6) % 100000 });
+                }
+            }
+        }
+    });
+}
+
+/** Every plant with a collider: street palms, then the zones in PLANT_RULES order, row by row, then the talus at the rock faces and the breakwaters' armour. */
 export function placePlants(ctx: PlantContext): Plant[] {
     const out: Plant[] = [];
     streetPalms(ctx, out);
@@ -171,5 +272,7 @@ export function placePlants(ctx: PlantContext): Plant[] {
             }
         }
     }
+    talusRocks(ctx, out);
+    moleRocks(ctx, out);
     return out;
 }

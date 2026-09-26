@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { mapFor } from '../../../src/server/maps.js';
 import { heightAt } from '../../../src/shared/map/heightfield.js';
-import { roadSurfaceIdAt } from '../../../src/shared/map/roadNetwork.js';
+import { nearestRoad, roadSurfaceIdAt } from '../../../src/shared/map/roadNetwork.js';
 import { isPaved } from '../../../src/shared/map/types.js';
 import { createProjection, pointAt, projectGlobal } from '../../../src/shared/race/geometry.js';
 import { createCourse } from '../../../src/shared/race/progress.js';
 import { gateSide } from '../../../src/shared/race/gates.js';
-import { createRaceWorld } from '../../../src/shared/race/raceWorld.js';
+import { BARRIER_DEPTH, createRaceWorld } from '../../../src/shared/race/raceWorld.js';
 import { buildRacingLine } from '../../../src/shared/race/racingLine.js';
 import { MAX_RACERS } from '../../../src/shared/race/rules.js';
 import { isTrackId, mapTracks, nextTrack, trackDef, TRACK_IDS } from '../../../src/shared/race/tracks/index.js';
@@ -85,6 +85,36 @@ describe.each(TRACK_IDS.map(id => [id] as const))('%s on Bulli Bay', id => {
             }
         }
         expect(nearest, at).toBeGreaterThanOrEqual(2.5);
+    });
+
+    it('keeps its barrier rows off the roadway of its centre line', () => {
+        // Each row (0.6 m deep) sampled every 0.25 m on both faces; the
+        // roadway is the half width of the road nearest to the centre line
+        // there (junction branches meeting at an acute angle put a row at
+        // the trim radius onto the inside of the turn)
+        const pts = track.centerline;
+        const n = pts.length;
+        let worst = Infinity, at = '';
+        for (const hint of track.hints) {
+            if (hint.kind !== 'barrier') continue;
+            const lx = Math.cos(hint.yaw), lz = -Math.sin(hint.yaw), fx = Math.sin(hint.yaw), fz = Math.cos(hint.yaw);
+            for (let t = -hint.length / 2; t <= hint.length / 2 + 1e-9; t += 0.25) {
+                for (const d of [-BARRIER_DEPTH / 2, BARRIER_DEPTH / 2]) {
+                    const x = hint.x + lx * t + fx * d, z = hint.z + lz * t + fz * d;
+                    for (let i = 0; i < (track.kind === 'circuit' ? n : n - 1); i++) {
+                        const a = pts[i], b = pts[(i + 1) % n];
+                        if (Math.abs(a.x - x) > 30 || Math.abs(a.z - z) > 30) continue;
+                        const ex = b.x - a.x, ez = b.z - a.z;
+                        const u = Math.max(0, Math.min(1, ((x - a.x) * ex + (z - a.z) * ez) / (ex * ex + ez * ez)));
+                        const cx = a.x + ex * u, cz = a.z + ez * u;
+                        const road = nearestRoad(map.net, cx, cz, 20);
+                        const margin = Math.hypot(x - cx, z - cz) - (road?.edge.halfWidth ?? 0);
+                        if (margin < worst) { worst = margin; at = `barrier ${hint.x} ${hint.z} at ${x.toFixed(1)} ${z.toFixed(1)}`; }
+                    }
+                }
+            }
+        }
+        expect(worst, at).toBeGreaterThanOrEqual(0);
     });
 
     it('has at least 8 grid slots behind the first gate, on the road and clear of every collider', () => {

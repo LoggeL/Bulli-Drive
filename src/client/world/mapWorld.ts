@@ -4,7 +4,7 @@ import { heightAt } from '../../shared/map/heightfield.js';
 import type { MapData } from '../../shared/map/mapData.js';
 import { PLANT_COLLIDERS } from '../../shared/map/plants.js';
 import type { FurnitureKind } from '../../shared/map/furniture.js';
-import { areaRailLine, railLine } from '../../shared/map/rails.js';
+import { areaRailLine, BOLLARD_TOP, railLine } from '../../shared/map/rails.js';
 import type { RailKind } from '../../shared/map/roadSchema.js';
 import { leftNormal, pointAt } from '../../shared/map/spline.js';
 import type { RoomKind } from '../../shared/protocol.js';
@@ -20,7 +20,7 @@ import { cellDistance, cellKey, cellLod, CELL_SIZES, occupiedCells, selectCells,
 import type { WorldMaterials } from './materials.js';
 import { createPalms, type PalmSpot } from './palms.js';
 import { alongPolyline, polylineLength, postsAlong, railPieces } from './railings.js';
-import { crestSpots } from './viewpoint.js';
+import { railSpots } from './viewpoint.js';
 import { createRoads } from './roads.js';
 import { mailboxSpots, ranchFences, scatterDecor, type DecorSpot } from './scatter.js';
 import { createSea } from './sea.js';
@@ -49,6 +49,8 @@ const FENCE_HEIGHT = 2.4;
 // Wooden railings: posts every 2 m, 1.05 m
 const RAIL_POST_SPACING = 2;
 const RAIL_HEIGHT = 1.05;
+// A quay's bollards (rail kind 'bollard')
+const BOLLARD_SPACING = 3;
 // The lookout's coin telescopes: painted steel, dark lenses
 const TELESCOPE: Finish = { color: rgb(0x2f5d45), rough: 0.42, metal: 0.25 };
 // Painted sheet metal of the mailboxes
@@ -230,7 +232,7 @@ export class MapWorld {
         const key = cellKey(ref.level, ref.i, ref.j);
         let cell = this.cells.get(key);
         if (cell) return cell;
-        const geometry = this.kit ? mergeKit(this.kit, this.cellMembers(ref), cellLod(ref.level, this.quality.kit.nearLod)) : null;
+        const geometry = this.kit ? mergeKit(this.kit, this.cellMembers(ref), cellLod(ref.level, this.quality.kit.nearLod, this.quality.kit.midLod)) : null;
         let mesh: THREE.Mesh | null = null;
         if (geometry && this.kit) {
             mesh = new THREE.Mesh(geometry, this.kit.material);
@@ -639,6 +641,27 @@ export class MapWorld {
             }
         }
         const up = new THREE.Vector3(0, 1, 0);
+        // A quay's bollards: cast iron posts every BOLLARD_SPACING m, a chain
+        // between them
+        for (const area of net.areas) {
+            for (const rail of area.rails ?? []) {
+                if (rail.kind !== 'bollard') continue;
+                const posts = postsAlong(areaRailLine(area, rail) as Vec2[], BOLLARD_SPACING);
+                posts.forEach(([px, pz], k) => {
+                    const y = heightAt(hf, px, pz);
+                    batch.add(new THREE.CylinderGeometry(0.1, 0.16, BOLLARD_TOP, 6, 1, true).translate(px, y + BOLLARD_TOP / 2, pz), FINISH.castIron);
+                    batch.add(new THREE.CylinderGeometry(0.02, 0.13, 0.12, 6, 1, true).translate(px, y + BOLLARD_TOP + 0.06, pz), FINISH.castIron);
+                    if (k === 0) return;
+                    const [qx, qz] = posts[k - 1];
+                    const a = new THREE.Vector3(qx, heightAt(hf, qx, qz) + BOLLARD_TOP - 0.18, qz), b = new THREE.Vector3(px, y + BOLLARD_TOP - 0.18, pz);
+                    const g = new THREE.CylinderGeometry(0.02, 0.02, a.distanceTo(b), 3, 1, true).rotateZ(Math.PI / 2);
+                    const dir = b.clone().sub(a).normalize();
+                    g.applyMatrix4(new THREE.Matrix4().makeBasis(dir, up, new THREE.Vector3().crossVectors(dir, up).normalize())
+                        .setPosition((a.x + b.x) / 2, (a.y + b.y) / 2 - 0.06, (a.z + b.z) / 2));
+                    batch.add(g, FINISH.castIron);
+                });
+            }
+        }
         for (const { line } of lines) {
             const posts = postsAlong(line, RAIL_POST_SPACING);
             posts.forEach(([px, pz], k) => {
@@ -664,20 +687,21 @@ export class MapWorld {
         if (mesh) group.add(mesh);
     }
 
-    // The lookout's coin telescopes (design 3.3): two on the knoll between
-    // its lot and the bay (the pier), where the view opens (viewpoint.ts,
-    // A66); small props like the sunshades, without a collider
+    // The lookout's coin telescopes (design 3.3): two at its lot's railing,
+    // in the corner towards the bay (the pier), 1 m inside the rail
+    // (viewpoint.ts, A66); small props like the sunshades, without a collider
     private addTelescopes(batch: PropBatch): void {
         const { landmarks } = this.map.sources.pois;
         const pier = landmarks.find(landmark => landmark.kind === 'pier');
         const ground = (x: number, z: number) => heightAt(this.map.hf, x, z);
         for (const lookout of landmarks) {
             const area = lookout.kind === 'lookout' && lookout.area ? this.map.net.areas.find(a => a.id === lookout.area) : undefined;
-            if (!area || !pier) continue;
+            const rail = area?.rails?.[0];
+            if (!area || !rail || !pier) continue;
             let cx = 0, cz = 0;
             for (const [px, pz] of area.polygon) { cx += px; cz += pz; }
             const from: Vec2 = [cx / area.polygon.length, cz / area.polygon.length];
-            for (const spot of crestSpots(ground, from, [pier.x, pier.z], 20, 90, 2, 1.8)) {
+            for (const spot of railSpots(areaRailLine(area, rail) as Vec2[], from, [pier.x, pier.z], 2, 2.2, 1)) {
                 const matrix = new THREE.Matrix4().makeRotationY(spot.yaw).setPosition(spot.x, ground(spot.x, spot.z), spot.z);
                 addTelescope(batch, matrix);
             }

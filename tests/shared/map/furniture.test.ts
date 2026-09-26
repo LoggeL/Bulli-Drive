@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { mapFor } from '../../../src/server/maps.js';
-import { FURNITURE_COLLIDERS, FURNITURE_ZONES, placeFurniture, type Furniture, type FurnitureContext } from '../../../src/shared/map/furniture.js';
+import { FURNITURE_COLLIDERS, FURNITURE_ZONES, LIT_LOT_AREA, litLots, placeFurniture, type Furniture, type FurnitureContext } from '../../../src/shared/map/furniture.js';
+import type { RoadArea } from '../../../src/shared/map/roadSchema.js';
 import { zoneAt } from '../../../src/shared/map/heightfield.js';
 import { pointInPolygon } from '../../../src/shared/map/geometry.js';
 import { buildRoadNetwork, insideCorridor, isOnRoad } from '../../../src/shared/map/roadNetwork.js';
@@ -295,20 +296,53 @@ describe('placeFurniture at a signalled junction', () => {
     });
 });
 
+describe('placeFurniture round a lot', () => {
+    // A road from the west ending at (0, 0) on the west side of a 90 × 40 m
+    // lot (3600 m², lit from 3000); zone residential: no street furniture
+    const lot: RoadArea = { id: 'lot', polygon: [[0, -20], [90, -20], [90, 20], [0, 20]], surface: 'asphalt', curb: true, connects: ['b'] };
+    const net = buildRoadNetwork(network([node('a', -90, 0), node('b', 0, 0)], [edge('ab', 'a', 'b')], { areas: [lot] }));
+
+    it('lights large lots only, not the arena, and not a square', () => {
+        expect(LIT_LOT_AREA).toBe(3000);
+        expect(litLots([lot], 'arena').map(a => a.id)).toEqual(['lot']);
+        expect(litLots([lot], 'lot')).toEqual([]);
+        expect(litLots([{ ...lot, polygon: [[0, -20], [70, -20], [70, 20], [0, 20]] }], 'arena')).toEqual([]);
+        expect(litLots([{ ...lot, markings: 'plazaPavers' }], 'arena')).toEqual([]);
+    });
+
+    it('stands a light every 30 m round the rim, 1 m inside, the arm over the lot, not where the road comes in', () => {
+        const pieces = placeFurniture({ ...context(net, () => ZONE.residential), lots: [lot] });
+        // Long sides: 3 lights centred (s = 15, 45, 75); short sides: one in
+        // the middle, the west one 1 m from the road's end is left out.
+        // Local x = (uz, -ux) points into the lot
+        expect(where(pieces, 'lamp')).toEqual([
+            [15, -19, -1, 0], [45, -19, -1, 0], [75, -19, -1, 0],
+            [89, 0, 0, -1],
+            [75, 19, 1, 0], [45, 19, 1, 0], [15, 19, 1, 0]
+        ]);
+        // A reserved place (a spawn) takes its light
+        const reserved = [{ x: 45, z: 15, hw: 8, hd: 8, ux: 0, uz: 1 }];
+        expect(where(placeFurniture({ ...context(net, () => ZONE.residential), lots: [lot], reserved }), 'lamp')).toHaveLength(6);
+    });
+});
+
 describe('Bulli Bay\'s street furniture', () => {
     const map = mapFor();
 
     it('stands off the carriageways, in Downtown and the park, clear of buildings, each on its collider, benches round the fountain', () => {
         expect(map.furniture.length).toBeGreaterThan(200);
+        const lots = litLots(map.net.areas, map.sources.pois.arena.area);
         const buildings = new BoxIndex();
         for (const lot of map.buildings) buildings.add(placementBox(lot));
         for (const piece of map.furniture) {
             const tag = `${piece.kind} at ${piece.x}, ${piece.z}`;
             // On the plaza (an area) off the roads and sidewalks round it,
             // elsewhere off every drivable surface
-            if (map.net.areas.some(area => pointInPolygon(area.polygon, piece.x, piece.z))) expect(insideCorridor(map.net, piece.x, piece.z, 0), tag).toBe(false);
+            const onLot = lots.some(area => pointInPolygon(area.polygon, piece.x, piece.z));
+            if (onLot || map.net.areas.some(area => pointInPolygon(area.polygon, piece.x, piece.z))) expect(insideCorridor(map.net, piece.x, piece.z, 0), tag).toBe(false);
             else expect(isOnRoad(map.net, piece.x, piece.z), tag).toBe(false);
-            expect(FURNITURE_ZONES, tag).toContain(zoneAt(map.hf, piece.x, piece.z));
+            // A lot's lights in any zone
+            if (!onLot) expect(FURNITURE_ZONES, tag).toContain(zoneAt(map.hf, piece.x, piece.z));
             expect(buildings.contains(piece.x, piece.z, 0.2), tag).toBe(false);
             expect(Math.hypot(piece.ux, piece.uz), tag).toBeCloseTo(1, 3);
             const collider = map.colliders.find(c => (c.kind === 'circle' || c.kind === 'obox') && c.x === piece.x && c.z === piece.z);
@@ -318,6 +352,11 @@ describe('Bulli Bay\'s street furniture', () => {
         }
         // Main Street's signals: its junctions with the four avenues
         expect(map.furniture.filter(p => p.kind === 'signal').length).toBeGreaterThanOrEqual(16);
+        // Lights round the gas station's and the diner's lots
+        for (const id of ['gas-station', 'diner-parking']) {
+            const area = map.net.areas.find(a => a.id === id)!;
+            expect(map.furniture.filter(p => p.kind === 'lamp' && pointInPolygon(area.polygon, p.x, p.z)).length, id).toBeGreaterThanOrEqual(4);
+        }
         // The plaza's ring: all eight benches round the fountain (-350, -70)
         expect(map.furniture.filter(p => p.kind === 'bench' && Math.abs(Math.hypot(p.x + 350, p.z + 70) - 11) < 0.01)).toHaveLength(8);
     });

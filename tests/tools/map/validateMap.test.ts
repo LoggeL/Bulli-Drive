@@ -48,7 +48,7 @@ describe('checkConnectivity', () => {
         const findings = checkConnectivity(net(network(
             [node('a', 0, 0), node('b', 100, 0), node('c', 0, 100), node('d', 60, 100)],
             [edge('cd', 'c', 'd'), edge('ab', 'a', 'b')],
-            { areas: [{ id: 'lot', polygon: [[-20, 90], [-5, 90], [-5, 110], [-20, 110]], surface: 'asphalt', curb: false, connects: ['c'] }] }
+            { areas: [{ id: 'lot', polygon: [[-20, 90], [0, 90], [0, 110], [-20, 110]], surface: 'asphalt', curb: false, connects: ['c'] }] }
         )));
         expect(messages(findings)).toEqual([
             'edges cd are not connected to the network',
@@ -56,11 +56,20 @@ describe('checkConnectivity', () => {
         ]);
     });
 
+    it('asks an area\'s road to reach it: every node it connects on its outline or inside, within 1 m', () => {
+        const lot = (x0: number) => net(network([node('a', 0, 0), node('b', 100, 0)], [edge('ab', 'a', 'b')], {
+            areas: [{ id: 'lot', polygon: [[x0, -20], [x0 + 40, -20], [x0 + 40, 20], [x0, 20]], surface: 'asphalt', curb: false, connects: ['b'] }]
+        }));
+        expect(checkConnectivity(lot(100.8))).toEqual([]);
+        expect(checkConnectivity(lot(90))).toEqual([]);
+        expect(messages(checkConnectivity(lot(106)))).toEqual(['area lot: node b lies 6.0 m off its outline']);
+    });
+
     it('joins the parts an area connects', () => {
         const joined = net(network(
             [node('a', 0, 0), node('b', 100, 0), node('c', 0, 100), node('d', 60, 100)],
             [edge('cd', 'c', 'd'), edge('ab', 'a', 'b')],
-            { areas: [{ id: 'lot', polygon: [[90, 10], [110, 10], [110, 90], [90, 90]], surface: 'asphalt', curb: false, connects: ['b', 'd'] }] }
+            { areas: [{ id: 'lot', polygon: [[60, 0], [110, 0], [110, 100], [60, 100]], surface: 'asphalt', curb: false, connects: ['b', 'd'] }] }
         ));
         expect(checkConnectivity(joined)).toEqual([]);
     });
@@ -301,6 +310,21 @@ describe('checkAreaRails (railings along the pier, lookouts and quays)', () => {
             expect.stringMatching(/^area deck, side 3 /)
         ]);
         expect(checkAreaRails(deck({ tags: ['noRail'] }), ground)).toEqual([]);
+    });
+
+    it('keeps an open railing\'s ends off the drivable width of a road (a flare leads them out)', () => {
+        // A pier 8 m wide at the end of a 10 m road (x = 0): its railings end
+        // 0.3 m inside the pier's sides, at z = ±3.7 on the road; flared 4 m
+        // back and 1.8 m out they end at z = ±5.5, beside the road
+        const pier = (flare?: [number, number]) => net(network([node('a', -80, 0), node('b', 0, 0)], [edge('ab', 'a', 'b')], {
+            areas: [{ id: 'pier', polygon: [[0, -4], [40, -4], [40, 4], [0, 4]], y: 5, surface: 'wood', curb: false, connects: ['b'],
+                rails: [{ from: 0, to: 3, kind: 'wood', ...(flare ? { flare } : {}) }] }]
+        }));
+        expect(messages(checkAreaRails(pier(), FLAT))).toEqual([
+            'area pier: a railing ends on the drivable width of ab',
+            'area pier: a railing ends on the drivable width of ab'
+        ]);
+        expect(checkAreaRails(pier([4, 1.8]), FLAT)).toEqual([]);
     });
 
     it('measures a level area from beyond its 4 m flat margin', () => {
@@ -612,6 +636,14 @@ describe('checkPois', () => {
         expect(messages(checkPois(poiNetwork(), wet, POI_MAP, { ...validPois(), jumps: [{ ...jump, z: -48 }] })))
             .toContainEqual('jump kicker: a car at 90 km/h lands in the water or beyond the boundary');
         expect(checkPois(poiNetwork(), wet, POI_MAP, { ...validPois(), jumps: [{ ...jump, z: -52 }] })).toEqual([]);
+        // A run-up of 30 m behind the rear edge, checked every 2 m: from a
+        // ramp at z = 1 heading south (rear edge at z = -4) it reaches the
+        // water at z = -12 (the 2 m grid: -10 is still dry); from one at
+        // z = -70 (rear edge -75) it leaves the map at z = -91
+        expect(messages(checkPois(poiNetwork(), wet, POI_MAP, { ...validPois(), jumps: [{ ...jump, z: 1 }] })))
+            .toEqual(['jump kicker: the 30 m run-up runs into deep water 8 m behind the ramp']);
+        expect(messages(checkPois(poiNetwork(), FLAT, POI_MAP, { ...validPois(), jumps: [{ ...jump, z: -70 }] })))
+            .toEqual(['jump kicker: the 30 m run-up leaves the map 16 m behind the ramp']);
         // A ramp without a working lip gets no landing check on top
         expect(messages(checkPois(poiNetwork(), wet, POI_MAP, { ...validPois(), jumps: [{ ...jump, z: -48, height: 0.5 }] })))
             .toEqual(['jump kicker: lip 0.50 m above the ground in front (height 0.5 m less the rise of the ground), needs 0.8 m']);

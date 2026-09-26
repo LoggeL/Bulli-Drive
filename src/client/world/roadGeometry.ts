@@ -410,14 +410,51 @@ function addArea(layers: Record<RoadLayer, MeshArrays>, area: RoadArea, height: 
         for (let k = 0; k < steps; k++) outline.push([p[0] + (q[0] - p[0]) * k / steps, p[1] + (q[1] - p[1]) * k / steps]);
     }
     const first = out.vertexCount;
+    // An area at a fixed height is level (on its walls the ground at the
+    // outline would already lean down to the terrain outside)
+    const level = area.y;
+    const flat: [number, number, number] = [0, 1, 0];
     for (const [x, z] of outline) {
         const u = (x - frame.ox) * frame.ux + (z - frame.oz) * frame.uz;
         const v = (x - frame.ox) * frame.vx + (z - frame.oz) * frame.vz;
-        out.vertex(x, height(x, z) + AREA_LIFT, z, groundNormal(height, x, z), u, v, a, b);
+        if (level === undefined) out.vertex(x, height(x, z) + AREA_LIFT, z, groundNormal(height, x, z), u, v, a, b);
+        else out.vertex(x, level + AREA_LIFT, z, flat, u, v, a, b);
     }
     for (const [i, j, k] of triangulatePolygon(outline)) out.tri(first + i, first + j, first + k);
+    // A level area on walls (the quay) shows its walls down to below the sea floor
+    if (level !== undefined && area.walls) addAreaWalls(out, outline, level + AREA_LIFT, a, b);
     // A curb round a lot without roads (the plaza)
     if (area.curb && area.connects.length === 0) addAreaCurb(layers.walk, area.polygon, height);
+}
+
+// How far an area's walls reach down (m)
+export const AREA_WALL_DEPTH = 4;
+
+function addAreaWalls(out: MeshArrays, outline: readonly Vec2[], top: number, a: readonly number[], b: readonly number[]): void {
+    let twice = 0;
+    for (let i = 0, j = outline.length - 1; i < outline.length; j = i++) twice += outline[j][0] * outline[i][1] - outline[i][0] * outline[j][1];
+    // Positive: counter-clockwise in x-z, the outside right of each side
+    const outward = twice > 0 ? 1 : -1;
+    let u = 0;
+    for (let i = 0; i < outline.length; i++) {
+        const [px, pz] = outline[i], [qx, qz] = outline[(i + 1) % outline.length];
+        const l = Math.sqrt((qx - px) * (qx - px) + (qz - pz) * (qz - pz));
+        const n: [number, number, number] = [(qz - pz) / l * outward, 0, -(qx - px) / l * outward];
+        const v = out.vertexCount;
+        out.vertex(px, top, pz, n, u, 0, a, b);
+        out.vertex(qx, top, qz, n, u + l, 0, a, b);
+        out.vertex(px, top - AREA_WALL_DEPTH, pz, n, u, AREA_WALL_DEPTH, a, b);
+        out.vertex(qx, top - AREA_WALL_DEPTH, qz, n, u + l, AREA_WALL_DEPTH, a, b);
+        // (v, v + 2, v + 1) faces (-dz, 0, dx): flip it where that is inside
+        if (outward > 0) {
+            out.tri(v, v + 1, v + 2);
+            out.tri(v + 1, v + 3, v + 2);
+        } else {
+            out.tri(v, v + 2, v + 1);
+            out.tri(v + 1, v + 2, v + 3);
+        }
+        u += l;
+    }
 }
 
 function addAreaCurb(out: MeshArrays, polygon: readonly Vec2[], height: HeightFn): void {

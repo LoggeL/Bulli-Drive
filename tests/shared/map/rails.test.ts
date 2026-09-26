@@ -147,6 +147,14 @@ describe('area railings', () => {
             .toEqual([[19.5, 10], [19.5, 0.5], [0, 0.5]]);
     });
 
+    it('flares an open railing\'s ends outwards past their vertices, not a closed one', () => {
+        // Sides x = 20 and z = 10 as above; each end goes on 4 m along its
+        // side and bends 1 m out of the rectangle
+        expect(areaRailLine(area(ccw), { from: 1, to: 3, kind: 'wood', offset: 0.5, flare: [4, 1] }))
+            .toEqual([[20.5, -4], [19.5, 0], [19.5, 9.5], [0, 9.5], [-4, 10.5]]);
+        expect(areaRailLine(area(ccw), { from: 0, to: 0, kind: 'fence', flare: [4, 1] })).toHaveLength(5);
+    });
+
     it('mitres an oblique corner so the railing stays the offset away from both sides', () => {
         // The corner at (20 | 0) turns by 45° into the side up to (30 | 10)
         const trapeze: [number, number][] = [[0, 0], [20, 0], [30, 10], [0, 10]];
@@ -176,6 +184,13 @@ describe('area railings', () => {
         expect(all).toHaveLength(13 + 10);
         expect(all[0].top).toBe(RAIL_TOP);
         expect(all.at(-1)!.top).toBe(Infinity);
+    });
+
+    it('gives a quay\'s bollards a low top (a car hits them, 0.7 m, below the rails\' 0.8 m)', () => {
+        const quay = area(ccw, [{ from: 0, to: 1, kind: 'bollard' }]);
+        const colliders = areaRailColliders(quay, quay.rails![0]);
+        expect(colliders).toHaveLength(3);
+        for (const c of colliders) expect(c.top).toBe(0.7);
     });
 
     it('refuses a rail naming a vertex the polygon does not have', () => {
