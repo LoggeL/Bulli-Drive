@@ -2,7 +2,7 @@ import type * as THREE from 'three';
 import type { LoadProgress } from '../ui/loadProgress.js';
 import { onLoadPoll } from '../ui/loadingScreen.js';
 import { models, whenModelsReady } from './gameModels.js';
-import { textureStats, whenWorldTexturesLoaded } from '../world/textures.js';
+import { textureStats, textureTally, whenWorldTexturesLoaded } from '../world/textures.js';
 import { kitProgress, updateMapScene, whenKitReady } from '../world/mapScene.js';
 import { updatePalms } from '../world/palms.js';
 import { updateCarModels } from '../vehicle/CarModel.js';
@@ -11,10 +11,11 @@ import { ASSET_WAIT_MS } from '../ui/assetGate.js';
 
 // Wires the page's loaders to the loading screen's steps (docs/ui.md 3.2).
 // The connection and the map report from network/websocket.ts; everything
-// else from here: world textures (counted once the map's world asks for
-// them), the building kit (per group file), the chosen car's model files
-// and the other cars' (the menu phase), the HDRI (desktop tier) and the
-// shader warmup for the first frame.
+// else from here: world textures (once the map's world asks for them) and
+// the building kit (GLBs and atlas), both by the bytes that are in and
+// counted per file fetched (assets/fetchTally.ts), the chosen car's model
+// files and the other cars' (the menu phase), the HDRI (desktop tier) and
+// the shader warmup for the first frame.
 
 export interface LoadStepEnv {
     tier: string;
@@ -26,13 +27,19 @@ export interface LoadStepEnv {
 }
 
 const CAR_TYPES = ['bulli', 'beetle', 'pickup', 'sport', 'jeep'];
+// Shares of the download in the kit's and the textures' steps (the rest:
+// parsing, transcoding and uploading after the last byte)
+const KIT_FETCH_SHARE = 0.9;
+const TEXTURE_FETCH_SHARE = 0.8;
 
 export function trackLoadSteps(progress: LoadProgress, env: LoadStepEnv): void {
     // Building kit: starts with the renderer (main.ts)
     progress.start('kit');
     onLoadPoll(() => {
-        const [settled, total] = kitProgress();
-        if (total > 0) progress.report('kit', settled / total, [settled, total]);
+        // By the bytes that are in; the parse after the last byte is the rest
+        const tally = kitProgress();
+        const [fetched, total] = tally.count();
+        if (total > 0) progress.report('kit', KIT_FETCH_SHARE * tally.fraction(), [fetched, total]);
     });
     void whenKitReady().then(() => progress.done('kit'));
 
@@ -77,7 +84,12 @@ export function mapWorldBuilt(progress: LoadProgress, env: Pick<LoadStepEnv, 're
     progress.start('textures');
     const report = () => {
         const { requested, loaded, failed } = textureStats;
-        if (requested > 0) progress.report('textures', (loaded + failed) / requested, [loaded + failed, requested]);
+        if (requested === 0) return;
+        // The bytes that are in (the files the manifest sized so far), then
+        // the transcode and upload of each; the counter goes by the files fetched
+        const [fetched, sized] = textureTally.count();
+        const bytes = textureTally.fraction() * sized / requested;
+        progress.report('textures', TEXTURE_FETCH_SHARE * bytes + (1 - TEXTURE_FETCH_SHARE) * (loaded + failed) / requested, [fetched, requested]);
     };
     report();
     onLoadPoll(report);

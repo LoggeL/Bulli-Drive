@@ -1,8 +1,8 @@
 import { state } from '../state.js';
 import { CONFIG } from '../config.js';
 import {
-    PROTOCOL_VERSION,
     type GameEvent,
+    type ProfileId,
     type MemberInfo,
     type ServerMessage
 } from '../../shared/protocol.js';
@@ -28,12 +28,13 @@ import { releaseKeyboardInputs } from '../controls/keyboard.js';
 import { resetMobileControls } from '../controls/mobile.js';
 import { sendToServer, setSocketNetsim } from './socket.js';
 import { createSocketNetsim } from '../net/netsim.js';
-import { hideConnectionOverlay, reconnectingText, showConnectionNotice, showReconnecting } from '../ui/connectionOverlay.js';
+import { hideConnectionOverlay, loaderWaitingText, reconnectingText, showConnectionNotice, showReconnecting } from '../ui/connectionOverlay.js';
 import { roomSimWorld, setGameMapWorld } from '../vehicle/simWorldClient.js';
 import { assistProfileForDevice } from '../vehicle/LocalVehicle.js';
 import { startNetPump } from '../vehicle/v2Driver.js';
 import { preferredRoomKind, setCurrentRoom } from '../ui/roomMenu.js';
-import { onOwnPaint, preferredPaint } from '../ui/menu/paintSync.js';
+import { onOwnPaint } from '../ui/menu/paintSync.js';
+import { helloFor } from './hello.js';
 import { netDriver, placeholderCar } from '../net/netDriver.js';
 import { reloadOnce } from './reloadOnce.js';
 import { applyResumeOutcome, resumeOutcome } from './resumeOutcome.js';
@@ -41,7 +42,7 @@ import { hideRespawnOverlay, showRespawnOverlay } from '../ui/respawnOverlay.js'
 import { clearRemoteViews, forgetRemote, noteSnapshotCars, setRemoteDead } from '../net/remotes.js';
 import { raceClient } from '../race/RaceClient.js';
 import { mapFeaturesGroup } from '../race/TrackDressing.js';
-import { loadProgress } from '../ui/loadingScreen.js';
+import { clearLoaderWaiting, loadingScreenCovers, loadProgress, showLoaderWaiting } from '../ui/loadingScreen.js';
 import { mapWorldBuilt } from '../assets/loadSteps.js';
 
 // The connection to the game server on protocol v2 (docs/phase-1b-design.md,
@@ -188,23 +189,20 @@ function connect() {
 }
 
 function sendHello() {
-    const savedName = localStorage.getItem('bulli-player-name') || '';
+    let storage: Storage | null = null;
+    try {
+        storage = localStorage;
+    } catch { /* storage blocked: the defaults */ }
     const sessionToken = storageGet(SESSION_KEY);
     const resume = storageGet(RESUME_KEY);
-    sendToServer({
-        type: 'hello',
-        protocolVersion: PROTOCOL_VERSION,
+    sendToServer(helloFor(storage, {
         build: pageBuild(),
         connId,
-        ...(sessionToken ? { sessionToken } : {}),
-        ...(resume ? { resume } : {}),
-        name: savedName,
-        carType: localStorage.getItem('bulli-car-type') || 'bulli',
-        profile: assistProfileForDevice(),
-        room: state.room?.kind ?? preferredRoomKind(),
-        // The paint picked in the menu (a random palette paint without one)
-        ...(preferredPaint() ? { paint: preferredPaint()! } : {})
-    });
+        sessionToken,
+        resume,
+        profile: assistProfileForDevice() as ProfileId,
+        room: state.room?.kind ?? preferredRoomKind()
+    }));
 }
 
 function onFrame(data: string | ArrayBuffer) {
@@ -246,12 +244,13 @@ function onClosed(code: number, reason: string) {
             showConnectionNotice('Disconnected after a long break', 'Continue', reconnectNow);
             return;
         case 'reconnect': {
-            // Never connected yet: the loader stays and the banner says why
-            const text = reconnectingText(code, everOpened);
+            // Still loading: the loader's status line says why it waits,
+            // else the banner
             const delay = Math.max(restartDelayMs ?? reconnectDelayMs(reconnectAttempt, Math.random), holdReconnectUntil - now);
             restartDelayMs = null;
             reconnectAttempt++;
-            showReconnecting(disconnectedAt, text);
+            if (loadingScreenCovers()) showLoaderWaiting(loaderWaitingText(code), disconnectedAt);
+            else showReconnecting(disconnectedAt, reconnectingText(code, everOpened));
             reconnectTimer = window.setTimeout(connect, delay);
             return;
         }
@@ -298,6 +297,7 @@ function handleServerMessage(data: ServerMessage) {
             reconnectAttempt = 0;
             disconnectedAt = -1;
             hideConnectionOverlay();
+            clearLoaderWaiting();
             // A new deploy with the same protocol: load the new client once
             const build = pageBuild();
             if (build && data.serverBuild && build !== data.serverBuild && reloadOnce(BUILD_RELOAD_KEY, data.serverBuild)) return;

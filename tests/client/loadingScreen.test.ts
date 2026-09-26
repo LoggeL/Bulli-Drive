@@ -15,6 +15,7 @@ const MARKUP = `
             <div class="loader-fill"></div><span class="loader-percent">0 %</span>
         </div>
         <p class="loader-status">Loading the game</p>
+        <button class="loader-reload" hidden>Reload</button>
         <p class="loader-tip"></p>
         <p id="loader-live" aria-live="polite"></p>
     </div>
@@ -69,11 +70,11 @@ describe('the loading screen', () => {
         vi.advanceTimersByTime(100);
         expect(text('.loader-status')).toBe('Loading the bay · textures 14/28');
         // Read out too, but not more than every 2 s (the start was read out at 0 s)
-        expect(text('#loader-live')).toBe('Loading');
+        expect(text('#loader-live')).toBe('Connecting to the server');
         progress.report('textures', 0.6, [17, 28]);
         vi.advanceTimersByTime(1800);
         expect(text('.loader-status')).toBe('Loading the bay · textures 17/28');
-        expect(text('#loader-live')).toBe('Loading');
+        expect(text('#loader-live')).toBe('Connecting to the server');
         vi.advanceTimersByTime(100);
         expect(text('#loader-live')).toBe('Loading the bay · textures 17/28');
     });
@@ -89,6 +90,8 @@ describe('the loading screen', () => {
 
     it('fades into the splash screen and then goes', () => {
         screen.startLoadingScreen('desktop', { clock });
+        let shows = 0;
+        document.getElementById('splash-screen')!.addEventListener('menushow', () => shows++);
         screen.removeLoader();
         const loader = document.getElementById('loading-screen')!;
         expect(document.getElementById('splash-screen')!.classList.contains('hidden')).toBe(false);
@@ -96,8 +99,45 @@ describe('the loading screen', () => {
         expect(loader.getAttribute('aria-busy')).toBe('false');
         vi.advanceTimersByTime(600);
         expect(document.getElementById('loading-screen')).toBeNull();
-        // A second call changes nothing
+        // A second call changes nothing: the menu opens once
         screen.removeLoader();
+        expect(shows).toBe(1);
+    });
+
+    it('runs the bar to 100 % before it fades, however far behind it was', async () => {
+        const progress = screen.startLoadingScreen('mobile', { clock });
+        // The bar shows the code step (26 %), the rest is done at once
+        vi.advanceTimersByTime(1000);
+        expect(text('.loader-percent')).toBe('26 %');
+        for (const id of ['connect', 'map', 'textures', 'kit', 'car', 'warmup'] as const) progress.done(id);
+        const finished = screen.finishLoader();
+        expect(text('.loader-percent')).toBe('100 %');
+        expect(document.querySelector<HTMLElement>('.loader-fill')!.style.transform).toBe('scaleX(1)');
+        // Still covering while the bar runs its last stretch (0.26 s)
+        vi.advanceTimersByTime(screen.FINISH_MS - 1);
+        expect(screen.loadingScreenCovers()).toBe(true);
+        vi.advanceTimersByTime(1);
+        await finished;
+        expect(screen.loadingScreenCovers()).toBe(false);
+    });
+
+    it('says it waits for the server instead of a step, and offers a reload after 10 s', () => {
+        screen.startLoadingScreen('desktop', { clock });
+        vi.advanceTimersByTime(100);
+        const reload = document.querySelector<HTMLElement>('.loader-reload')!;
+        screen.showLoaderWaiting('Waiting for the server · retrying', performance.now());
+        expect(text('.loader-status')).toBe('Waiting for the server · retrying');
+        expect(document.querySelector('.loader-status')!.classList.contains('loader-waiting')).toBe(true);
+        expect(reload.hidden).toBe(true);
+        vi.advanceTimersByTime(screen.LOADER_RELOAD_OFFER_MS - 200);
+        expect(reload.hidden).toBe(true);
+        vi.advanceTimersByTime(300);
+        expect(reload.hidden).toBe(false);
+        // The server is there: the steps again, no reload
+        screen.clearLoaderWaiting();
+        expect(text('.loader-status')).not.toContain('Waiting');
+        expect(document.querySelector('.loader-status')!.classList.contains('loader-waiting')).toBe(false);
+        expect(reload.hidden).toBe(true);
     });
 
     it('stays as the backdrop when nothing more will load', () => {

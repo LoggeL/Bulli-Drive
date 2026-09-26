@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-    connectionOverlayText, hideConnectionOverlay, reconnectingText, showConnectionNotice, showReconnecting
+    connectionOverlayText, hideConnectionOverlay, loaderWaitingText, reconnectingText, showConnectionNotice, showReconnecting
 } from '../../src/client/ui/connectionOverlay.js';
 import { CLOSE_FULL, CLOSE_RESTART } from '../../src/shared/net/constants.js';
 import { closeAction } from '../../src/shared/net/reconnect.js';
@@ -32,6 +32,9 @@ describe('the connection banner', () => {
         }
         expect(reconnectingText(CLOSE_FULL, false)).toBe('The server is full, retrying…');
         expect(reconnectingText(CLOSE_FULL, true)).toBe('The server is full, retrying…');
+        // The loading screen's status line says it instead of the banner (ui/loadingScreen.ts)
+        expect(loaderWaitingText(1006)).toBe('Waiting for the server · retrying');
+        expect(loaderWaitingText(CLOSE_FULL)).toBe('The server is full · retrying');
     });
 
     it('shows a second after the connection went, and offers a reload after 30 s', () => {

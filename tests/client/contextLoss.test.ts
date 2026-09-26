@@ -125,10 +125,19 @@ describe('WebGL refused at start', () => {
         expect(loader.querySelector('.loader-status')!.textContent).toBe('3D graphics unavailable');
         const dialog = document.querySelector('[role="alertdialog"][aria-labelledby="graphics-unavailable-title"]');
         expect(dialog?.textContent).toContain('3D graphics unavailable');
+        // A first refusal: WebGL is off, a crash is not the likely cause
+        expect(dialog?.textContent).toContain('hardware acceleration');
+        expect(dialog?.textContent).not.toContain('crashed');
         // Over the loader: later in the page at the same position (z-index in style.css)
         expect(loader.compareDocumentPosition(dialog!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
         expect(isSafeMode()).toBe(true);
         dialog?.remove();
+        // Refused again within the lite days after that trouble: the crash is the likely cause
+        showGraphicsUnavailable(new Error('Error creating WebGL context.'));
+        const again = document.querySelector('[aria-labelledby="graphics-unavailable-title"]');
+        expect(again?.textContent).toContain('crashed');
+        expect(again?.textContent).not.toContain('hardware acceleration');
+        again?.remove();
         loader.remove();
         localStorage.clear();
     });

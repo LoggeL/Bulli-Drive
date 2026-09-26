@@ -14,6 +14,9 @@ export interface ShowroomFraming {
     lookHeight: number;
     /** Where the car lands in the frame (fractions from the top left): a shifted projection, the UI keeps its side */
     center: [number, number];
+    /** The car fills this much of the free box's height (fitDistance), and at most maxWidth of its width */
+    fill: number;
+    maxWidth: number;
 }
 
 /** Where the car stands: on the pier deck (5 m above the sea), heading east-northeast back to the town. */
@@ -29,9 +32,10 @@ export const SHOWROOM_HERO_ANGLE = 0.45;
 export const SHOWROOM_FRAMING: Readonly<Record<'landscape' | 'portrait', ShowroomFraming>> = {
     // Desktop and phones held sideways: the car in the right part of the
     // frame, the menu panel on the left over sea and deck
-    landscape: { distance: 10, height: 1.4, fov: 35, lookHeight: 0.8, center: [0.64, 0.38] },
-    // Phones held upright: the car in the upper part, the sheet below it
-    portrait: { distance: 13, height: 1.6, fov: 55, lookHeight: 0.8, center: [0.5, 0.25] }
+    landscape: { distance: 10, height: 1.4, fov: 35, lookHeight: 0.8, center: [0.64, 0.38], fill: 0.7, maxWidth: 0.72 },
+    // Phones held upright: the car in the upper part, the sheet below it;
+    // the free box is short there, the car takes more of it
+    portrait: { distance: 13, height: 1.6, fov: 55, lookHeight: 0.8, center: [0.5, 0.25], fill: 0.92, maxWidth: 0.62 }
 };
 
 export interface ShowroomPose {
@@ -57,9 +61,6 @@ export function heroAngleFor(distance: number): number {
 
 /** The Bulli's height as a share of the frame at 8 m with a 35° FOV (measured on the key art). */
 export const CAR_FRAME_AT_8M = 0.54;
-/** The car fills this much of the free box's height, and at most CAR_MAX_WIDTH of its width */
-export const CAR_FILL = 0.7;
-export const CAR_MAX_WIDTH = 0.72;
 /** The car's width over its height in the three-quarter view, with the near front larger in perspective */
 export const CAR_ASPECT = 1.5;
 export const SHOWROOM_DISTANCE = { min: 7, max: 15 } as const;
@@ -72,8 +73,8 @@ export const SHOWROOM_DISTANCE = { min: 7, max: 15 } as const;
 export function fitDistance(framing: ShowroomFraming, box: [number, number], aspect: number): number {
     const lens = Math.tan(35 / 2 * DEG) / Math.tan(framing.fov / 2 * DEG);
     const atUnit = 8 * CAR_FRAME_AT_8M * lens;
-    const byHeight = atUnit / (CAR_FILL * box[1]);
-    const byWidth = atUnit * CAR_ASPECT / aspect / (CAR_MAX_WIDTH * box[0]);
+    const byHeight = atUnit / (framing.fill * box[1]);
+    const byWidth = atUnit * CAR_ASPECT / aspect / (framing.maxWidth * box[0]);
     return Math.min(SHOWROOM_DISTANCE.max, Math.max(SHOWROOM_DISTANCE.min, byHeight, byWidth));
 }
 
@@ -240,4 +241,17 @@ export function transitionPose(t: number, from: CameraState, to: CameraState, cu
 /** A direct flight to a near spawn: from the showroom to the chase camera in TRANSITION.direct. */
 export function directPose(t: number, from: CameraState, to: CameraState): CameraState {
     return blend(from, to, smooth(t / TRANSITION.direct));
+}
+
+/**
+ * Where the car will spawn, as far as the way into the game may rely on it:
+ * the room's preview spot in a Party or Free Roam room the menu goes on
+ * with. Not in a race room: its preview is a free-roam spot, the grid is
+ * elsewhere, and a late joiner watches instead of spawning (the crane then
+ * waits in the sky, D3). Not when the menu switches to another room.
+ */
+export function spawnHintFor(roomKind: string | null | undefined, menuMode: string,
+    preview: { x: number; z: number } | null): { x: number; z: number } | null {
+    if (!preview || (roomKind !== 'party' && roomKind !== 'freeroam') || roomKind !== menuMode) return null;
+    return { x: preview.x, z: preview.z };
 }

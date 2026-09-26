@@ -13,15 +13,15 @@ import { updateProjectiles } from './world/projectiles.js';
 import { applyMenuMode, initRoomMenu } from './ui/roomMenu.js';
 import { closeMenu, initMenu, menuCarFrame, menuChoice, menuOpen, onMenuLayout } from './ui/menu/menu.js';
 import { ShowroomCamera } from './camera/ShowroomCamera.js';
-import { SHOWROOM_SPOT } from './camera/showroom.js';
-import { menuModeFor, type MenuChoice } from './ui/menu/menuState.js';
+import { spawnHintFor } from './camera/showroom.js';
+import type { MenuChoice } from './ui/menu/menuState.js';
 import { paintById, type PaintId } from '../shared/paints.js';
 import { netDriver } from './net/netDriver.js';
 import { groundHeight } from './world/ground.js';
 import { updatePalms } from './world/palms.js';
 import { lowerMapDetail, startKitPreload, updateMapScene } from './world/mapScene.js';
 import { updateMinimap } from './ui/minimap.js';
-import { loadingScreenCovers, removeLoader, showLoaderNotice, startLoadingScreen } from './ui/loadingScreen.js';
+import { finishLoader, loadingScreenCovers, onLoadPoll, showLoaderNotice, startLoadingScreen } from './ui/loadingScreen.js';
 import { trackLoadSteps } from './assets/loadSteps.js';
 import { Bulli, type CarType } from './entities/Bulli.js';
 import { sendToServer } from './network/socket.js';
@@ -174,13 +174,14 @@ function init() {
             carType = localStorage.getItem('bulli-car-type') || carType;
         } catch { /* storage blocked */ }
         trackLoadSteps(progress, { tier: lightingTier(), renderer: state.renderer, scene: state.scene, camera: state.camera, carType });
-        void progress.whenPhase('loader').then(removeLoader);
+        void progress.whenPhase('loader').then(finishLoader);
     }
 
     // The menu's showroom: the own car at the head of the pier, the camera
     // round it, until DRIVE (docs/ui.md 4.1); not in the sandbox, whose
     // world has no pier
     const lite = isSafeMode();
+    let lastLoaded = -1;
     if (!SANDBOX) {
         const reducedMotion = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
         showroom = new ShowroomCamera({
@@ -188,17 +189,20 @@ function init() {
             carFree: () => !netDriver.prediction?.spawned,
             spawned: () => !netDriver.prediction || netDriver.prediction.spawned,
             frame: menuCarFrame,
-            spawnHint: () => {
-                const choice = menuChoice();
-                const room = state.room;
-                return room && state.preview && menuModeFor(room.kind) === choice.mode ? state.preview : null;
-            },
+            spawnHint: () => spawnHintFor(state.room?.kind, menuChoice().mode, state.preview),
             reducedMotion: () => !!reducedMotion?.matches,
             lite,
             // Phones (and CPU rasterizers) draw the showroom at 30 fps at most
             maxFps: lightingTier() === 'desktop' ? 0 : 30
         });
         onMenuLayout(() => showroom?.invalidate());
+        // Lite graphics draw the showroom as a still: a texture, the kit or
+        // a car model that comes in behind the menu draws it again
+        onLoadPoll(() => {
+            const loaded = progress.overall('all');
+            if (loaded !== lastLoaded) showroom?.invalidate();
+            lastLoaded = loaded;
+        });
     }
     document.body.classList.add('in-menu');
     state.inMenu = true;
@@ -420,7 +424,11 @@ function animate(frameTime: number) {
         updatePalms(state.camera);
         // Car LODs, wheels, brake lights and blinkers
         updateCarModels(state.camera, dt);
-        renderQuality.update(frameTime);
+        // Frames the menu holds down (phones at 30 fps, the lite still)
+        // are no measure of the GPU: they would talk the resolution and the
+        // map's detail down for the whole session
+        if (showroom?.paced) renderQuality.pause();
+        else renderQuality.update(frameTime);
         // A desktop GPU that is slow even at the lowest resolution: the
         // map world drops to its mid detail level (once)
         if (renderQuality.struggling) lowerMapDetail();

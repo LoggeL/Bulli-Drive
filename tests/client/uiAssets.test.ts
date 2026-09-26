@@ -25,11 +25,16 @@ function webpSize(file: string): [number, number] {
 }
 
 describe('the loading screen assets', () => {
-    it('keeps the key art within its budgets and sizes', () => {
-        expect(kb('public/ui/keyart-1920.webp')).toBeLessThanOrEqual(250);
-        expect(webpSize('public/ui/keyart-1920.webp')).toEqual([1920, 1080]);
-        expect(kb('public/ui/keyart-portrait-900.webp')).toBeLessThanOrEqual(120);
-        expect(webpSize('public/ui/keyart-portrait-900.webp')).toEqual([900, 1600]);
+    it('keeps the key art of each layout, and its lite render, within its budgets and sizes', () => {
+        for (const lite of ['', 'lite-']) {
+            expect(kb(`public/ui/keyart-${lite}1920.webp`), lite).toBeLessThanOrEqual(250);
+            expect(webpSize(`public/ui/keyart-${lite}1920.webp`), lite).toEqual([1920, 1080]);
+            // Phones upright (390 x 750 at 2x) and sideways (844 x 390 at 2x)
+            expect(kb(`public/ui/keyart-${lite}portrait.webp`), lite).toBeLessThanOrEqual(120);
+            expect(webpSize(`public/ui/keyart-${lite}portrait.webp`), lite).toEqual([780, 1500]);
+            expect(kb(`public/ui/keyart-${lite}phone-landscape.webp`), lite).toBeLessThanOrEqual(120);
+            expect(webpSize(`public/ui/keyart-${lite}phone-landscape.webp`), lite).toEqual([1688, 780]);
+        }
     });
 
     it('keeps the inline placeholder within 1.5 KB', () => {

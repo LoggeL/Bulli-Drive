@@ -86,14 +86,106 @@ canvas {
    game code switches (ui/loadingScreen.ts)
    ========================================================================== */
 
-/* WebGL refused: the key art stays as the backdrop of the notice */
-#loading-screen.loader-stopped .loader-progress,
-#loading-screen.loader-stopped .loader-tip {
-    visibility: hidden;
+/* A light running along the empty bar: the page is at work, also while
+   a step has nothing to count yet (the code, the connection) */
+.loader-track::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    width: 24%;
+    background: linear-gradient(90deg, rgba(243, 235, 221, 0), rgba(243, 235, 221, 0.45), rgba(243, 235, 221, 0));
+    animation: loader-sheen 2s linear infinite;
 }
 
-#loading-screen.loader-stopped .loader-status {
+@keyframes loader-sheen {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(420%); }
+}
+
+/* Why lite graphics (main.ts): a note in the corner away from the panel */
+.loader-notice {
+    position: absolute;
+    top: max(16px, env(safe-area-inset-top));
+    right: max(16px, env(safe-area-inset-right));
+    margin: 0;
+    padding: 6px 14px;
+    border: 1px solid var(--ui-line);
+    border-radius: 999px;
+    background: rgba(18, 20, 22, 0.64);
+    font-size: 13px;
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+    .loader-notice {
+        right: auto;
+        left: max(16px, env(safe-area-inset-left));
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .loader-track::after {
+        display: none;
+    }
+}
+
+/* WebGL refused: the key art alone stays as the backdrop of the notice
+   (contextLoss.ts), which says it all */
+#loading-screen.loader-stopped .loader-panel,
+#loading-screen.loader-stopped .loader-notice {
+    display: none;
+}
+
+#loading-screen.loader-stopped .loader-scrim {
+    background: rgba(18, 20, 22, 0.35);
+}
+
+/* Waiting for the server: the status line says so, with a spinner */
+.loader-status.loader-waiting {
+    display: flex;
+    align-items: center;
+    gap: 10px;
     color: var(--ui-danger);
+}
+
+.loader-status.loader-waiting::before {
+    content: '';
+    flex: none;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--ui-line);
+    border-top-color: var(--ui-danger);
+    border-radius: 50%;
+    animation: net-notice-spin 0.9s linear infinite;
+}
+
+/* Waiting for good: a reload, in the loader's own panel */
+.loader-reload {
+    margin-top: 12px;
+    min-height: 44px;
+    padding: 0 1.4rem;
+    border: none;
+    border-radius: 999px;
+    background: var(--ui-amber);
+    color: #1B1712;
+    font: 600 14px/1 var(--ui-font-display);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+}
+
+.loader-reload[hidden] {
+    display: none;
+}
+
+.loader-reload:focus-visible {
+    outline: 2px solid var(--ui-paper);
+    outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .loader-status.loader-waiting::before {
+        animation: none;
+    }
 }
 
 /* ==========================================================================

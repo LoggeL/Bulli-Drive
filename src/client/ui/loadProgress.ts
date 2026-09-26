@@ -33,9 +33,11 @@ export interface LoadClock {
     now(): number;
 }
 
-// Weights (docs/ui.md 3.2): expected shares of the wall clock, measured on a
-// desktop and estimated for a phone on 4G; ?debug=load logs the timeline
-// to calibrate them. The phone and lite (software) tiers load no HDRI.
+// Weights (docs/ui.md 3.2): expected shares of the wall clock, calibrated
+// with ?debug=load on a throttled network (U5): a desktop at 25 Mbit/s and
+// 40 ms, a phone (Pixel 7) on 4G at 6.4 Mbit/s and 150 ms. The phone and
+// lite (software) tiers load no HDRI; their GPUs compile the first view
+// slower than the desktop's.
 const STEP_CAP_MS = 20_000;
 const LABELS: Record<TaskId, string> = {
     code: 'Loading the game',
@@ -45,7 +47,7 @@ const LABELS: Record<TaskId, string> = {
     kit: 'Loading the buildings',
     car: 'Loading your car',
     hdri: 'Lighting the sky',
-    warmup: 'Warming up shaders',
+    warmup: 'Preparing the view',
     cars: 'Loading the other cars'
 };
 
@@ -57,22 +59,22 @@ export const DESKTOP_LOAD_TASKS: readonly LoadTaskSpec[] = [
     spec('code', 20, 'loader'),
     spec('connect', 5, 'loader'),
     spec('map', 15, 'loader'),
-    spec('textures', 25, 'loader', STEP_CAP_MS),
-    spec('kit', 15, 'loader', STEP_CAP_MS),
-    spec('car', 5, 'loader', STEP_CAP_MS),
-    spec('hdri', 7, 'loader', STEP_CAP_MS),
-    spec('warmup', 8, 'loader', 10_000),
+    spec('textures', 30, 'loader', STEP_CAP_MS),
+    spec('kit', 12, 'loader', STEP_CAP_MS),
+    spec('car', 4, 'loader', STEP_CAP_MS),
+    spec('hdri', 6, 'loader', STEP_CAP_MS),
+    spec('warmup', 3, 'loader', 10_000),
     spec('cars', 5, 'menu', STEP_CAP_MS)
 ];
 
 export const PHONE_LOAD_TASKS: readonly LoadTaskSpec[] = [
     spec('code', 25, 'loader'),
-    spec('connect', 5, 'loader'),
-    spec('map', 20, 'loader'),
-    spec('textures', 15, 'loader', STEP_CAP_MS),
+    spec('connect', 4, 'loader'),
+    spec('map', 12, 'loader'),
+    spec('textures', 26, 'loader', STEP_CAP_MS),
     spec('kit', 15, 'loader', STEP_CAP_MS),
     spec('car', 5, 'loader', STEP_CAP_MS),
-    spec('warmup', 10, 'loader', 10_000),
+    spec('warmup', 8, 'loader', 10_000),
     spec('cars', 5, 'menu', STEP_CAP_MS)
 ];
 
@@ -82,6 +84,9 @@ export function loadTasksFor(tier: string): readonly LoadTaskSpec[] {
 }
 
 const SETTLED: readonly TaskState[] = ['done', 'skipped', 'timedOut'];
+
+/** The status line keeps a step at least this long while it runs (no flicker between two steps). */
+export const STATUS_HOLD_MS = 1500;
 
 export interface LoadProgress {
     start(id: TaskId): void;
@@ -96,7 +101,11 @@ export interface LoadProgress {
     overall(phase?: LoadPhase | 'all'): number;
     /** Whole percent for the display: 100 only once every step is done or skipped. */
     percent(phase?: LoadPhase | 'all'): number;
-    /** The running step with the most weight still open, with its counter. */
+    /**
+     * The running step with the most weight still open, with its counter;
+     * a step it named stays at least STATUS_HOLD_MS while it runs. With
+     * none running, the next step to come.
+     */
     status(phase?: LoadPhase | 'all'): string;
     /** Resolves once every step of the phase (and of the phases before it) is done, skipped or timed out. */
     whenPhase(phase: LoadPhase): Promise<void>;
@@ -108,6 +117,8 @@ export function createLoadProgress(specs: readonly LoadTaskSpec[], clock: LoadCl
     const tasks = new Map<TaskId, LoadTask>();
     for (const s of specs) tasks.set(s.id, { ...s, state: 'pending', fraction: 0, startedAt: 0 });
     const highWater = new Map<string, number>();
+    // The step the status line named per phase, and since when
+    const named = new Map<string, { id: TaskId; since: number }>();
     const waiters: Array<{ phase: LoadPhase; resolve: () => void }> = [];
 
     const inPhase = (task: LoadTask, phase: LoadPhase | 'all') =>
@@ -200,17 +211,29 @@ export function createLoadProgress(specs: readonly LoadTaskSpec[], clock: LoadCl
             return complete ? 100 : Math.min(99, Math.floor(value * 100));
         },
         status(phase = 'loader') {
-            let best: LoadTask | null = null;
-            let bestOpen = -1;
-            for (const task of tasks.values()) {
-                if (!inPhase(task, phase) || task.state !== 'running') continue;
-                const open = task.weight * (1 - task.fraction);
-                if (open > bestOpen) {
-                    best = task;
-                    bestOpen = open;
+            const now = clock.now();
+            const mostOpen = (states: readonly TaskState[]): LoadTask | null => {
+                let best: LoadTask | null = null;
+                let bestOpen = -1;
+                for (const task of tasks.values()) {
+                    if (!inPhase(task, phase) || !states.includes(task.state)) continue;
+                    const open = task.weight * (1 - task.fraction);
+                    if (open > bestOpen) {
+                        best = task;
+                        bestOpen = open;
+                    }
                 }
+                return best;
+            };
+            let best = mostOpen(['running']);
+            const held = named.get(phase);
+            if (best && held && held.id !== best.id && now - held.since < STATUS_HOLD_MS && tasks.get(held.id)!.state === 'running') {
+                best = tasks.get(held.id)!;
             }
-            if (!best) return settled(phase === 'all' ? 'menu' : phase) ? 'Ready' : 'Loading';
+            if (best && held?.id !== best.id) named.set(phase, { id: best.id, since: now });
+            // Between two steps: the one that comes next
+            best ??= [...tasks.values()].find(task => inPhase(task, phase) && task.state === 'pending') ?? null;
+            if (!best) return settled(phase === 'all' ? 'menu' : phase) ? 'Ready' : LABELS.code;
             return best.count ? `${best.label} ${best.count[0]}/${best.count[1]}` : best.label;
         },
         whenPhase(phase) {
@@ -227,10 +250,12 @@ export function createLoadProgress(specs: readonly LoadTaskSpec[], clock: LoadCl
 
 /**
  * The bar's shown value one frame later: it follows the real value upwards
- * at most `ratePerSecond` (the bar does not jump when a heavy step
- * finishes) and never goes down.
+ * (the bar does not jump when a heavy step finishes), at least
+ * `ratePerSecond` and faster the further it is behind (1.5 times the gap a
+ * second), so it never lags far behind the real value; never down.
  */
 export function approachProgress(shown: number, target: number, dtSeconds: number, ratePerSecond = 0.3): number {
     if (target <= shown) return shown;
-    return Math.min(target, shown + ratePerSecond * Math.max(0, dtSeconds));
+    const rate = Math.max(ratePerSecond, 1.5 * (target - shown));
+    return Math.min(target, shown + rate * Math.max(0, dtSeconds));
 }

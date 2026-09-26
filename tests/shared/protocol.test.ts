@@ -145,7 +145,6 @@ describe('parseClientMessage rejects invalid messages', () => {
         ['debugPlace with NaN', overTheWire({ ...debugPlace, x: NaN })],
         ['rename with number', { type: 'rename', name: 5 }],
         ['setCar without profile', { type: 'setCar', carType: 'jeep' }],
-        ['hello with a paint outside the palette', { ...hello, paint: 'neon' }],
         ['hello with a colour code as paint', { ...hello, paint: 0xff00ff }],
         ['setPaint without paint', { type: 'setPaint' }],
         ['setPaint outside the palette', { type: 'setPaint', paint: 'gold' }],

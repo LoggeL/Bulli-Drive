@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { FetchTally } from '../assets/fetchTally.js';
 import { getKTX2Loader } from '../assets/gltfLoader.js';
 import { placeholderTexel } from './texturePlaceholders.js';
 
@@ -19,6 +20,7 @@ interface ManifestEntry {
     file: string;
     kind: 'color' | 'data' | 'normal';
     hash: string;
+    bytes: number;
 }
 
 interface TextureManifest {
@@ -47,6 +49,8 @@ const loaded = new Set<THREE.Texture>();
 let maxAnisotropy = 4;
 
 export const textureStats = { requested: 0, loaded: 0, failed: 0 };
+/** The downloads of the requested textures (bytes and files, for the loading screen) */
+export const textureTally = new FetchTally();
 
 /** Must be called once before the first worldTexture(). */
 export function initWorldTextures(target: THREE.WebGLRenderer, anisotropy: number): void {
@@ -109,7 +113,9 @@ export function worldTexture(name: string, options: WorldTextureOptions = {}): T
         .then(async ([list, loader]) => {
             const entry = list.textures[name];
             if (!entry) throw new Error(`texture ${name} is not in the manifest`);
-            const file = await loader.loadAsync(`${BASE}${entry.file}?v=${entry.hash}`);
+            textureTally.expect(name, entry.bytes);
+            const file = await loader.loadAsync(`${BASE}${entry.file}?v=${entry.hash}`, textureTally.listener(name));
+            textureTally.fetched(name);
             copyInto(texture, file);
             loaded.add(texture);
             for (const clone of clones.get(texture) ?? []) copyInto(clone, texture);
@@ -117,6 +123,7 @@ export function worldTexture(name: string, options: WorldTextureOptions = {}): T
         })
         .catch(error => {
             // The placeholder stays: a neutral texel instead of black
+            textureTally.fetched(name);
             textureStats.failed++;
             console.warn(`World texture ${name} failed to load, keeping its neutral placeholder`, error);
         });

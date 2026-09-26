@@ -38,6 +38,10 @@ type InputKind = 'keyboard' | 'touch' | 'gamepad';
 
 const PAD_POLL_MS = 50;
 const SWIPE_MIN_PX = 40;
+// The loader fades out over the menu this long (ui/loadingScreen.ts): DRIVE
+// shows no loading progress under it (it would flash 'LOADING 99 %' while
+// the last car model comes in)
+const SHOW_SETTLE_MS = 500;
 
 let root: HTMLElement | null = null;
 let hooks: MenuHooks | null = null;
@@ -46,6 +50,7 @@ let choice: MenuChoice = { car: 'bulli', paint: 'sea', mode: 'party', name: '' }
 let row: MenuRow = 'name';
 let open = false;
 let starting = false;
+let settling = false;
 let pollTimer = 0;
 let padTimer = 0;
 let padState: PadMenuState = IDLE_PAD;
@@ -161,8 +166,9 @@ function announce(text: string): void {
 
 // ---- Changing it ----
 
+// From DRIVE on the pick is taken: nothing changes it any more
 function setCar(car: CarClassId, options: { announce?: boolean } = {}): void {
-    if (car === choice.car) return;
+    if (car === choice.car || starting) return;
     choice = { ...choice, car };
     renderCar();
     saveMenuChoice(storage, menuChoice());
@@ -171,10 +177,10 @@ function setCar(car: CarClassId, options: { announce?: boolean } = {}): void {
 }
 
 function setPaint(paint: PaintId, options: { fromServer?: boolean } = {}): void {
-    if (paint === choice.paint) return;
+    if (paint === choice.paint || (starting && !options.fromServer)) return;
     choice = { ...choice, paint };
     renderPaint();
-    // The server's paint of a first visit is not a pick: it is not saved
+    // The server's paint (one it kept for a resumed session) is not a pick: it is not saved
     if (options.fromServer) return;
     saveMenuChoice(storage, menuChoice());
     hooks?.onPaint(paint);
@@ -182,7 +188,7 @@ function setPaint(paint: PaintId, options: { fromServer?: boolean } = {}): void 
 }
 
 function setMode(mode: MenuMode): void {
-    if (mode === choice.mode) return;
+    if (mode === choice.mode || starting) return;
     choice = { ...choice, mode };
     renderMode();
     saveMenuChoice(storage, menuChoice());
@@ -202,7 +208,8 @@ function buildCars(): void {
         const stats = carStats(car);
         card.setAttribute('aria-label', `${CAR_NAMES[car]}, ${stats.topSpeedKmh} km/h, ${stats.mass} kg`);
         const img = document.createElement('img');
-        img.src = `/icons/car-${car}-menu.webp`;
+        // The render loads once the menu shows (onShow), not alongside the loader's assets
+        img.dataset.src = `/icons/car-${car}-menu.webp`;
         img.alt = '';
         img.width = 320;
         img.height = 180;
@@ -369,7 +376,8 @@ function renderDrive(): void {
     const button = $('#start-btn');
     const label = $('#start-btn .btn-label');
     if (!button || !label) return;
-    const ready = gameAssetsReady();
+    // Under the loader's fade DRIVE is just DRIVE (a click still waits for the assets)
+    const ready = gameAssetsReady() || settling;
     const percent = gameAssetsPercent();
     button.classList.toggle('loading', !ready);
     button.style.setProperty('--progress', ready ? '1' : (percent / 100).toFixed(3));
@@ -384,6 +392,7 @@ async function start(): Promise<void> {
     starting = true;
     const picked = menuChoice();
     saveMenuChoice(storage, picked);
+    lockPanel(true);
     renderDrive();
     // The hidden menu must not keep the focus: Space drives, Enter would press DRIVE again
     const focused = document.activeElement;
@@ -393,8 +402,16 @@ async function start(): Promise<void> {
     } catch (error) {
         console.error('Start failed', error);
         starting = false;
+        lockPanel(false);
         renderDrive();
     }
+}
+
+// The panel while the start waits for its assets: shown, but not to be changed
+function lockPanel(locked: boolean): void {
+    const panel = $('.menu-panel');
+    if (panel) panel.inert = locked;
+    root?.classList.toggle('starting', locked);
 }
 
 /** Closes the menu for good (the start went through). */
@@ -415,6 +432,17 @@ export function closeMenu(): void {
 function onShow(pollMs: number): void {
     if (open || starting) return;
     open = true;
+    for (const img of $$<HTMLImageElement>('.car-card img[data-src]')) {
+        // Fades in once it is there (ui/menu.css)
+        img.addEventListener('load', () => img.classList.add('loaded'), { once: true });
+        img.src = img.dataset.src!;
+        img.removeAttribute('data-src');
+    }
+    settling = true;
+    window.setTimeout(() => {
+        settling = false;
+        renderDrive();
+    }, SHOW_SETTLE_MS);
     renderDrive();
     pollTimer = window.setInterval(renderDrive, pollMs);
     padTimer = window.setInterval(pollPad, Math.min(pollMs, PAD_POLL_MS));
@@ -432,6 +460,7 @@ export function initMenu(menuHooks: MenuHooks, options: MenuOptions = {}): MenuC
     choice = loadMenuChoice(storage);
     open = false;
     starting = false;
+    settling = false;
     padState = IDLE_PAD;
     const pollMs = options.pollMs ?? 200;
     if (!root) return choice;

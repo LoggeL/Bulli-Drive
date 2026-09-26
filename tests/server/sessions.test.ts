@@ -191,6 +191,11 @@ describe('grace time and resume', () => {
         drop(resumed.transport, 1000);
         const reloaded = join({ sessionToken: a.transport.of('welcome')[0].sessionToken, connId: 'page-reloaded' });
         expect(reloaded.session.color).toBe(0xB8862F);
+        // So does one with a paint this palette does not know
+        drop(reloaded.transport, 2000);
+        const unknown = join({ sessionToken: a.transport.of('welcome')[0].sessionToken, connId: 'page-3', paint: 'neon' });
+        expect(unknown.resumed).toBe(true);
+        expect(unknown.session.color).toBe(0xB8862F);
     });
 
     it('never resumes a kicked session', () => {

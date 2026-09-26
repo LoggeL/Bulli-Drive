@@ -110,10 +110,19 @@ describe('fitting the car into the menu\'s free box', () => {
 
     it('stands further back when the box is narrow (the car is 1.5 times as wide as high)', () => {
         // Upright, 9:16, FOV 55°: lens tan 17.5° / tan 27.5° = 0.60659; the
-        // width asks 4.32 * 0.60659 * 1.5 / 0.5625 / (0.72 * 1) = 9.71 m,
-        // the height only 4.32 * 0.60659 / (0.7 * 0.66) = 5.67 m
+        // width (at most 62 % of it upright) asks 4.32 * 0.60659 * 1.5 /
+        // 0.5625 / (0.62 * 1) = 11.27 m, the height only 4.32 * 0.60659 /
+        // (0.92 * 0.66) = 4.32 m
         const lens = Math.tan(17.5 * Math.PI / 180) / Math.tan(27.5 * Math.PI / 180);
-        expect(fitDistance(SHOWROOM_FRAMING.portrait, [1, 0.66], 0.5625)).toBeCloseTo(4.32 * lens * 1.5 / 0.5625 / 0.72, 9);
+        expect(fitDistance(SHOWROOM_FRAMING.portrait, [1, 0.66], 0.5625)).toBeCloseTo(4.32 * lens * 1.5 / 0.5625 / 0.62, 9);
+    });
+
+    it('lets the car take 92 % of the short box of an upright phone', () => {
+        // iPhone in Safari: a box of 22 % of the height between the tools and
+        // the car's name: 4.32 * 0.60659 / (0.92 * 0.22) = 12.95 m (the
+        // width would do with 11.27 m); 70 % would stand back to 17 m, past the 15 m
+        const lens = Math.tan(17.5 * Math.PI / 180) / Math.tan(27.5 * Math.PI / 180);
+        expect(fitDistance(SHOWROOM_FRAMING.portrait, [1, 0.22], 0.5625)).toBeCloseTo(4.32 * lens / (0.92 * 0.22), 9);
     });
 
     it('keeps the camera between 7 and 15 m', () => {

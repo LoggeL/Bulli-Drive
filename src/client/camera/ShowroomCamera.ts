@@ -62,6 +62,8 @@ export class ShowroomCamera {
     // The way into the game
     private transitionKind: TransitionKind | null = null;
     private transitionAt = 0;
+    // The direct flight starts once the spawn is there (or the wait ran out)
+    private flightAt = Infinity;
     private from: CameraState | null = null;
     private cutAt = Infinity;
     private fade: HTMLCanvasElement | null = null;
@@ -80,6 +82,15 @@ export class ShowroomCamera {
     /** Whether the menu or the way into the game still owns the camera. */
     get busy(): boolean {
         return this.active || this.transitionKind !== null;
+    }
+
+    /**
+     * Whether the menu holds the frame rate down (phones at maxFps, lite
+     * graphics a still): its frame times say nothing about how fast the
+     * GPU is, so the adaptive resolution does not count them (main.ts).
+     */
+    get paced(): boolean {
+        return this.active && (this.env.lite || this.env.maxFps > 0);
     }
 
     private framing(camera: THREE.PerspectiveCamera): ShowroomFraming {
@@ -215,6 +226,7 @@ export class ShowroomCamera {
         }));
         this.transitionKind = kind;
         this.transitionAt = this.now();
+        this.flightAt = Infinity;
         this.cutAt = Infinity;
         this.fadeAt = Infinity;
         this.stillTaken = false;
@@ -272,15 +284,18 @@ export class ShowroomCamera {
                 this.apply(camera, this.read(chase));
                 if (now - this.fadeAt >= TRANSITION.fade * 1000 + 30) this.finish(camera, chase);
                 return;
-            case 'direct':
+            case 'direct': {
+                // Waits at the showroom for the spawn, at most as long as the crane would
                 if (!spawned) {
-                    this.transitionAt = now;
                     this.apply(camera, from);
                     return;
                 }
-                this.apply(camera, directPose(t, from, this.read(chase)));
-                if (t >= TRANSITION.direct) this.finish(camera, chase);
+                if (this.flightAt === Infinity) this.flightAt = now;
+                const flight = (now - this.flightAt) / 1000;
+                this.apply(camera, directPose(flight, from, this.read(chase)));
+                if (flight >= TRANSITION.direct) this.finish(camera, chase);
                 return;
+            }
             default: {
                 if (this.cutAt === Infinity && t >= TRANSITION.rise && spawned) this.cutAt = t;
                 this.apply(camera, transitionPose(t, from, this.read(chase), this.cutAt));
@@ -294,7 +309,7 @@ export class ShowroomCamera {
         if (!this.transitionKind) return 0;
         const t = (this.now() - this.transitionAt) / 1000;
         if (this.transitionKind === 'fade') return this.fadeAt === Infinity ? Infinity : TRANSITION.fade - (this.now() - this.fadeAt) / 1000;
-        if (this.transitionKind === 'direct') return TRANSITION.direct - t;
+        if (this.transitionKind === 'direct') return this.flightAt === Infinity ? Infinity : TRANSITION.direct - (this.now() - this.flightAt) / 1000;
         return this.cutAt === Infinity ? Infinity : this.cutAt + TRANSITION.descend - t;
     }
 

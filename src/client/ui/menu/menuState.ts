@@ -38,7 +38,8 @@ export const STORAGE_KEYS = {
 
 /**
  * The paint of a first visit: Sea Green, the paint of the loading screen's
- * key art (tools/ui/keyart.ts), so the loader fades into the same car.
+ * key art (tools/ui/keyart.ts). The hello asks the server for it too
+ * (network/hello.ts), so the loader fades into the same car (docs/ui.md D28).
  */
 export const FIRST_PAINT: PaintId = 'sea';
 
@@ -69,7 +70,7 @@ export function cleanMenuName(name: string): string {
     return name.replace(/[\x00-\x1f\x7f]/g, '').trim().slice(0, MAX_NAME_LENGTH);
 }
 
-/** The paint saved by the menu, null without a valid one (the server then picks one). */
+/** The paint saved by the menu, null without a valid one (a first visit: FIRST_PAINT). */
 export function savedPaint(storage: MenuStorage): PaintId | null {
     const paint = read(storage, STORAGE_KEYS.paint);
     return isPaintId(paint) ? paint : null;

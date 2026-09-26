@@ -64,7 +64,7 @@ describe('acceptHello', () => {
         }
     });
 
-    it('paints the car in the wish from the menu, or in a palette paint drawn from the random source', () => {
+    it('paints the car in the wish from the menu, or in a palette paint drawn from the random source for none or an unknown one', () => {
         // Dove Blue from the palette (docs/ui.md 5)
         const wished = acceptHello(new FakeTransport(), JSON.stringify({ ...hello, paint: 'blue' }), { lobby, serverBuild: null })!;
         expect(wished.color).toBe(0x5C7C95);
@@ -74,10 +74,10 @@ describe('acceptHello', () => {
         expect(drawn.color).toBe(0x8E2A28);
         expect(transport.sent[0]).toEqual(expect.objectContaining({ type: 'welcome', color: 0x8E2A28 }));
         expect(acceptHello(new FakeTransport(), JSON.stringify(hello), { lobby, serverBuild: null, random: () => 0.99 })!.color).toBe(0x2A2C2E);
-        // No paint outside the palette
-        const refused = new FakeTransport();
-        expect(acceptHello(refused, JSON.stringify({ ...hello, paint: 'neon' }), { lobby, serverBuild: null })).toBeNull();
-        expect(refused.closed?.code).toBe(CLOSE_HELLO);
+        // A paint outside the palette (one a later deploy removed) counts
+        // as no wish: a palette paint, and the player still gets in
+        const unknown = acceptHello(new FakeTransport(), JSON.stringify({ ...hello, paint: 'neon' }), { lobby, serverBuild: null, random: () => 0.3 })!;
+        expect(unknown.color).toBe(0x8E2A28);
     });
 
     it('gives an unknown car the Bulli and an empty name a generated one', () => {

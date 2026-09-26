@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { FetchTally } from '../assets/fetchTally.js';
 import type { RenderTier } from '../effects/renderQuality.js';
 import { getKTX2Loader } from '../assets/gltfLoader.js';
 import { patchWorldMaterial } from './materials.js';
@@ -34,8 +35,8 @@ export interface KitCatalog {
 }
 
 interface KitManifest {
-    groups: Record<string, { file: string; hash: string }>;
-    atlas: Record<string, { file: string; hash: string }>;
+    groups: Record<string, { file: string; hash: string; bytes: number }>;
+    atlas: Record<string, { file: string; hash: string; bytes: number }>;
 }
 
 const BASE = `${import.meta.env.BASE_URL}models/kit/`;
@@ -125,8 +126,8 @@ function kitMaterial(source: THREE.MeshStandardMaterial, tier: RenderTier): THRE
 export async function loadKit(
     renderer: THREE.WebGLRenderer,
     tier: RenderTier,
-    // Groups loaded (or failed) of all groups, for the loading screen
-    onProgress: (settled: number, total: number) => void = () => undefined
+    // The files' downloads (GLBs and atlas), for the loading screen
+    tally: FetchTally = new FetchTally()
 ): Promise<KitCatalog> {
     const [{ GLTFLoader }, { MeshoptDecoder }, ktx2] = await Promise.all([
         import('three/examples/jsm/loaders/GLTFLoader.js'),
@@ -143,6 +144,9 @@ export async function loadKit(
     // Software WebGL draws the kit with its albedo and emission only: the
     // normal and ARM maps would cost it a transcode and an upload for nothing
     const unused = tier === 'software' ? /kit_atlas_(normal|arm)\.ktx2$/ : null;
+    // What comes over the network: every group, the atlas maps this tier uses
+    for (const group of Object.values(manifest.groups)) tally.expect(group.file, group.bytes);
+    for (const entry of Object.values(manifest.atlas)) if (!unused?.test(entry.file)) tally.expect(entry.file, entry.bytes);
     sharedKtx2.load = ((url: string, onLoad: (texture: THREE.Texture) => void, _progress?: unknown, onError?: (error: unknown) => void) => {
         let texture = textures.get(url);
         if (!texture && unused?.test(url)) {
@@ -150,8 +154,10 @@ export async function loadKit(
             textures.set(url, texture);
         }
         if (!texture) {
-            const hash = atlasHash.get(url.slice(url.lastIndexOf('/') + 1));
-            texture = ktx2.loadAsync(hash ? `${url}?v=${hash}` : url);
+            const file = url.slice(url.lastIndexOf('/') + 1);
+            const hash = atlasHash.get(file);
+            texture = ktx2.loadAsync(hash ? `${url}?v=${hash}` : url, tally.listener(file));
+            void texture.finally(() => tally.fetched(file)).catch(() => undefined);
             textures.set(url, texture);
         }
         texture.then(onLoad, onError);
@@ -160,11 +166,9 @@ export async function loadKit(
     loader.setMeshoptDecoder(MeshoptDecoder);
     loader.setKTX2Loader(sharedKtx2);
     const groups = Object.values(manifest.groups);
-    let settled = 0;
-    onProgress(0, groups.length);
     const scenes = await Promise.all(groups.map(group =>
-        loader.loadAsync(`${BASE}${group.file}?v=${group.hash}`)
-            .finally(() => onProgress(++settled, groups.length))
+        loader.loadAsync(`${BASE}${group.file}?v=${group.hash}`, tally.listener(group.file))
+            .finally(() => tally.fetched(group.file))
             .then(gltf => gltf.scene)));
 
     const pieces = new Map<string, KitPieceData>();

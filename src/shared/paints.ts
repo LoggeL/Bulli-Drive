@@ -8,6 +8,9 @@ import type { RandomSource } from './math/rng.js';
 // (assets/carMaterials.ts); other colours (older resume tickets) are mapped
 // into the paint range there.
 
+// A paint taken out of or renamed in the palette: 'hello' tolerates an id
+// it does not know (a random paint instead), 'setPaint' drops it; a page
+// of an older build reloads on the build check anyway, so no protocol bump.
 export const PAINT_IDS = ['sea', 'cream', 'red', 'blue', 'ochre', 'orange', 'silver', 'anthracite'] as const;
 export type PaintId = typeof PAINT_IDS[number];
 

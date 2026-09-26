@@ -36,9 +36,14 @@ tools/models/
   src/                 small inputs of the builds (licence plate decals, one per car)
 ```
 
-The car-select icon of the start screen (`public/icons/car-<id>.webp`) is an
-Eevee render of LOD0 (`bd_lookdev.render_icon`, transparent film), trimmed
-and fitted into 156 x 96 px by `build-all.mjs --icons`.
+Two product shots per car, both Eevee renders of LOD0 in the factory paint
+(`bd_lookdev.render_icon`, transparent film):
+
+- the small icon of the race lobby's car picker (`public/icons/car-<id>.webp`),
+  trimmed and fitted into 156 x 96 px by `build-all.mjs --icons`;
+- the main menu's car card (`public/icons/car-<id>-menu.webp`, 640 x 360),
+  the same shot at `--icon-size=1280x720`, by `tools/ui/menu-renders.mjs`
+  (docs/ui.md 4.3; the menu shows it desaturated, the paint is picked apart).
 
 ## Running it
 
@@ -48,7 +53,8 @@ npm --prefix tools run models                  # all cars: Blender build + pack 
 node tools/models/build-all.mjs --only=bulli   # one car
 node tools/models/build-all.mjs --skip-blender # re-pack tools/models/.out without Blender
 node tools/models/build-all.mjs --render       # also Eevee stills (needs the look-dev inputs below)
-node tools/models/build-all.mjs --only=bulli --icons  # also the car-select icon -> public/icons/car-bulli.webp
+node tools/models/build-all.mjs --only=bulli --icons  # also the race lobby's icon -> public/icons/car-bulli.webp
+node tools/ui/menu-renders.mjs --only=bulli           # the menu's card -> public/icons/car-bulli-menu.webp
 ```
 
 Blender 5.2 LTS (`$BLENDER`, else `/opt/homebrew/bin/blender`,
@@ -190,8 +196,9 @@ drops the wheel nodes). Instead:
    `src/license_plate_<id>_512.png`.
 2. Register it in `models.json` with the car type id of
    `src/client/vehicle/CarModel.ts` (`beetle`, `pickup`, `sport`, `jeep`).
-3. `node tools/models/build-all.mjs --only=<id> --icons`, check the look-dev renders,
+3. `node tools/models/build-all.mjs --only=<id> --icons` and
+   `node tools/ui/menu-renders.mjs --only=<id>`, check the look-dev renders,
    run `npm test`, commit the script and `public/models/<id>_lod*.glb` plus
-   the manifest and `public/icons/car-<id>.webp`.
+   the manifest, `public/icons/car-<id>.webp` and `public/icons/car-<id>-menu.webp`.
 4. In the game: add the id to `GLTF_TYPES` (`src/client/vehicle/CarModel.ts`) and a
    scale to `MODEL_SCALE` (`src/client/vehicle/GltfCarBody.ts`) that fits the sim hull.

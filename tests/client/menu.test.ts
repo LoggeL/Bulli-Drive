@@ -129,6 +129,9 @@ describe('the main menu', () => {
         startGate = new Promise(resolve => { release = resolve; });
         await openMenu();
         const button = $('#start-btn');
+        // Under the loader's fade DRIVE is plain (no flash of a last percent)
+        expect($('#start-btn .btn-label').textContent).toBe('DRIVE');
+        vi.advanceTimersByTime(500);
         expect(button.classList.contains('loading')).toBe(true);
         expect($('#start-btn .btn-label').textContent).toBe('LOADING 64 %');
         expect(button.style.getPropertyValue('--progress')).toBe('0.640');
@@ -146,6 +149,35 @@ describe('the main menu', () => {
         release();
     });
 
+    it('takes the pick at DRIVE: car, paint, mode and name stay while the start waits for its assets', async () => {
+        startGate = new Promise(() => undefined);
+        await openMenu();
+        $('#start-btn').click();
+        expect($('#splash-screen').classList.contains('starting')).toBe(true);
+        expect($('.menu-panel').inert).toBe(true);
+        // Nothing reaches the game or the storage any more, whichever way it comes
+        $('.car-next').click();
+        $('.paint-chip[data-paint="red"]').click();
+        $('.mode-option[data-room="race"]').click();
+        key($('.paint-chip[aria-checked="true"]'), 'ArrowRight');
+        expect(cars).toEqual([]);
+        expect(paints).toEqual([]);
+        expect($('.car-card[aria-current="true"]').dataset.car).toBe('bulli');
+        expect($('#splash-screen').dataset.mode).toBe('party');
+        expect(store.get('bulli-car-type')).toBe('bulli');
+        expect(starts).toEqual([{ car: 'bulli', paint: 'sea', mode: 'party', name: 'Player' }]);
+    });
+
+    it('loads the car renders once the menu shows, not alongside the loader', async () => {
+        store = new Map();
+        menu.initMenu({ onCar: () => undefined, onPaint: () => undefined, onStart: async () => undefined }, { storage: storage(), pollMs: 100 });
+        const images = () => $$('.car-card img') as HTMLImageElement[];
+        expect(images()).toHaveLength(5);
+        expect(images().every(img => !img.getAttribute('src'))).toBe(true);
+        $('#splash-screen').dispatchEvent(new Event('menushow'));
+        expect(images().map(img => img.getAttribute('src'))).toEqual(['bulli', 'beetle', 'pickup', 'sport', 'jeep'].map(car => `/icons/car-${car}-menu.webp`));
+    });
+
     it('starts on Enter in the name field, as "Player" without a name, and closes for good', async () => {
         assets.ready = true;
         await openMenu();
@@ -159,10 +191,10 @@ describe('the main menu', () => {
         expect(menu.menuOpen()).toBe(false);
     });
 
-    it('shows the server\'s paint of a first visit without saving it as a pick', async () => {
+    it('shows the paint the server kept (a resumed session) without saving it as a pick', async () => {
         await openMenu();
         const sync = await import('../../src/client/ui/menu/paintSync.js');
-        // Dove Blue from the server's palette draw
+        // Dove Blue from the server
         sync.onOwnPaint(0x5C7C95);
         expect($('.paint-chip[aria-checked="true"]').dataset.paint).toBe('blue');
         expect(paints).toEqual([]);

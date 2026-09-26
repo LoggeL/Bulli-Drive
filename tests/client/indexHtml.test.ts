@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { safeModeReason } from '../../src/client/render/safeMode.js';
 
 // What index.html tells the player about the drive controls of the v2
 // physics (phase 1a): the menu's hint line per input (keys, touch,
@@ -14,12 +15,32 @@ import { describe, expect, it } from 'vitest';
 // paints from the page alone. The menu's behaviour: tests/client/menu.test.ts.
 
 const INDEX = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../index.html');
+const MENU_CSS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../src/client/ui/menu.css');
 const html = readFileSync(INDEX, 'utf8');
 const head = /<head>([\s\S]*)<\/head>/.exec(html)![1];
 // Parsed inert (a template loads no stylesheets, fonts or scripts)
 const template = document.createElement('template');
 template.innerHTML = /<body>([\s\S]*)<\/body>/.exec(html)![1];
 const page = template.content;
+
+/**
+ * Runs the loader's key art script of index.html on a copy of the loading
+ * screen with this link and storage ('blocked': the storage throws): the
+ * files it gives the picture's sources (by media) and image.
+ */
+function keyartFor(search: string, storage: Map<string, string> | null | 'blocked'): Record<string, string> {
+    const script = /<picture class="keyart">[\s\S]*?<\/picture>\s*<script>([\s\S]*?)<\/script>/.exec(html)![1];
+    const doc = document.implementation.createHTMLDocument('');
+    doc.body.innerHTML = `<div id="loading-screen">${/<picture class="keyart">[\s\S]*?<\/picture>/.exec(html)![0]}</div>`;
+    const localStorage = storage === 'blocked'
+        ? { getItem: () => { throw new Error('blocked'); } }
+        : { getItem: (key: string) => storage?.get(key) ?? null };
+    new Function('location', 'localStorage', 'document', script)({ search }, localStorage, doc);
+    const parts: Record<string, string> = {};
+    for (const source of doc.querySelectorAll('source')) parts[source.getAttribute('media')!] = source.getAttribute('srcset')!;
+    parts.img = doc.querySelector('img')!.getAttribute('src')!;
+    return parts;
+}
 
 // Text as the player reads it: whitespace collapsed
 const text = (selector: string) => (page.querySelector(selector)?.textContent ?? '').replace(/\s+/g, ' ').trim();
@@ -145,11 +166,17 @@ describe('the loading screen', () => {
         expect(html).not.toMatch(/Polishing headlights|blinker fluid/);
     });
 
-    it('shows the key art and the wordmark before any game code', () => {
-        const img = loader.querySelector<HTMLImageElement>('.keyart img')!;
-        expect(img.getAttribute('src')).toBe('/ui/keyart-1920.webp');
-        expect(loader.querySelector('.keyart source[media="(orientation: portrait)"]')?.getAttribute('srcset')).toBe('/ui/keyart-portrait-900.webp');
-        expect(head).toMatch(/<link rel="preload" as="image" href="\/ui\/keyart-1920\.webp"[^>]*fetchpriority="high"/);
+    it('shows the key art of the layout and the wordmark before any game code', () => {
+        // The page's own script picks the files as it parses (no game code)
+        const parts = keyartFor('', null);
+        expect(parts).toEqual({
+            '(orientation: portrait)': '/ui/keyart-portrait.webp',
+            '(orientation: landscape) and (max-height: 520px)': '/ui/keyart-phone-landscape.webp',
+            img: '/ui/keyart-1920.webp'
+        });
+        // The phones' layout starts where the menu's does (ui/menu.css)
+        expect(readFileSync(MENU_CSS, 'utf8')).toContain('@media (orientation: landscape) and (max-height: 520px)');
+        expect(loader.querySelector('.keyart img')?.getAttribute('fetchpriority')).toBe('high');
         // The wordmark is paths, no font to wait for (tools/ui/wordmark.mjs)
         const wordmark = loader.querySelector('svg.wordmark');
         expect(wordmark?.getAttribute('aria-label')).toBe('Bulli Drive');
@@ -160,6 +187,34 @@ describe('the loading screen', () => {
         // The critical CSS is inline, with the blurred key art as placeholder
         expect(head).toMatch(/<style>[\s\S]*#loading-screen[\s\S]*<\/style>/);
         expect(head).toMatch(/keyart-blur \*\/url\(data:image\/webp;base64,[A-Za-z0-9+/=]+\)\/\* \/keyart-blur/);
+    });
+
+    it('shows the lite key art exactly when render/safeMode.ts picks lite graphics', () => {
+        const now = Date.now();
+        const cases: Array<[string, Record<string, string>]> = [
+            ['', {}],
+            ['?lite=1', {}],
+            ['?e2e=1&lite=1', { 'bulli-graphics': 'high' }],
+            ['?lite=0', { 'bulli-graphics': 'lite' }],
+            ['?lite=10', {}],
+            ['', { 'bulli-graphics': 'lite' }],
+            ['', { 'bulli-graphics': 'high', 'bulli-safe-mode-until': String(now + 60_000) }],
+            ['', { 'bulli-safe-mode-until': String(now + 60_000) }],
+            ['', { 'bulli-safe-mode-until': String(now - 60_000) }],
+            ['', { 'bulli-graphics': 'auto', 'bulli-safe-mode-until': 'soon' }]
+        ];
+        for (const [search, stored] of cases) {
+            const storage = new Map(Object.entries(stored));
+            const reason = safeModeReason({
+                search, now,
+                storage: { getItem: key => storage.get(key) ?? null, setItem: () => undefined, removeItem: () => undefined }
+            });
+            const lite = keyartFor(search, storage).img.includes('/keyart-lite-');
+            expect(lite, `${search} ${JSON.stringify(stored)}`).toBe(reason !== null);
+        }
+        // Storage blocked: only the link counts
+        expect(keyartFor('?lite=1', 'blocked').img).toBe('/ui/keyart-lite-1920.webp');
+        expect(keyartFor('', 'blocked').img).toBe('/ui/keyart-1920.webp');
     });
 
     it('keeps the inline CSS and script of the head within 6 KB (docs/ui.md 9)', () => {

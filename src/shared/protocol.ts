@@ -133,9 +133,11 @@ export const HelloSchema = v.object({
     carType: shortString(32),
     profile: v.picklist(ASSIST_PROFILE_IDS),
     room: v.picklist(ROOM_KINDS),
-    // The paint picked in the menu (shared/paints.ts); without it the
-    // server picks one from the palette
-    paint: v.optional(v.picklist(PAINT_IDS))
+    // The paint picked in the menu (shared/paints.ts). Like carType it
+    // may name a paint this server does not know (a palette changed with a
+    // deploy): the server then picks one from the palette, the hello stays
+    // good. 'setPaint' takes palette paints only
+    paint: v.optional(shortString(32))
 });
 
 export type HelloMessage = v.InferOutput<typeof HelloSchema>;

@@ -50,8 +50,6 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <!-- The loading screen paints from here on its own: key art, wordmark
          and bar need no game code and no stylesheet (docs/ui.md 3.1) -->
-    <link rel="preload" as="image" href="/ui/keyart-1920.webp" type="image/webp" media="(orientation: landscape)" fetchpriority="high">
-    <link rel="preload" as="image" href="/ui/keyart-portrait-900.webp" type="image/webp" media="(orientation: portrait)" fetchpriority="high">
     <link rel="preload" as="font" href="/fonts/barlow-500.woff2" type="font/woff2" crossorigin>
     <link rel="preload" as="font" href="/fonts/barlow-semi-condensed-600.woff2" type="font/woff2" crossorigin>
     <style>
@@ -59,8 +57,8 @@
     @font-face { font-family: 'Barlow'; font-weight: 500; font-display: swap; src: url(/fonts/barlow-500.woff2) format('woff2'); }
     @font-face { font-family: 'Barlow Semi Condensed'; font-weight: 600; font-display: swap; src: url(/fonts/barlow-semi-condensed-600.woff2) format('woff2'); }
     :root {
-        --ui-ink: #121416; --ui-line: rgba(243, 235, 221, .14); --ui-paper: #F3EBDD;
-        --ui-paper-2: rgba(243, 235, 221, .72); --ui-amber: #E0A84A; --ui-danger: #E06A5A;
+        --ui-ink: #121416; --ui-line: rgba(243,235,221,.14); --ui-paper: #F3EBDD;
+        --ui-paper-2: rgba(243,235,221,.72); --ui-amber: #E0A84A; --ui-danger: #E06A5A;
         --ui-ease: cubic-bezier(.2, .7, .2, 1);
         --ui-font: 'Barlow', system-ui, sans-serif; --ui-font-display: 'Barlow Semi Condensed', 'Barlow', system-ui, sans-serif;
     }
@@ -74,27 +72,31 @@
     }
     .keyart, .keyart img { position: absolute; inset: 0; width: 100%; height: 100%; }
     .keyart img { object-fit: cover; object-position: 50% 50%; }
-    .loader-scrim { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(18, 20, 22, .6), rgba(18, 20, 22, .25) 45%, rgba(18, 20, 22, 0) 65%), linear-gradient(0deg, rgba(18, 20, 22, .55), rgba(18, 20, 22, 0) 45%); }
+    .loader-scrim { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(18,20,22,.6), rgba(18,20,22,.25) 45%, rgba(18,20,22,0) 65%), linear-gradient(0deg, rgba(18,20,22,.55), rgba(18,20,22,0) 45%); }
     .loader-panel {
         position: absolute; left: max(24px, 5vw, env(safe-area-inset-left)); bottom: max(24px, 7vh, env(safe-area-inset-bottom));
-        width: min(420px, calc(100% - 48px)); text-shadow: 0 1px 12px rgba(18, 20, 22, .5);
+        width: min(420px, calc(100% - 48px)); text-shadow: 0 1px 12px rgba(18,20,22,.5);
     }
-    .loader-panel .wordmark { display: block; width: min(300px, 70%); height: auto; margin-bottom: 28px; filter: drop-shadow(0 1px 10px rgba(18, 20, 22, .45)); }
+    .loader-panel .wordmark { display: block; width: min(300px, 70%); height: auto; margin-bottom: 28px; filter: drop-shadow(0 1px 10px rgba(18,20,22,.45)); }
     .loader-progress { display: flex; align-items: center; gap: 14px; }
-    .loader-track { flex: 1; height: 2px; background: var(--ui-line); overflow: hidden; }
+    .loader-track { position: relative; flex: 1; height: 2px; background: var(--ui-line); overflow: hidden; }
     .loader-fill { height: 100%; background: var(--ui-amber); transform: scaleX(0); transform-origin: 0 50%; transition: transform .25s linear; }
     .loader-percent { min-width: 3.2em; text-align: right; font: 600 15px/1 var(--ui-font-display); letter-spacing: .06em; font-variant-numeric: tabular-nums; }
     .loader-status { margin: 10px 0 0; color: var(--ui-paper-2); min-height: 1.4em; }
     .loader-tip { margin: 18px 0 0; min-height: 2.8em; transition: opacity .3s var(--ui-ease); }
     .loader-tip::before { content: 'TIP'; display: block; margin-bottom: 2px; color: var(--ui-amber); font: 600 12px/1.4 var(--ui-font-display); letter-spacing: .18em; }
     .loader-tip .tip-touch, .loader-notice[hidden] { display: none; }
-    .loader-notice { position: absolute; top: max(16px, env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right)); margin: 0; padding: 6px 14px; border: 1px solid var(--ui-line); border-radius: 999px; background: rgba(18, 20, 22, .64); font-size: 13px; }
     @media (pointer: coarse) { .loader-tip .tip-keyboard { display: none; } .loader-tip .tip-touch { display: inline; } }
     @media (orientation: portrait) {
-        .loader-scrim { background: linear-gradient(0deg, rgba(18, 20, 22, .8), rgba(18, 20, 22, .5) 38%, rgba(18, 20, 22, 0) 58%); }
+        .keyart img { object-position: 50% 30%; }
+        .loader-scrim { background: linear-gradient(0deg, rgba(18,20,22,.8), rgba(18,20,22,.5) 38%, rgba(18,20,22,0) 58%); }
         .loader-panel { left: 24px; right: 24px; width: auto; }
     }
-    @media (max-height: 480px) { .loader-panel { width: min(320px, 40%); bottom: 16px; } .loader-panel .wordmark { width: 88%; margin-bottom: 12px; } .loader-tip { margin-top: 8px; } }
+    @media (orientation: landscape) and (max-height: 520px) {
+        .loader-scrim { background: linear-gradient(270deg, rgba(18,20,22,.72), rgba(18,20,22,.4) 38%, rgba(18,20,22,0) 55%); }
+        .loader-panel { left: auto; right: max(16px, env(safe-area-inset-right)); bottom: max(14px, env(safe-area-inset-bottom)); width: min(288px, 42vw); }
+        .loader-panel .wordmark { width: 200px; margin-bottom: 14px; } .loader-tip { margin-top: 8px; font-size: 14px; }
+    }
     @media (prefers-reduced-motion: reduce) { #loading-screen, .loader-fill, .loader-tip { transition: none; } }
     .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
     </style>
@@ -208,10 +210,31 @@
         </defs>
     </svg>
     <div id="loading-screen" aria-busy="true">
+        <!-- One key art per layout of the menu (tools/ui/keyart.ts), in lite
+             graphics its lite render: the script below picks the files -->
         <picture class="keyart">
-            <source media="(orientation: portrait)" srcset="/ui/keyart-portrait-900.webp" type="image/webp">
-            <img src="/ui/keyart-1920.webp" alt="" width="1920" height="1080" fetchpriority="high" decoding="async">
+            <source media="(orientation: portrait)" data-keyart="portrait" type="image/webp">
+            <source media="(orientation: landscape) and (max-height: 520px)" data-keyart="phone-landscape" type="image/webp">
+            <img data-keyart="1920" alt="" width="1920" height="1080" fetchpriority="high" decoding="async">
         </picture>
+        <script>
+            // Lite graphics as render/safeMode.ts decides them (the link over the
+            // setting over the trouble timer; tests/client/indexHtml.test.ts
+            // compares the two), so the loader shows the look the menu will have
+            (function() {
+                var link = /[?&]lite=([01])(?:&|$)/.exec(location.search), lite = link ? link[1] === '1' : false;
+                if (!link) try {
+                    var setting = localStorage.getItem('bulli-graphics');
+                    lite = setting === 'lite' || (setting !== 'high' && Number(localStorage.getItem('bulli-safe-mode-until')) > Date.now());
+                } catch (e) { /* storage blocked */ }
+                var parts = document.querySelectorAll('#loading-screen [data-keyart]');
+                // The sources first: the image picks among them once its src is set
+                for (var i = 0; i < parts.length; i++) {
+                    var url = '/ui/keyart-' + (lite ? 'lite-' : '') + parts[i].getAttribute('data-keyart') + '.webp';
+                    if (parts[i].tagName === 'IMG') parts[i].src = url; else parts[i].srcset = url;
+                }
+            })();
+        </script>
         <div class="loader-scrim"></div>
         <p class="loader-notice" hidden></p>
         <div class="loader-panel">
@@ -221,6 +244,7 @@
                 <span class="loader-percent" aria-hidden="true">0 %</span>
             </div>
             <p class="loader-status">Loading the game</p>
+            <button type="button" class="loader-reload" hidden>Reload</button>
             <p class="loader-tip"><span class="tip-keyboard">Hold SPACE through a corner – drifting fills your boost.</span><span class="tip-touch">AUTO gives gas for you – just steer with the stick.</span></p>
             <p class="sr-only" id="loader-live" aria-live="polite"></p>
         </div>

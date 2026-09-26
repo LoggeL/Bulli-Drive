@@ -41,11 +41,11 @@ describe('the weighted progress', () => {
         progress.done('connect');
         progress.report('map', 0.5);
         progress.report('textures', 0.4);
-        // Loader steps weigh 20 + 5 + 15 + 25 + 15 + 5 + 7 + 8 = 100:
-        // 20 + 5 + 7.5 + 10 = 42.5
-        expect(progress.overall()).toBeCloseTo(0.425, 12);
-        // The menu phase adds the other cars (5): 42.5 / 105
-        expect(progress.overall('menu')).toBeCloseTo(42.5 / 105, 12);
+        // Loader steps weigh 20 + 5 + 15 + 30 + 12 + 4 + 6 + 3 = 95:
+        // 20 + 5 + 7.5 + 12 = 44.5
+        expect(progress.overall()).toBeCloseTo(44.5 / 95, 12);
+        // The menu phase adds the other cars (5): 44.5 / 100
+        expect(progress.overall('menu')).toBeCloseTo(0.445, 12);
     });
 
     it('leaves the HDRI out on phones and in lite graphics', () => {
@@ -55,7 +55,7 @@ describe('the weighted progress', () => {
         const progress = createLoadProgress(loadTasksFor('mobile'), clock());
         expect(progress.task('hdri')).toBeUndefined();
         progress.done('code');
-        // Phone loader steps: 25 + 5 + 20 + 15 + 15 + 5 + 10 = 95
+        // Phone loader steps: 25 + 4 + 12 + 26 + 15 + 5 + 8 = 95
         expect(progress.overall()).toBeCloseTo(25 / 95, 12);
     });
 
@@ -169,26 +169,52 @@ describe('the steps over time', () => {
     });
 
     it('names the running step with the most weight still open', () => {
-        const progress = createLoadProgress(DESKTOP_LOAD_TASKS, clock());
-        // Textures 25 * (1 - 0.8) = 5 open, kit 15 * (1 - 0.2) = 12 open
-        progress.report('textures', 0.8, [22, 28]);
+        const time = clock();
+        const progress = createLoadProgress(DESKTOP_LOAD_TASKS, time);
+        // Textures 30 * (1 - 0.85) = 4.5 open, kit 12 * (1 - 0.2) = 9.6 open
+        progress.report('textures', 0.85, [22, 28]);
         progress.report('kit', 0.2);
         expect(progress.status()).toBe('Loading the buildings');
         progress.report('kit', 0.9);
-        // Kit 1.5 open: the textures lead again, with their counter
+        // Kit 1.2 open: the textures lead again, with their counter - once
+        // the buildings had their 1.5 s on the line
+        time.set(1499);
+        expect(progress.status()).toBe('Loading the buildings');
+        time.set(1500);
         expect(progress.status()).toBe('Loading the bay · textures 22/28');
-        // A step of the menu phase is not the loader's
+        // A step of the menu phase is not the loader's (the other cars: 5 open)
         progress.report('cars', 0);
         expect(progress.status()).toBe('Loading the bay · textures 22/28');
+        expect(progress.status('menu')).toBe('Loading the other cars');
+    });
+
+    it('keeps a step on the line at most while it runs, and names the next one between two steps', () => {
+        const time = clock();
+        const progress = createLoadProgress(DESKTOP_LOAD_TASKS, time);
+        progress.done('code');
+        // Nothing runs yet: the connection comes next
+        expect(progress.status()).toBe('Connecting to the server');
+        progress.start('connect');
+        expect(progress.status()).toBe('Connecting to the server');
+        // Done within its 1.5 s: the line moves on at once
+        progress.done('connect');
+        progress.start('map');
+        expect(progress.status()).toBe('Loading Bulli Bay');
+        // Every step of the loader settled
+        for (const id of ['map', 'textures', 'kit', 'car', 'hdri', 'warmup'] as const) progress.done(id);
+        expect(progress.status()).toBe('Ready');
         expect(progress.status('menu')).toBe('Loading the other cars');
     });
 });
 
 describe('the shown bar', () => {
-    it('follows the real value upwards at most 30 % a second', () => {
-        expect(approachProgress(0.2, 0.9, 1)).toBeCloseTo(0.5, 12);
-        expect(approachProgress(0.2, 0.9, 0.1)).toBeCloseTo(0.23, 12);
+    it('follows the real value upwards at least 30 % a second, 1.5 times the gap when far behind', () => {
+        // 0.05 behind: 30 % a second
+        expect(approachProgress(0.2, 0.25, 0.1)).toBeCloseTo(0.23, 12);
         expect(approachProgress(0.2, 0.25, 1)).toBe(0.25);
+        // 0.7 behind: 105 % a second
+        expect(approachProgress(0.2, 0.9, 0.1)).toBeCloseTo(0.305, 12);
+        expect(approachProgress(0.2, 0.9, 1)).toBe(0.9);
     });
 
     it('never goes down', () => {

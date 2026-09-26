@@ -190,6 +190,18 @@ export class AdaptiveRenderQuality {
         this.resetSampleWindow(frameTime);
     }
 
+    /**
+     * A frame that is no measure of the GPU (the menu holds the frame rate
+     * down): nothing is sampled, and the next measured frame starts over
+     * with the warm-up.
+     */
+    pause(): void {
+        this.previousFrameTime = -1;
+        this.sampleWindowStart = 0;
+        this.sampledFrameTime = 0;
+        this.sampledFrames = 0;
+    }
+
     private resetSampleWindow(frameTime: number): void {
         this.sampleWindowStart = frameTime;
         this.sampledFrameTime = 0;

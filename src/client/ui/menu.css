@@ -48,6 +48,18 @@
     user-select: text;
 }
 
+/* Buttons and fields take the menu's type (browsers give them their own);
+   no specificity, so every rule that sets a font still wins */
+:where(#splash-screen, .menu-dialog) :where(button, input) {
+    font: inherit;
+}
+
+/* DRIVE was pressed: the pick stands while the start waits for its assets */
+#splash-screen.menu.starting .menu-panel > :not(.menu-drive) {
+    opacity: 0.55;
+    transition: opacity 0.24s var(--ui-ease);
+}
+
 /* The HUD waits under the menu and comes in at the end of the way into the
    game (docs/ui.md 6); the other players' name tags stay out of the showroom */
 body.in-menu #ui-overlay,
@@ -413,6 +425,22 @@ body.in-menu #killfeed {
     height: auto;
     aspect-ratio: 16 / 9;
     pointer-events: none;
+    /* The renders carry the factory paint; the paint is picked apart and
+       shows on the car itself, so the cards show the body alone, in the
+       paper tone of the menu (docs/ui.md D30) */
+    filter: grayscale(1) sepia(0.18) brightness(1.04);
+    opacity: 0.8;
+    transition: opacity 0.18s var(--ui-ease);
+}
+
+.car-card:hover img,
+.car-card[aria-current="true"] img {
+    opacity: 1;
+}
+
+/* The renders load once the menu shows: they fade in, no pop */
+.car-card img:not(.loaded) {
+    opacity: 0;
 }
 
 .car-card:hover {
@@ -1093,27 +1121,6 @@ body.in-menu #killfeed {
         height: 44px;
     }
 
-    .menu-modes::after {
-        display: block;
-        margin-top: 6px;
-        min-height: 1.35em;
-        color: var(--ui-paper-2);
-        font-size: 13px;
-        line-height: 1.35;
-    }
-
-    #splash-screen[data-mode="party"] .menu-modes::after {
-        content: 'Coins, powerups, shooting – bump everyone.';
-    }
-
-    #splash-screen[data-mode="freeroam"] .menu-modes::after {
-        content: 'Cruise the bay. Bumping allowed.';
-    }
-
-    #splash-screen[data-mode="race"] .menu-modes::after {
-        content: 'Six tracks – pick track and bots in the lobby.';
-    }
-
     #splash-screen[data-mode="race"] .mode-note {
         display: none;
     }
@@ -1148,18 +1155,30 @@ body.in-menu #killfeed {
         background: rgba(18, 20, 22, 0.4);
     }
 
+    /* The numbers in one line: the car gets the height (docs/ui.md 4.2) */
     .car-stats {
-        gap: 16px;
-        padding: 8px 14px;
+        gap: 14px;
+        padding: 6px 14px;
         background: rgba(18, 20, 22, 0.42);
     }
 
-    .stat-bar {
-        width: 56px;
+    .car-stat {
+        flex-direction: row;
+        align-items: center;
+        gap: 6px;
     }
 
     .car-stat:nth-child(2) .stat-bar {
-        width: 64px;
+        margin-top: 0;
+        width: 48px;
+    }
+
+    .car-stat:first-child .stat-bar {
+        display: none;
+    }
+
+    .stat-value {
+        font-size: 15px;
     }
 
     .car-character {
@@ -1226,6 +1245,27 @@ body.in-menu #killfeed {
         display: none;
     }
 
+    /* The picked mode in one line under the control (the cards' text) */
+    .menu-modes::after {
+        display: block;
+        margin-top: 6px;
+        min-height: 1.35em;
+        color: var(--ui-paper-2);
+        font-size: 13px;
+        line-height: 1.35;
+    }
+
+    #splash-screen[data-mode="party"] .menu-modes::after {
+        content: 'Coins, powerups, shooting – bump everyone.';
+    }
+
+    #splash-screen[data-mode="freeroam"] .menu-modes::after {
+        content: 'Cruise the bay. Bumping allowed.';
+    }
+
+    #splash-screen[data-mode="race"] .menu-modes::after {
+        content: 'Six tracks – pick track and bots in the lobby.';
+    }
 }
 
 /* Upright phones below 700 px: a tighter sheet */
@@ -1346,27 +1386,24 @@ body.in-menu #killfeed {
         margin-bottom: 0;
     }
 
+    /* Two rows of four: every chip a 44 px target (docs/ui.md 4.4) */
     .menu-paint .paint-chips {
-        grid-template-columns: repeat(8, 1fr);
+        grid-template-columns: repeat(4, minmax(44px, 1fr));
         gap: 0;
     }
 
-    .paint-chip {
-        min-width: 0;
-    }
-
     .paint-chip::before {
-        width: 24px;
-        height: 24px;
+        width: 28px;
+        height: 28px;
     }
 
     .paint-chip::after {
-        width: 32px;
-        height: 32px;
+        width: 36px;
+        height: 36px;
     }
 
     .menu-label {
-        margin-bottom: 6px;
+        margin-bottom: 4px;
         font-size: 11px;
     }
 
@@ -1374,24 +1411,26 @@ body.in-menu #killfeed {
         height: 44px;
     }
 
+    .menu-modes::after {
+        margin-top: 3px;
+        font-size: 12px;
+    }
+
     /* No room under the sticky DRIVE: the lobby explains itself */
     #splash-screen[data-mode="race"] .mode-note {
         display: none;
     }
 
-    #splash-name-input {
-        height: 42px;
-    }
-
     .menu-panel {
-        gap: 10px;
+        gap: 8px;
+        padding-top: max(8px, env(safe-area-inset-top, 0px));
     }
 
     .menu-drive {
         position: sticky;
         bottom: 0;
         margin: 0 -14px;
-        padding: 10px 14px max(10px, env(safe-area-inset-bottom, 0px));
+        padding: 6px 14px max(8px, env(safe-area-inset-bottom, 0px));
         background: linear-gradient(0deg, rgba(18, 20, 22, 0.94) 60%, rgba(18, 20, 22, 0));
     }
 
@@ -1470,6 +1509,13 @@ body.in-menu #killfeed {
 
     .menu-hint .preview-keys {
         font-size: 10px;
+    }
+}
+
+/* Narrow sideways phones: a smaller wordmark keeps clear of the tools */
+@media (orientation: landscape) and (max-height: 520px) and (max-width: 640px) {
+    .menu-brand .wordmark {
+        width: 104px;
     }
 }
 

@@ -157,7 +157,7 @@ export class Bulli {
 
     // Honk (F) and shoot (E) pulses from keyboard, touch and gamepad
     handleActions() {
-        if (state.dead || state.isModalOpen) {
+        if (state.dead || state.isModalOpen || state.inMenu) {
             state.inputs.e = state.inputs.f = false;
             return;
         }

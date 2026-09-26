@@ -24,6 +24,10 @@ const POLL_MS = 100;
 // The status line is read out at most this often (aria-live)
 const ANNOUNCE_MS = 2000;
 const FADE_MS = 400;
+// All done: the bar runs to 100 % (its CSS transition, 0.25 s), then the loader fades
+export const FINISH_MS = 260;
+// Waiting for the server this long: the loader offers a reload
+export const LOADER_RELOAD_OFFER_MS = 10_000;
 
 let progress: LoadProgress | null = null;
 let taskIds: TaskId[] = [];
@@ -35,6 +39,9 @@ let lastPaint = 0;
 let lastAnnounce = -Infinity;
 let announced = '';
 let removed = false;
+let finishing = false;
+// The server does not answer yet: what the status line says instead, since when
+let waiting: { text: string; since: number } | null = null;
 let debugStates: Map<TaskId, TaskState> | null = null;
 let debugStart = 0;
 
@@ -76,6 +83,7 @@ export function startLoadingScreen(tier: string, options: { clock?: LoadClock; d
         debugStart = clock.now();
     }
     lastPaint = performance.now();
+    document.querySelector('#loading-screen .loader-reload')?.addEventListener('click', () => window.location.reload());
     startTips();
     pollTimer = window.setInterval(tick, POLL_MS);
     tick();
@@ -105,17 +113,20 @@ function paint(): void {
     const root = document.getElementById('loading-screen');
     if (!root || !progress || removed) return;
     const now = performance.now();
-    shown = approachProgress(shown, progress.overall('loader'), (now - lastPaint) / 1000);
+    shown = finishing ? 1 : approachProgress(shown, progress.overall('loader'), (now - lastPaint) / 1000);
     lastPaint = now;
-    const percent = Math.min(progress.percent('loader'), Math.floor(shown * 100));
+    const percent = finishing ? 100 : Math.min(progress.percent('loader'), Math.floor(shown * 100));
     const fill = root.querySelector<HTMLElement>('.loader-fill');
     if (fill) fill.style.transform = `scaleX(${shown})`;
     const label = root.querySelector('.loader-percent');
     if (label) label.textContent = `${percent} %`;
     root.querySelector('[role="progressbar"]')?.setAttribute('aria-valuenow', String(percent));
-    const status = progress.status('loader');
+    const status = waiting?.text ?? progress.status('loader');
     const line = root.querySelector('.loader-status');
     if (line && line.textContent !== status) line.textContent = status;
+    line?.classList.toggle('loader-waiting', !!waiting);
+    const reload = root.querySelector<HTMLElement>('.loader-reload');
+    if (reload) reload.hidden = !waiting || now - waiting.since < LOADER_RELOAD_OFFER_MS;
     if (status !== announced && now - lastAnnounce >= ANNOUNCE_MS) {
         const live = document.getElementById('loader-live');
         if (live) live.textContent = status;
@@ -176,6 +187,41 @@ export function showLoaderNotice(text: string): void {
     if (!notice) return;
     notice.textContent = text;
     notice.hidden = false;
+}
+
+/**
+ * The server does not answer (refused, down, full) while the loader is up:
+ * the status line says so instead of a step, and after
+ * LOADER_RELOAD_OFFER_MS since `sinceMs` (performance.now) the loader
+ * offers a reload. The connection banner stays away from the loader.
+ */
+export function showLoaderWaiting(text: string, sinceMs: number): void {
+    waiting = { text, since: sinceMs };
+    paint();
+    // The offer comes on time even between two polls
+    window.setTimeout(paint, Math.max(0, sinceMs + LOADER_RELOAD_OFFER_MS - performance.now()) + 10);
+}
+
+/** The server answered: the status line shows the steps again. */
+export function clearLoaderWaiting(): void {
+    if (!waiting) return;
+    waiting = null;
+    paint();
+}
+
+/**
+ * Every step of the loader is done: the bar runs to 100 %, then the loader
+ * fades into the menu (removeLoader). Resolves once it fades.
+ */
+export function finishLoader(): Promise<void> {
+    if (finishing || removed) return Promise.resolve();
+    finishing = true;
+    waiting = null;
+    paint();
+    return new Promise(resolve => window.setTimeout(() => {
+        removeLoader();
+        resolve();
+    }, FINISH_MS));
 }
 
 /**
