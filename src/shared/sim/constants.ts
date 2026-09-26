@@ -37,6 +37,14 @@ export const SIM_TUNING = {
     SUSP_FREQ: 2,
     SUSP_DAMPING: 0.8,
     SUSP_TRAVEL: 0.25,
+    // How far the body rises above the full extension (m) before the wheels
+    // leave the ground (section 26.9)
+    SUSP_LIFT: 0.02,
+    // Grade (rise per metre) from which the ground's push up a flank costs
+    // horizontal speed, and from which it costs the full share (26.9);
+    // above every road (at most 20 %) and ramp (at most 19 %)
+    FLANK_FROM: 0.25,
+    FLANK_FULL: 0.5,
     // Below this speed the tyre model blends into kinematic steering
     V_LOW: 5,
     // Resistances

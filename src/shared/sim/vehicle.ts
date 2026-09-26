@@ -405,26 +405,61 @@ export function stepVertical(car: SimCar, world: SimWorld, dt: number): void {
     // On the ground: vertical speed of the ground under the moving car
     if (onTop) gradX = gradZ = 0;
     else groundGradient(world, s.x, s.z);
-    const vGround = gradX * s.vx + gradZ * s.vz;
     // Bump stop: the body moves with the ground (no bounce)
     if (s.susp < -T.SUSP_TRAVEL) {
         s.susp = -T.SUSP_TRAVEL;
-        if (s.vy < vGround) s.vy = vGround;
+        bumpStop(s);
     }
     // Spring and damper per unit mass; the wheels cannot pull the body down
+    const vGround = gradX * s.vx + gradZ * s.vz;
     const force = g - k * s.susp + 2 * T.SUSP_DAMPING * omega * (vGround - s.vy);
-    s.vy += ((force > 0 ? force : 0) - g) * dt;
+    const dvy = ((force > 0 ? force : 0) - g) * dt;
+    s.vy += dvy;
+    // On a steep flank the push that speeds the body up (beyond holding it
+    // against gravity) comes from the car's speed along the grade: it takes
+    // (∇h·v̂)·Δvy off the speed, along the travel direction, exactly the
+    // energy the push adds (vy ≈ ∇h·v), so a flank cannot add energy
+    // (26.9). Along the travel only: a sideways share would make a car
+    // crossing a bumpy bank drift down it. Faded in from FLANK_FROM to
+    // FLANK_FULL grade: roads and ramps stay below it and drive as before.
+    if (dvy > 0) {
+        const share = clamp((Math.sqrt(gradX * gradX + gradZ * gradZ) - T.FLANK_FROM) / (T.FLANK_FULL - T.FLANK_FROM), 0, 1);
+        const v2 = s.vx * s.vx + s.vz * s.vz;
+        if (share > 0 && v2 > 1e-6) {
+            const cut = (gradX * s.vx + gradZ * s.vz) / v2 * dvy * share;
+            s.vx -= cut * s.vx;
+            s.vz -= cut * s.vz;
+        }
+    }
     s.susp += s.vy * dt;
     if (s.susp < -T.SUSP_TRAVEL) {
         s.susp = -T.SUSP_TRAVEL;
-        if (s.vy < vGround) s.vy = vGround;
-    } else if (s.susp > extension) {
-        // The body rose above the full extension: the wheels leave the ground
+        bumpStop(s);
+    } else if (s.susp > extension + T.SUSP_LIFT) {
+        // The body rose clearly above the full extension: the wheels leave
+        // the ground. Up to SUSP_LIFT above it they still touch without load
+        // (the spring cannot pull), so a washboard does not cut the drive
+        // and the steering for single ticks (26.9).
         s.y += s.susp - extension;
         s.susp = extension;
         s.grounded = false;
         s.airTicks = 0;
     }
+}
+
+// The body on its bump stop is hit by the ground under the moving car
+// (gradient in gradX/gradZ): an inelastic push along the ground's normal
+// n = (-∇h, 1) takes away the velocity component into the ground, so the
+// body moves along the surface afterwards (vy = ∇h·v). On a grade s the car
+// keeps 1/(1 + s²) of its speed into the grade and turns the rest upwards
+// (at 100 %: half and half), instead of gaining s·v upwards for free.
+function bumpStop(s: VehicleState): void {
+    const into = gradX * s.vx + gradZ * s.vz - s.vy;
+    if (into <= 0) return;
+    const lambda = into / (1 + gradX * gradX + gradZ * gradZ);
+    s.vy += lambda;
+    s.vx -= gradX * lambda;
+    s.vz -= gradZ * lambda;
 }
 
 // Tick step 6 with the final position: drift, boost and timers
@@ -472,10 +507,12 @@ export function finishTick(car: SimCar): void {
     fill += DRAFT_FILL * s.draft;
     s.boostMeter = Math.min(1, s.boostMeter + fill * DT);
     const wasBoosting = s.boosting;
+    // In the air the boost gives no thrust (26.3): it cannot start there and
+    // drains nothing; one held through a flight carries on after the landing
     s.boosting = (car.input.buttons & BTN_BOOST) !== 0 && u > 0 && s.waterTicks === 0
-        && (wasBoosting ? s.boostMeter > 0 : s.boostMeter >= T.BOOST_MIN);
+        && (wasBoosting ? s.boostMeter > 0 : s.grounded && s.boostMeter >= T.BOOST_MIN);
     ev.boostStarted = s.boosting && !wasBoosting;
-    if (s.boosting) s.boostMeter = Math.max(0, s.boostMeter - T.BOOST_DRAIN * DT);
+    if (s.boosting && s.grounded) s.boostMeter = Math.max(0, s.boostMeter - T.BOOST_DRAIN * DT);
 
     if (s.ghostTicks > 0) s.ghostTicks--;
     if (s.ghostExit > 0) s.ghostExit--;

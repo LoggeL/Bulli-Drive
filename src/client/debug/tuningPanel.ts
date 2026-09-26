@@ -75,6 +75,7 @@ const FOLDERS: [string, Knob[]][] = [
     ]],
     ['Federung und Luft', [
         g('SUSP_FREQ', 0.8, 4, 0.05), g('SUSP_DAMPING', 0.2, 1.5, 0.05), g('SUSP_TRAVEL', 0.05, 0.5, 0.01),
+        g('SUSP_LIFT', 0, 0.1, 0.005), g('FLANK_FROM', 0, 1, 0.05), g('FLANK_FULL', 0.05, 2, 0.05),
         g('AIR_YAW_RESPONSE', 0, 10, 0.1), g('AIR_ALIGN', 0, 6, 0.1)
     ]],
     ['Fahrwerk', [

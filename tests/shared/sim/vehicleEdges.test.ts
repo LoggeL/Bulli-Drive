@@ -40,6 +40,38 @@ describe('in the air', () => {
         expect(plain.car.state.vy).toBeCloseTo(-20 / 60, 12);
     });
 
+    it('neither starts nor drains a boost; one held through the flight goes on after the landing', () => {
+        // 26.3/26.9: no thrust in the air, so no drain (0.45/s) either; the
+        // meter fills with AIR_FILL (0.10/s) from the 18th tick in the air.
+        // 30 ticks from airTicks 30: + 0.10 · 30/60 = 0.05.
+        const held = flying(30), fresh = flying(30);
+        held.car.state.boosting = true;
+        held.car.state.boostMeter = 0.5;
+        fresh.car.state.boostMeter = 0.5;
+        let started = 0;
+        drive(held.car, held.world, 30, { throttle: 255, buttons: BTN_BOOST });
+        drive(fresh.car, fresh.world, 30, { throttle: 255, buttons: BTN_BOOST }, () => {
+            if (fresh.car.events.boostStarted) started++;
+        });
+        expect(held.car.state.boostMeter).toBeCloseTo(0.5 + 0.10 * 30 / 60, 12);
+        expect(held.car.state.boosting).toBe(true);
+        expect(fresh.car.state.boostMeter).toBeCloseTo(0.5 + 0.10 * 30 / 60, 12);
+        expect(fresh.car.state.boosting).toBe(false);
+        expect(started).toBe(0);
+        // Back on the ground (1 cm above it, falling): the held boost drains
+        // again without a new start
+        held.car.state.y = 0.01;
+        held.car.state.vy = -1;
+        let restarted = 0;
+        drive(held.car, held.world, 60, { throttle: 255, buttons: BTN_BOOST }, () => {
+            if (held.car.events.boostStarted) restarted++;
+        });
+        expect(held.car.state.grounded).toBe(true);
+        expect(held.car.state.boosting).toBe(true);
+        expect(restarted).toBe(0);
+        expect(held.car.state.boostMeter).toBeLessThan(0.55 - 0.45 * 50 / 60);
+    });
+
     it('does not steer, and eases the yaw rate towards 2/s times the slip angle at 3/s', () => {
         // Heading and flight direction the same (β = 0): a yaw rate of 0.4
         // loses 3 · DT = 5 % a tick, whatever the steering
