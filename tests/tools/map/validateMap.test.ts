@@ -851,6 +851,41 @@ describe('checkTrack', () => {
         expect(checkTrack(square(), big, { ...LOOP, ramps: [{ edge: 'bc', s: 100, length: 10, height: 1.5 }] }).findings).toEqual([]);
     });
 
+    it('allows the fastest class 1 m/s more at the lip than where it lands, not more', () => {
+        // AIR_BRAKE_TOLERANCE at its edge. Near the corner at the end of bc
+        // the Sport (about 42.5 m/s at the lip) lands where each 2 m further
+        // on its allowed speed drops by about 24 · 2 / 42 = 1.1 m/s, so the
+        // excess moves in steps of about 1.1 m/s with the touch-down. Two
+        // ramps on either side of 1 m/s, excess measured (regression lock of
+        // the speed profile, not recomputed here): s 107 over 1.62 m 0.76
+        // m/s, which passes; s 110 over 1.5 m 1.24 m/s, which does not (the
+        // message shows 153 against 149 km/h)
+        const at = (s: number, height: number) => messages(checkTrack(square(), big, { ...LOOP, ramps: [{ edge: 'bc', s, length: 10, height }] }).findings);
+        expect(at(107, 1.62)).toEqual([]);
+        expect(at(110, 1.5)).toEqual([expect.stringMatching(
+            /^track loop: ramp at s = 110 on bc: sport lands too close before a bend: 153 km\/h at the lip, 149 km\/h allowed where it lands 4\d m on \(it would have to brake in the air\)$/)]);
+    });
+
+    it('reports the slowest class\'s flight over the real ground, longer where it falls away', () => {
+        // bc runs south (+z) along x = 200; the ramp at s = 100 has its front
+        // edge at z = 105. The ground falls 10 % from z = 110 on: after
+        // d = 5 m the path meets it where 1.5 + vy·t − 7.5 t² = 0.5 − 0.1·vh·t,
+        // so t = ((vy + 0.1 vh) + √((vy + 0.1 vh)² + 30)) / 15 (one metre of
+        // the drop inside those 5 m); over level ground (vy + √(vy² + 45)) / 15
+        const falling = field((_, z) => 5 - 0.1 * Math.max(0, z - 110), { ...SPEC, cols: 201, rows: 201, originX: -100, originZ: -100 });
+        const jump = checkTrack(square(), falling, { ...LOOP, ramps: [{ edge: 'bc', s: 100, length: 10, height: 1.5 }] }).stats!.jumps[0];
+        expect(jump.lip).toBeCloseTo(1.5, 9);
+        const v = jump.speed / 3.6, slope = 0.15;
+        const vy = v * slope / Math.sqrt(1 + slope * slope), vh = v / Math.sqrt(1 + slope * slope);
+        const b = vy + 0.1 * vh;
+        const expected = (b + Math.sqrt(b * b + 30)) / 15, level = (vy + Math.sqrt(vy * vy + 45)) / 15;
+        expect(expected).toBeGreaterThan(level + 0.05);
+        // The trace steps 1/120 s and stops on the first step below ground
+        expect(jump.airtime).toBeGreaterThanOrEqual(expected - 1e-9);
+        expect(jump.airtime).toBeLessThan(expected + 1 / 120 + 1e-9);
+        expect(jump.distance).toBeCloseTo(vh * jump.airtime, 9);
+    });
+
     it('reports a jump landing in a bend and a lip the slope eats', () => {
         const late = checkTrack(square(), big, { ...LOOP, ramps: [{ edge: 'bc', s: 175, length: 10, height: 1.5 }] });
         // (it has no room to brake for the corner either)

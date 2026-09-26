@@ -22,9 +22,20 @@
 //
 // Roads (docs/phase-1a-design.md, 27): every road of the map (chains of
 // edges through joints), both directions, at 60, 100, 130, 160 and 200 km/h
-// held constant along the centre line (the car is put back onto the line
-// and turned along it before every tick): every take-off of at least
-// 3 ticks with its place, air time and height, and a summary per speed.
+// and at boost speeds (230, 270 km/h: top speed + BOOST_SPEED) held
+// constant along the centre line (the car is put back onto the line and
+// turned along it before every tick): every take-off of at least 3 ticks
+// with its place, air time and height, and a summary per speed. A flight
+// still going at the end of the road goes on straight into whatever lies
+// there (marked *: longer than on the road that really follows).
+// Town: straight lines across downtown and the residential streets
+// (x −560..300, z −420..420, every 6 m, four directions) at 30, 45 and
+// 60 km/h over the bare ground (no buildings): flights of at least 0.1 s
+// that take off from and land on paved ground, i.e. across roads, their
+// embankments and junctions rather than along them. And two named
+// crossings: the mobile E2E test's bump (sand onto the road embankment at
+// (−596, 300), east) and Palm Street straight on through the T junction
+// sv-n1 into the cut slope behind it.
 // Ramps: every jump ramp of the map (free roam) and of the tracks (race
 // world), driven straight at 60, 90 and 130 km/h (the speed is held until
 // the lip): air time, distance from the front edge to the touch-down,
@@ -34,12 +45,13 @@
 // seeds 1-4 (360 races): DNF, resets, missed gates, total time, flights off
 // the terrain and how far the bots got off the racing line.
 //
-//   npx tsx scripts/sim-airtime.ts --only roads,ramps   # sections: synthetic, crests, roads, ramps, bots, sweep
+//   npx tsx scripts/sim-airtime.ts --only roads,ramps   # sections: synthetic, crests, roads, town, ramps, bots, sweep
 //   npx tsx scripts/sim-airtime.ts --tune GRAVITY=16    # other tuning values for the sim
 //   npx tsx scripts/sim-airtime.ts --terrain old.bhf    # another bake of the same roads
 
-import { heightAt } from '../src/shared/map/heightfield.js';
+import { heightAt, surfaceAt } from '../src/shared/map/heightfield.js';
 import { createMapData } from '../src/shared/map/mapData.js';
+import { isPaved } from '../src/shared/map/types.js';
 import { roadChains, type RoadChain, type RoadNetwork } from '../src/shared/map/roadNetwork.js';
 import { routeToTrack } from '../src/shared/map/routeToTrack.js';
 import { pointAt } from '../src/shared/map/spline.js';
@@ -58,7 +70,7 @@ import { rampFlight, rampLip, validateMap } from '../tools/map/validateMap.js';
 const SPEEDS = [25, 40, 55];
 const series = process.argv.includes('--series');
 const onlyArg = process.argv.indexOf('--only');
-const sections = new Set(onlyArg >= 0 ? process.argv[onlyArg + 1].split(',') : ['synthetic', 'crests', 'roads', 'ramps', 'bots']);
+const sections = new Set(onlyArg >= 0 ? process.argv[onlyArg + 1].split(',') : ['synthetic', 'crests', 'roads', 'town', 'ramps', 'bots']);
 const KMH = 3.6;
 // --tune GRAVITY=16,SUSP_FREQ=1.8: try other tuning values (the sim's
 // only; the validator's estimate keeps the shipped defaults)
@@ -219,7 +231,7 @@ function roadPath(net: RoadNetwork, chain: RoadChain, backwards: boolean): RoadP
     };
 }
 
-interface RoadFlight { road: string; edge: string; s: number; x: number; z: number; kmh: number; air: number; height: number; impact: number }
+interface RoadFlight { road: string; edge: string; s: number; x: number; z: number; kmh: number; air: number; height: number; impact: number; pastEnd: boolean }
 
 // Drives the path at a constant speed, following the centre line; after
 // the path's end a flight in progress goes on straight
@@ -248,11 +260,11 @@ function driveRoad(world: SimWorld, path: RoadPath, road: string, kmh: number): 
         stepVehicle(car, world);
         S += v / 60;
         if (!s.grounded) {
-            if (air === 0) takeoff = { road, edge: before.edge, s: before.s, x: before.x, z: before.z, kmh, air: 0, height: 0, impact: 0 };
+            if (air === 0) takeoff = { road, edge: before.edge, s: before.s, x: before.x, z: before.z, kmh, air: 0, height: 0, impact: 0, pastEnd: false };
             air++;
             height = Math.max(height, s.y - world.groundHeight(s.x, s.z));
         } else if (air > 0) {
-            if (air >= 3 && takeoff) flights.push({ ...takeoff, air: air / 60, height, impact: car.events.landedImpact });
+            if (air >= 3 && takeoff) flights.push({ ...takeoff, air: air / 60, height, impact: car.events.landedImpact, pastEnd: t >= ticks });
             air = 0;
             height = 0;
         }
@@ -260,7 +272,7 @@ function driveRoad(world: SimWorld, path: RoadPath, road: string, kmh: number): 
     return flights;
 }
 
-const ROAD_SPEEDS = [60, 100, 130, 160, 200];
+const ROAD_SPEEDS = [60, 100, 130, 160, 200, 230, 270];
 if (sections.has('roads')) {
     const chains = roadChains(bundle.net);
     const all: RoadFlight[] = [];
@@ -274,12 +286,14 @@ if (sections.has('roads')) {
     }
     const length = chains.reduce((sum, c) => sum + c.length, 0);
     console.log(`\nRoads: ${chains.length} roads, ${(length / 1000).toFixed(2)} km, both directions, Bulli, speed held on the centre line; flights of >= 3 ticks`);
-    console.log('\n| km/h | take-offs | >= 0.1 s | >= 0.3 s | longest (s) | highest (m) | total air (s) |');
-    console.log('| ---: | ---: | ---: | ---: | ---: | ---: | ---: |');
+    console.log('\n| km/h | take-offs | >= 0.1 s | >= 0.3 s | longest (s) | highest (m) | longest, highest within the road (s, m) | total air (s) |');
+    console.log('| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |');
     for (const kmh of ROAD_SPEEDS) {
-        const f = all.filter(r => r.kmh === kmh);
-        const longest = f.reduce((m, r) => Math.max(m, r.air), 0), highest = f.reduce((m, r) => Math.max(m, r.height), 0);
-        console.log(`| ${kmh} | ${f.length} | ${f.filter(r => r.air >= 0.1).length} | ${f.filter(r => r.air >= 0.3).length} | ${longest.toFixed(2)} | ${highest.toFixed(2)} | ${f.reduce((m, r) => m + r.air, 0).toFixed(1)} |`);
+        const f = all.filter(r => r.kmh === kmh), within = f.filter(r => !r.pastEnd);
+        const longest = (list: RoadFlight[]) => list.reduce((m, r) => Math.max(m, r.air), 0);
+        const highest = (list: RoadFlight[]) => list.reduce((m, r) => Math.max(m, r.height), 0);
+        console.log(`| ${kmh} | ${f.length} | ${f.filter(r => r.air >= 0.1).length} | ${f.filter(r => r.air >= 0.3).length} | ${longest(f).toFixed(2)} | ${highest(f).toFixed(2)} | `
+            + `${longest(within).toFixed(2)}, ${highest(within).toFixed(2)} | ${f.reduce((m, r) => m + r.air, 0).toFixed(1)} |`);
     }
     // Take-off spots: flights within 12 m of each other on the same road
     // and direction are one spot; air time and height per speed
@@ -296,10 +310,87 @@ if (sections.has('roads')) {
     console.log('| --- | --- | --- | ' + ROAD_SPEEDS.map(() => '---:').join(' | ') + ' |');
     for (const spot of spots) {
         if ([...spot.by.values()].every(f => f.air < 0.1)) continue;
-        const cells = ROAD_SPEEDS.map(k => { const f = spot.by.get(k); return f ? `${f.air.toFixed(2)} / ${f.height.toFixed(2)}` : '–'; });
+        const cells = ROAD_SPEEDS.map(k => { const f = spot.by.get(k); return f ? `${f.air.toFixed(2)} / ${f.height.toFixed(2)}${f.pastEnd ? '*' : ''}` : '–'; });
         console.log(`| ${spot.road} | ${spot.edge} ${spot.s.toFixed(0)} | ${spot.x.toFixed(0)}, ${spot.z.toFixed(0)} | ${cells.join(' | ')} |`);
     }
-    console.log(`(${spots.filter(p => [...p.by.values()].every(f => f.air < 0.1)).length} more spots with hops under 0.1 s only)`);
+    console.log(`(${spots.filter(p => [...p.by.values()].every(f => f.air < 0.1)).length} more spots with hops under 0.1 s only; * the flight went on past the end of the road)`);
+}
+
+// ---- Across the town at 30-60 km/h ----
+
+// Drives straight from (x0, z0) along (dx, dz) for `length` m at a speed
+// held constant; flights of at least `minTicks` with take-off and
+// touch-down point
+interface Crossing { x: number; z: number; ex: number; ez: number; air: number; height: number }
+function driveStraight(world: SimWorld, x0: number, z0: number, dx: number, dz: number, kmh: number, length: number, minTicks: number): Crossing[] {
+    const v = kmh / KMH, yaw = Math.atan2(dx, dz);
+    const car = spawnCar(world, 'a', 'bulli', x0, z0, yaw, v);
+    const s = car.state;
+    const out: Crossing[] = [];
+    let air = 0, height = 0, tx = 0, tz = 0;
+    for (let t = 0; t < Math.ceil(length / v * 60); t++) {
+        const px = s.x, pz = s.z;
+        s.vx = dx * v;
+        s.vz = dz * v;
+        s.yaw = yaw;
+        s.yawRate = 0;
+        car.input.throttle = 0;
+        stepVehicle(car, world);
+        if (!s.grounded) {
+            if (air === 0) { tx = px; tz = pz; }
+            air++;
+            height = Math.max(height, s.y - world.groundHeight(s.x, s.z));
+        } else if (air > 0) {
+            if (air >= minTicks) out.push({ x: tx, z: tz, ex: s.x, ez: s.z, air: air / 60, height });
+            air = 0;
+            height = 0;
+        }
+    }
+    // A flight still going at the end counts up to there
+    if (air >= minTicks) out.push({ x: tx, z: tz, ex: s.x, ez: s.z, air: air / 60, height });
+    return out;
+}
+
+if (sections.has('town')) {
+    // The bare ground of the map: the lines run through buildings
+    const ground = groundWorld((x, z) => mapWorld.groundHeight(x, z));
+    const paved = (x: number, z: number) => isPaved(surfaceAt(bundle.hf, x, z));
+    const X0 = -560, X1 = 300, Z0 = -420, Z1 = 420, STEP = 6;
+    const lines: { x: number; z: number; dx: number; dz: number; length: number }[] = [];
+    for (let z = Z0; z <= Z1; z += STEP) lines.push({ x: X0, z, dx: 1, dz: 0, length: X1 - X0 }, { x: X1, z, dx: -1, dz: 0, length: X1 - X0 });
+    for (let x = X0; x <= X1; x += STEP) lines.push({ x, z: Z0, dx: 0, dz: 1, length: Z1 - Z0 }, { x, z: Z1, dx: 0, dz: -1, length: Z1 - Z0 });
+    console.log(`\nTown: ${lines.length} straight lines across x ${X0}..${X1}, z ${Z0}..${Z1} (every ${STEP} m, four directions), Bulli, speed held, bare ground; flights >= 0.1 s from paved to paved ground`);
+    console.log('\n| km/h | flights | >= 0.2 s | >= 0.3 s | longest (s) | highest (m) | longest three (x, z: s / m) |');
+    console.log('| ---: | ---: | ---: | ---: | ---: | ---: | --- |');
+    for (const kmh of [30, 45, 60]) {
+        const found: Crossing[] = [];
+        for (const l of lines) {
+            // Taking off from the road or from its edge (the last 3 m before)
+            for (const f of driveStraight(ground, l.x, l.z, l.dx, l.dz, kmh, l.length, 6)) {
+                if ((paved(f.x, f.z) || paved(f.x - 3 * l.dx, f.z - 3 * l.dz)) && paved(f.ex, f.ez)) found.push(f);
+            }
+        }
+        found.sort((a, b) => b.air - a.air);
+        const top = found.slice(0, 3).map(f => `${f.x.toFixed(0)}, ${f.z.toFixed(0)}: ${f.air.toFixed(2)} / ${f.height.toFixed(2)}`).join('; ');
+        console.log(`| ${kmh} | ${found.length} | ${found.filter(f => f.air >= 0.2).length} | ${found.filter(f => f.air >= 0.3).length} | ${(found[0]?.air ?? 0).toFixed(2)} | `
+            + `${found.reduce((m, f) => Math.max(m, f.height), 0).toFixed(2)} | ${top || '–'} |`);
+    }
+    // Two crossings by name, flights of 3 ticks and more, anywhere
+    const named = [
+        { label: 'E2E bump: sand onto the road embankment at (−596, 300), east', x: -620, z: 300, dx: 1, dz: 0, length: 110 },
+        { label: 'Palm Street straight on through sv-n1 into the cut slope, east', x: -150, z: -127, dx: 1, dz: 0, length: 120 }
+    ];
+    const speeds = [30, 45, 60, 80, 100];
+    console.log('\n| Crossing | ' + speeds.map(k => `${k} km/h air s / m`).join(' | ') + ' |');
+    console.log('| --- | ' + speeds.map(() => '---:').join(' | ') + ' |');
+    for (const c of named) {
+        const cells = speeds.map(kmh => {
+            const f = driveStraight(mapWorld, c.x, c.z, c.dx, c.dz, kmh, c.length, 3);
+            const longest = f.reduce<Crossing | null>((m, r) => (!m || r.air > m.air ? r : m), null);
+            return longest ? `${longest.air.toFixed(2)} / ${longest.height.toFixed(2)}` : '–';
+        });
+        console.log(`| ${c.label} | ${cells.join(' | ')} |`);
+    }
 }
 
 // ---- Every ramp of the map and of the tracks ----

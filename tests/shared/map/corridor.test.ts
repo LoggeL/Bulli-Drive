@@ -702,8 +702,11 @@ describe('longitudinalProfile: a vertical radius that changes along the road', (
             const station = i + 1;
             expect(b[i], `station ${station}`).toBeLessThanOrEqual((station === 99 || station === 100 ? 1 / 60 : 1 / 150) + 1e-9);
         }
-        // and the rounding uses it: sharper than 1/150 there
-        expect(Math.max(b[98], b[99])).toBeGreaterThan(1 / 150 + 1e-6);
+        // and the rounding uses it at both stations: sharper than 1/150 at
+        // station 99 (the 60 m step after it) and at 100 (the 60 m step
+        // before it)
+        expect(b[98], 'station 99').toBeGreaterThan(1 / 150 + 1e-6);
+        expect(b[99], 'station 100').toBeGreaterThan(1 / 150 + 1e-6);
     });
 });
 

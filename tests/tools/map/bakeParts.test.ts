@@ -232,6 +232,10 @@ describe('roadProfiles', () => {
             expect(added(-30)).toBeCloseTo(1, 9);
             expect(added(-35)).toBeCloseTo(0.5625, 9);
             expect(added(-25)).toBeCloseTo(0.5625, 9);
+            // Down to its feet without a step: u = ±0.8 gives 0.36² = 0.1296,
+            // u = ±0.9 gives 0.19² = 0.0361
+            for (const x of [-38, -22]) expect(added(x), `${id} x ${x}`).toBeCloseTo(0.1296, 9);
+            for (const x of [-39, -21]) expect(added(x), `${id} x ${x}`).toBeCloseTo(0.0361, 9);
             for (const x of [-40, -20, -60, 0]) expect(added(x), `${id} x ${x}`).toBeCloseTo(0, 9);
         }
     });
