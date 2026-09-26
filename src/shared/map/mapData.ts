@@ -136,8 +136,11 @@ export const FOUNTAIN_TOP = 1.5;
 // Shipping containers stand on the arena's concrete; a car can land on one
 export const CONTAINER_TOP = 2.6;
 // Places kept free of buildings and plants: around the jump ramps, their
-// landings and a straight run-up behind them, around the spawns
-export const JUMP_LANDING = 45;
+// landings and a straight run-up behind them, around the spawns. The
+// landing reaches JUMP_LANDING m beyond the ramp: 45 m with GRAVITY 20,
+// 60 m since GRAVITY 15 flies 1.33 times as far (docs/phase-1a-design.md,
+// 27; the validator checks a car at 130 km/h lands inside it)
+export const JUMP_LANDING = 60;
 export const JUMP_RUNUP = 30;
 export const JUMP_SIDE = 4;
 export const SPAWN_KEEP = 8;

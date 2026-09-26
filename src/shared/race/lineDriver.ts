@@ -138,7 +138,7 @@ export class LineDriver {
         private readonly random: RandomSource
     ) {
         this.skill = BOT_SKILLS[level];
-        this.profile = speedProfile(course.line, params, course.surfaces, this.skill.unpavedGrip);
+        this.profile = speedProfile(course.line, params, course.surfaces, this.skill.unpavedGrip, course.heights);
         const size = this.skill.delayTicks + 1;
         this.delaySteer = new Int16Array(size);
         this.delayThrottle = new Int16Array(size);

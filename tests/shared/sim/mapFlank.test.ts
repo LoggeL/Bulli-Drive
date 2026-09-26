@@ -12,7 +12,8 @@ describe('Bulli Bay: the grass bank south of (-84, -338)', () => {
         // Southwards from (-84, -338) a bank of 108 % rises 1.1 m just ahead
         // of a road. The push along the normal leaves at most v/2 upwards
         // (at 100 %: half and half; at 108 %: 14·1.08/(1 + 1.08²) = 6.97),
-        // so the apex over the lip is at most (v/2)²/(2g) = 1.23 m. Before
+        // so the apex over the lip is at most (v/2)²/(2g) = 1.63 m (GRAVITY
+        // 15, docs/phase-1a-design.md 27; 1.23 m with 20). Before
         // (vy raised to ∇h·v = 15 m/s at no cost) it flew 2.9 m over the
         // lip, 68 ticks, with 1.6 times the kinetic energy it came with.
         const world = mapFor().simWorld;
@@ -29,7 +30,7 @@ describe('Bulli Bay: the grass bank south of (-84, -338)', () => {
         }
         // It does leave the bank (the lock would pass trivially otherwise)
         expect(lip).toBeGreaterThan(13);
-        expect(apex - lip).toBeLessThan((v / 2) ** 2 / (2 * 20));
+        expect(apex - lip).toBeLessThan((v / 2) ** 2 / (2 * 15));
         expect(most).toBeLessThanOrEqual(v * v / 2);
     });
 });

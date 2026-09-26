@@ -213,11 +213,11 @@ describe('snapYaw and oblique branches', () => {
         expect(barrier).toMatchObject({ kind: 'barrier', yaw: 2.356194, length: 10 });
         expect(barrier.kind === 'barrier' && isAxisYaw(barrier.yaw)).toBe(false);
         // At the trim radius (7 m) its eastern end would stand on the straight
-        // route (z > -5.5: half its 10 m width plus the 0.5 m clearance). A
+        // route (z > -6.5: half its 10 m width plus the 1.5 m clearance). A
         // row d m into the branch, 10 m long and 0.6 m deep, reaches up to
-        // z = -0.707 d + 5 × 0.707 + 0.3 × 0.707 = -0.707 d + 3.748, off the
-        // roadway from d = 9.248 / 0.707 = 13.08 m: in 0.5 m steps from 7 m, 13.5 m
-        expect(barrier.kind === 'barrier' && Math.hypot(barrier.x, barrier.z)).toBeCloseTo(13.5, 3);
+        // z = -0.707 d + 5 × 0.707 + 0.3 × 0.707 = -0.707 d + 3.748, clear
+        // from d = 10.248 / 0.707 = 14.49 m: in 0.5 m steps from 7 m, 14.5 m
+        expect(barrier.kind === 'barrier' && Math.hypot(barrier.x, barrier.z)).toBeCloseTo(14.5, 3);
     });
 });
 

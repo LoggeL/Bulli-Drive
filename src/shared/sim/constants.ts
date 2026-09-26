@@ -28,7 +28,7 @@ export const GHOST_EXIT_TICKS = 180;
 export const SIM_TUNING = {
     // Gravity: on the body (vertical motion, on the ground and in the
     // air), downhill pull, tyre load
-    GRAVITY: 20,
+    GRAVITY: 15,
     G_SLOPE: 9.81,
     G_TIRE: 9.81,
     // Suspension (docs/phase-1a-design.md, 26): natural frequency (Hz) and

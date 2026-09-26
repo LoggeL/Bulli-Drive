@@ -50,7 +50,7 @@ export function driveTrack(map: MapData, track: MapTrackDef, car: CarClassId, le
     const world = createRaceWorld(map, def);
     // The race world's ramps: the map's first, then the track's
     const first = map.ramps.length;
-    const course = createCourse(def, buildRacingLine(def), world.surfaceAt);
+    const course = createCourse(def, buildRacingLine(def), world.surfaceAt, world.terrainHeight);
     const sim = createSimCar('bot', car);
     const slot = track.grid[0];
     spawnVehicle(sim.state, world, slot.x, slot.z, slot.yaw);
@@ -85,6 +85,8 @@ export function driveTrack(map: MapData, track: MapTrackDef, car: CarClassId, le
             missed = progress.missedGate;
         }
     }
+    // A flight over the finish line counts too (the Ridge Climb's last ramp)
+    if (air >= 3 && takeoff) flights.push({ ...takeoff, ticks: air });
     return {
         time: progress.finishTicks === null ? null : progress.finishTicks / TICK_RATE,
         resets, missedGates, flights, maxLineDistance: driver.maxLineDistance, topSpeed

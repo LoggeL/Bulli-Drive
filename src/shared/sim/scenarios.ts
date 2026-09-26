@@ -302,8 +302,8 @@ export const SIM_SCENARIOS: SimScenario[] = [
         ticks: 240,
         create() {
             // A bump 1 m high and 20 m long at z = -380: κ = 0.049/m at its
-            // top, v²·κ is above GRAVITY from 20 m/s on, so the jeep leaves
-            // it at 30 m/s
+            // top, v²·κ is above GRAVITY (15) from 17.5 m/s on, so the jeep
+            // leaves it at 30 m/s
             const world = createGroundWorld(cosineBump(1, 20, -380));
             return { world, cars: [spawnCar(world, 'a', 'jeep', 0, -400, 0, 30)] };
         },

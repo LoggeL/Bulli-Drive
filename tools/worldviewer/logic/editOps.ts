@@ -31,7 +31,7 @@ export const DEFAULT_JUNCTION: Junction = { shape: 'auto', control: 'stop', cros
 // new objects look like the hand-written ones
 const NODE_KEYS = ['id', 'x', 'z', 'y', 'kind', 'junction'];
 const EDGE_KEYS = ['id', 'name', 'from', 'to', 'curve', 'profile', 'overrides', 'oneWay', 'maxGrade',
-    'elevation', 'rails', 'walls', 'tags'];
+    'elevation', 'verticalRadius', 'bumps', 'rails', 'walls', 'tags'];
 
 export type Selection =
     | { kind: 'node'; id: string }
@@ -354,14 +354,18 @@ export function splitEdge(file: RoadNetworkFile, edgeId: string, at: { x: number
     const [railsA, railsB] = splitRanges<RailRange>(edge.rails ?? [], s);
     const [wallsA, wallsB] = splitRanges<WallRange>(edge.walls ?? [], s);
     const pins = edge.elevation ?? [];
+    // A bump goes with the part its centre lies on
+    const bumps = edge.bumps ?? [];
     const first = withKeys(withPoints(edge, before), {
         to: node.id, rails: optionalList(railsA), walls: optionalList(wallsA),
-        elevation: optionalList(pins.filter(pin => pin.s < s))
+        elevation: optionalList(pins.filter(pin => pin.s < s)),
+        bumps: optionalList(bumps.filter(bump => bump.s < s))
     }, EDGE_KEYS);
     const second = withKeys(withPoints(edge, after), {
         id: secondId, from: node.id,
         rails: optionalList(railsB), walls: optionalList(wallsB),
-        elevation: optionalList(pins.filter(pin => pin.s >= s).map(pin => ({ ...pin, s: roundCoord(pin.s - s) })))
+        elevation: optionalList(pins.filter(pin => pin.s >= s).map(pin => ({ ...pin, s: roundCoord(pin.s - s) }))),
+        bumps: optionalList(bumps.filter(bump => bump.s >= s).map(bump => ({ ...bump, s: roundCoord(bump.s - s) })))
     }, EDGE_KEYS);
 
     const edges = file.edges.flatMap(e => e.id === edgeId ? [first, second] : [e]);
@@ -407,7 +411,9 @@ function reversed(edge: RoadEdge, length: number): RoadEdge {
         from: edge.to, to: edge.from, curve,
         rails: edge.rails?.map(r => reverseRange(r, length)),
         walls: edge.walls?.map(w => reverseRange(w, length)),
-        elevation: edge.elevation && [...edge.elevation].reverse().map(pin => ({ ...pin, s: roundCoord(length - pin.s) }))
+        // A terrace runs from s to s + length: reversed it starts at its other end
+        elevation: edge.elevation && [...edge.elevation].reverse().map(pin => ({ ...pin, s: Math.max(0, roundCoord(length - pin.s - (pin.length ?? 0))) })),
+        bumps: edge.bumps && [...edge.bumps].reverse().map(bump => ({ ...bump, s: roundCoord(length - bump.s) }))
     }, EDGE_KEYS);
 }
 
@@ -458,15 +464,16 @@ function mergeAtJoint(file: RoadNetworkFile, node: RoadNode, incident: RoadEdge[
     const rails = [...(first.rails ?? []).map(closeRange), ...(second.rails ?? []).map(r => shiftRange(r, firstLength))];
     const walls = [...(first.walls ?? []).map(closeRange), ...(second.walls ?? []).map(r => shiftRange(r, firstLength))];
     const pins = [...(first.elevation ?? []), ...(second.elevation ?? []).map(pin => ({ ...pin, s: roundCoord(pin.s + firstLength) }))];
+    const bumps = [...(first.bumps ?? []), ...(second.bumps ?? []).map(bump => ({ ...bump, s: roundCoord(bump.s + firstLength) }))];
     const merged = withKeys(e1, {
         from: first.from,
         to: second.to,
         curve: { type: 'catmullRom', points: [...catmullPoints(first), [node.x, node.z], ...catmullPoints(second)] },
-        rails: optionalList(rails), walls: optionalList(walls), elevation: optionalList(pins)
+        rails: optionalList(rails), walls: optionalList(walls), elevation: optionalList(pins), bumps: optionalList(bumps)
     }, EDGE_KEYS);
 
     const notes: string[] = [];
-    for (const key of ['name', 'profile', 'overrides', 'oneWay', 'maxGrade', 'tags'] as const) {
+    for (const key of ['name', 'profile', 'overrides', 'oneWay', 'maxGrade', 'verticalRadius', 'tags'] as const) {
         if (JSON.stringify(e1[key]) !== JSON.stringify(e2[key])) notes.push(`${e2.id}: ${key} of ${e1.id} applies to the merged road`);
     }
     const next: RoadNetworkFile = {

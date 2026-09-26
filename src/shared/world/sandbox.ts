@@ -80,9 +80,11 @@ export const SANDBOX: SandboxLayout = {
         kicker(25, -90, 20, 12),
         // Jump with a landing hill: kicker, 16 m gap, then a hill 3 m high
         // with a short steep face and a long landing slope behind its crest
+        // (36 m since GRAVITY 15: a car at 36 m/s lands on it at about
+        // z = -72, docs/phase-1a-design.md, 27)
         { x: 70, z: -120, yaw: 0, width: 8, length: 16, height: 3 },
         { x: 70, z: -93, yaw: 0, width: 10, length: 6, height: 3, hill: true },
-        { x: 70, z: -78, yaw: Math.PI, width: 10, length: 24, height: 3, hill: true }
+        { x: 70, z: -72, yaw: Math.PI, width: 10, length: 36, height: 3, hill: true }
     ],
     walls: [
         // Long wall to slide along, 1 m thick, from z = -190 to 30

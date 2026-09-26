@@ -567,7 +567,7 @@ export class Bot {
             p.filterInput = (tick, input) => { raceInputFilter(this.phaseAt(tick), tick, this.race.state?.startTick ?? null, input); };
             p.ghostFloor = (tick, car) => { raceGhostFloor(this.phaseAt(tick), tick, this.race.state?.startTick ?? null, car); };
         }
-        if ((!before || before.trackId !== state.trackId) && this.map) this.raceCourse = createCourse(trackDef(this.map, state.trackId), undefined, this.map.simWorld.surfaceAt);
+        if ((!before || before.trackId !== state.trackId) && this.map) this.raceCourse = createCourse(trackDef(this.map, state.trackId), undefined, this.map.simWorld.surfaceAt, this.map.simWorld.terrainHeight);
         if (state.phase === 'countdown' && state.startTick !== null && this.raceDriverFor !== state.startTick) {
             this.raceDriverFor = state.startTick;
             this.raceDriver = null;

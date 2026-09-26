@@ -18,8 +18,12 @@ export const FLAT_MARGIN = 4;
 export const DEFAULT_MAX_GRADE = 0.08;
 // Moving average of the natural ground under the centre line (m)
 export const PROFILE_SMOOTH_WINDOW = 60;
-// Crests and sags are rounded to at least this vertical radius (m)
+// Crests and sags are rounded to at least this vertical radius (m); an
+// edge may ask for a smaller one (verticalRadius, down to
+// MIN_DESIGN_RADIUS) for crests a fast car leaves the ground over
+// (docs/phase-1a-design.md, 27)
 export const MIN_VERTICAL_RADIUS = 150;
+export const MIN_DESIGN_RADIUS = 40;
 // Two corridors whose height demands differ by more than this at a grid
 // point are reported as a conflict (below: rounding noise at junctions)
 export const CONFLICT_TOLERANCE = 0.05;
@@ -167,7 +171,9 @@ export interface ProfileResult {
 // Rounding works on the slopes p[i] = h[i + 1] - h[i] (per step). A
 // profile bends with a radius of at least R exactly when neighbouring
 // slopes differ by at most spacing² / R, i.e. when the slope sequence is
-// Lipschitz with that rate. roundSlopes maps target slopes to such a
+// Lipschitz with that rate. The rate may change along the road (a smaller
+// radius on some edges): rate[k] bounds the change from slope k - 1 to
+// slope k (rate[0] is unused). roundSlopes maps target slopes to such a
 // sequence:
 //   1. shift all targets by `shift`,
 //   2. the mean of the largest rate-limited sequence below them and the
@@ -177,17 +183,17 @@ export interface ProfileResult {
 // Each step keeps the rate limit, and the result grows monotonically and
 // continuously with `shift`, so a bisection on the shift can make the
 // slopes add up to a given height difference. Returns the sum.
-function roundSlopes(target: Float64Array, shift: number, rate: number, lower: Float64Array, upper: Float64Array,
+function roundSlopes(target: Float64Array, shift: number, rate: Float64Array, lower: Float64Array, upper: Float64Array,
     below: Float64Array, above: Float64Array, out: Float64Array): number {
     const m = target.length;
     for (let k = 0; k < m; k++) below[k] = above[k] = target[k] + shift;
     for (let k = 1; k < m; k++) {
-        if (below[k] > below[k - 1] + rate) below[k] = below[k - 1] + rate;
-        if (above[k] < above[k - 1] - rate) above[k] = above[k - 1] - rate;
+        if (below[k] > below[k - 1] + rate[k]) below[k] = below[k - 1] + rate[k];
+        if (above[k] < above[k - 1] - rate[k]) above[k] = above[k - 1] - rate[k];
     }
     for (let k = m - 2; k >= 0; k--) {
-        if (below[k] > below[k + 1] + rate) below[k] = below[k + 1] + rate;
-        if (above[k] < above[k + 1] - rate) above[k] = above[k + 1] - rate;
+        if (below[k] > below[k + 1] + rate[k + 1]) below[k] = below[k + 1] + rate[k + 1];
+        if (above[k] < above[k + 1] - rate[k + 1]) above[k] = above[k + 1] - rate[k + 1];
     }
     let sum = 0;
     for (let k = 0; k < m; k++) {
@@ -217,8 +223,10 @@ const SHIFT_BISECTIONS = 200;
 // Where two pins are further apart in height than the grade allows, the
 // profile runs midway and infeasible reports the shortfall; where only the
 // radius cannot be met, the stretch keeps the profile of step 3.
+// `radius` is one vertical radius or one per step (like `grades`); where
+// two steps meet, the smaller of their radii applies.
 export function longitudinalProfile(natural: ArrayLike<number>, spacing: number, grades: Grades,
-    pins: readonly ProfilePin[], radius = MIN_VERTICAL_RADIUS): ProfileResult {
+    pins: readonly ProfilePin[], radius: number | ArrayLike<number> = MIN_VERTICAL_RADIUS): ProfileResult {
     const n = natural.length;
     if (n === 0) return { heights: new Float64Array(0), infeasible: 0, unrounded: 0 };
     const snapped = pins.map(pin => {
@@ -244,14 +252,20 @@ export function longitudinalProfile(natural: ArrayLike<number>, spacing: number,
     const heights = Float64Array.from(base);
     if (n < 3) return { heights, infeasible, unrounded: 0 };
 
-    // Step 4. Grade limit per slope, itself rate-limited so that clamping
-    // to it keeps the rate (a lower grade reaches out by the rate)
-    const rate = spacing * spacing / radius;
+    // Step 4. Largest change of slope from step i - 1 to step i (the
+    // smaller radius of the two), and its running sum for the cones below
     const steps = n - 1;
+    const rates = new Float64Array(steps);
+    const radiusOf = (i: number) => typeof radius === 'number' ? radius : radius[Math.min(i, radius.length - 1)];
+    for (let i = 1; i < steps; i++) rates[i] = spacing * spacing / Math.min(radiusOf(i - 1), radiusOf(i));
+    const reach = new Float64Array(steps);
+    for (let i = 1; i < steps; i++) reach[i] = reach[i - 1] + rates[i];
+    // Grade limit per slope, itself rate-limited so that clamping to it
+    // keeps the rate (a lower grade reaches out by the rate)
     const limit = new Float64Array(steps);
     for (let i = 0; i < steps; i++) limit[i] = gradeOf(grades, i) * spacing;
-    for (let i = 1; i < steps; i++) if (limit[i] > limit[i - 1] + rate) limit[i] = limit[i - 1] + rate;
-    for (let i = steps - 2; i >= 0; i--) if (limit[i] > limit[i + 1] + rate) limit[i] = limit[i + 1] + rate;
+    for (let i = 1; i < steps; i++) if (limit[i] > limit[i - 1] + rates[i]) limit[i] = limit[i - 1] + rates[i];
+    for (let i = steps - 2; i >= 0; i--) if (limit[i] > limit[i + 1] + rates[i + 1]) limit[i] = limit[i + 1] + rates[i + 1];
 
     const target = new Float64Array(steps), lower = new Float64Array(steps), upper = new Float64Array(steps);
     const below = new Float64Array(steps), above = new Float64Array(steps), slopes = new Float64Array(steps);
@@ -265,6 +279,7 @@ export function longitudinalProfile(natural: ArrayLike<number>, spacing: number,
         const k0 = Math.max(0, a - 1), k1 = Math.min(steps - 1, b);
         const m = k1 - k0 + 1;
         const t = target.subarray(0, m), lw = lower.subarray(0, m), up = upper.subarray(0, m);
+        const rate = rates.subarray(k0, k0 + m);
         let span = 1;
         for (let k = 0; k < m; k++) {
             t[k] = base[k0 + k + 1] - base[k0 + k];
@@ -275,7 +290,7 @@ export function longitudinalProfile(natural: ArrayLike<number>, spacing: number,
         // Cones around the known slopes next to the stretch
         const cone = (slope: number, at: number) => {
             for (let k = 0; k < m; k++) {
-                const d = Math.abs(k0 + k - at) * rate;
+                const d = Math.abs(reach[k0 + k] - reach[at]);
                 if (slope - d > lw[k]) lw[k] = slope - d;
                 if (slope + d < up[k]) up[k] = slope + d;
             }

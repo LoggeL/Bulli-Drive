@@ -58,7 +58,7 @@ export function trackRuntime(map: MapData, id: TrackId): TrackRuntime {
         const track = trackDef(map, id);
         const world = createRaceWorld(map, track);
         // The course knows the surfaces its bots race on
-        runtime = { track, world, course: createCourse(track, undefined, world.surfaceAt), hash: trackHash(track) };
+        runtime = { track, world, course: createCourse(track, undefined, world.surfaceAt, world.terrainHeight), hash: trackHash(track) };
         perMap.set(id, runtime);
     }
     return runtime;

@@ -634,6 +634,82 @@ describe('longitudinalProfile: a grade limit that changes along the road', () =>
     });
 });
 
+describe('longitudinalProfile: a vertical radius that changes along the road', () => {
+    // A level terrace on a 12 % climb (docs/phase-1a-design.md, 27): pins
+    // at 0 (y 0) and on the terrace 100-120 m (y 12 = 0.12 · 100), the
+    // ground climbing 12 % before it and level after. Per step (spacing 1 m)
+    // the slope may turn by 1/R.
+    const n = 201, spacing = 1;
+    const natural = Array.from({ length: n }, (_, i) => 0.12 * Math.min(i, 120));
+    const pins = [{ from: 0, to: 0, y: 0 }, { from: 100, to: 120, y: 12 }, { from: 200, to: 200, y: 12 }];
+    const bends = (h: ArrayLike<number>) => Array.from({ length: n - 2 }, (_, i) => Math.abs(h[i + 2] - 2 * h[i + 1] + h[i]));
+
+    it('rounds with the smaller radius only on the steps that ask for it, the rest with the default', () => {
+        // R 60 m on steps 80-140 (the crest where the climb meets the
+        // terrace), 150 m elsewhere: the 12 % turn into the terrace takes
+        // 0.12 · 60 = 7.2 m instead of 18 m
+        const radii = Float64Array.from({ length: n - 1 }, (_, i) => (i >= 80 && i < 140 ? 60 : 150));
+        const sharp = longitudinalProfile(natural, spacing, 0.14, pins, radii);
+        const round = longitudinalProfile(natural, spacing, 0.14, pins, 150);
+        expect(sharp.unrounded).toBe(0);
+        expect(sharp.infeasible).toBe(0);
+        const b = bends(sharp.heights);
+        // bends[i] is the turn at station i + 1, between steps i and i + 1:
+        // stations 80-140 touch a 60 m step
+        for (let i = 0; i < b.length; i++) {
+            const limit = i + 1 >= 80 && i + 1 <= 140 ? 1 / 60 : 1 / 150;
+            expect(b[i], `station ${i + 1}`).toBeLessThanOrEqual(limit + 1e-9);
+        }
+        // The crest uses the smaller radius: turns sharper than 1/150 per
+        // metre, all within the stretch that allows it
+        expect(Math.max(...b.slice(79, 139))).toBeGreaterThan(1 / 100);
+        // The terrace stays level and the pins hold in both
+        for (const { heights } of [sharp, round]) {
+            for (let i = 100; i <= 120; i++) expect(heights[i]).toBeCloseTo(12, 9);
+            expect(heights[0]).toBeCloseTo(0, 9);
+        }
+        // With 150 m everywhere no step turns sharper
+        expect(Math.max(...bends(round.heights))).toBeLessThanOrEqual(1 / 150 + 1e-9);
+    });
+
+    it('scales the turn per step with the spacing: at 2 m, 4/R per step', () => {
+        // The same terrace at 2 m spacing (stations 0-100): R 60 on the
+        // steps 40-69 (80-140 m), 150 m elsewhere; the crest turns by up to
+        // 2²/60 per step there, more than 2²/150
+        const n2 = 101;
+        const natural2 = Array.from({ length: n2 }, (_, i) => 0.12 * Math.min(2 * i, 120));
+        const pins2 = [{ from: 0, to: 0, y: 0 }, { from: 100, to: 120, y: 12 }, { from: 200, to: 200, y: 12 }];
+        const radii = Float64Array.from({ length: n2 - 1 }, (_, i) => (i >= 40 && i < 70 ? 60 : 150));
+        const { heights, unrounded } = longitudinalProfile(natural2, 2, 0.14, pins2, radii);
+        expect(unrounded).toBe(0);
+        let inside = 0;
+        for (let i = 1; i + 1 < n2; i++) {
+            const bend = Math.abs(heights[i + 1] - 2 * heights[i] + heights[i - 1]);
+            const sharp = i >= 40 && i <= 70;
+            expect(bend, `station ${i}`).toBeLessThanOrEqual((sharp ? 4 / 60 : 4 / 150) + 1e-9);
+            if (sharp) inside = Math.max(inside, bend);
+        }
+        expect(inside).toBeGreaterThan(4 / 100);
+    });
+
+    it('takes the smaller radius where two steps meet: a single sharp step is enough', () => {
+        // Only step 99 (from station 99 to 100) asks for 60 m: stations 99
+        // and 100 may turn by 1/60, their neighbours by 1/150
+        const radii = Float64Array.from({ length: n - 1 }, (_, i) => (i === 99 ? 60 : 150));
+        const { heights } = longitudinalProfile(natural, spacing, 0.14, pins, radii);
+        const b = bends(heights);
+        for (let i = 0; i < b.length; i++) {
+            const station = i + 1;
+            expect(b[i], `station ${station}`).toBeLessThanOrEqual((station === 99 || station === 100 ? 1 / 60 : 1 / 150) + 1e-9);
+        }
+        // and the rounding uses it at both stations: sharper than 1/150 at
+        // station 99 (the 60 m step after it) and at 100 (the 60 m step
+        // before it)
+        expect(b[98], 'station 99').toBeGreaterThan(1 / 150 + 1e-6);
+        expect(b[99], 'station 100').toBeGreaterThan(1 / 150 + 1e-6);
+    });
+});
+
 describe('TerrainShaper: sides, widths, flags per vertex and the conflict report', () => {
     const cellOf = (x: number, z: number) => ((z - GRID.originZ) / 2) * GRID.cols + (x - GRID.originX) / 2;
 

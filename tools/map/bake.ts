@@ -119,6 +119,9 @@ function main(argv: string[]): number {
         problems++;
         console.warn(`profile: pins of ${chain.edges.join(' → ')} miss the grade limit by ${chain.infeasible.toFixed(2)} m`);
     }
+    // Not a failure: the kink stays (grade limit and radius cannot both be
+    // met), but a fast car may leave the ground there
+    for (const chain of report.unroundedChains) console.warn(`profile: ${chain.unrounded} kinks left unrounded on ${chain.edges.join(' → ')}`);
 
     const terrainPath = path.join(outDir, 'terrain.bhf');
     if (check) {

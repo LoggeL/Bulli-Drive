@@ -1267,7 +1267,7 @@ Ein Aufbau auf einer Feder mit Dämpfer über masselosen Rädern, pro Substep (3
 
 **Parameter:** `GRAVITY` 20 m/s² (bisher `G_AIR`), `SUSP_FREQ` 2 Hz, `SUSP_DAMPING` 0,8, `SUSP_TRAVEL` 0,25 m. Stabil: ω·Δt = 0,07, c·Δt = 0,11 je Substep.
 
-**Warum `GRAVITY` bei 20 bleibt (entschieden, gemessen):** Die Abhebe-Schwelle ist v²·κ > `GRAVITY`, 1 g würde also mehr Kuppen abheben lassen. Mit 14 m/s² und 16 m/s² fliegen aber alle Rampen 1,2- bis 1,4-mal so weit; Strecken, Landezonen (`JUMP_LANDING`) und die Landeprüfung des Validators sind auf 20 m/s² ausgelegt. Gemessen mit den Bots (`driveTrack`, alle Strecken und Klassen): bei 14 m/s² landet der Sport-Bot auf der Ridge Climb nach der Canyon-Rampe zu schnell vor der Kurve (27 m neben der Linie) und ein Bulli-Bot auf der Grand Tour braucht einen Reset; bei 16 m/s² verpasst der Sport eine Rampe. Bei 20 m/s² bleiben alle Rampen und Flugweiten wie bisher. Die Straßenkuppen der Karte sind mit R ≥ 150 m ausgerundet (phase-3-design A5); sie heben erst ab etwa 55 m/s ab (Boost, Turbo). Scharfe Kuppen, Knicke und Bodenwellen werfen dagegen schon bei normalem Tempo ab (26.6). `GRAVITY` ist ein Regler im Tuning-Panel.
+**Warum `GRAVITY` bei 20 bleibt (entschieden, gemessen; *überholt durch 27: `GRAVITY` ist 15, Rampen, Landezonen und Validator sind nachgezogen*):** Die Abhebe-Schwelle ist v²·κ > `GRAVITY`, 1 g würde also mehr Kuppen abheben lassen. Mit 14 m/s² und 16 m/s² fliegen aber alle Rampen 1,2- bis 1,4-mal so weit; Strecken, Landezonen (`JUMP_LANDING`) und die Landeprüfung des Validators sind auf 20 m/s² ausgelegt. Gemessen mit den Bots (`driveTrack`, alle Strecken und Klassen): bei 14 m/s² landet der Sport-Bot auf der Ridge Climb nach der Canyon-Rampe zu schnell vor der Kurve (27 m neben der Linie) und ein Bulli-Bot auf der Grand Tour braucht einen Reset; bei 16 m/s² verpasst der Sport eine Rampe. Bei 20 m/s² bleiben alle Rampen und Flugweiten wie bisher. Die Straßenkuppen der Karte sind mit R ≥ 150 m ausgerundet (phase-3-design A5); sie heben erst ab etwa 55 m/s ab (Boost, Turbo). Scharfe Kuppen, Knicke und Bodenwellen werfen dagegen schon bei normalem Tempo ab (26.6). `GRAVITY` ist ein Regler im Tuning-Panel.
 
 **Reifenlast:** `G_TIRE` bleibt konstant; die Federkraft geht (noch) nicht in den Grip ein. Sonst verlören Bots auf Kuppen vor Kurven Grip, den ihr Geschwindigkeitsprofil nicht kennt. Kann später kommen.
 
@@ -1328,7 +1328,7 @@ Sim-Kosten (`npm run perf:sim`): 32 Autos eben 0,105 statt 0,092 ms/Tick, Bulli 
 
 ### 26.7 Offen
 
-- **Knick am oberen Ende des Canyon (Ridge Climb, x −120, z −14):** 8 % auf 0 % innerhalb von 4 m, genau in der Landezone der Canyon-Rampe. Ein Fall für die Ausrundung im Bake (phase-3-design A5), nicht für die Sim. Nach dem Review (26.9) weiter offen: Der Knick kostet den Sport-Bot mit Seed 1 rund 5 s (60,5 → 65,4 s), der Zeit-Test nimmt deshalb den Median dreier Seeds.
+- **Knick am oberen Ende des Canyon (Ridge Climb, x −120, z −14):** *(Erledigt in 27: ausgerundet.)* 8 % auf 0 % innerhalb von 4 m, genau in der Landezone der Canyon-Rampe. Ein Fall für die Ausrundung im Bake (phase-3-design A5), nicht für die Sim. Nach dem Review (26.9) weiter offen: Der Knick kostet den Sport-Bot mit Seed 1 rund 5 s (60,5 → 65,4 s), der Zeit-Test nimmt deshalb den Median dreier Seeds.
 - **Stufe am Querweg bei x −564, z 300:** Die Straße steigt dort in 4 m um 0,8 m; ostwärts ab etwa 30 m/s hebt jedes Auto 0,8–1,1 s ab (2,4–3,7 m hoch). Der Mobile-E2E-Test nutzt sie als bekannte Bodenwelle (26.8). Wird sie im Bake ausgerundet, muss der Test eine andere Stelle bekommen (Suche: Wegwerf-Skript aus 26.8).
 - Reifenlast aus der Federkraft (26.2), Nicken aus zwei Achsen in der Sim: bewusst nicht.
 - `phase-3-design.md` A31 („die v2-Sim hebt auf Gelände nicht ab“) gilt seit diesem Abschnitt nicht mehr.
@@ -1390,7 +1390,7 @@ Entschieden, mit Messung:
 
 Kartenraster (Linien alle 16 m, vier Richtungen, Tempo mit Gas gehalten, nicht jeden Tick gesetzt; das Setzen jedes Ticks hebt den Tempoverlust wieder auf): Abflüge mit vy > 15 m/s bei 28 m/s 184 → 13, mit vy > 25 m/s 4–8 → 0, größte Abfluggeschwindigkeit bei 14 m/s 48 → 8,2 m/s. Straßen fahren wie vorher (alle 122 Kanten, beide Richtungen, auf der Mittellinie): 14, 20 und 28 m/s 0 Abflüge, 40 m/s 5 (höchstens 0,13 m), 50 m/s 5 (höchstens 0,24 m).
 
-**2. Auf Straßen hebt das Auto kaum ab (entschieden: bleibt, dem Nutzer offen gesagt).** Die Schwelle ist v²·κ > `GRAVITY`, und die Straßenkuppen sind mit R ≥ 150 m ausgerundet (phase-3-design A5). Bis 100 km/h gibt es auf keiner Straße einen Abflug, bei 180 km/h fünf Hüpfer bis 0,24 m, erst mit Boost mehr. Abseits der Straße, an Bodenwellen, Knicken und Böschungen, fliegt das Auto dagegen (26.6). Mögliche nächste Schritte, bewusst nicht in diesem Stand:
+**2. Auf Straßen hebt das Auto kaum ab (entschieden: bleibt, dem Nutzer offen gesagt; *umgesetzt in 27: (a) und (b)*).** Die Schwelle ist v²·κ > `GRAVITY`, und die Straßenkuppen sind mit R ≥ 150 m ausgerundet (phase-3-design A5). Bis 100 km/h gibt es auf keiner Straße einen Abflug, bei 180 km/h fünf Hüpfer bis 0,24 m, erst mit Boost mehr. Abseits der Straße, an Bodenwellen, Knicken und Böschungen, fliegt das Auto dagegen (26.6). Mögliche nächste Schritte, bewusst nicht in diesem Stand:
 
 - (a) `GRAVITY` auf 14–16 m/s² senken und Rampen, `JUMP_LANDING` sowie die Landeprüfung des Validators nachziehen (die Bot-Probleme aus 26.2 liegen in der Geometrie der Rampen und Landezonen);
 - (b) im Bake einzelne Straßenkuppen schärfer ausrunden (R ≈ 60–80 m) als gewollte Hügelsprünge.
@@ -1403,7 +1403,7 @@ Beides erst nach Punkt 1, sonst verstärkt eine geringere Gravitation die Katapu
 
 **5. Böschungen am Strand und an Straßendämmen (entschieden: bleiben).** Wer bei Stadttempo quer eine 50-%-Böschung von 1,8 m hochfährt, hebt oben ab. Das ist mit dem Stoß aus Punkt 1 physikalisch stimmig: Die Böschung dreht die Fahrt nach oben, ohne Energie zu erzeugen. Strandböschung bei x ≈ −635 ostwärts mit Gas ab 14 m/s: vorher 2,1 m und 92 Ticks, jetzt 1,7 m und 63 Ticks. Straßendamm bei (21, −520): 0,3–0,5 m (vorher mit gesetztem Tempo 2,4 m). Wer das nicht will, rundet die Böschungskanten im Bake aus. Das ist eine Frage der Karte, nicht der Sim.
 
-**6. Knick der Canyon-Rampe (Ridge Climb, 26.7): nicht in diesem Stand.** Eine andere Ausrundung im Bake ändert das Heightfield der Karte, damit das `terrain.bhf`, die Engine-Gleichheit und die Zeiten aller Strecken. Das gehört in einen eigenen Karten-PR mit eigener Messung. Bis dahin bleiben der Median dreier Seeds im Zeit-Test und Seed 11 im Lock „missed gates“.
+**6. Knick der Canyon-Rampe (Ridge Climb, 26.7): nicht in diesem Stand** *(erledigt in 27)*. Eine andere Ausrundung im Bake ändert das Heightfield der Karte, damit das `terrain.bhf`, die Engine-Gleichheit und die Zeiten aller Strecken. Das gehört in einen eigenen Karten-PR mit eigener Messung. Bis dahin bleiben der Median dreier Seeds im Zeit-Test und Seed 11 im Lock „missed gates“.
 
 **7. Remote-Interpolation (behoben).** `vy` ist seit 26 die Geschwindigkeit des gefederten Aufbaus, `y` aber die Radunterkante. Als Hermite-Tangente von `y` ließ `vy` ein geerdetes Remote-Auto nach einer Landung zwischen zwei Snapshots bis 5 cm unter den Boden tauchen. Für geerdete Samples nimmt `RemoteTrack` jetzt die Sekante, `vy` nur für Samples in der Luft.
 
@@ -1448,3 +1448,165 @@ Einer ist eine ältere Lücke, nicht aus 26: Die Nullung des Gradienten auf eine
 | Pixel 7, `?netsim=150,30,3` | 56 / 2,48 m / 10,1 m/s | am Boden, 0 Resets | 2,48 m / −5,8° … +3,7° | 4,8 … 7,6 m | 0, 0 Bildsprünge |
 
 In allen Läufen: HUD ohne Überlappung, auch mit „HOLD RESET BUTTON“; kein Element und kein Text mit jump/flip; RESET mit `#icon-recover`. Halten setzt nach 470–530 ms zurück, kurzes Tippen nicht. Keine Seitenfehler; Chromium zeigt nur die bekannten SwiftShader-Hinweise. Party (iPhone 13, Pixel 7): HUD wie oben, gemeldet wird nur die Verschachtelung von `#health-bar-container` in `#score-container`. Die Screenshots im Flug zeigen keine Rauchspur mehr auf der Fahrbahn unter dem Auto (vorher zwei, drei Wölkchen). Im Netsim-Lauf stand das Auto am Ende der 5-s-Messung bei x −383: Dort endet die Strecke an einem Hindernis, rund 3,5 s nach der Landung (Punkt 9).
+
+## 27. Luft auf Straßen: GRAVITY 15, gebaute Kuppen und Bodenwellen
+
+Auftrag (Nutzer): „The car is currently really glued to the ground, e.g. when driving over a bump with high speed.“ Stand nach 26: Abseits der Straße hebt das Auto ab, auf Straßen erst ab etwa 180 km/h (fünf Hüpfer bis 0,24 m), weil `GRAVITY` 20 m/s² ist und das Bake jede Straßenkuppe mit R ≥ 150 m ausrundet (Schwelle v²·κ > g: √(20 · 150) = 55 m/s). Ziel: auf Straßen ab etwa 100–130 km/h kurze, kontrollierte Flüge (0,1–0,6 s), große Kuppen mit Boost spektakulär, Stadtfahrt (Bordsteine, flache Kreuzungen bei ≤ 60 km/h) bleibt am Boden. Alles entschieden, ohne Rückfrage.
+
+### 27.1 Messung (`scripts/sim-airtime.ts`, erweitert)
+
+Neue Abschnitte (`--only synthetic,crests,roads,town,ramps,bots,sweep`, dazu `--tune KEY=WERT` für andere Tuning-Werte und `--terrain alt.bhf` für ein anderes Bake desselben Netzes):
+
+- **roads:** jede Straße der Karte (105 Ketten aus Kanten über Gelenke, 19,4 km), beide Richtungen, bei 60/100/130/160/200 km/h und bei Boost-Tempo 230/270 km/h (Spitze + `BOOST_ADD` 20 m/s: 240–270 km/h je Klasse). Der Bulli wird vor jedem Tick auf die Mittellinie gesetzt und längs gedreht, das Tempo gehalten; gezählt werden Flüge ab 3 Ticks mit Ort, Luftzeit und Höhe. Ausgabe: Summe je Tempo und eine Liste der Abhebestellen (nur solche mit mindestens 0,1 s bei irgendeinem Tempo). Ein Flug, der am Ende der Kette noch läuft, geht geradeaus ins Gelände weiter; er ist mit * markiert und in einer eigenen Spalte („innerhalb der Straße“) herausgerechnet, denn auf der Straße, die dort wirklich weitergeht, biegt das Auto ab (Messartefakt).
+- **town:** Die Messung roads fährt nur längs der Mittellinie. Dieser Abschnitt fährt quer: gerade Linien über Downtown und die Wohnviertel (x −560..300, z −420..420, alle 6 m, vier Richtungen, 570 Linien) bei 30/45/60 km/h über dem nackten Gelände (ohne Gebäude); gezählt werden Flüge ab 0,1 s, die auf Asphalt (oder in den 3 m davor, also an der Dammkante) abheben und auf Asphalt landen, d. h. über Straßendämme, Kreuzungen und Einmündungen hinweg. Dazu zwei benannte Querfahrten: die Bodenwelle des Mobile-E2E-Tests (vom Sand auf den Straßendamm bei (−596, 300), nach Osten) und die Palm Street geradeaus über die T-Kreuzung sv-n1 hinaus.
+- **ramps:** jede Rampe der Karte (Free Roam, Arena) und der Strecken (Race World) gerade angefahren bei 60/90/130 km/h (Tempo bis zur Lippe gehalten): Luftzeit, Weite ab Vorderkante, Höhe, Landestoß; daneben die Schätzung des Validators über ebenem Boden.
+- **sweep:** alle Bots (6 Strecken × 5 Klassen × 3 Stufen × 4 Seeds = 360 Rennen, `driveTrack`): DNF, Resets, verpasste Tore, Gesamtzeit, Geländeflüge.
+- Der Start im Abschnitt crests setzt vy auf die Bodengeschwindigkeit (auf einer Steigung hüpfte das mit vy = 0 abgesetzte Auto sonst einmal).
+
+**Vorher** (GRAVITY 20, altes Bake):
+
+| km/h | Abflüge | ≥ 0,1 s | ≥ 0,3 s | längster | höchster |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 60 | 0 | 0 | 0 | – | – |
+| 100 | 0 | 0 | 0 | – | – |
+| 130 | 4 | 3 | 0 | 0,17 s | 0,08 m |
+| 160 | 7 | 7 | 0 | 0,28 s | 0,20 m |
+| 200 | 16 | 14 | 6 | 0,42 s | 0,43 m |
+
+Abhebestellen vorher: nur ungewollte Knicke (Beach Lot Drive, oberes Ende von Canyon Road und Palm Street, Canyon-4, Bluff Road, Ridge Fire Trail, Lookout), alle erst ab 130 km/h und höchstens 0,17 s bei 130 km/h.
+
+Nur `GRAVITY` gesenkt (Karte unverändert): 14 → 100 km/h 6 Abflüge (höchstens 0,18 s), 130 km/h 10 (0,35 s); 15 → 3 (0,17 s) und 8 (0,32 s); 16 → 3 und 6 (0,27 s). Die Gravitation allein bringt nur an den alten Knicken etwas Luft; die mit R ≥ 150 m ausgerundeten Kuppen heben auch mit 15 erst ab √(15 · 150) = 47 m/s (171 km/h) ab. Es braucht gebaute Kuppen (27.3).
+
+### 27.2 GRAVITY 15 (entschieden)
+
+`GRAVITY` 20 → **15 m/s²** (1,5 g). Begründung: Die Schwelle v* = √(g·R) sinkt um √(15/20) = 0,87; eine Kuppe mit R 60 m hebt ab 30 m/s (108 km/h) ab statt ab 34,6 m/s. 14 würde die Flüge noch länger machen (hängt, „schwebt“; Flugzeit 2·vy/g), 16 gäbe kaum Luft. Bei 15 fliegen Rampen 1,33-mal so weit (Wurfzeit ∝ 1/g), deshalb wurden Rampen, Landezonen und Validator nachgezogen (27.4).
+
+**Federung unverändert** (2 Hz, Dämpfung 0,8, 25 cm Weg, `SUSP_LIFT` 2 cm). Die volle Ausfederung g/k sinkt von 12,7 auf 9,5 cm. Geprüft: `SUSP_FREQ` 1,73 (Ausfederung wieder 12,7 cm) und `SUSP_LIFT` 3–4 cm senkten im Bot-Sweep die Resets an der schwachen Stelle der Grand Tour nur teilweise (8 → 4–6), die Ursache war eine Barriere (27.5); die Landungen federn mit 2 Hz ohne Abprall (Test „lands without a bounce“ unverändert grün), und kürzere Flüge bringt eine weichere Feder nicht. Anpressdruck bei der Landung bleibt Sache von Feder und Anschlag.
+
+### 27.3 Gebaute Kuppen und Bodenwellen im Bake (`BAKE_VERSION` 3)
+
+Drei neue, optionale Felder an Kanten in `roads.json` (Schema `roadSchema.ts`, Bake `tools/map/bakeTerrain.ts`, Worldviewer beim Teilen, Umdrehen und Verbinden von Kanten nachgezogen):
+
+- **`verticalRadius`** (40–1000 m, Vorgabe 150): kleinster Ausrundungsradius dieser Kante. `longitudinalProfile` nimmt jetzt einen Radius je Schritt (wie `grades`); wo zwei Schritte zusammenstoßen, gilt der kleinere. Die Kegel um feste Nachbarneigungen summieren die Raten (`reach`).
+- **Terrassen:** Höhen-Pins mit `length` (`elevation: [{ s, y, length }]`) halten die Straße von s bis s + length waagerecht; auf einer rückwärts durchlaufenen Kante wird der Bereich richtig herum eingetragen.
+- **`bumps`:** Bodenwellen auf dem Profil, je `height · (1 − u²)²` mit u = 2(s − Mitte)/`length` (nur +, −, ×: das Bake läuft bitgleich im Browser, `determinism.test.ts`; ein Kosinus wäre dort verboten). Scheitelkrümmung 16·h/L², größte Flankensteigung 3,08·h/L. Das Schema verlangt, dass eine Welle nicht vor der Kante beginnt, der Validator, dass sie nicht über ihr Ende reicht.
+
+Die Karte (Bulli Bay, alle Kuppen im Datentest `tests/shared/sim/mapCrests.test.ts`):
+
+| Stelle | Art | Strecke | 100 km/h | 130 km/h | 160 km/h | 200 km/h |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| Palm Street hinauf auf Seaview Drive / hinab | Terrasse s 106–130, 12 %, R 60 | – | 0 | 0,27–0,28 s | 0,48–0,50 s | 0,63–0,73 s |
+| Seaview Drive (Seaview-3) Süd/Nord | Terrassen 0–32 und 76–116, 12 %, R 60 | – | 0 | 0,23–0,28 s | 0,42–0,47 s | 0,63–0,65 s |
+| Sunset Court | Terrassen 12–22 und 84–106, 12 %, R 60 | – | 0 | 0,30 s | 0,48–0,50 s | 0,60–0,73 s |
+| Canyon Road (Canyon-2), Terrasse auf halber Höhe | s 118–138, 12 %, R 60 | Ridge Climb | 0 | 0,20–0,23 s | 0,42–0,43 s | 0,50–0,68 s |
+| Pacific Coast Highway (PCH-4), Terrasse am Klippenabstieg | s 140–156, 12 %, R 60 | Coast Sprint | 0 | 0,27–0,30 s | 0,45–0,50 s | 0,52–0,75 s |
+| Canyon Road Ost (Canyon-8), zwei Wellen | 1 m / 34 m | – | 0 | 0,38–0,42 s | 0,55–0,58 s | 0,72–0,77 s |
+| East Ranch Trail, Welle | 1 m / 34 m | Grand Tour | 0 | 0,40–0,42 s | 0,58 s | 0,73 s |
+| Oak Canyon Trail, zwei Wellen | 1 m / 34 m, 0,8 m / 30 m | Grand Tour | 0 | 0,35–0,37 s | 0,48–0,53 s | 0,60–0,92 s |
+| Beach Trail (Beach-Trail-3), zwei Dünenbuckel | 1,5 m / 44 m | Dune Rally | 0 | 0,37–0,40 s | 0,67 s | 0,85–0,90 s |
+| Chaparral Trail, drei Wellen | 1 m / 34 m | – | 0 | 0,33–0,40 s | 0,52–0,57 s | 0,65–0,78 s |
+| Ranch Fire Road (Fire-1), Welle | 1 m / 34 m | – | 0 | 0,40–0,42 s | 0,57 s | 0,70–0,75 s |
+
+(Luftzeiten aus dem Abschnitt roads, beide Richtungen; Höhen bei 200 km/h 0,8–2,2 m.) Die Wohnstraßen im San-Francisco-Stil: steil (12 %, Asphalt-Grenze) bis an ein waagerechtes Plateau an der Kreuzung oder eine Terrasse, dort R 60 m (v* = 30 m/s). Ohne die Terrassen folgte das Profil dem geglätteten Gelände, das oben flach ausläuft: Ein Knick von nur 4–5 % hebt trotz R 60 erst ab 160 km/h ab (zu kurzer Bogen für die Federung). Wellen liegen auf geraden Stücken (R > 1000 m über die Flugweite); auf dem East Ranch Trail ließen zuerst drei Wellen in einer langen Kurve (R 300–2000 m) die Bots über drei Flüge von der Linie abdriften, jetzt liegt eine auf dem geraden Anfang; ebenso auf der Ranch Fire Road nur noch eine. Hillcrest Avenue bekam zunächst 12 % und R 60: ein Korridor-Konflikt (7 cm) an der Kreuzung Seaview Drive, zurückgenommen.
+
+**Canyon-Knick (26.7) ausgerundet:** Canyon-1 darf 10 % (vorher 8 %): Damit passt die R-150-Ausrundung zwischen die Plateaus, die Kette war vorher „unrounded“ (Knick 8 % → 0 in 4 m). Jetzt hebt die Kuppe erst bei 200 km/h ab (0,20–0,30 s), vorher ab 130 km/h. Das Bake meldet jetzt jede Kette mit verbliebenem Knick (`unroundedChains`); übrig sind kurze Zufahrten (Pier, Beach Lot Drive, Tankstelle, Diner, Bluff Road) und Canyon-4.
+
+**Nachher** (alle Straßen):
+
+| km/h | Abflüge | ≥ 0,1 s | ≥ 0,3 s | längster | höchster | längster, höchster innerhalb der Straße |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 60 | 0 | 0 | 0 | – | – | – |
+| 100 | 2 | 2 | 0 | 0,17 s | 0,06 m | 0,17 s, 0,06 m |
+| 130 | 36 | 35 | 26 | 0,42 s | 0,25 m | 0,42 s, 0,25 m |
+| 160 | 40 | 40 | 34 | 0,67 s | 1,01 m | 0,67 s, 1,01 m |
+| 200 | 67 | 62 | 51 | 1,62 s* | 5,20 m* | 0,92 s, 2,20 m |
+| 230 (Boost) | 86 | 85 | 64 | 1,92 s* | 9,46 m* | 1,65 s, 2,66 m |
+| 270 (Boost) | 86 | 86 | 73 | 2,33 s | 13,20 m* | 2,33 s, 6,42 m |
+
+(* Flug über das Kettenende hinaus, siehe 27.1.) Bei 60 km/h hebt längs keiner Straße ein Auto ab (quer über Straßendämme und Kreuzungen siehe 27.7), bei 100 km/h nur der alte Knick am Beach Lot Drive (0,13–0,17 s, eine Zufahrt zum Strandparkplatz).
+
+Die längsten Flüge ab 200 km/h:
+
+- **Ridge Fire Trail rückwärts** (bergauf auf das Kreuzungsplateau ridge-fork): 200 km/h 1,62 s / 5,2 m, 230 km/h 1,92 s / 9,5 m, 270 km/h 2,08 s / 13,2 m (mit `GRAVITY` 20 bei 200 km/h: 0,37 s). Kein Knick: 15 % hinauf auf das Plateau mit der Vorgabe R ≈ 150 m ausgerundet, v* = √(15 · 150) = 47 m/s (171 km/h). Die Länge ist ein **Messartefakt**: Das Plateau ist die Kreuzung am Kettenende, der Flug geht dort geradeaus ins offene Gelände weiter, statt auf der Ridge Road abzubiegen. In einer freien Fahrt mit Lenkung (Vollgas, Boost-Leiste immer voll, alle Straßen in beide Richtungen, Bulli und Sport; Review-Probe) blieb es überall bei höchstens 0,98 s, 2,0 m und 12,5 m/s Landestoß.
+- **Coyote Trail** (s 190–230, Kuppe von +15 % auf −10 % mit R ≈ 200 m) rückwärts: 200 km/h 0,92 s / 0,25 m, 230 km/h 1,65 s / 2,3 m, 270 km/h 2,33 s / 6,4 m. Vorwärts (s 226) 1,37 s / 1,8 m bzw. 1,65 s / 5,0 m bei 230/270 km/h; ähnlich die Ranch Fire Road (fire-2 s 362 rückwärts: 1,13 s / 1,0 m bzw. 1,80 s / 3,3 m). Das sind echte, ungebaute Hügelkuppen; mit Boost auf Spitzentempo ist sie der spektakuläre Sprung, den das Ziel verlangt. 270 km/h erreicht nur der Sport mit Boost (55 + 20 m/s), 230 km/h jede Klasse mit Boost.
+- Die gebauten Kuppen und Wellen mit Boost (230–270 km/h): 0,6–1,0 s (Oak Canyon 547 rückwärts 1,52 s / 3,8 m bei 270 km/h), bis 2,7 m hoch, landbar; die Querablage nach der Landung meist unter 2 m (Review-Probe mit Lenkung).
+
+Das Gelände ändert sich damit an den genannten Stellen (Korridor und Böschungen folgen dem Profil); `terrain.bhf`, Manifest, `sourceHash` und der Welt-Hash sind neu. Die Engine-Gleichheit vergleicht Node mit WebKit und Chromium auf dem neuen Bake (keine festgeschriebenen Hashes).
+
+### 27.4 Rampen, Landezonen und Validator
+
+Validator (`tools/map/validateMap.ts`):
+
+- **Mindest-Lippe** 0,8 → **0,6 m**: dieselbe Fallzeit √(2·Lippe/g) = 0,28 s wie 0,8 m bei 20 m/s².
+- **Flug über dem echten Gelände:** `rampFlight(ramp, lip, v, hf)` verfolgt die Wurfparabel alle 1/120 s bis zum Boden (fallender Boden verlängert, steigender verkürzt). Ohne `hf` wie bisher über ebenem Boden.
+- **Landestrecke für die schnellste Klasse:** Die Strecke muss über den Flug der schnellsten Klasse (bisher der langsamsten) plus 10 m gerade sein (R ≥ 60 m). `JumpStats` nennt dazu `maxSpeed` und `maxDistance`.
+- **Keine Bremse in der Luft (neu):** Für jede Klasse muss das Geschwindigkeitsprofil an der Landestelle das Absprungtempo erlauben (±1 m/s), sonst bräuchte das Auto die Bremse in der Luft, um die nächste Kurve zu schaffen. Diese Regel fand die Hafenrampe und die zweite Dünenrampe, an denen Bots mit 140 km/h vor einer Kehre landeten.
+- **Freie Landezone der Karten-Sprünge:** `JUMP_LANDING` 45 → **60 m** (1,33 × 45); ein Auto mit 130 km/h landet (über dem echten Gelände) mit 5 m Luft darin (`JUMP_CLEAR_SPEED`, `JUMP_CLEAR_MARGIN`).
+
+Daten (`tracks.json`, alle `trackVersion` + 1, weil sich auch die Barrieren verschoben haben, 27.5; `pois.json`):
+
+- Ridge Climb Rampe 2 (Ridge-5): s 110, 2,2 m → **s 100, 1,6 m**. Mit 15 m/s² landete die schnellste Klasse sonst in der Kehre am Ende von Ridge-5 (69 m weit).
+- Harbor Circuit Rampe (Dock-2): s 80 → **s 50** (keine Bremse in der Luft vor der Kurve am Dock-Ende).
+- Dune Rally Rampe 2 (Beach-Trail-2): s 110 → **s 70** (die Beetle-Bots landeten mit 140 km/h vor der Slalom-Kehre, drehten sich und verloren die Richtung; s 90 und 100 halfen nur einzelnen Seeds, gemessen mit `trackRaces`-Seeds 1–6).
+- Karten-Sprung Chaparral Flat (über die Coyote-Schlucht): 2,0 → **1,6 m** hoch (bei 130 km/h 53 statt 57 m, mit 20 m/s² 48 m).
+- Sandbox: der Landehügel hinter der Schanze ist 36 statt 24 m lang (ein Auto mit 36 m/s landete sonst 2 m vor seinem Fuß, jetzt mehr als 8 m davor).
+
+Rampen nachher (Sim, 130 km/h; vorher in Klammern): Strecken 0,63–0,98 s (0,55–1,03 s), 23–35 m (20–37 m), Landestoß 5–9 m/s; Karte 0,70–1,48 s, 26–53 m; die Arena-Rampen 1,03 s, 37 m (0,80 s, 29 m). Alle Flugweiten bis 130 km/h liegen in den (neuen) Landezonen, der Validator meldet 0 Fehler.
+
+### 27.5 Bots
+
+- **Tempoplanung an Kuppen** (`racingLine.ts`, `crestLimits`): `Course` trägt die Geländehöhe unter jedem Punkt der Linie (`createCourse(…, terrainHeight)`; RaceRoom, WebSocket-Bots und `driveTrack` geben sie mit). Die vertikale Krümmung κ kommt aus der zweiten Differenz über ±6 m. Wo das Auto abheben würde (v²·κ > 0,8·g) und die Linie sich innerhalb des Flugs (0,6 s beim geplanten Tempo) um mehr als 0,1 rad dreht, plant der Bot die Kuppe mit √(0,8·g/κ). Auf geraden Kuppen fliegt er. Grund: In der Luft lenkt und bremst niemand, ein Bot landete quer in der nächsten Kurve.
+- **Barrieren an Einmündungen** (`routeToTrack.ts`, `BARRIER_ROUTE_CLEARANCE` 0,5 → 1,5 m): Die Bots schneiden Kurven mit 150 km/h innen an und streiften an der Grand Tour (ranch-end) die Barriere quer über der Ranch Fire Road; in 6 von 360 Rennen folgte ein Dreher und ein Reset. Mit 1,5 m wandern 30 der 93 Barrierereihen bis zu 2 m tiefer in die Seitenstraße. Deshalb `trackVersion` + 1 für alle Strecken (die Geister sind wegen des neuen `simHash` ohnehin ungültig).
+- `driveTrack` zählt einen Flug, der beim Zieleinlauf noch läuft (der Sport springt über die letzte Rampe der Ridge Climb 33 m vor dem Ziel über die Ziellinie).
+
+Sweep (360 Rennen): vorher (26.9) 0 DNF, 2 Resets, 0 verpasste Tore, 36 825 s; nachher **0 DNF, 2 Resets, 1 verpasstes Tor, 36 899 s**, 378 Geländeflüge (längster 0,82 s, ein Käfer der Grand Tour). Die Zahl der Resets ist gleich, der Ort ist neu: Vorher lagen beide auf der Grand Tour (Bulli easy Seed 2, Käfer hard Seed 4), auf der Dune Rally gab es keinen; jetzt ist die Grand Tour frei, und beide Resets sind Käfer der **Dune Rally** (easy Seed 2 und medium Seed 4, das verpasste Tor ist medium Seed 4). Die Grand Tour wird erst mit dem ganzen Paket frei: origin/main nur mit `BARRIER_ROUTE_CLEARANCE` 1,5 hat weiterhin 2 Resets dort (Bulli easy 2, Käfer medium 2). Nachverfolgt: easy 2 ist bei 61,5 s schon auf Gras neben dem Chaparral Trail 2, fliegt 0,60 s, landet und fährt 1 s später bei (−546, −690) auf ein Hindernis (70 → 7 km/h), Reset nach 3 s Stillstand; medium 4 kommt auf dem Coyote Trail auf Gras (69,5 s), hüpft 0,43 s zurück auf die Piste, kommt wieder ab und verpasst ein Tor. Beide kommen in einer Kurve von der Piste, bevor sie hüpfen; die Hüpfer auf dem Naturgelände (Gravitation 15) machen den Rückweg aber unruhiger. Offen, 27.7. Unterwegs gemessen (beides schon mit der Tempoplanung): nur `GRAVITY` 15 mit der alten Karte 3 Resets, 2 verpasste Tore; mit den Wellen, aber vor Barrieren- und Rampenkorrektur 8 und 5.
+
+Medium-Bots je Strecke und Klasse (Seed 1): alle ohne Reset, Zeiten ±2 s wie vorher, außer Ridge Climb Sport 65,1 → 61,1 s (der Canyon-Knick ist weg) und Dune Rally Käfer 70,2 → 73,6 s (die zweite Dünenrampe steht weiter vorn, dazu die Buckel). Geländeflüge des mittleren Bulli höchstens 0,53 s (vorher 0,22 s).
+
+`trackRaces` (Integration, 18 Rennen × 5 Bots): längster Stillstand 528 Ticks (Grenze 600). Unterwegs: Die Dünenrampe bei s 110 und 90 ergab je einen Käfer über 600 (Seed 3 bzw. 1), vor dem Verschieben der Hafenrampe hing ein Pickup 617 Ticks an der Einmündung bei pch-s2.
+
+### 27.6 Tests
+
+Unit (Erwartungen aus Handrechnung):
+
+- `ground.test.ts`: alle Rechnungen auf 15 m/s² (Kuppe R 60: v* = 30 m/s; Knick-Schwelle 2,65 % bis 4,87 % → 2,6 % bleibt, 5 % hebt ab; Wurfparabel 8 m/s: 2,133 m, 1,067 s; Rampe 12 × 2 bei 30 m/s: 0,948 s, 28,4 m; Landung auf ±20 %; Anstoß). Neu: die Bodenwelle der Karte (1 m / 34 m, κ = 16/34²): bei 0,9·v* (v* = 32,9 m/s) am Boden, bei 1,1·v* in der Luft; mit `GRAVITY` 20 bleibt das Auto bei 1,1·v*(15) am Boden und hebt bei 1,1·v*(20) = 41,8 m/s ab.
+- `corridor.test.ts`: Radius je Schritt (Terrasse auf 12 % Anstieg: R 60 nur auf den Schritten 80–140, dort schärfer als 1/150 je Meter, überall sonst höchstens 1/150; ein einzelner Schritt mit R 60 erlaubt 1/60 an seinen beiden Stationen und biegt an beiden einzeln schärfer als 1/150).
+- `bakeParts.test.ts`: Terrasse waagerecht auch auf einer rückwärts durchlaufenen Kante; Bodenwelle h·(1 − u²)² (1 in der Mitte, 0,5625 bei u = ±½, stetig bis an den Fuß: 0,1296 bei ±0,8, 0,0361 bei ±0,9, 0 außerhalb) in beiden Richtungen; `verticalRadius` 60 biegt schärfer als 1/150, höchstens 1/60.
+- `roadNetwork.test.ts`: Schema (Radius unter 40 m, Welle kürzer als 8 m oder höher als 3 m, Terrasse ohne Länge) und Welle vor Kantenbeginn.
+- `validateMap.test.ts`: Flug 0,840 s / 16,48 m über ebenem Boden; über fallendem Boden 1,293 s, steigendem 0,566 s; Lippe 0,6 m; Landung für die schnellste Klasse; keine Bremse in der Luft (Sport, s 120 gegen s 100) und ihre Grenze von 1 m/s (gemessener Überschuss 0,76 m/s erlaubt, 1,24 m/s gemeldet; Regressions-Lock des Geschwindigkeitsprofils); Luftzeit und Weite der langsamsten Klasse in `JumpStats` über fallendem Gelände (Handrechnung der Wurfparabel gegen 10 % Gefälle, länger als über ebenem Boden); freie Landezone bei 130 km/h über einem 30-%-Hang (79,7 m); Welle über das Kantenende.
+- `racingLine.test.ts`, `lineDriver.test.ts`, `progress.test.ts`: κ der Parabel R 40 exakt 1/40; Kuppe vor einer Kurve √(0,8 · 15 · 40) = 21,9 m/s, auf der Geraden 50 m/s; ein Rundkurs rechnet über den Rundenbeginn (Fenster und Flug), ein Sprint nicht über sein Ende hinaus; eine Linie kürzer als das Fenster hat keine Krümmung; auch mit 2 m Stationsabstand 4/R je Schritt; der LineDriver plant mit den Höhen seines Kurses; `createCourse` liest die Höhen.
+- `mapCrests.test.ts` (Kartendaten): 21 gebaute Kuppen und Wellen in ihrer Fahrtrichtung, je 9–36 Ticks Luft bei 130 km/h (gemessen 12–25), 0 Ticks bei 60 km/h und bei 100 km/h.
+- `editOps.test.ts`: Terrasse und Wellen beim Umdrehen, Teilen und Verbinden.
+- Angepasst: `vehicleEdges` (g·Δt), `sandbox` (Landehügel, 180 Ticks), `mapFlank` ((v/2)²/2g mit 15), `mapData` (Landezone 60 m), `routeToTrack` (Barriere 14,5 m tief), `driveTrack` (Geländeflüge unter 0,65 s statt 0,5 s; Lock „missed gates“ jetzt Seed 13; ein Test für den Flug über die Ziellinie), `mobile.spec.ts` (Kommentar: 73–85 Ticks, 3,2–3,6 m, Landung bei x −510).
+
+Goldens neu erzeugt (`UPDATE_GOLDEN=1`): nur `ramp-jump-beetle` und `crest-hop-reset-jeep` (längere Flüge) und die Tuning-Liste (`GRAVITY` 15); alle Szenarien auf ebenem Boden unverändert.
+
+Mutationsprobe, jeweils rot: kleinster statt größter Radius zweier Schritte (umgekehrt), Kegel mit fester Rate, Radius je Schritt ignoriert, Terrassenlänge ignoriert, Terrassenbereich nicht sortiert (rückwärts), Wellenform w statt w², Wellen nicht addiert, `verticalRadius` ignoriert, `GRAVITY` 20 und 12, Kuppendeckel immer/nie, Marge 1, Vorzeichen der Krümmung, LineDriver ohne Höhen, Kurs ohne Höhen, Mindest-Lippe 0,8 und 0,5, Flug über ebenem Boden, Flug ab Bodenhöhe, Landung für die langsamste Klasse, keine Prüfung der freien Landezone, Welle über das Kantenende nicht geprüft, Mindestradius 30, Wellenbeginn nicht bzw. mit ≤ geprüft, Worldviewer (Terrasse ohne Länge umgedreht, Wellen nicht gespiegelt, nicht verschoben, beim Verbinden verloren, kein Hinweis auf `verticalRadius`), Barrierenabstand 0,5, Landezone 45 m, Flug über die Ziellinie nicht gezählt, alter Landehügel, keine Luftbrems-Prüfung, Landestelle an der Lippe, Luftbrems-Toleranz 0, 0,2, 1,3 und 5, Kennzahlen der langsamsten Klasse über ebenem Boden, Radius nur des einen Schritts (`radiusOf(i)` bzw. `radiusOf(i − 1)` statt des kleineren), Wellenbereich bis |u| < 0,9, kein Reset bei verpasstem Tor, Federung darf ziehen (Kuppen-Datentest), kein Abbruch am Ende eines Sprints, falsche Strecke über den Rundenbeginn.
+
+Stryker auf die neuen Zeilen (`crestCurvature`, `crestLimits`, Radius je Schritt, Raten und Kegel in `corridor.ts`; `tools/` liegt außerhalb der Stryker-Konfiguration): 229 Mutanten, 84,7 % getötet, nach den Tests für Rundkurs, Sprint-Ende und 2-m-Abstand. Die Überlebenden in den neuen Zeilen sind äquivalent: `<`/`<=` auf kontinuierlichen Floats (Abheben, Reichweite, Drehung), Schleifen bis `<= n` auf Float64Arrays (Schreiben hinter das Ende ist wirkungslos), `d >= 0` und `next >= k` (nie gleich), das Vorzeichen der Summe `reach` (nur Beträge von Differenzen zählen), `radius.length + 1` (die Liste hat genau so viele Einträge wie Schritte), der Abbruch am Rundenende eines Rundkurses (eine Runde von `samplePath` beginnt am Ende einer Kurve, nach dem Rundenbeginn kommt keine Kurve innerhalb eines Flugs). Offen, nicht äquivalent: der Index der Rate im Rückwärtslauf von `roundSlopes` (`rate[k − 1]` statt `rate[k + 1]`) wirkt nur, wo eine Biegung über die Grenze zweier Radien reicht; die Tests biegen innerhalb eines Radius. Die übrigen Überlebenden liegen im älteren Code von `speedProfile` und `roundSlopes`.
+
+### 27.7 Offen
+
+- **Beach Lot Drive** (Zufahrt zum Strandparkplatz): alter, nicht ausrundbarer Knick zwischen zwei Plateaus auf 52 m, hebt ab 100 km/h kurz ab (0,13–0,17 s). Nicht auf einer Strecke.
+- **Dune Rally, Käfer abseits der Piste:** Kurze Hüpfer auf Naturgelände der Pisten (Coyote, Chaparral-2, Ridge Fire Trail) werden mit 15 m/s² länger. Die Käfer der Dune Rally kommen dort in Kurven von der Piste und finden über die Hüpfer schwerer zurück: 2 Resets in 360 Rennen (easy Seed 2, medium Seed 4, dazu ein verpasstes Tor), vorher auf der Dune Rally keiner (die 2 Resets vorher lagen auf der Grand Tour, 27.5). Eine neue Schwachstelle, kein alter Stand.
+- **Stadt nur längs geprüft, quer hüpft es klein (entschieden: so lassen).** „Bei 60 km/h hebt längs keiner Straße ein Auto ab“ gilt für die Mittellinie (Abschnitt roads). Quer über Straßendämme, Kreuzungen und Einmündungen (Abschnitt town, Flüge ≥ 0,1 s von Asphalt auf Asphalt; vorher = altes Bake mit `GRAVITY` 20):
+
+  | km/h | Flüge | ≥ 0,2 s | ≥ 0,3 s | längster | höchster | vorher |
+  | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+  | 30 | 0 | 0 | 0 | – | – | 0 |
+  | 45 | 7 | 1 | 0 | 0,20 s | 0,10 m | 1 (0,18 s, 0,11 m) |
+  | 60 | 22 | 9 | 2 | 0,38 s | 0,30 m | 11 (0,33 s, 0,30 m) |
+
+  Die längsten heben dort ab, wo die Nord-Süd-Linie bei x −146 Straßen quert (z −251, 103, −23), und bei (−464, 297). Benannte Querfahrten (längster Flug, Luft / Höhe):
+
+  | Querfahrt | 30 km/h | 45 km/h | 60 km/h | 80 km/h | 100 km/h |
+  | --- | ---: | ---: | ---: | ---: | ---: |
+  | E2E-Bodenwelle: Sand auf den 0,6–0,8 m hohen Straßendamm bei (−596, 300), nach Osten | 0,17 s / 0,06 m | 0,23 s / 0,12 m | 0,43 s / 0,35 m | 0,62 s / 0,73 m | 0,88 s / 1,17 m |
+  | vorher | – | 0,15 s | 0,27 s | 0,42 s | 0,53 s |
+  | Palm Street geradeaus über die T-Kreuzung sv-n1 in die Böschung | – | 0,65 s / 0,64 m | 1,03 s / 1,84 m | 1,53 s / 4,13 m | 2,00 s / 7,16 m |
+  | vorher | – | 0,42 s | 0,73 s | 1,10 s | 1,47 s |
+
+  Die Hüpfer beim Queren sind kurz und flach (bei 45 km/h höchstens 0,20 s und 10 cm) und entstehen am Höhenversatz zwischen Straßenkörper und Gelände, nicht an Bordsteinen (die gibt es im Sim-Gelände nicht als Stufe). Hinter sv-n1 steigt die Einschnittsböschung auf 9 m um 5 m an (etwa 55 %, unverändert gegenüber vorher); wer die T-Kreuzung geradeaus überfährt, fährt auf eine Rampe. Neu ist nur, dass die Palm Street jetzt waagerecht auf der Terrasse ankommt (vorher bergauf) und die Schwerkraft kleiner ist. Die Böschung bleibt: Sie ist kein Fahrweg, sondern das Gelände hinter dem Ende der Straße, wer dort geradeaus fährt, verlässt die Straße; eine flachere Böschung wäre eine eigene Geländeänderung mit neuem Bake. Der Abschnitt town in `sim-airtime.ts` hält die Querfahrten für künftige Änderungen sichtbar.
+- **Boost-Tempo (230–270 km/h):** lange Flüge an ungebauten Hügelkuppen der Pisten (Coyote Trail bis 2,33 s / 6,4 m, Ranch Fire Road bis 1,80 s, 27.3); am Ridge Fire Trail (bis 2,08 s / 13,2 m) ist die Länge ein Messartefakt am Kettenende. Mit Lenkung gefahren höchstens 0,98 s und 2,0 m. Das Kreuzungsplateau ridge-fork auszurunden (größerer `verticalRadius` oder `maxGrade` wie bei Canyon-1) bringt erst über 171 km/h etwas und braucht ein neues Bake; zurückgestellt.
+- **130 km/h spürbar, optisch zurückhaltend (entschieden).** Bei 130 km/h fliegt das Auto 0,2–0,4 s, hebt dabei aber nur 8–25 cm ab; auf dem Handy (WebKit/iPhone 13, Chromium/Pixel 7, Review-Probe) sieht man davon vor allem den Schatten, der sich löst (Canyon-8-Welle bei 38 m/s: 22 Ticks, 0,15 m). Deutlich sichtbar wird es ab etwa 160 km/h (0,5–1 m; bei 52 m/s 1,17 m). Das folgt aus dem Ziel: Eine Wurfparabel von t Sekunden steigt g·t²/8 hoch, bei 0,4 s und 15 m/s² also 0,30 m (über den Kuppen gemessen 0,25 m bei 0,42 s). Mehr Höhe bei 130 km/h hieße längere Flüge (über 0,6 s) oder stärkere Wellen (1,2–1,5 m auf 34–40 m) bzw. R ≈ 50 m an den Terrassen, und damit mehr Bots, die in der Luft die Linie verlieren (27.5). So bleibt es.
+- Grip aus der Federkraft (26.2) bleibt aus.
