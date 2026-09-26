@@ -24,10 +24,14 @@ interface WorldHook {
     placeLocalCar(x: number, z: number, angle: number): void;
 }
 
-// Half the desktop project's 1280 x 800 at the same aspect ratio: the camera
-// frustum, and with it the draw calls and triangles, stay the same, while
-// software WebGL shades a quarter of the pixels.
-test.use({ viewport: { width: 640, height: 400 } });
+// A quarter of the desktop project's 1280 x 800 at the same aspect ratio:
+// the camera frustum, and with it the draw calls and triangles, stay the
+// same (LODs and impostors go by distance, not by pixels; the phone camera
+// and HUD by the width below 768 px), while software WebGL shades a
+// sixteenth of the pixels. On the CI runner SwiftShader frames of the phone
+// tier cost seconds, and they are pixel-bound; the mean colours of the
+// ground checks moved by less than 1 ΔE even at 160 x 100 (from 640 x 400).
+test.use({ viewport: { width: 320, height: 200 } });
 
 function settled(page: Page): Promise<WorldInfo> {
     return page.evaluate(() => (window as unknown as { __bulliDebug: WorldHook }).__bulliDebug.worldSettled());
