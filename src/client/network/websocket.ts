@@ -12,7 +12,7 @@ import { closeAction, reconnectDelayMs } from '../../shared/net/reconnect.js';
 import { isPowerupType } from '../../shared/party/rules.js';
 import { resetTuning, tuningIsDefault } from '../../shared/sim/tuning.js';
 import type { MapData } from '../../shared/map/mapData.js';
-import { gameMap, loadGameMap } from '../map/gameMap.js';
+import { gameMap, loadGameMap, reloadForMap } from '../map/gameMap.js';
 import { Bulli, type CarType } from '../entities/Bulli.js';
 import { createMapScene, setMapSceneRoom } from '../world/mapScene.js';
 import { clearPowerupMarkers, createPowerupMarker, applyPowerupEffect, setPowerupCollectedVisual } from '../world/powerups.js';
@@ -129,6 +129,8 @@ export function initWebSocket() {
     // needs the map to check the world and to predict
     const tryLoad = (attempt: number): void => {
         loadGameMap().then(() => connect()).catch(error => {
+            // A map from a newer deploy: this page cannot read it, reload
+            if (reloadForMap(error)) return;
             console.error('Map failed to load', error);
             window.setTimeout(() => tryLoad(attempt + 1), Math.min(10_000, 1000 * 2 ** attempt));
         });
