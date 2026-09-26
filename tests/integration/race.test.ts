@@ -97,13 +97,16 @@ describe('a race of 4 WebSocket bots and 2 server bots behind netsim 150/30/3, a
             return true;
         };
         // D: inputs 100 ticks ahead and malformed packets during the countdown
-        // Every 10th tick it runs, not on fixed tick numbers: a bot that
-        // skips ahead after a stall of its process would miss those
+        // Every 5th tick it runs, from the moment it knows the start tick, not
+        // on fixed tick numbers: a bot that skips ahead after a stall of its
+        // process would miss those (on a busy CI runner, with the time trial
+        // beside it, the old window of the last 200 ticks and every 10th tick
+        // once saw only two)
         let dSent = 0;
         let dLastSent = -Infinity;
         d.raceOverride = (tick, S, _s, input) => {
             if (tick >= S) return false;
-            if (tick > S - 200 && tick - dLastSent >= 10 && dSent < 6) {
+            if (tick - dLastSent >= 5 && dSent < 6) {
                 dSent++;
                 dLastSent = tick;
                 d.sendInputAhead(100, { steer: 127, throttle: 255, brake: 0, buttons: 2 });
