@@ -1,6 +1,6 @@
 # UI: Ladebildschirm und Hauptmenü
 
-**Stand:** 2026-09-26 · Branch `ui/menu-refactor` (auf `main` = Phase 3 live) · U1 (Ladebildschirm) und U2–U4 (Hauptmenü, Lack, Showroom und Übergang) umgesetzt, dazu die Nachbesserungen aus dem Review (Abschnitt 14) mit Teilen von U5 (Gewichte kalibriert). Offen aus U5: axe-Check und Stryker-Gesamtlauf. Was anders kam als geplant, steht in den Abschnitten 3.4, 4.5 und 14 und in den Entscheidungen D12–D38.
+**Stand:** 2026-09-26 · Branch `ui/menu-refactor` (auf `main` = Phase 3 live) · U1 (Ladebildschirm) und U2–U4 (Hauptmenü, Lack, Showroom und Übergang) umgesetzt, dazu die Nachbesserungen aus dem Review (Abschnitt 14) mit Teilen von U5 (Gewichte kalibriert). Offen aus U5: axe-Check und Stryker-Gesamtlauf. Was anders kam als geplant, steht in den Abschnitten 3.4, 4.5 und 14 und in den Entscheidungen D12–D39. Auf `main` mit #19 (ohne Sprung) rebased.
 Auftrag: „also refactor the loading screen and main menu“. Der Ladebildschirm und das Hauptmenü sollen zum realistischen, ruhig-naturgetreuen Look von Bulli Bay passen ([`world-look.md`](world-look.md)) und sich auf Desktop und Handy gleich gut bedienen lassen.
 
 Die Entscheidungen in diesem Dokument hat der Workflow ohne Rückfragen getroffen. Jede steht mit ihrer Begründung in Abschnitt 12 („Entscheidungen“).
@@ -267,7 +267,7 @@ Alles liegt weit im Budget des Tiers (Desktop ≤ 300/1,2 Mio., Handy ≤ 150/50
 
 **Übergang:** Kran 0,7 s nach oben bis 45 m, Blick 10° über die Bildunterkante in den Himmel, Schnitt beim Spawn, 1,1 s Anflug (Bildfolge `chromium-desktop-drive-*.png`). Mit reduzierter Bewegung und in Lite: Das nächste Showroom-Bild wird nach dem Zeichnen als Standbild festgehalten (`afterRender`), das Auto steht dafür noch am Pier, und das Standbild blendet in 0,3 s über dem ersten Spielbild aus. Jede Übergangsart endet auch ohne Spawn, spätestens 2 s (`maxHold`) nach dem Aufstieg; der Direktflug wartet dafür am Pier (D36).
 
-## 5. Lackfarbe (Protokoll v5)
+## 5. Lackfarbe (Protokoll v6)
 
 Neues Modul `src/shared/paints.ts` mit `PAINT_IDS` und je Lack Name und sRGB-Hex. Startwerte, die im Lookdev (Showroom-Licht und Blender-Renders) nachjustiert werden:
 
@@ -290,7 +290,7 @@ Protokolländerungen:
 - Ohne `paint` wählt der Server einen zufälligen Lack aus der Palette statt einer beliebigen 24-Bit-Farbe. Das gilt auch für die Race-Bots: `BOT_COLORS` wird durch die Palette ersetzt. Resume-Tickets behalten die Farbe wie heute.
 - **Client:** `carPaintColor` erkennt Paletten-Hexwerte und übernimmt sie unverändert, weil sie bereits im Lookdev abgestimmt sind. Andere Werte, etwa von alten Tickets, werden wie heute gemappt. Die zweite Farbe (Creme-Oberteil bei Bulli und Pickup) bleibt fest am Modell.
 - **Umgesetzt:** `hello.paint` gilt auch bei der Übernahme einer Sitzung (Neuladen, Wiederverbinden). Bei einem wiederaufgenommenen Mitglied geht die Änderung wie ein `setPaint` an den Raum. `setPaint` setzt `session.color` sofort. Dem Raum zeigt `Room.showCarChanges` Auto- und Lackwechsel gemeinsam höchstens einmal je `CAR_CHANGE_INTERVAL_MS`. Ein reiner Lackwechsel baut kein neues Sim-Auto und löst kein `carChanged` aus. Ohne Wunsch zieht der Server den Lack über eine injizierbare `RandomSource` (`HandshakeContext.random`).
-- **`PROTOCOL_VERSION` 4 → 5.** Die neue Nachricht würde ein alter Server abweisen, und laut `protocol.ts` wird bei jeder inkompatiblen Änderung erhöht. Deploys laufen ohnehin über den Build-Check mit Neuladen. Der parallele Branch `sim/airborne-no-jump` fasst womöglich ebenfalls Protokollbits an. Wer zuletzt merged, legt beide Änderungen in eine Version zusammen (siehe Abschnitt 13).
+- **`PROTOCOL_VERSION` 5 → 6.** Die neue Nachricht würde ein alter Server abweisen, und laut `protocol.ts` wird bei jeder inkompatiblen Änderung erhöht. Deploys laufen ohnehin über den Build-Check mit Neuladen. Geplant war 4 → 5; der parallele Branch `sim/airborne-no-jump` (#19, ohne Sprung) ist aber zuerst gemergt und hat v5 belegt, deshalb bekommt der Lack beim Rebase v6 (D39).
 
 ## 6. Übergang Menü → Spiel
 
@@ -382,7 +382,7 @@ Jeder Schritt ist für sich lauffähig und mergebar.
 |---|---|
 | **U1 Loader** (erledigt) | Schriften selbst ausliefern, Wortmarke, Key-Art-Skript und Assets, `loadProgress` mit allen Quellen, Inline-CSS und Bootstrap, Tipps, Fehler-Overlays im neuen Stil. Das Menü bleibt vorerst das alte, liegt aber auf der Key-Art. |
 | **U2 Menü-Overlay** | Layouts Desktop, hoch und quer, Karussell mit Renderings und Werten, Modus-Karten, DRIVE mit Fortschritt, Einstellungsdialog, About, a11y, Tastatur und Gamepad. Hintergrund noch Key-Art bzw. Lite-Einzelbild. `fixtures.ts` wird angepasst. |
-| **U3 Lack** | `paints.ts`, Protokoll v5, Server, Chips, Remote-Update |
+| **U3 Lack** | `paints.ts`, Protokoll v6, Server, Chips, Remote-Update |
 | **U4 Showroom und Übergang** | POI, `ShowroomCamera`, Autotausch, Kran-Übergang, Reduced Motion, fps-Deckel auf Handys |
 | **U5 Feinschliff** | Gewichte kalibrieren (`?debug=load`), Screenshots Nachher an denselben vier Geräten, Budgets, axe-Check, Stryker, Doku aktualisieren |
 
@@ -395,7 +395,7 @@ Jeder Schritt ist für sich lauffähig und mergebar.
 | D3 | Übergang über einen Schnitt im Himmel statt Kamerafahrt über die Karte | Der Spawn ist weit weg oder vorab unbekannt (Moduswechsel). Ein Flug über hunderte Meter würde Terrain- und Kit-Streaming mitten im Übergang auslösen |
 | D4 | Loader bleibt, bis das erste Showroom-Bild vollständig ist | Keine untexturierte Welt im Menü. Die Gesamtzeit bis zum Fahren ändert sich nicht, weil das Gate heute schon wartet |
 | D5 | Lack aus einer kuratierten Palette von 8 statt freiem Farbwähler | Passt zum ruhig-naturgetreuen Look, und die Paletten-Hexwerte lassen sich im Lookdev abstimmen |
-| D6 | `PROTOCOL_VERSION` → 5 | Eine neue Nachricht ist mit alten Servern inkompatibel, die Regel in `protocol.ts` verlangt das |
+| D6 | `PROTOCOL_VERSION` → 6 (geplant 5, siehe D39) | Eine neue Nachricht ist mit alten Servern inkompatibel, die Regel in `protocol.ts` verlangt das |
 | D7 | Stabile IDs und Klassen für den Join-Flow behalten | Die E2E-Fixtures ändern sich minimal, keine neuen Specs |
 | D8 | UI-Sprache bleibt Englisch | Wie das HUD und die Race-Oberfläche. Deutsch nur in der Doku |
 | D9 | Barlow selbst ausgeliefert statt Google Fonts | Kein Fallback auf `cursive` ohne Netz, ruhige technische Anmutung, OFL |
@@ -422,12 +422,13 @@ Jeder Schritt ist für sich lauffähig und mergebar.
 | D30 | Karten-Renderings im Menü entsättigt (CSS-Filter) statt neu in neutralem Lack gerendert | Der Werkslack auf den Karten (roter Bulli, blauer Käfer …) wirkte wie eine Farbwahl, obwohl der Lack getrennt gewählt wird und am 3D-Auto steht. Ein Filter braucht keine zweite Render-Pipeline in fünf Blender-Skripten. Die gewählte Karte ist voll deckend, die übrigen etwas zurückgenommen |
 | D31 | Der Loader läuft zum Schluss sichtbar auf 100 % (0,26 s) und blendet erst dann aus; DRIVE zeigt in den ersten 0,5 s nach dem Einblenden keinen Ladestand | Vorher verschwand der Loader bei 65–81 %, weil die Glättung hinterherhinkte, und DRIVE blitzte kurz „LOADING 99 %“. Die 0,26 s sind die CSS-Transition des Balkens |
 | D32 | Kein Server: Die Statuszeile des Loaders sagt „Waiting for the server · retrying“ in `--ui-danger`, Reload nach 10 s im Loader-Panel; das Verbindungsbanner nur ohne Loader | Die Pille lag mitten auf dem Auto der Key-Art, und die Zeile behauptete weiter „Loading Bulli Bay“. Im Spiel bleibt das Banner mit 30 s bis zum Reload (`RELOAD_OFFER_MS`) |
-| D33 | `hello.paint` nimmt jede kurze Zeichenkette an, eine unbekannte ID zählt als kein Wunsch (Zufallslack); `setPaint` bleibt streng | Wie `carType`. So ist eine spätere Palettenänderung keine inkompatible Protokolländerung, die jede Seite mit gespeichertem Lack am `hello` scheitern lässt. Kein `PROTOCOL_VERSION`-Bump nötig, weil v5 noch nicht live war und die Nachricht nur toleranter wird |
+| D33 | `hello.paint` nimmt jede kurze Zeichenkette an, eine unbekannte ID zählt als kein Wunsch (Zufallslack); `setPaint` bleibt streng | Wie `carType`. So ist eine spätere Palettenänderung keine inkompatible Protokolländerung, die jede Seite mit gespeichertem Lack am `hello` scheitern lässt. Kein eigener `PROTOCOL_VERSION`-Bump nötig, weil v6 noch nicht live war und die Nachricht nur toleranter wird |
 | D34 | Die adaptive Auflösung misst keine Frames, solange der Showroom die Bildrate deckelt (`ShowroomCamera.paced`: Handys mit 30 fps, Lite-Standbild) | 30 fps ergeben 33 ms je Frame, mehr als die Schwelle von 20 ms. Nach etwa 30 s im Menü sank die Auflösung auf jedem Handy auf 0,75, und das Kartendetail blieb für die ganze Sitzung auf „mid“ |
 | D35 | Ab DRIVE ist die Wahl fest (Panel `inert`, Setter ignorieren Änderungen) | Während DRIVE auf Sounds und Assets wartet (auf dem Handy mehrere Sekunden), konnte man das Auto wechseln. Gefahren wäre das alte, Menü und Speicher hätten das neue gezeigt |
 | D36 | Spawn-Hinweis nur in Party und Free Roam; der Direktflug wartet höchstens `rise + maxHold` auf den Spawn | In Race und Zeitfahren ist `preview` ein Free-Roam-Platz. Bei etwa jedem vierten Race-Beitritt wurde deshalb der Direktflug gewählt, und ohne Spawn (laufendes Rennen: Zuschauer) hing das Menü für immer, weil der Code die Wartezeit in jedem Frame zurücksetzte |
 | D37 | Die Tab-Reihenfolge bleibt Name → Auto → Lack → Modus → DRIVE, auch wenn sie auf dem Desktop quer über den Bildschirm springt | Sie folgt dem Ablauf „wer, womit, wie, los“ und ist in allen drei Layouts gleich, auch für Gamepad und Screenreader (D22). Eine Reihenfolge nach Desktop-Lage (Name → Modus → DRIVE → Auto → Lack) würde DRIVE vor die Autowahl stellen und auf dem Handy nicht mehr zur sichtbaren Folge passen |
 | D38 | Fortschritt von Kit und Texturen nach Bytes laut Manifest, Zähler je Datei nach dem Abruf (`assets/fetchTally.ts`) | Die Zähler zählten erst nach Dekodieren und Upload und standen dadurch bis kurz vor Schluss auf 0/N. Die Bytes stehen in den Manifesten, die Loader melden `ProgressEvent`s |
+| D39 | Rebase auf #19 (`sim/airborne-no-jump`): Lack als Protokoll v6, Showroom nutzt `bodyGroup` statt `flipGroup`, kein `playJumpSound`, der Jump-Test von #19 prüft die Powerups im neuen About-Dialog | #19 war zuerst live und hat v5 belegt. Alte v5-Tabs bekommen so beim Deploy den Neuladen-Hinweis statt eines abgewiesenen `setPaint` |
 
 ## 13. Offene Punkte
 
@@ -436,8 +437,6 @@ Jeder Schritt ist für sich lauffähig und mergebar.
 - **Rest-Versatz Key-Art ↔ Menü:** Eine Key-Art je Layout (D29) trifft die häufigen Viewports gut: Desktop 16:9 und 16:10, iPhone in Safari, iPhone 13 quer. Auf anderen Höhen (Pixel 7: das Auto 35 px tiefer, Tablets hoch, iPhone SE quer) bleibt ein kleiner Versatz in Lage und Größe. Er ist in der 0,4-s-Überblendung sichtbar, aber gleicher Lack und gleiche Einstellung. Ganz weg ginge er nur mit einem live gerenderten ersten Bild unter dem Loader, das kostet vor dem Menü aber GPU-Zeit.
 - **Lack im Spiel wechseln:** Das Protokoll kann es (`setPaint`), die UI bietet es im Spiel noch nicht an.
 - **Spielerzahl je Modus:** Die Modus-Karten könnten zeigen, wie viele Spieler gerade in einem Modus sind. Dafür bräuchte es einen öffentlichen Endpunkt oder eine Lobby-Nachricht vor `ready`, das ist nicht Teil dieses Auftrags.
-- **HUD-Hinweise zum Sprung:** `jump-hint` (Q) und `#btn-flip` stehen noch im HUD. Das ist kein Menü- oder Hilfetext, das gleichen wir beim Rebase auf `sim/airborne-no-jump` ab (D11).
-- **Merge mit `sim/airborne-no-jump`:** Dieser Branch hebt `PROTOCOL_VERSION` auf 5 (Lack). Ändert der andere Branch das Protokoll ebenfalls, bekommt der zweite Merge eine gemeinsame Version (dann 6 oder beide Änderungen in 5, je nach Reihenfolge) und einen Protokoll-Test für beide. Die Steuerungstexte im Menü, im Dialog und in den Loader-Tipps nennen schon keinen Sprung. Im HUD bleiben `jump-hint` und `#btn-flip` Sache des anderen Branches.
 
 ## 14. Review (Nachbesserung)
 
@@ -459,7 +458,7 @@ Ein Review mit gedrosseltem Netz, frischen Browser-Kontexten und einer eigenen M
 | (3) Quer fehlen die Modusbeschreibungen | Behoben: eine Zeile unter der Segmentsteuerung |
 | (4) Tab-Reihenfolge auf dem Desktop | Bewusst so gelassen und begründet (D37) |
 | (5) Karten zeigen feste Farben | Behoben: entsättigt (D30) |
-| (6) HUD zeigt noch Q/Sprung | Nicht in diesem Branch: das gleicht der Rebase auf `sim/airborne-no-jump` ab (D11) |
+| (6) HUD zeigt noch Q/Sprung | Erledigt durch #19 (`sim/airborne-no-jump`), auf das dieser Branch rebased ist (D39) |
 | Showroom-Drosselung senkt Auflösung und Kartendetail dauerhaft | Behoben (D34), Tests in `renderQuality.test.ts` und `showroomCamera.test.ts` |
 | Direktflug hängt ohne Spawn, Spawn-Hinweis in Race falsch | Behoben (D36), Tests mit injizierter Uhr in `showroomCamera.test.ts` |
 | Auswahl nach DRIVE änderbar und still überschrieben | Behoben (D35), Test in `menu.test.ts` |
