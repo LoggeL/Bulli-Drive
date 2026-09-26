@@ -141,7 +141,7 @@ function playEventEffects(vehicle: LocalVehicle): void {
     }
     if (ev.reset) state.cameraSnapPending = true;
     if (vehicle.hintChanged && vehicle.resetHint) {
-        showInteractionPrompt(inputManager.touchUi ? 'HOLD ↻ TO RESET' : 'HOLD R TO RESET');
+        showInteractionPrompt(inputManager.touchUi ? 'HOLD RESET BUTTON' : 'HOLD R TO RESET');
     }
     // Tyre smoke from both rear wheels while drifting
     if (s.driftTicks > 0 && s.grounded) {

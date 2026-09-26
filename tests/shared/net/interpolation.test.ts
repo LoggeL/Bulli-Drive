@@ -30,6 +30,24 @@ describe('RemoteTrack', () => {
         expect(pose.z).toBeCloseTo(0.75, 9);
     });
 
+    it('blends the suspension and the vertical speed between samples, holds them past the newest', () => {
+        // Landing: the body 2 cm extended and falling 3 m/s at tick 0, 10 cm
+        // compressed and rising 1 m/s three ticks later. Snapshots come at
+        // 20 Hz; without the blend the body would step 12 cm per snapshot.
+        const track = new RemoteTrack();
+        track.push(0, { ...car(0, 0, 0, 0, 30), susp: 0.02, vy: -3 });
+        track.push(3, { ...car(0, 1.5, 0, 0, 30), susp: -0.1, vy: 1 });
+        const pose = createRemotePose();
+        track.sample(1, pose);
+        expect(pose.susp).toBeCloseTo(0.02 - 0.12 / 3, 12);
+        expect(pose.vy).toBeCloseTo(-3 + 4 / 3, 12);
+        track.sample(3, pose);
+        expect(pose.susp).toBeCloseTo(-0.1, 12);
+        track.sample(5, pose);
+        expect(pose.susp).toBeCloseTo(-0.1, 12);
+        expect(pose.vy).toBeCloseTo(1, 12);
+    });
+
     it('turns the short way across ±π', () => {
         const track = new RemoteTrack();
         track.push(0, car(0, 0, Math.PI - 0.1, 0, 0, 2 / (3 * DT) * 0.1));

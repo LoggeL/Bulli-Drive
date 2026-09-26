@@ -492,7 +492,7 @@ function handleEvent(event: GameEvent) {
             // A race without this car (not ready at the countdown): it leaves the sim
             if (event.id === me) {
                 netDriver.despawnOwn();
-                if (state.bulli) state.bulli.flipGroup.visible = false;
+                if (state.bulli) state.bulli.bodyGroup.visible = false;
             } else {
                 setRemoteDead(event.id, true);
             }
@@ -612,7 +612,7 @@ function killLocalCar() {
             state.bulli.group.position.z,
             state.bulli.colorCode
         );
-        state.bulli.flipGroup.visible = false;
+        state.bulli.bodyGroup.visible = false;
     }
     resetLocalPowerups();
     showRespawnOverlay();
@@ -626,7 +626,7 @@ function respawnLocalCar(health: number) {
     resetMobileControls();
     resetLocalPowerups();
     if (state.bulli) {
-        state.bulli.flipGroup.visible = true;
+        state.bulli.bodyGroup.visible = true;
         state.bulli.health = health;
         state.bulli.speed = 0;
     }
@@ -679,7 +679,7 @@ export function addRemotePlayer(member: MemberInfo) {
     remote.name = member.name;
     remote.health = 100;
     // Hidden until its first snapshot places it
-    remote.flipGroup.visible = false;
+    remote.bodyGroup.visible = false;
     remote.createNametag(member.name, false);
     // Race bots carry the tag BOT (docs/phase-2-design.md, 6.3)
     if (member.bot) {

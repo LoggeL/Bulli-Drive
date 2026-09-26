@@ -478,7 +478,7 @@ function drawTrackMinimap(ctx: CanvasRenderingContext2D, mode: TrackMode): void 
     }
     for (const id in state.remotePlayers) {
         const remote = state.remotePlayers[id];
-        if (!remote.flipGroup.visible) continue;
+        if (!remote.bodyGroup.visible) continue;
         const m = toMap(mode.frame, remote.group.position.x, remote.group.position.z);
         ctx.fillStyle = colorToCss(remote.colorCode);
         ctx.strokeStyle = '#fff8e7';
@@ -489,7 +489,7 @@ function drawTrackMinimap(ctx: CanvasRenderingContext2D, mode: TrackMode): void 
         ctx.stroke();
     }
     const own = state.bulli;
-    if (own && own.flipGroup.visible) {
+    if (own && own.bodyGroup.visible) {
         const m = toMap(mode.frame, own.group.position.x, own.group.position.z);
         ctx.translate(m.px, m.py);
         ctx.rotate(mapHeading(own.angle ?? 0));

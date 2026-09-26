@@ -5,6 +5,7 @@ import { createProjectile } from '../world/projectiles.js';
 import { sendToServer } from '../network/socket.js';
 import { CarModel, randomCarType, type CarType } from '../vehicle/CarModel.js';
 import { Nametag } from '../vehicle/Nametag.js';
+import type { BodyMotion } from '../vehicle/bodyMotion.js';
 import type { LocalVehicle } from '../vehicle/LocalVehicle.js';
 import { driveLocalCar } from '../vehicle/v2Driver.js';
 import { partyRulesActive } from '../ui/roomMenu.js';
@@ -16,11 +17,11 @@ const MEGA_PROJECTILE_FRONT_OFFSET = 6.5;
 export { randomCarType, type CarType };
 
 export class Bulli {
-    // The three.js model; group, flipGroup, wheels and shieldMesh are its
+    // The three.js model; group, bodyGroup, wheels and shieldMesh are its
     // objects, kept here for the code that reaches into the car
     readonly model: CarModel;
     group: THREE.Group;
-    flipGroup: THREE.Group;
+    bodyGroup: THREE.Group;
     isLocal: boolean;
     colorCode: number;
     carType: CarType;
@@ -61,7 +62,7 @@ export class Bulli {
 
         this.model = new CarModel(colorCode, this.carType, { local: isLocal });
         this.group = this.model.group;
-        this.flipGroup = this.model.flipGroup;
+        this.bodyGroup = this.model.bodyGroup;
         this.wheels = this.model.wheels;
     }
 
@@ -69,6 +70,16 @@ export class Bulli {
     // models are loaded, so this always asks the model
     get shieldMesh(): THREE.Mesh | undefined {
         return this.model.shieldMesh;
+    }
+
+    /** Ground tilt, body height, pitch, roll and wheels of this frame (vehicle/bodyMotion.ts). */
+    setBodyPose(motion: BodyMotion, scale: number): void {
+        this.model.setBodyPose(motion, scale);
+    }
+
+    /** Height of the wheels over the ground on screen (m): the contact shadow fades. */
+    get airHeight(): number {
+        return this.model.airHeight;
     }
 
     /** Drive look of this frame from the v2 sim (wheels, brake lights, blinkers). */
@@ -129,11 +140,11 @@ export class Bulli {
         playShootSound();
 
         const megaActive = this.powerups.size.active;
-        // Fire from the front of the car (account for jump height)
+        // Fire from the front of the car, at the body's height (also in the air)
         const frontOffset = megaActive ? MEGA_PROJECTILE_FRONT_OFFSET : 3.5;
         const startX = this.group.position.x + Math.sin(this.angle) * frontOffset;
         const startZ = this.group.position.z + Math.cos(this.angle) * frontOffset;
-        const startY = this.group.position.y + this.flipGroup.position.y;
+        const startY = this.group.position.y + this.bodyGroup.position.y;
 
         createProjectile(startX, startY, startZ, this.angle, this.colorCode, state.myId || '', megaActive);
     }

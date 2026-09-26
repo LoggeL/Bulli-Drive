@@ -91,9 +91,6 @@
             <symbol id="icon-grow" viewBox="0 0 24 24">
                 <path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5M4 9l5-5M20 9l-5-5M4 15l5 5M20 15l-5 5"/>
             </symbol>
-            <symbol id="icon-jump" viewBox="0 0 24 24">
-                <path d="M4 18c2.5 0 3.5-2 5.5-2s3 2 5.5 2 3.5-2 5-2M12 14V4M8 8l4-4 4 4"/>
-            </symbol>
             <symbol id="icon-shield" viewBox="0 0 24 24">
                 <path d="M12 2.5 20 6v5.5c0 5-3.2 8.2-8 10-4.8-1.8-8-5-8-10V6z"/>
                 <path d="m8.5 12 2.2 2.2 4.8-5"/>
@@ -258,8 +255,6 @@
                     <span class="preview-sep">&middot;</span>
                     <span class="preview-keys">SHIFT</span> <span class="preview-desc">boost</span>
                     <span class="preview-sep">&middot;</span>
-                    <span class="preview-keys">Q</span> <span class="preview-desc">jump</span>
-                    <span class="preview-sep">&middot;</span>
                     <span class="preview-keys">E</span> <span class="preview-desc">shoot</span>
                 </div>
                 <!-- Phones (style.css shows it instead of the keyboard row) -->
@@ -294,7 +289,6 @@
                     <div class="modal-control-row"><span class="modal-key">W A S D</span><span>Drive &amp; steer</span></div>
                     <div class="modal-control-row"><span class="modal-key">SPACE</span><span>Handbrake / drift</span></div>
                     <div class="modal-control-row"><span class="modal-key">SHIFT</span><span>Boost (fills while drifting)</span></div>
-                    <div class="modal-control-row"><span class="modal-key">Q</span><span>Jump / flip</span></div>
                     <div class="modal-control-row"><span class="modal-key">R</span><span>Hold to reset onto the road</span></div>
                     <div class="modal-control-row"><span class="modal-key">E</span><span>Shoot projectile</span></div>
                     <div class="modal-control-row"><span class="modal-key">F</span><span>Honk horn</span></div>
@@ -306,14 +300,13 @@
                     <div class="modal-control-row"><span class="modal-key">AUTO</span><span>Auto-gas on / off</span></div>
                     <div class="modal-control-row"><span class="modal-key">DRIFT</span><span>Handbrake / drift (hold)</span></div>
                     <div class="modal-control-row"><span class="modal-key">BOOST</span><span>Boost (hold)</span></div>
-                    <div class="modal-control-row"><span class="modal-key">JUMP</span><span>Tap to jump, hold to reset</span></div>
+                    <div class="modal-control-row"><span class="modal-key">RESET</span><span>Hold to reset onto the road</span></div>
                 </div>
 
                 <h3 class="modal-section-title">Powerups</h3>
                 <div class="modal-powerup-list">
                     <div class="modal-powerup-item"><svg class="ui-icon powerup-icon" aria-hidden="true"><use href="#icon-speed"></use></svg><span><strong>Speed Boost</strong> &mdash; Doubles your top speed</span></div>
                     <div class="modal-powerup-item"><svg class="ui-icon powerup-icon" aria-hidden="true"><use href="#icon-grow"></use></svg><span><strong>Grow</strong> &mdash; Makes your car huge</span></div>
-                    <div class="modal-powerup-item"><svg class="ui-icon powerup-icon" aria-hidden="true"><use href="#icon-jump"></use></svg><span><strong>Jump</strong> &mdash; Launches the car into the air</span></div>
                     <div class="modal-powerup-item"><svg class="ui-icon powerup-icon" aria-hidden="true"><use href="#icon-shield"></use></svg><span><strong>Shield</strong> &mdash; Protects from collisions</span></div>
                     <div class="modal-powerup-item"><svg class="ui-icon powerup-icon" aria-hidden="true"><use href="#icon-magnet"></use></svg><span><strong>Magnet</strong> &mdash; Attracts nearby coins</span></div>
                     <div class="modal-powerup-item"><svg class="ui-icon powerup-icon" aria-hidden="true"><use href="#icon-ghost"></use></svg><span><strong>Ghost</strong> &mdash; Passes through obstacles</span></div>
@@ -343,8 +336,8 @@
                 <svg class="ui-icon" aria-hidden="true"><use href="#icon-target"></use></svg>
             </button>
             <button id="btn-brake" class="control-btn action brake race-only" type="button" aria-label="Brake">BRAKE</button>
-            <button id="btn-flip" class="control-btn action flip" type="button" data-key="space" data-mode="jump" aria-label="Jump and flip vehicle">
-                <svg class="ui-icon" aria-hidden="true"><use href="#icon-jump"></use></svg>
+            <button id="btn-reset" class="control-btn action reset" type="button" aria-label="Hold to reset onto the road">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-recover"></use></svg>
             </button>
         </div>
 
@@ -482,11 +475,6 @@
                     <div class="key wide">SHIFT</div>
                     <svg class="ui-icon hint-icon" aria-hidden="true"><use href="#icon-speed"></use></svg>
                     <span class="sr-only">Boost</span>
-                </div>
-                <div class="hint-row jump-hint">
-                    <div class="key">Q</div>
-                    <svg class="ui-icon hint-icon" aria-hidden="true"><use href="#icon-jump"></use></svg>
-                    <span class="sr-only">Jump and flip</span>
                 </div>
                 <div class="hint-row">
                     <div class="key">R</div>

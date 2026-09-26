@@ -407,21 +407,32 @@ function initContactShadows(scene: THREE.Scene): void {
     scene.add(contactShadows);
 }
 
+/**
+ * The contact shadow of a car whose wheels are `lift` m over the ground:
+ * its opacity and size relative to standing. It gets paler and smaller as
+ * the car rises (the car leaves its shadow behind on the ground), gone at
+ * about 10 m; on the ground and on the springs it stays whole.
+ */
+export function contactShadowLook(lift: number): { fade: number; size: number } {
+    const h = Math.max(0, lift);
+    return { fade: 1 / (1 + h * 0.6 + h * h * 0.05), size: 1 - 0.4 * h / (h + 3) };
+}
+
 function writeContactShadow(index: number, car: any): boolean {
-    const flipGroup: THREE.Object3D = car.flipGroup;
-    if (!flipGroup?.visible) return false;
+    const bodyGroup: THREE.Object3D = car.bodyGroup;
+    if (!bodyGroup?.visible) return false;
     const group: THREE.Object3D = car.group;
 
-    // Fade and widen the shadow while the car is in the air
-    const lift = Math.max(0, flipGroup.position.y);
-    const airFade = 1 / (1 + lift * 0.45);
+    // Paler and smaller while the car is in the air (vehicle/bodyMotion.ts
+    // sets the height of the wheels over the ground)
+    const look = contactShadowLook(car.airHeight ?? 0);
     const ghostFade = car.powerups?.ghost?.active ? 0.2 : 1;
-    const opacity = LIGHTING.contactShadow.opacity * airFade * ghostFade;
+    const opacity = LIGHTING.contactShadow.opacity * look.fade * ghostFade;
     if (opacity < 0.01) return false;
 
     // The car model knows its body size (GLB or procedural)
     const [width, length] = car.footprint ?? CAR_FOOTPRINT[car.carType] ?? DEFAULT_FOOTPRINT;
-    const spread = LIGHTING.contactShadow.spread * (group.scale.x || 1) * (1 + lift * 0.06);
+    const spread = LIGHTING.contactShadow.spread * (group.scale.x || 1) * look.size;
     // Just above road markings and curbs, tilted with the car on slopes
     _position.copy(group.position);
     _position.y += 0.1;

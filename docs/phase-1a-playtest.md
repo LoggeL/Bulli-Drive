@@ -33,11 +33,11 @@ Handys im selben WLAN öffnen `http://<LAN-IP-des-Macs>:8000/…`. Zum Tunen mit
 | Fahren, lenken | W/S, A/D | W/S, A/D oder Pfeiltasten |
 | Leertaste | Sprung/Salto | Handbremse (Drift) |
 | Boost | – | Shift (füllt sich beim Driften) |
-| Sprung | Leertaste | Q |
+| Sprung | Leertaste | entfällt (Federung, das Auto hebt über Kuppen und Rampen selbst ab; phase-1a-design.md 26) |
 | Zurücksetzen | Leertaste, wenn festgefahren | R halten (auf die nächste Straße im Umkreis von 40 m, sonst an Ort und Stelle) |
 | Schießen / Hupen | E / F | E / F |
-| Touch | Joystick, Buttons | Auto-Gas startet mit der ersten Stick-Berührung, großer DRIFT-Button, BOOST, AUTO schaltet Auto-Gas um; Flip-Button kurz = Sprung, lang = Reset |
-| Gamepad | – | RT Gas, LT Bremse, linker Stick lenkt, A Drift, B Boost, Y Sprung, Back Reset, X Schießen, LB Hupe |
+| Touch | Joystick, Buttons | Auto-Gas startet mit der ersten Stick-Berührung, großer DRIFT-Button, BOOST, AUTO schaltet Auto-Gas um; RESET-Button halten = Reset |
+| Gamepad | – | RT Gas, LT Bremse, linker Stick lenkt, A Drift, B Boost, Back Reset, X Schießen, LB Hupe |
 
 ## 2. Ablauf pro Tester
 
@@ -65,7 +65,7 @@ Rempeln braucht zwei Geräte am selben Server, beide mit derselben Variante. Gem
 - **Rempeln:** Weicht das eigene Auto nachvollziehbar aus? In 1a ist der Kontakt gegen Mitspieler absichtlich weich und einseitig (nur das eigene Auto wird geschoben, 70 % Stärke), und die Mitspieler kommen nur 20-mal pro Sekunde. Leichtes Zittern ist bekannt und wird in Phase 1b gelöst; ein völlig falsches Gefühl ist dagegen wichtig.
 - **Kamera:** Die Renn-Kamera ist tiefer und näher. Zu unruhig, zu nah, zu wenig Übersicht? (Im Panel lässt sich zum Vergleich die alte Kamera einschalten.)
 - **Handy:** Kommt man mit Auto-Gas, Joystick und DRIFT-Button zurecht? Verdeckt der Daumen etwas? Ruckelt es (dann mit `&debug=perf` die FPS notieren)?
-- **Party-Modus:** Powerups (Turbo, Mega, Super-Jump, Ghost, Schild), Schießen und Respawn funktionieren auch mit v2. Fällt dabei etwas auf?
+- **Party-Modus:** Powerups (Turbo, Mega, Ghost, Schild), Schießen und Respawn funktionieren auch mit v2. Fällt dabei etwas auf?
 
 ## 4. Werte anpassen (Tuning-Panel)
 
@@ -89,8 +89,8 @@ Zum Ausprobieren eignet sich die Sandbox (`/?sandbox=1&tune=1`) mit Rampen, Wand
 | Boost zu schwach / zu stark | `BOOST_ADD` (Boost, Tempo über vtop), `BOOST_ACCEL` | | 20 m/s, 10 m/s² |
 | Boost füllt zu langsam | `DRIFT_FILL` (Boost) | höher | 0,35 |
 | Pendeln bei sehr hohem Tempo | `yawDampHigh` (Assists) | höher, z. B. 1–2 | 0 |
-| Auto hebt über Kuppen ab | `STICK` (Global) | höher | 8 |
-| Sprung zu hoch / zu niedrig | `jumpSpeed ·K` (Sprung) | | 11 m/s |
+| Auto hebt über Kuppen zu leicht / zu schwer ab | `GRAVITY` (Global; Rampen fliegen mit weniger weiter, phase-1a-design.md 26.2) | höher / niedriger | 20 m/s² |
+| Federung zu weich / zu hart | `SUSP_FREQ`, `SUSP_DAMPING` | | 2 Hz, 0,8 |
 | Rempeln gegen Mitspieler zu stark / zu schwach | `PROXY_CONTACT_SCALE` (Kollision) | | 0,7 |
 | Autos prallen zu stark voneinander ab | `CAR_RESTITUTION` (Kollision) | niedriger | 0,25 |
 

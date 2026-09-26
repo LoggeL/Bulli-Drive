@@ -41,7 +41,7 @@ Der Radstand für die Lenkschätzung fremder Autos kommt jetzt aus dem Modell (M
 
 **Spielerfarbe als Lack.** Der Server vergibt beliebige RGB-Farben. `carPaintColor` behält den Farbton, zieht aber Sättigung (höchstens 0,58) und Helligkeit (0,2–0,62) in den Bereich echter Autolacke. So gibt es keinen Neon-Bulli in der ruhigen Welt. `paint_secondary` bleibt das Creme der Vorlage (#D6CBB2). Minikarte und Namensschild behalten die Originalfarbe.
 
-**Räder.** Die Pivots `wheel_fl/fr/rl/rr` drehen um die Achse (Winkel = gerollte Strecke / Radius) und lenken vorn um die Hochachse (`steerAngle` der Sim, + = links). Die Rotation wird mit der Grundrotation des Pivots verknüpft. LOD2 hat die Räder in den Körper gebacken, dort drehen sie nicht. Federung und Nicken bleiben wie gehabt auf `group` und `flipGroup` (`LocalVehicle`: Nicken beim Beschleunigen und Bremsen, Wanken in Kurven, Stauchen beim Landen).
+**Räder.** Die Pivots `wheel_fl/fr/rl/rr` drehen um die Achse (Winkel = gerollte Strecke / Radius) und lenken vorn um die Hochachse (`steerAngle` der Sim, + = links). Die Rotation wird mit der Grundrotation des Pivots verknüpft. LOD2 hat die Räder in den Körper gebacken, dort drehen sie nicht. Federung und Nicken bleiben wie gehabt auf `group` und `bodyGroup` (`LocalVehicle`: Nicken beim Beschleunigen und Bremsen, Wanken in Kurven, Stauchen beim Landen).
 
 **Fahrzustand.** Das eigene Auto (`LocalVehicle`) und die Sandbox-Dummies melden pro Frame Geschwindigkeit, Lenkwinkel und Bremse (`setDriveState`). Fremde Autos haben nur die 20-Hz-Positionen. Aus ihnen schätzt `CarModel` Geschwindigkeit und Gierrate (geglättet über die Update-Abstände), daraus den Lenkwinkel (Einspurmodell mit Radstand) und das Bremsen (Verzögerung über 3,5 m/s²).
 

@@ -109,7 +109,6 @@ export class InputManager {
     private stickY = 0;
     private stickActive = false;
     private readonly touchLatch = new ButtonLatch();
-    private flipHeld = false;
     // Auto-gas starts with the first touch of the stick after a (re)spawn,
     // so the car does not drive off on its own while the player looks around
     autoGasEnabled = true;
@@ -171,20 +170,6 @@ export class InputManager {
         else this.touchLatch.release(bits);
     }
 
-    // The recover button (btn-flip): holding it for RESET_HOLD_TICKS resets
-    // the car (there is no jump any more, docs/phase-1a-design.md 26)
-    flipDown(): void {
-        if (this.flipHeld) return;
-        this.flipHeld = true;
-        this.touchLatch.press(BTN_RESET);
-    }
-
-    flipUp(): void {
-        if (!this.flipHeld) return;
-        this.flipHeld = false;
-        this.touchLatch.release(BTN_RESET);
-    }
-
     get autoGasActive(): boolean {
         return this.touchUi && this.autoGasEnabled && (this.raceTouchOn ? this.raceGasArmed : this.autoGasArmed);
     }
@@ -218,7 +203,6 @@ export class InputManager {
     releaseTouch(): void {
         this.stickX = this.stickY = 0;
         this.stickActive = false;
-        this.flipHeld = false;
         this.touchLatch.clear();
         this.autoGasArmed = false;
         this.brakeHeld = false;

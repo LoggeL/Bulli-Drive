@@ -47,6 +47,8 @@ interface LodInstance {
     root: THREE.Object3D;
     pivots: THREE.Object3D[];
     baseRotations: THREE.Quaternion[];
+    // Rest height of each pivot in the model (suspension travel moves them)
+    baseHeights: number[];
     surfboard: THREE.Object3D | null;
 }
 
@@ -75,6 +77,7 @@ export class GltfCarBody {
     private readonly lodDistances: readonly number[];
     private spin = 0;
     private steer = 0;
+    private drop = 0;
 
     /** True when at least one LOD of the model is loaded. */
     static available(id: string): boolean {
@@ -123,6 +126,7 @@ export class GltfCarBody {
                 root,
                 pivots,
                 baseRotations: pivots.map(pivot => pivot.quaternion.clone()),
+                baseHeights: pivots.map(pivot => pivot.position.y),
                 surfboard: root.getObjectByName('accessory_surfboard') ?? null
             });
             nametag = Math.max(nametag, root.getObjectByName('socket_nametag')?.position.y ?? 0);
@@ -175,14 +179,22 @@ export class GltfCarBody {
         this.steer = steerAngle;
     }
 
-    /** Writes spin and steering onto the pivots of the shown LOD. */
+    /** How far the wheels hang below their rest spot on the body (m, + = down; the suspension). */
+    setWheelDrop(drop: number): void {
+        this.drop = drop;
+    }
+
+    /** Writes spin, steering and the suspension travel onto the pivots of the shown LOD. */
     applyWheels(): void {
         const instance = this.active;
         if (!instance) return;
+        const drop = this.drop / this.scale;
         for (let i = 0; i < instance.pivots.length; i++) {
             _euler.set(this.spin, i < 2 ? this.steer : 0, 0, 'YXZ');
             _spin.setFromEuler(_euler);
-            instance.pivots[i].quaternion.copy(instance.baseRotations[i]).multiply(_spin);
+            const pivot = instance.pivots[i];
+            pivot.quaternion.copy(instance.baseRotations[i]).multiply(_spin);
+            pivot.position.y = instance.baseHeights[i] - drop;
         }
     }
 

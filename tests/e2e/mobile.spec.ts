@@ -6,17 +6,26 @@ import {
 // Runs in the "mobile" project: iPhone 13 with touch. The critical path on
 // a phone: the splash screen with the touch controls and thumb-sized mode
 // options, Free Roam from the splash, real touch events on the stick and
-// the buttons (docs/phase-1a-design.md, 11.2), the room chip back to the
-// Party, a short drop that resumes the same player, and a lost connection
-// that comes back as a new player after the grace time, with a reconnect
-// banner that leaves the HUD free. The HUD layout in eight viewports is a
-// measurement in the render job (tests/e2e-render/touch-hud.spec.ts). The
-// touch rules (brake threshold, auto-gas, flip held = reset) are tested on
-// InputManager in tests/client/input.test.ts, the DOM wiring on the real
-// markup (DRIFT and BOOST bits, a second finger, the stick's Y axis, the
-// flip button's tap and hold) in tests/client/mobileControls.test.ts.
+// the buttons (docs/phase-1a-design.md, 11.2), a bump taken at speed (the
+// car leaves the ground and lands, 26), the RESET button held, the room
+// chip back to the Party, a short drop that resumes the same player, and a
+// lost connection that comes back as a new player after the grace time,
+// with a reconnect banner that leaves the HUD free. The HUD layout in eight
+// viewports is a measurement in the render job
+// (tests/e2e-render/touch-hud.spec.ts). The touch rules (brake threshold,
+// auto-gas) are tested on InputManager in tests/client/input.test.ts, the
+// DOM wiring on the real markup (DRIFT, BOOST and RESET bits, a second
+// finger, the stick's Y axis) in tests/client/mobileControls.test.ts, the
+// flight itself in the sim (tests/shared/sim/ground.test.ts).
 
 type Box = { x: number; y: number; width: number; height: number };
+
+// The edge of a raised stretch of road on Bulli Bay, east-bound: the road
+// climbs 0.8 m within 4 m at x -564. Measured in the sim (all five classes,
+// full throttle from 30 m west): 55-59 ticks in the air, 2.4-2.8 m over the
+// ground at 38 m/s, landing at 10 m/s on the road beyond, clear for a
+// second after it (docs/phase-1a-design.md 26.8)
+const BUMP = { x: -596, z: 300, yaw: Math.PI / 2, speed: 38 };
 
 const overlaps = (a: Box, b: Box) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 const round = (box: Box) => `[${Math.round(box.x)}..${Math.round(box.x + box.width)}]x[${Math.round(box.y)}..${Math.round(box.y + box.height)}]`;
@@ -38,7 +47,7 @@ async function waitTicks(page: Page, ticks: number): Promise<void> {
 
 // Touch HUD elements the reconnect banner must not cover
 const HUD = [
-    '#btn-drift', '#btn-boost', '#btn-autogas', '#btn-flip', '#btn-shoot', '#btn-honk',
+    '#btn-drift', '#btn-boost', '#btn-autogas', '#btn-reset', '#btn-shoot', '#btn-honk',
     '#joystick-move', '#drive-meter', '#map-panel', '#score-container', '#player-list'
 ];
 // The phones the reconnect banner is checked on, portrait and landscape
@@ -68,7 +77,7 @@ test('touch on a phone: splash, Free Roam, stick and buttons, room chip and a lo
     // ---- Free Roam from the splash screen: no shooting, no score ----
     await joinFromSplash(player, 'E2E Phone', 'freeroam');
     expect((await v2(page)).profile).toBe('touch');
-    for (const selector of ['#joystick-move', '#btn-flip', '#btn-honk', '#btn-drift', '#btn-boost', '#btn-autogas', '#drive-meter', '#room-chip']) {
+    for (const selector of ['#joystick-move', '#btn-reset', '#btn-honk', '#btn-drift', '#btn-boost', '#btn-autogas', '#drive-meter', '#room-chip']) {
         await expect(page.locator(selector), selector).toBeVisible();
     }
     await expect(page.locator('#btn-shoot')).toBeHidden();
@@ -100,16 +109,41 @@ test('touch on a phone: splash, Free Roam, stick and buttons, room chip and a lo
     await expect.poll(async () => (await v2(page)).yaw).toBeGreaterThan(beforeTurn.yaw + 0.05);
     await touch(cdp, 'touchEnd', []);
 
+    // ---- A bump at speed: off the ground, and down again cleanly ----
+    // The server puts the car 30 m before the edge at 38 m/s; auto-gas
+    // keeps the throttle open, the stick is free (straight on)
+    const flightsBefore = (await v2(page)).flights.count;
+    const resetsAtBump = (await v2(page)).resets;
+    await page.evaluate(({ x, z, yaw, speed }) => (window as unknown as {
+        __bulliDebug: { placeLocalCar(x: number, z: number, angle: number, speed: number): void };
+    }).__bulliDebug.placeLocalCar(x, z, yaw, speed), BUMP);
+    // In the air on screen: the drawn body over the ground (every frame)
+    await page.waitForFunction(() => ((window as unknown as {
+        __bulliDebug: { snapshot(): { v2: { body: { airHeight: number } } | null } };
+    }).__bulliDebug.snapshot().v2?.body.airHeight ?? 0) > 1, undefined, { polling: 'raf', timeout: 20_000 });
+    await expect.poll(async () => (await v2(page)).flights.count).toBeGreaterThan(flightsBefore);
+    const landed = await v2(page);
+    // Half the measured flight at least, over a metre high, a soft landing
+    expect(landed.flights.last.ticks).toBeGreaterThanOrEqual(30);
+    expect(landed.flights.last.height).toBeGreaterThan(1);
+    expect(landed.flights.last.landing).toBeLessThan(15);
+    expect(landed.grounded).toBe(true);
+    expect(landed.resets).toBe(resetsAtBump);
+    // Still rolling on: no crash on the way down
+    expect(landed.u).toBeGreaterThan(25);
+
     // The auto-gas button switches it off
     await page.locator('#btn-autogas').tap();
     await expect(page.locator('#btn-autogas')).toHaveAttribute('aria-pressed', 'false');
     await expect.poll(async () => (await v2(page)).input.throttle).toBe(0);
 
-    // Holding the flip button resets the car (a tap no longer jumps,
-    // docs/phase-1a-design.md 26)
+    // No jump any more (docs/phase-1a-design.md 26): holding the RESET
+    // button puts the car back onto the road
+    await expect(page.getByRole('button', { name: /jump|flip/i })).toHaveCount(0);
+    await expect(page.locator('#btn-reset')).toHaveAttribute('aria-label', 'Hold to reset onto the road');
     const resetsBefore = (await v2(page)).resets;
-    const flip = await center(page, '#btn-flip');
-    await touch(cdp, 'touchStart', [{ ...flip, id: 2 }]);
+    const reset = await center(page, '#btn-reset');
+    await touch(cdp, 'touchStart', [{ ...reset, id: 2 }]);
     await expect.poll(async () => (await v2(page)).resets).toBe(resetsBefore + 1);
     await touch(cdp, 'touchEnd', []);
     await expect.poll(async () => (await v2(page)).grounded).toBe(true);

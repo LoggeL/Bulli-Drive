@@ -10,7 +10,7 @@ with other drivers.
 - **Multiplayer:** The server simulates every car at 60 Hz; each client predicts its own car, so driving and bumping into each other feel immediate. Rooms of up to 32 players in three modes: **Party** (combat, coins and powerups in Cannery Lot and the harbour yards round it), **Free Roam** (the whole map) and **Race**.
 - **Racing:** Race rooms with a lobby, a countdown with start lights and a launch boost, six tracks on Bulli Bay (Downtown Loop, Coast Sprint, Ridge Climb, Harbor Circuit, Dune Rally, Grand Tour), real bumping with ghost rules against griefing, slipstream, server bots that fill the grid to six, results and a rematch vote. The time trial races your best run (or the track record) as a ghost car.
 - **Combat:** Shoot projectiles at other players, score kills, climb the scoreboard.
-- **Powerups & coins:** Turbo, Mega, Super Jump, Shield, Magnet and Ghost powerups plus collectible coins, shared across all players.
+- **Powerups & coins:** Turbo, Mega, Shield, Magnet and Ghost powerups plus collectible coins, shared across all players.
 - **3D Graphics:** Built with Three.js.
 - **Bulli Bay:** A curated 2 × 2 km map with 19 km of roads: beach, pier and promenade in the west, a downtown grid with Main Street and a fountain plaza, Seaview Heights on the slope, the harbour with its cranes and the Party zone, a ridge road up to a lookout, ranch land, dunes, cliffs. Roads from hand-made splines on a baked heightfield, buildings and landmarks from a Blender kit, palms, trees and street furniture, off-road surfaces with their own grip, guard rails, the sea (drive in and the car is put back on the road), and a north-up radar. The same map data drives the server's sim, the client and the [worldviewer](#worldviewer-map-viewer-and-spline-editor).
 - **Phones:** The same game on touch screens, with its own quality tier (draw call and triangle budget checked in CI).
@@ -126,7 +126,7 @@ Apart from these, the flags change nothing about the game.
 Open `http://localhost:5173/?sandbox=1&tune=1` with `npm run dev` (or
 `http://localhost:8000/?sandbox=1&tune=1` after `npm run build && npm start`;
 `npx vite` alone is enough, the sandbox never connects to the server). The
-pad is 400 × 400 m and has three kickers (10°, 15°, 20°), a jump with a
+pad is 400 × 400 m and has three kickers (10°, 15°, 20°), a ramp with a
 landing hill, a long wall to slide along, a post row, a cone slalom, two
 painted curves (R 40 and R 80 m), a 90° city corner with 12 m roads and five
 dummy cars, one of each body: three parked next to the start, two lapping
@@ -135,7 +135,7 @@ the curves. They are full sim cars, so ramming them pushes them away.
 | Key | Sandbox |
 |---|---|
 | W/S, A/D (or arrows) | Throttle, brake/reverse, steer |
-| Space / Shift / Q | Handbrake (drift) / boost / jump |
+| Space / Shift | Handbrake (drift) / boost |
 | R (hold) | Reset the car where it is |
 | N | Put the dummies and cones back |
 | C | Switch the car body |
@@ -148,7 +148,7 @@ of one car class (`·K`, pick the class in "Werte der Klasse") and of the
 assist profile (`·P`). "Export → Zwischenablage" copies the changed values
 as JSON, "Import ← Zwischenablage" loads such a JSON back and "Reset auf
 Defaults" undoes everything. In the sandbox the panel also toggles the
-powerup effects (Turbo, Mega, Super-Jump, Ghost, Shield) and switches the
+powerup effects (Turbo, Mega, Ghost, Shield) and switches the
 body. Changes live in the page only; to keep them, paste the exported JSON
 into the defaults (`SIM_TUNING` in `src/shared/sim/constants.ts`, the classes
 in `src/shared/sim/vehicleClasses.ts`).
@@ -295,16 +295,19 @@ game, LODs, lamps, scale against the sim hull) in [docs/cars.md](docs/cars.md).
 - **WASD or arrows:** Drive, brake/reverse and steer
 - **SPACE:** Handbrake / drift (drifting fills the boost meter)
 - **SHIFT:** Boost
-- **Q:** Jump / flip
 - **R (hold):** Reset the car onto the nearest road
 - **E:** Shoot projectile
 - **F:** Honk
 
 On touch screens auto-gas drives once you touch the stick, which steers and
 brakes when pulled back; hold **DRIFT** for the handbrake and **BOOST** to
-boost, **AUTO** switches auto-gas on and off, and the jump button jumps on a
-tap and resets when held. Gamepads (standard mapping) work too: RT/LT gas and
-brake, A drift, B boost, Y jump, Back reset, X shoot, LB honk.
+boost, **AUTO** switches auto-gas on and off, and holding **RESET** puts the
+car back onto the road. Gamepads (standard mapping) work too: RT/LT gas and
+brake, A drift, B boost, Back reset, X shoot, LB honk.
+
+There is no jump button: the car rides on a suspension and leaves the ground
+by itself over crests, bumps and ramps taken fast enough, and lands on its
+springs ([docs/phase-1a-design.md](docs/phase-1a-design.md), section 26).
 
 The camera automatically swings into a chase view behind the car.
 
@@ -312,8 +315,7 @@ The camera automatically swings into a chase view behind the car.
 chip), choose the track, the bots and your car in the lobby and press READY.
 Press the gas in the last third of a second before green (the green end of
 the bar under the lights) and hold it: a perfect start. Pressed earlier and
-held, the wheels spin for half a second. There is no jump in a race;
-R (or holding the reset button) puts the car back on the racing line. On
+held, the wheels spin for half a second. R (or holding the reset button) puts the car back on the racing line. On
 touch screens the stick only steers in a race, **BRAKE** brakes, and
 auto-gas starts with a tap on **TAP ON GREEN** (a tap in the window is a
 perfect start) or by itself right after green.

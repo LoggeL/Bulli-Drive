@@ -223,13 +223,13 @@ class RaceClient {
     }
 
     /** The car a spectator follows (the leader first, a tap for the next), or null. */
-    spectateTarget(): { position: THREE.Vector3; yaw: number } | null {
+    spectateTarget(): { position: THREE.Vector3; yaw: number; airHeight: number } | null {
         if (!this.spectating) return null;
         const ids = (this.model.order.length ? this.model.order.map(e => e.id) : this.model.state!.racers.map(r => r.id))
-            .filter(id => state.remotePlayers[id]?.flipGroup.visible);
+            .filter(id => state.remotePlayers[id]?.bodyGroup.visible);
         if (!ids.length) return null;
-        const remote = state.remotePlayers[ids[this.spectateIndex % ids.length]] as unknown as { group: THREE.Group; angle: number };
-        return { position: remote.group.position, yaw: remote.angle };
+        const remote = state.remotePlayers[ids[this.spectateIndex % ids.length]] as unknown as { group: THREE.Group; angle: number; airHeight: number };
+        return { position: remote.group.position, yaw: remote.angle, airHeight: remote.airHeight };
     }
 
     /** The render tick of the own car: C - 1 + alpha (the pose on screen). */
@@ -249,8 +249,8 @@ class RaceClient {
         let arrow: ArrowView | null = null;
         const car = state.bulli;
         // A spectator's own car is not in the race (it waits for the next lobby)
-        if (hud?.spectating && car && !netDriver.prediction?.spawned) car.flipGroup.visible = false;
-        if (hud && !hud.spectating && car?.flipGroup.visible && state.camera) {
+        if (hud?.spectating && car && !netDriver.prediction?.spawned) car.bodyGroup.visible = false;
+        if (hud && !hud.spectating && car?.bodyGroup.visible && state.camera) {
             const next = model.nextGate(car.group.position.x, car.group.position.z);
             minimapRace.nextGate = next?.gate ?? -1;
             if (next && !hud.countdown) {

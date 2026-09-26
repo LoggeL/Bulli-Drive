@@ -16,7 +16,6 @@ function createHost(): VehicleHost {
     const off = () => ({ active: false, timer: 0 });
     return {
         group: new THREE.Group(),
-        flipGroup: new THREE.Group(),
         carType: 'bulli',
         powerups: { speed: off(), size: off(), shield: off(), magnet: off(), ghost: off() },
         speed: 0,

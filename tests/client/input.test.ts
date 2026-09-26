@@ -5,7 +5,7 @@ import {
 import {
     PAD_BUTTON, createPadState, findStandardPad, padSteer, radialDeadzoneScale, readPad, type PadLike
 } from '../../src/client/input/gamepad.js';
-import { BTN_BOOST, BTN_HANDBRAKE, BTN_RESET, SIM_TUNING } from '../../src/shared/sim/constants.js';
+import { BTN_BOOST, BTN_HANDBRAKE, BTN_RESET } from '../../src/shared/sim/constants.js';
 import { createVehicleInput } from '../../src/shared/sim/types.js';
 
 function pad(overrides: { axes?: number[]; buttons?: Record<number, number> } = {}): PadLike {
@@ -77,23 +77,6 @@ describe('touch', () => {
         input.autoGasEnabled = true;
         input.releaseTouch();
         expect(input.sampleTick(out).throttle).toBe(0);
-    });
-
-    it('holds reset while the recover button is down, and nothing else (no jump on a tap)', () => {
-        const input = new InputManager();
-        input.touchUi = true;
-        const out = createVehicleInput();
-        input.flipDown();
-        expect(input.sampleTick(out).buttons).toBe(BTN_RESET);
-        input.flipUp();
-        expect(input.sampleTick(out).buttons).toBe(0);
-
-        input.flipDown();
-        for (let tick = 0; tick < SIM_TUNING.RESET_HOLD_TICKS; tick++) {
-            expect(input.sampleTick(out).buttons).toBe(BTN_RESET);
-        }
-        input.flipUp();
-        expect(input.sampleTick(out).buttons).toBe(0);
     });
 });
 

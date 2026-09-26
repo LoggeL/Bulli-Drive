@@ -1,7 +1,6 @@
 // Gamepad with the W3C standard mapping (docs/phase-1a-design.md, 11.2):
 // RT gas, LT brake/reverse (analog), left stick steers; A handbrake, B boost,
-// X shoot, LB honk, View/Back held resets (Y was the jump, gone since
-// docs/phase-1a-design.md 26). The mapping itself is
+// X shoot, LB honk, View/Back held resets; Y is free. The mapping itself is
 // pure so it can be tested without a browser.
 
 export const PAD_STICK_DEADZONE = 0.12;

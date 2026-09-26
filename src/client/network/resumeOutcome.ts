@@ -31,7 +31,7 @@ export function resumeOutcome(
 
 /** The page state applyResumeOutcome changes (the client's `state`). */
 export interface ResumePage {
-    bulli: { flipGroup: { visible: boolean }; health: number } | null;
+    bulli: { bodyGroup: { visible: boolean }; health: number } | null;
     health: number;
     dead: boolean;
 }
@@ -43,7 +43,7 @@ export function applyResumeOutcome(outcome: ResumeOutcome, page: ResumePage, sen
         // connection was gone, the respawn event is lost: undo the death
         // on screen here
         if (page.bulli) {
-            page.bulli.flipGroup.visible = true;
+            page.bulli.bodyGroup.visible = true;
             page.bulli.health = page.health;
         }
         hideRespawnOverlay();
@@ -51,7 +51,7 @@ export function applyResumeOutcome(outcome: ResumeOutcome, page: ResumePage, sen
         // Dead in the Party (maybe killed while the connection was gone):
         // the respawn event brings the car back
         page.dead = true;
-        if (page.bulli) page.bulli.flipGroup.visible = false;
+        if (page.bulli) page.bulli.bodyGroup.visible = false;
         showRespawnOverlay();
     } else if (outcome === 'sendReady') {
         // Past the splash screen but not driving in this room (a new session

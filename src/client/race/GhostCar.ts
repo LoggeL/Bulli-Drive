@@ -42,7 +42,7 @@ export class GhostCar {
         const ground = groundHeight(pose.x, pose.z);
         group.position.set(pose.x, ground, pose.z);
         group.rotation.y = pose.yaw;
-        this.model.flipGroup.position.y = Math.max(0, pose.y - ground);
+        this.model.bodyGroup.position.y = Math.max(0, pose.y - ground);
         const speed = this.placed && dt > 0 ? Math.hypot(pose.x - this.lastX, pose.z - this.lastZ) / dt : 0;
         this.model.setDriveState(Math.min(speed, 80), 0, false);
         this.placed = true;

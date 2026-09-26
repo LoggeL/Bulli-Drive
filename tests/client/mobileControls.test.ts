@@ -11,8 +11,8 @@ import { createVehicleInput } from '../../src/shared/sim/types.js';
 // The touch HUD's DOM layer (src/client/controls/mobile.ts,
 // docs/phase-1a-design.md 11.2) on the real markup of index.html: pointer
 // events on the stick and the buttons end up as the input of the next sim
-// tick. The rules behind it (brake threshold, auto-gas, the flip button's
-// hold time) are tested on InputManager in input.test.ts; this checks the
+// tick. The rules behind it (brake threshold, auto-gas, the reset hold
+// time in the sim) are tested on InputManager and the sim; this checks the
 // wiring - which button sets which bit, which way the stick's axes point.
 // Bits as the protocol defines them (docs/phase-1a-design.md, 11.1):
 // handbrake 1, boost 2, reset 8 (4 was the jump, section 26).
@@ -119,18 +119,18 @@ describe('touch buttons', () => {
         expect(tick().buttons).toBe(0);
     });
 
-    it('the flip button holds reset while pressed; a tap sends nothing else (no jump)', () => {
-        const flip = byId('btn-flip');
-        pointer('pointerdown', flip, 4);
+    it('the RESET button holds the reset bit while pressed and nothing else', () => {
+        const reset = byId('btn-reset');
+        pointer('pointerdown', reset, 4);
         expect(tick().buttons).toBe(RESET);
-        pointer('pointerup', flip, 4);
+        pointer('pointerup', reset, 4);
         expect(tick().buttons).toBe(0);
 
         // Held for half a second (30 ticks, RESET_HOLD_TICKS): reset all
         // along, and nothing when the finger lifts
-        pointer('pointerdown', flip, 4);
+        pointer('pointerdown', reset, 4);
         for (let i = 0; i < 30; i++) expect(tick().buttons).toBe(RESET);
-        pointer('pointerup', flip, 4);
+        pointer('pointerup', reset, 4);
         expect(tick().buttons).toBe(0);
     });
 });

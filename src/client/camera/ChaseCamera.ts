@@ -31,6 +31,13 @@ export interface ChaseProfile {
     portraitMaxHeight: number;
     yawDamping: number;
     positionDamping: number;
+    // Vertical follow (docs/phase-1a-design.md, 26.8): the height the rig
+    // follows moves with a filtered vertical speed (verticalSpeedDamping,
+    // 1/s) and closes the remaining gap at verticalDamping (1/s). No lag on
+    // a steady climb, while take-off and landing (the vertical speed jumps)
+    // ease in and out instead of jolting the picture.
+    verticalSpeedDamping: number;
+    verticalDamping: number;
     lookDamping: number;
     fovDamping: number;
 }
@@ -63,6 +70,8 @@ export const RACE_CAMERA: ChaseProfile = {
     // Tight enough not to trail far behind at 50 m/s
     yawDamping: 7,
     positionDamping: 12,
+    verticalSpeedDamping: 10,
+    verticalDamping: 5,
     lookDamping: 12,
     fovDamping: 5
 };
@@ -99,6 +108,9 @@ export class ChaseCamera {
     private readonly lastCarPosition = new THREE.Vector3();
     private cameraYaw = 0;
     private rigReady = false;
+    // The height the rig follows and its vertical speed
+    private followY = 0;
+    private followVy = 0;
 
     constructor(profile: ChaseProfile) {
         this.profile = profile;
@@ -130,9 +142,18 @@ export class ChaseCamera {
 
         if (shouldSnap) {
             this.cameraYaw = target.yaw;
+            this.followY = carPos.y;
+            this.followVy = 0;
         } else {
             this.cameraYaw = dampAngle(this.cameraYaw, target.yaw, dampingFactor(p.yawDamping, dt));
+            if (dt > 0) {
+                const vy = (carPos.y - this.lastCarPosition.y) / dt;
+                this.followVy += (vy - this.followVy) * dampingFactor(p.verticalSpeedDamping, dt);
+                this.followY += this.followVy * Math.min(dt, 0.1);
+                this.followY += (carPos.y - this.followY) * dampingFactor(p.verticalDamping, dt);
+            }
         }
+        const followY = this.followY;
 
         const portraitScale = camera.aspect < 1 ? p.portraitScale : 1;
         const distanceScale = (this.mobile ? p.mobileDistanceScale : 1) * portraitScale;
@@ -148,12 +169,12 @@ export class ChaseCamera {
 
         this.cameraTarget.set(
             carPos.x - forwardX * distance,
-            carPos.y + height,
+            followY + height,
             carPos.z - forwardZ * distance
         );
         this.desiredLookAt.set(
             carPos.x + forwardX * lookAhead,
-            carPos.y + p.lookAtY,
+            followY + p.lookAtY,
             carPos.z + forwardZ * lookAhead
         );
 

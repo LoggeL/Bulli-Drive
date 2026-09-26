@@ -122,7 +122,7 @@ export function startEngineSound() {
     engineSource.start();
 }
 
-export function updateEngineSound(speed: number, isAccelerating: boolean, turboActive: boolean = false, jumpHeight: number = 0) {
+export function updateEngineSound(speed: number, isAccelerating: boolean, turboActive: boolean = false, airHeight: number = 0) {
     if (!engineSource || !engineGain || !state.audioCtx) return;
     
     const absSpeed = Math.abs(speed);
@@ -140,14 +140,14 @@ export function updateEngineSound(speed: number, isAccelerating: boolean, turboA
     
     // Playback rate based on speed (0.8 idle to 1.5 at max speed)
     // Turbo boost adds extra pitch
-    // Jump height adds pitch (revving in air)
+    // In the air the wheels spin free: the engine revs up with the height
     const baseRate = 0.8;
     const speedBoost = absSpeed * 0.7;
     const accelBoost = isAccelerating ? 0.1 : 0;
     const turboBoost = turboActive ? 0.4 : 0;
-    const jumpBoost = Math.max(0, Math.min(0.8, jumpHeight * 0.05)); // Cap pitch increase from height
+    const airBoost = Math.max(0, Math.min(0.8, airHeight * 0.05)); // Cap pitch increase from height
 
-    const targetRate = Math.min(2.5, baseRate + speedBoost + accelBoost + turboBoost + jumpBoost);
+    const targetRate = Math.min(2.5, baseRate + speedBoost + accelBoost + turboBoost + airBoost);
     
     engineSource.playbackRate.cancelScheduledValues(currentTime);
     engineSource.playbackRate.setValueAtTime(engineSource.playbackRate.value, currentTime);

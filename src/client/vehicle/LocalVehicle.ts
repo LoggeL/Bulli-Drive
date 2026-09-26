@@ -9,6 +9,7 @@ import { gameHooks } from '../game/hooks.js';
 import { FixedStepLoop } from '../game/loop.js';
 import { inputManager } from '../input/InputManager.js';
 import { state } from '../state.js';
+import { BodyMotion, type BodyMotionInput } from './bodyMotion.js';
 import type { NetDriver } from '../net/netDriver.js';
 
 // The local car on the v2 physics (docs/phase-1a-design.md, 12.2/12.3): the
@@ -18,25 +19,16 @@ import type { NetDriver } from '../net/netDriver.js';
 // docs/phase-1b-design.md 8); offline and in the sandbox it steps itself.
 
 const POWERUP_KEYS = ['speed', 'size', 'shield', 'magnet', 'ghost'] as const;
-// Visual spring from the accelerations (renderer only, never in the sim)
-const PITCH_PER_ACCEL = 0.0035;      // rad per m/s²
-const ROLL_PER_ACCEL = 0.0045;
-const MAX_PITCH = 4 * Math.PI / 180;
-const MAX_ROLL = 5 * Math.PI / 180;
-const SPRING_RATE = 10;
-const SQUASH_RATE = 8;
-// Terrain tilt: ±2 m samples, eased
-const SLOPE_STEP = 2.0;
-const TILT_RATE = 6;
 // Reset hint (6.7): pushing into a wall at a standstill for a second
 const STUCK_TICKS = 60;
 
 // The model and adapter fields LocalVehicle drives (entities/Bulli.ts)
 export interface VehicleHost {
     group: THREE.Group;
-    flipGroup: THREE.Group;
     // Wheels, brake lights and blinkers of the model (CarModel.setDriveState)
     setDriveState?(speed: number, steerAngle: number, braking: boolean): void;
+    // Ground tilt, body height, pitch, roll and wheels (CarModel.setBodyPose)
+    setBodyPose?(motion: BodyMotion, scale: number): void;
     carType: string;
     powerups: Record<(typeof POWERUP_KEYS)[number], { active: boolean; timer: number }>;
     speed: number;
@@ -54,14 +46,6 @@ export interface FrameEvents {
     landedImpact: number;
     boostStarted: boolean;
     reset: boolean;
-}
-
-function clamp(value: number, min: number, max: number): number {
-    return value < min ? min : value > max ? max : value;
-}
-
-function damp(rate: number, dt: number): number {
-    return 1 - Math.exp(-rate * Math.min(dt, 0.1));
 }
 
 export function assistProfileForDevice(): AssistProfile {
@@ -88,17 +72,23 @@ export class LocalVehicle {
     ticks = 0;
     private lastResetTick = -Infinity;
     resets = 0;
+    // Flights off the ground: how many ended, and the last one's ticks in
+    // the air, highest point over the ground (m) and landing impact (m/s)
+    flights = 0;
+    lastFlight = { ticks: 0, height: 0, landing: 0 };
+    private flightTicks = 0;
+    private flightHeight = 0;
     private stuckTicks = 0;
     resetHint = false;
     // The hint came on during this frame
     hintChanged = false;
     // Interpolated pose of the last frame
     readonly pose = { x: 0, y: 0, z: 0, yaw: 0, ground: 0, scale: 1 };
-    private pitchSpring = 0;
-    private rollSpring = 0;
-    private squash = 0;
-    private tiltPitch = 0;
-    private tiltRoll = 0;
+    // Body height, pitch, roll and wheels on screen (renderer only)
+    readonly body = new BodyMotion();
+    private readonly bodyInput: BodyMotionInput = {
+        x: 0, z: 0, yaw: 0, airHeight: 0, grounded: true, susp: 0, vy: 0, speed: 0, horizontalSpeed: 0, loadX: 0, yawRate: 0
+    };
 
     readonly classId: CarClassId;
     // Assist profile; the tuning panel may switch it (then refreshCarParams)
@@ -134,6 +124,11 @@ export class LocalVehicle {
         return s.vx * Math.sin(s.yaw) + s.vz * Math.cos(s.yaw);
     }
 
+    /** Height of the wheels over the ground on screen (m), 0 on the ground. */
+    get airHeight(): number {
+        return this.body.airHeight;
+    }
+
     get slipAngle(): number {
         const s = this.car.state;
         const fx = Math.sin(s.yaw), fz = Math.cos(s.yaw);
@@ -145,6 +140,7 @@ export class LocalVehicle {
     place(x: number, z: number, yaw: number): void {
         placeVehicle(this.car.state, this.world, x, z, yaw);
         this.syncPrev();
+        this.body.reset();
     }
 
     private syncPrev(): void {
@@ -277,11 +273,20 @@ export class LocalVehicle {
             this.lastResetTick = tick;
             ev.reset = true;
             this.resets++;
-            // No interpolation across the jump onto the road
+            // No interpolation across the move onto the road
             this.syncPrev();
+            this.body.reset();
         }
 
         const s = car.state;
+        if (!s.grounded) {
+            this.flightTicks++;
+            this.flightHeight = Math.max(this.flightHeight, s.y - this.world.groundHeight(s.x, s.z));
+        } else if (this.flightTicks > 0) {
+            this.flights++;
+            this.lastFlight = { ticks: this.flightTicks, height: this.flightHeight, landing: tickEvents.landedImpact };
+            this.flightTicks = this.flightHeight = 0;
+        }
         const hadHint = this.resetHint;
         const stuck = car.input.throttle > 127 && Math.abs(this.forwardSpeed) < 1 && s.wallTicks < 2;
         this.stuckTicks = stuck ? this.stuckTicks + 1 : 0;
@@ -314,39 +319,32 @@ export class LocalVehicle {
         const group = host.group;
         group.position.set(pose.x, pose.ground, pose.z);
         group.scale.setScalar(pose.scale);
-        host.flipGroup.position.y = Math.max(0, pose.y - pose.ground);
-
-        // Tilt: terrain slope plus a spring from the accelerations
-        const fwdX = Math.sin(pose.yaw), fwdZ = Math.cos(pose.yaw);
-        const ground = this.world.groundHeight;
-        const hFwd = ground(pose.x + fwdX * SLOPE_STEP, pose.z + fwdZ * SLOPE_STEP);
-        const hBack = ground(pose.x - fwdX * SLOPE_STEP, pose.z - fwdZ * SLOPE_STEP);
-        const hLeft = ground(pose.x + fwdZ * SLOPE_STEP, pose.z - fwdX * SLOPE_STEP);
-        const hRight = ground(pose.x - fwdZ * SLOPE_STEP, pose.z + fwdX * SLOPE_STEP);
-        const tilt = damp(TILT_RATE, dt);
-        this.tiltPitch += (Math.atan2(hBack - hFwd, SLOPE_STEP * 2) - this.tiltPitch) * tilt;
-        this.tiltRoll += (Math.atan2(hLeft - hRight, SLOPE_STEP * 2) - this.tiltRoll) * tilt;
-        const u = this.forwardSpeed;
-        const grounded = curr.grounded;
-        // Nose up when accelerating, down when braking; body leans out of turns
-        const pitchTarget = grounded ? clamp(-curr.loadX * PITCH_PER_ACCEL, -MAX_PITCH, MAX_PITCH) : 0;
-        const rollTarget = grounded ? clamp(u * curr.yawRate * ROLL_PER_ACCEL, -MAX_ROLL, MAX_ROLL) : 0;
-        const spring = damp(SPRING_RATE, dt);
-        this.pitchSpring += (pitchTarget - this.pitchSpring) * spring;
-        this.rollSpring += (rollTarget - this.rollSpring) * spring;
-        if (this.events.landedImpact > 3) this.squash = Math.max(this.squash, Math.min(0.15, this.events.landedImpact * 0.012));
-        this.squash -= this.squash * damp(SQUASH_RATE, dt);
-        host.flipGroup.scale.y = 1 - this.squash;
-
         group.rotation.order = 'YXZ';
         group.rotation.y = pose.yaw;
-        group.rotation.x = this.tiltPitch + this.pitchSpring;
-        group.rotation.z = this.tiltRoll + this.rollSpring;
+
+        // The body on its springs and in the air (vehicle/bodyMotion.ts)
+        const u = this.forwardSpeed;
+        const grounded = curr.grounded;
+        const input = this.bodyInput;
+        input.x = pose.x;
+        input.z = pose.z;
+        input.yaw = pose.yaw;
+        input.grounded = grounded;
+        // Over the terrain: in the air, or standing on a ramp or a low collider
+        input.airHeight = pose.y - pose.ground;
+        input.susp = prev.susp + (curr.susp - prev.susp) * a;
+        input.vy = prev.vy + (curr.vy - prev.vy) * a;
+        input.speed = u;
+        input.horizontalSpeed = Math.hypot(curr.vx, curr.vz);
+        input.loadX = curr.loadX;
+        input.yawRate = curr.yawRate;
+        this.body.update(dt, input, this.world.groundHeight);
+        host.setBodyPose?.(this.body, pose.scale);
 
         // Wheels roll with the road speed, the front pair steers; the brake
         // lights come on while braking forwards (or with the handbrake)
-        const input = this.car.input;
-        const braking = grounded && ((input.brake > 20 && u > 0.5) || ((input.buttons & BTN_HANDBRAKE) !== 0 && Math.abs(u) > 0.5));
+        const drive = this.car.input;
+        const braking = grounded && ((drive.brake > 20 && u > 0.5) || ((drive.buttons & BTN_HANDBRAKE) !== 0 && Math.abs(u) > 0.5));
         host.setDriveState?.(u, curr.steerAngle, braking);
 
         // Adapter: speeds in units per 1/60 s tick (section 12.3)

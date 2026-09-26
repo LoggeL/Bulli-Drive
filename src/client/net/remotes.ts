@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import {
-    CAR_GHOST, CAR_IDLE, CAR_MEGA, CAR_RACE_GHOST, CAR_RESPAWN_SHIELD, CAR_SHIELD, CAR_TURBO, type Snapshot
+    CAR_GHOST, CAR_GROUNDED, CAR_IDLE, CAR_MEGA, CAR_RACE_GHOST, CAR_RESPAWN_SHIELD, CAR_SHIELD, CAR_TURBO, type Snapshot
 } from '../../shared/net/codec.js';
 import { AdaptiveDelay, createRemotePose, RemoteTrack, type RemotePose } from '../../shared/net/interpolation.js';
 import type { PredictedRemote } from '../../shared/net/prediction.js';
 import type { Bulli } from '../entities/Bulli.js';
 import { state } from '../state.js';
+import { BodyMotion, type BodyMotionInput } from '../vehicle/bodyMotion.js';
 import { groundHeight } from '../world/ground.js';
 import { netDriver } from './netDriver.js';
 
@@ -31,6 +32,8 @@ interface RemoteView {
     lastSeenTick: number;
     // Forward speed of the last frame (m/s), for the brake lights
     lastSpeed: number;
+    // Body height, pitch, roll and wheels on screen
+    body: BodyMotion;
 }
 
 // Slowing down faster than this (m/s²) going forwards lights the brake lights
@@ -38,6 +41,9 @@ const BRAKE_LIGHT_DECEL = 6;
 
 const views = new Map<string, RemoteView>();
 const pose: RemotePose = createRemotePose();
+const bodyInput: BodyMotionInput = {
+    x: 0, z: 0, yaw: 0, airHeight: 0, grounded: true, susp: 0, vy: 0, speed: 0, horizontalSpeed: 0, loadX: 0, yawRate: 0
+};
 const delay = new AdaptiveDelay();
 
 function wrapAngle(angle: number): number {
@@ -47,7 +53,10 @@ function wrapAngle(angle: number): number {
 function viewOf(id: string): RemoteView {
     let view = views.get(id);
     if (!view) {
-        view = { track: new RemoteTrack(), blend: 0, flags: 0, idleShown: false, dead: false, lastSeenTick: -1, lastSpeed: 0 };
+        view = {
+            track: new RemoteTrack(), blend: 0, flags: 0, idleShown: false, dead: false, lastSeenTick: -1, lastSpeed: 0,
+            body: new BodyMotion()
+        };
         views.set(id, view);
     }
     return view;
@@ -65,9 +74,12 @@ export function clearRemoteViews(): void {
 export function setRemoteDead(id: string, dead: boolean): void {
     const view = viewOf(id);
     view.dead = dead;
-    if (!dead) view.track.clear();
+    if (!dead) {
+        view.track.clear();
+        view.body.reset();
+    }
     const remote = state.remotePlayers[id] as unknown as Bulli | undefined;
-    if (remote) remote.flipGroup.visible = !dead;
+    if (remote) remote.bodyGroup.visible = !dead;
 }
 
 /** Every car of a snapshot into its sample buffer. */
@@ -119,13 +131,13 @@ export function updateRemoteCars(dt: number, now: number, alpha: number): void {
         const remote = state.remotePlayers[id] as unknown as Bulli;
         const view = viewOf(id);
         if (view.dead) {
-            remote.flipGroup.visible = false;
+            remote.bodyGroup.visible = false;
             continue;
         }
         if (!view.track.newest || renderTick < 0) continue;
         const newestTick = view.track.newest.tick;
         const missing = netDriver.prediction ? netDriver.prediction.lastSnapshotTick - newestTick : 0;
-        remote.flipGroup.visible = missing < MISSING_HIDE_TICKS;
+        remote.bodyGroup.visible = missing < MISSING_HIDE_TICKS;
         view.track.decay(dt * 1000);
         if (!view.track.sample(renderTick, pose)) continue;
         if (pose.extrapolated) anyExtrapolated = true;
@@ -135,11 +147,15 @@ export function updateRemoteCars(dt: number, now: number, alpha: number): void {
         if (view.track.teleported) {
             view.track.teleported = false;
             view.blend = predicted ? 1 : 0;
+            view.body.reset();
         }
         let x = pose.x, y = pose.y, z = pose.z, yaw = pose.yaw;
         let steer = pose.car?.steerAngle ?? 0;
         let scale = pose.car?.scale ?? 1;
         let speed = pose.speed;
+        let susp = pose.susp, vy = pose.vy;
+        let grounded = ((pose.car?.flags ?? CAR_GROUNDED) & CAR_GROUNDED) !== 0;
+        let vx = pose.car?.vx ?? 0, vz = pose.car?.vz ?? 0;
         if (predicted && view.blend > 0) {
             // The predicted pose plus its own offset from the snapshots
             const a = predicted.prev, b = predicted.car.state, w = view.blend, o = predicted.offset;
@@ -154,12 +170,33 @@ export function updateRemoteCars(dt: number, now: number, alpha: number): void {
             steer = b.steerAngle;
             scale = b.scale;
             speed = b.vx * Math.sin(b.yaw) + b.vz * Math.cos(b.yaw);
+            const ps = a.susp + (b.susp - a.susp) * alpha, pvy = a.vy + (b.vy - a.vy) * alpha;
+            susp += (ps - susp) * w;
+            vy += (pvy - vy) * w;
+            if (w >= 0.5) {
+                grounded = b.grounded;
+                vx = b.vx;
+                vz = b.vz;
+            }
         }
         const ground = groundHeight(x, z);
+        const shownScale = Number.isFinite(scale) ? Math.max(0.5, Math.min(4, scale)) : 1;
         remote.group.position.set(x, ground, z);
+        remote.group.rotation.order = 'YXZ';
         remote.group.rotation.y = yaw;
-        remote.group.scale.setScalar(Number.isFinite(scale) ? Math.max(0.5, Math.min(4, scale)) : 1);
-        remote.flipGroup.position.y = Math.max(0, y - ground);
+        remote.group.scale.setScalar(shownScale);
+        // Ground tilt, body on its springs and in the air (vehicle/bodyMotion.ts)
+        bodyInput.x = x;
+        bodyInput.z = z;
+        bodyInput.yaw = yaw;
+        bodyInput.airHeight = y - ground;
+        bodyInput.grounded = grounded;
+        bodyInput.susp = susp;
+        bodyInput.vy = vy;
+        bodyInput.speed = speed;
+        bodyInput.horizontalSpeed = Math.hypot(vx, vz);
+        view.body.update(dt, bodyInput, groundHeight);
+        remote.setBodyPose(view.body, shownScale);
         remote.angle = yaw;
         remote.speed = speed / 60;
         // Wheels and brake lights (CarModel rolls them each frame): the

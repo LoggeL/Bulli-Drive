@@ -98,7 +98,7 @@ export function updateProjectiles(dt: number) {
         let hit = false;
         for (const id in state.remotePlayers) {
             const remote = state.remotePlayers[id];
-            if (!remote.flipGroup.visible) continue;
+            if (!remote.bodyGroup.visible) continue;
             const rx = remote.group.position.x;
             const rz = remote.group.position.z;
 

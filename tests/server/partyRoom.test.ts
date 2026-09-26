@@ -109,6 +109,17 @@ describe('message validation', () => {
         expect(handleClientMessage(lobby, alice, { type: 'debugPlace', x: 6, z: -40, yaw: 0 }, 0)).toBe('ok');
         steps(room, 1);
         expect([alice.member!.car!.state.x, alice.member!.car!.state.z]).toEqual([6, -40]);
+        // Rolling at a speed (e.g. towards a crest), capped at 60 m/s:
+        // yaw π/2 faces +x
+        handleClientMessage(lobby, alice, { type: 'debugPlace', x: 6, z: -40, yaw: Math.PI / 2, speed: 30 }, 0);
+        steps(room, 1);
+        const s = alice.member!.car!.state;
+        expect(s.vx).toBeGreaterThan(29);
+        expect(s.vx).toBeLessThan(31);
+        expect(Math.abs(s.vz)).toBeLessThan(0.5);
+        handleClientMessage(lobby, alice, { type: 'debugPlace', x: 6, z: -40, yaw: 0, speed: 500 }, 0);
+        steps(room, 1);
+        expect(Math.hypot(alice.member!.car!.state.vx, alice.member!.car!.state.vz)).toBeLessThanOrEqual(60);
     });
 });
 

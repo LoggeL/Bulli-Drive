@@ -340,29 +340,12 @@ function createPowerupIcon(type: string): SVGSVGElement {
 }
 
 
-// The jump is gone (docs/phase-1a-design.md, 26): the button only resets
-export type JumpControlMode = 'recover';
-const JUMP_CONTROL_LABELS: Record<JumpControlMode, string> = {
-    recover: 'Recover vehicle'
-};
-let jumpControlButton: HTMLButtonElement | null = null;
+// The touch reset button (held: reset onto the road); off while dead
+let resetButton: HTMLButtonElement | null = null;
 
-
-/** Keep the mobile action available while changing its meaning visually when stuck. */
-export function updateJumpControl(mode: JumpControlMode, enabled: boolean) {
-    if (!jumpControlButton) {
-        jumpControlButton = document.getElementById('btn-flip') as HTMLButtonElement | null;
-    }
-    if (!jumpControlButton) return;
-
-    if (jumpControlButton.disabled === enabled) jumpControlButton.disabled = !enabled;
-    if (jumpControlButton.getAttribute('aria-label') !== JUMP_CONTROL_LABELS[mode]) {
-        jumpControlButton.setAttribute('aria-label', JUMP_CONTROL_LABELS[mode]);
-    }
-    if (jumpControlButton.dataset.mode === mode) return;
-    jumpControlButton.dataset.mode = mode;
-    const use = jumpControlButton.querySelector('use');
-    use?.setAttribute('href', mode === 'recover' ? '#icon-recover' : '#icon-jump');
+export function updateResetControl(enabled: boolean) {
+    if (!resetButton) resetButton = document.getElementById('btn-reset') as HTMLButtonElement | null;
+    if (resetButton && resetButton.disabled === enabled) resetButton.disabled = !enabled;
 }
 
 // Health bar

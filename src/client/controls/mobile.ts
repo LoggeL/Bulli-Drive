@@ -1,5 +1,5 @@
 import { state } from '../state.js';
-import { BTN_BOOST, BTN_HANDBRAKE } from '../../shared/sim/constants.js';
+import { BTN_BOOST, BTN_HANDBRAKE, BTN_RESET } from '../../shared/sim/constants.js';
 import { inputManager } from '../input/InputManager.js';
 
 const JOYSTICK_DEADZONE = 0.12;
@@ -55,13 +55,13 @@ export function destroyMobileControls() {
 }
 
 // Touch controls (docs/phase-1a-design.md, 11.2): the stick steers and
-// brakes, auto-gas drives; DRIFT and BOOST are held; the flip button jumps
-// on a short press and resets when held
+// brakes, auto-gas drives; DRIFT, BOOST and RESET are held (RESET for
+// RESET_HOLD_TICKS puts the car back onto the road)
 function setupDriveControls() {
     setupJoystick('joystick-move', (x, y, active) => inputManager.setStick(x, y, active));
     setupActionButton('btn-honk', 'f');
     setupActionButton('btn-shoot', 'e');
-    setupHoldButton('btn-flip', down => (down ? inputManager.flipDown() : inputManager.flipUp()));
+    setupHoldButton('btn-reset', down => inputManager.touchButton(BTN_RESET, down));
     setupHoldButton('btn-drift', down => inputManager.touchButton(BTN_HANDBRAKE, down));
     setupHoldButton('btn-boost', down => inputManager.touchButton(BTN_BOOST, down));
     // Race layout (docs/phase-2-design.md, 17.5): the stick only steers

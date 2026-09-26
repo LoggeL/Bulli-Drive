@@ -151,8 +151,9 @@ export const ClientMessageSchema = v.variant('type', [
     v.object({ type: v.literal('honk') }),
     v.object({ type: v.literal('shoot'), targetId: shortString(64) }),
     v.object({ type: v.literal('visibility'), hidden: v.boolean() }),
-    // E2E only (server started with E2E=1): puts the own car at rest there
-    v.object({ type: v.literal('debugPlace'), x: finiteNumber, z: finiteNumber, yaw: finiteNumber }),
+    // E2E only (server started with E2E=1): puts the own car there, at rest
+    // or rolling straight ahead at speed (m/s, e.g. towards a crest)
+    v.object({ type: v.literal('debugPlace'), x: finiteNumber, z: finiteNumber, yaw: finiteNumber, speed: v.optional(finiteNumber) }),
     // Race lobby (docs/phase-2-design.md, 6.4 and 16.2)
     v.object({ type: v.literal('raceReady'), ready: v.boolean() }),
     v.object({ type: v.literal('raceConfig'), track: v.optional(v.picklist(TRACK_IDS)), botLevel: v.optional(v.picklist(BOT_LEVELS)) }),

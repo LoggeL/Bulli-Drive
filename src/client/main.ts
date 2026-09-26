@@ -4,7 +4,7 @@ import { initWebSocket, markPlayerReady } from './network/websocket.js';
 import { initKeyboard } from './controls/keyboard.js';
 import { setupMobileControls } from './controls/mobile.js';
 import { updateParticles, spawnDriftParticle, spawnBoostFireParticle, spawnDamageSmoke } from './effects/particles.js';
-import { updateJumpControl, showInteractionPrompt } from './ui/hud.js';
+import { updateResetControl, showInteractionPrompt } from './ui/hud.js';
 import { initSounds, startEngineSound, updateEngineSound } from './effects/sounds.js';
 import { checkCoinCollection, animateCoins } from './world/coins.js';
 import { animatePowerups } from './world/powerups.js';
@@ -52,7 +52,7 @@ function switchLocalCar(carType: string): void {
     if (state.bulli && state.bulli.carType !== carType) {
         const previousPosition = state.bulli.group.position.clone();
         const previousAngle = state.bulli.angle;
-        const visible = state.bulli.flipGroup.visible;
+        const visible = state.bulli.bodyGroup.visible;
         state.scene.remove(state.bulli.group);
         state.bulli.dispose();
 
@@ -60,7 +60,7 @@ function switchLocalCar(carType: string): void {
         state.bulli.group.position.copy(previousPosition);
         state.bulli.angle = previousAngle;
         state.bulli.group.rotation.y = previousAngle;
-        state.bulli.flipGroup.visible = visible;
+        state.bulli.bodyGroup.visible = visible;
         state.bulli.createNametag(state.myName, true);
         state.scene.add(state.bulli.group);
     }
@@ -208,6 +208,7 @@ function updateRaceCamera(dt: number, carPos: THREE.Vector3, vehicle: LocalVehic
     const spectate = raceClient.spectateTarget();
     if (spectate) {
         _chaseTarget.position.copy(spectate.position);
+        _chaseTarget.position.y += spectate.airHeight;
         _chaseTarget.yaw = spectate.yaw;
         _chaseTarget.speedRatio = 0.5;
         _chaseTarget.boost = false;
@@ -216,7 +217,9 @@ function updateRaceCamera(dt: number, carPos: THREE.Vector3, vehicle: LocalVehic
     }
     const s = vehicle.car.state;
     const u = vehicle.forwardSpeed;
+    // The camera follows the car into the air (ChaseCamera eases it)
     _chaseTarget.position.copy(carPos);
+    _chaseTarget.position.y += vehicle.airHeight;
     _chaseTarget.yaw = vehicle.pose.yaw
         + RACE_CAMERA_SLIP_BLEND * vehicle.slipAngle * Math.max(0, Math.min(1, u / 10));
     _chaseTarget.speedRatio = Math.min(1, Math.abs(u) / Math.max(1, vehicle.car.params.topSpeed));
@@ -241,14 +244,13 @@ function animate(frameTime: number) {
     if (state.bulli) {
         state.bulli.update(dt);
 
-        // Update engine sound based on speed and jump height
+        // Engine sound from the speed and the height in the air
         const isAccelerating = Math.abs(state.inputs.throttle) > 0.02;
         const turboActive = state.bulli.powerups.speed.active;
         // v2 only: the drift boost (Shift) sounds and burns like the Turbo
         const vehicle: LocalVehicle | undefined = state.bulli.vehicle;
         const boostActive = turboActive || !!vehicle?.car.state.boosting;
-        const jumpHeight = state.bulli.flipGroup.position.y;
-        updateEngineSound(state.bulli.speed, isAccelerating, boostActive, jumpHeight);
+        updateEngineSound(state.bulli.speed, isAccelerating, boostActive, vehicle?.airHeight ?? 0);
 
         // Update the automatic chase camera. Its yaw follows the car on the
         // shortest arc, while position, framing and FOV use independent damping
@@ -275,8 +277,7 @@ function animate(frameTime: number) {
         updateSpeedometer();
         if (vehicle) updateDriveHud(vehicle);
         updateHealthBar();
-        // No jump (docs/phase-1a-design.md, 26): the button resets when held
-        updateJumpControl('recover', !state.dead);
+        updateResetControl(!state.dead);
 
         // Damage smoke based on health
         if (state.health < 100 && !state.dead) {
@@ -306,7 +307,7 @@ function animate(frameTime: number) {
         const remote = state.remotePlayers[id] as any;
         remote.update(dt);
         // Damage smoke for remote players
-        if (remote.health < 100 && remote.flipGroup.visible) {
+        if (remote.health < 100 && remote.bodyGroup.visible) {
             const damagePercent = 1 - remote.health / 100;
             if (Math.random() < damagePercent * 0.15) {
                 spawnDamageSmoke(

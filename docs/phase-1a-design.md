@@ -1281,7 +1281,7 @@ Ohne Reifenkontakt wirken weder Gas, Bremse, Boost noch Lenkung (bisher: halber 
 - **Super-Jump:** entfernt, nicht umgewidmet (ein Aufwärtsimpuls wäre wieder ein Sprung). Der Powerup-Pool der Party hat fünf Typen (Turbo, Mega, Schild, Magnet, Ghost); die Items der Karte verteilen sich reihum darauf.
 - **Protokoll v5:** Self-Block ohne `flipAngle`, `flipRate` (f64), `jumpCooldown`, `prevButtons` (u8), mit `susp` (f64): 148 statt 158 Byte. Im Compact-Record steht statt des Flip-Winkels die Federung (i8 in 5 mm). Car-Flags `1 << 5` (Super-Jump) und `1 << 11` (Flip) und Mod-Bit 4 sind frei. Die Geister-Spur behält 13 Byte je Probe, der Flip-Byte ist jetzt Reserve (neue Tuning-Werte ergeben einen neuen `simHash`, alte Geister werden ohnehin nicht mehr angeboten).
 - **Rennregel E4** (kein Sprung im Rennen): Der Eingabefilter lässt im Rennen alles durch, es gibt nichts mehr zu entfernen.
-- **Client (nur so weit nötig, damit alles baut und stimmig bleibt):** Q und Gamepad-Y belegen nichts mehr, `btn-flip` sendet nur noch Reset (halten), `updateJumpControl` zeigt immer „Recover“, kein Sprung-Sound, kein Salto in der Darstellung. Offen für den nächsten Schritt: die Texte in `index.html` (Startbildschirm „Q jump“, ABOUT „JUMP: Tap to jump“, Powerup-Liste, Hinweis-Zeile, Symbol von `btn-flip`), die Darstellung der Federung und eine Nickbewegung im Flug.
+- **Client:** Q und Gamepad-Y belegen nichts mehr, kein Sprung-Sound, kein Salto. Der Touch-Button „tippen = Sprung, halten = Reset“ heißt jetzt `btn-reset` (Klasse `.reset`, Symbol `#icon-recover`, „Hold to reset onto the road“) und setzt nur noch Bit 8, solange er gehalten wird (`InputManager.touchButton`, wie DRIFT und BOOST; `flipDown`/`flipUp` sind weg). Entfernt: `#icon-jump`, die Q-Zeilen auf Startbildschirm, ABOUT und Tastenhinweis (`.hint-row.jump-hint`), der Jump-Powerup-Eintrag, `updateJumpControl`/`JumpControlMode` (jetzt `updateResetControl`), der Hinweis heißt bei Touch „HOLD RESET BUTTON“. `flipGroup` heißt `bodyGroup` (Darstellung, 26.8).
 
 ### 26.5 Tests
 
@@ -1329,5 +1329,37 @@ Sim-Kosten (`npm run perf:sim`): 32 Autos eben 0,105 statt 0,092 ms/Tick, Bulli 
 ### 26.7 Offen
 
 - **Knick am oberen Ende des Canyon (Ridge Climb, x −120, z −14):** 8 % auf 0 % innerhalb von 4 m, genau in der Landezone der Canyon-Rampe. Ein Fall für die Ausrundung im Bake (phase-3-design A5), nicht für die Sim.
-- Client: Texte und Symbole des Sprungs in `index.html`, Federung und Flug-Nicken in der Darstellung (`LocalVehicle.applyPose`, `remotes.ts`: `susp` steht im State und im Compact-Record bereit), Mobile-E2E auf dem Emulator.
+- **Stufe am Querweg bei x −564, z 300:** Die Straße steigt dort in 4 m um 0,8 m; ostwärts ab etwa 30 m/s hebt jedes Auto 0,8–1,1 s ab (2,4–3,7 m hoch). Der Mobile-E2E-Test nutzt sie als bekannte Bodenwelle (26.8). Wird sie im Bake ausgerundet, muss der Test eine andere Stelle bekommen (Suche: Wegwerf-Skript aus 26.8).
+- Reifenlast aus der Federkraft (26.2), Nicken aus zwei Achsen in der Sim: bewusst nicht.
 - `phase-3-design.md` A31 („die v2-Sim hebt auf Gelände nicht ab“) gilt seit diesem Abschnitt nicht mehr.
+
+### 26.8 Darstellung, Kamera, Mobile-Test
+
+**Aufbau auf dem Bildschirm (`src/client/vehicle/bodyMotion.ts`, nur Renderer):** Die Sim hat einen vertikalen Freiheitsgrad (`susp`) und keinen Nick-/Rollwinkel; `BodyMotion` leitet daraus pro Frame ab:
+
+- **`group`** (Position am Boden, Gier, Mega-Skala) trägt nur noch die geglättete **Bodenneigung** unter dem Auto (±2 m, Rate 6/s). Der Kontaktschatten liegt in dieser Ebene, auch im Flug.
+- **`bodyGroup`** (bisher `flipGroup`) trägt den Aufbau: Höhe = Höhe der Radunterkante über dem Gelände + `susp`·0,6 (entschieden: 60 % des Federwegs, höchstens 15 cm Einfedern, damit die Räder in den Radkästen bleiben), dazu Nicken und Rollen relativ zur Bodenneigung. Am Boden: Gelände plus die Beschleunigungsfeder wie bisher (4°/5°). In der Luft dreht die Nase mit Rate 2,5/s in die Flugbahn (−atan(vy/v), höchstens 25°: steigend Nase hoch, fallend Nase runter), das Rollen läuft mit 1,5/s aus; nach der Landung legt sich der Aufbau mit 12/s auf den Boden. Die Beschleunigungsfeder wirkt in der Luft nicht.
+- **Räder:** Die Pivots `wheel_*` des GLB (bzw. die prozeduralen Räder) werden um denselben Federweg gegenläufig verschoben (`GltfCarBody.setWheelDrop`): Am Boden bleiben die Räder auf dem Boden, während der Aufbau ein- und ausfedert; in der Luft hängen sie 7,6 cm (0,6 · g/k) unter der Ruhelage.
+- Das alte Stauchen per `scale.y` beim Landen ist weg; das Einfedern zeigt jetzt die Federung selbst. Die Höhe im Flug wird durch die Mega-Skala geteilt (vorher flog ein Mega-Auto doppelt so hoch, wie es war).
+- **Andere Autos** (`net/remotes.ts`) bekommen dasselbe `BodyMotion`: `RemoteTrack` interpoliert `susp` und `vy` jetzt linear zwischen den Snapshots (vorher sprang `susp` mit 20 Hz), im Kontakt-Set aus der Prediction. Neu dabei: Auch entfernte Autos neigen sich mit dem Gelände (vorher nur Gier). Sandbox-Dummies ebenso; der Zeitfahr-Geist nur mit Höhe.
+- **Kontaktschatten** (`contactShadowLook`): blasser und kleiner mit der Höhe (Deckkraft 1/(1 + 0,6h + 0,05h²), Größe 1 − 0,4·h/(h+3)); bei 0,5 m noch > 70 %, bei 10 m < 10 %. Vorher wuchs er in der Luft. Die Höhe kommt aus `CarModel.airHeight`, nicht mehr aus der Position der Gruppe.
+- **Motorsound:** dreht in der Luft mit der Höhe hoch wie vorher mit der Sprunghöhe (`airHeight`).
+
+**Kamera (`ChaseCamera`):** Das Ziel der Kamera war die Bodenhöhe unter dem Auto, ein fliegendes Auto lief also nach oben aus dem Bild. Jetzt folgt sie der Radunterkante (Boden + Flughöhe, ohne das Federn). Vertikal: Die Folgehöhe bewegt sich mit einer gefilterten Vertikalgeschwindigkeit (`verticalSpeedDamping` 10/s) und schließt den Rest mit 5/s (`verticalDamping`). Kein Nachhängen an einer gleichmäßigen Steigung (Test: 6 m/s aufwärts, nur die bisherige Positionsdämpfung bleibt), und Abheben/Landen (Sprung der Vertikalgeschwindigkeit um 8 m/s) ändern die Kamera-Vertikalgeschwindigkeit um höchstens 0,8 m/s je Frame (direkt gefolgt: 1,45 m/s; Test in `chaseCamera.test.ts`).
+
+**E2E-Hook:** `placeLocalCar(x, z, yaw, speed)` setzt das Auto mit Tempo ab (Server: `debugPlace.speed`, nur mit E2E=1, höchstens 60 m/s). `V2Snapshot.flights` zählt Flüge und hält den letzten (Ticks, größte Höhe, Landestoß), `V2Snapshot.body` die gezeichnete Höhe und Neigung.
+
+**Mobile-E2E (`tests/e2e/mobile.spec.ts`, bestehender Test erweitert, iPhone 13 in Chromium):** Nach Stick und Lenken setzt der Server das Auto 30 m vor die Stufe bei x −564, z 300 (ostwärts, 38 m/s, Auto-Gas); geprüft: gezeichneter Aufbau > 1 m über dem Boden (per rAF), Flug ≥ 30 Ticks und > 1 m hoch, Landestoß < 15 m/s, danach am Boden, kein Reset, weiter > 25 m/s; kein Button mit „jump“/„flip“, RESET halten setzt zurück. Mutationsprobe: Federkraft darf ziehen (klebt wieder) → rot; gezeichnete Flughöhe 0 → rot. Laufzeit des Mobile-Tests +2 s.
+
+**Emulator-Belege (Wegwerf-Skript `mobile-air.mts`, nicht im Repo), Produktions-Build, Free Roam:**
+
+| Lauf | Flug (Ticks / Höhe / Landestoß) | nach Landung | gezeichnet max. / Nicken | Kamera über Boden | Korrekturen am Hügel |
+| --- | --- | --- | --- | --- | --- |
+| WebKit iPhone 13 (390×664) | 65 / 3,36 m / 11,6 m/s | am Boden, 44 m/s, 0 Resets | 3,36 m / −7,0° … +6,0° | 4,4 … 8,5 m | 0 |
+| WebKit iPhone SE quer (568×320) | 61 / 3,00 m / 11,0 m/s | am Boden, 44 m/s, 0 Resets | 3,00 m / −6,5° … +5,4° | 4,2 … 7,9 m | 1, Versatz 0 |
+| Chromium Pixel 7 (412×839) | 61 / 2,92 m / 10,8 m/s | am Boden, 43,6 m/s, 0 Resets | 2,88 m / −6,8° … +4,3° | 4,5 … 7,9 m | 2, Versatz ≤ 3 cm |
+| Pixel 7, `?netsim=150,30,3` (7 Läufe) | 59–70 / 2,8–3,7 m / 10,8–13,6 m/s | am Boden, 44 m/s, 0 Resets | wie oben | folgt (z. B. 4,4 … 7,2 m) | 0–4, Versatz ≤ 15 cm, 0 Bildsprünge (`renderSnaps`) |
+
+Alle Läufe: kein Sprung-Button (`getByRole('button', /jump|flip/)` = 0), RESET sichtbar mit `#icon-recover`, Halten setzt zurück, kurzes Tippen nicht, keine Konsolen- oder Seitenfehler. Unter Netsim kommt das Abheben aus der Prediction (Server und Client rechnen dieselbe Sim); am Hügel gab es nur kleine Korrekturen, die als Render-Versatz auslaufen. Zweimal sprang der Lead-Regler (ein `resync`, bis 20 Ticks nach vorn) während des Anlaufs: ein Uhr-Sprung des Netzcodes, nicht des Flugs. Große Frame-Sprünge in den Messreihen sind Aussetzer von SwiftShader bzw. des headless WebKit (bis 300 ms), keine Korrekturen. Einschränkung WebKit: Playwright kann dort nur tippen; Druck und Ziehen am Stick und das Halten von RESET liefen über Maus-Pointer-Events, Taps (Modus, Start) über echte Touch-Events. In Chromium alles über CDP-Touch. Ein weiterer Netsim-Lauf brach im Skript ab (das Warten auf den Anlauf verpasste das Fenster nach einem Frame-Aussetzer) und wurde wiederholt.
+
+Screenshots vor, während und nach dem Flug (alle Läufe) zeigen das Auto über der Kreuzung mit dem blassen Schatten darunter und die Kamera mit dem Auto in der Luft.

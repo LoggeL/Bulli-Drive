@@ -6,7 +6,7 @@ import * as THREE from 'three';
 export interface RemotePlayer {
     id: string;
     group: THREE.Group;
-    flipGroup: THREE.Group;
+    bodyGroup: THREE.Group;
     name: string;
     colorCode: number;
     health: number;
