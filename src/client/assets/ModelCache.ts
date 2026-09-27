@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { isGpuDiag } from '../debug/gpuDiag.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { RenderTier } from '../effects/renderQuality.js';
 import { patchCarMaterial } from './carMaterials.js';
@@ -241,6 +242,9 @@ export class ModelCache {
     private async runWarmup(renderer: THREE.WebGLRenderer, camera: THREE.Camera, scene: THREE.Scene): Promise<void> {
         await this.whenLoaded();
         if (this.templates.size === 0 || this.disposed) return;
+        // The GPU bisect (?gpudiag=1) compiles every shader only when its part
+        // comes back into view, so a crash names that part
+        if (isGpuDiag()) return;
         const t0 = performance.now();
         const holder = new THREE.Group();
         for (const template of this.templates.values()) {

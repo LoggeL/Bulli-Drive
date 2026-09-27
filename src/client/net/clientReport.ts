@@ -5,7 +5,7 @@ import { isSafeMode } from '../render/safeMode.js';
 // client tells the server what it ran on. No personal data: device class,
 // GPU name, screen and the event.
 
-export type ClientReportEvent = 'context-lost' | 'context-restored' | 'webgl-unavailable';
+export type ClientReportEvent = 'context-lost' | 'context-restored' | 'webgl-unavailable' | 'diag-step';
 
 const pageStart = typeof performance !== 'undefined' ? performance.now() : 0;
 let gpuName = '';

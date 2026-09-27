@@ -45,6 +45,7 @@ import { assistProfileForDevice, type LocalVehicle } from './vehicle/LocalVehicl
 import { updateRemoteCars } from './net/remotes.js';
 import type { ProfileId } from '../shared/protocol.js';
 import { raceClient } from './race/RaceClient.js';
+import { isGpuDiag, startGpuDiag } from './debug/gpuDiag.js';
 
 const chaseCamera = new ChaseCamera(RACE_CAMERA);
 const _chaseTarget: ChaseTarget = { position: new THREE.Vector3(), yaw: 0, speedRatio: 0, boost: false };
@@ -153,6 +154,8 @@ function init() {
     document.body.appendChild(state.renderer.domElement);
     // Show a notice and pause rendering if the browser drops the GL context
     watchWebGLContext(state.renderer.domElement);
+    // ?gpudiag=1: turn the scene on part by part to find what crashes a GPU
+    if (isGpuDiag()) startGpuDiag(state.scene, state.renderer);
     // Car models (GLB + KTX2) load and compile while the splash screen is up;
     // until they are there (or if they fail) the cars stay procedural
     startModelPreload(state.renderer, state.camera, state.scene)
