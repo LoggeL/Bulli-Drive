@@ -225,7 +225,7 @@
                 var link = /[?&]lite=([01])(?:&|$)/.exec(location.search), lite = link ? link[1] === '1' : false;
                 if (!link) try {
                     var setting = localStorage.getItem('bulli-graphics');
-                    lite = setting === 'lite' || (setting !== 'high' && Number(localStorage.getItem('bulli-safe-mode-until')) > Date.now());
+                    lite = setting === 'lite' || (setting !== 'high' && Number(localStorage.getItem('bulli-safe-mode-until-v2')) > Date.now());
                 } catch (e) { /* storage blocked */ }
                 var parts = document.querySelectorAll('#loading-screen [data-keyart]');
                 // The sources first: the image picks among them once its src is set
