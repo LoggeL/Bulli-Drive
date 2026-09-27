@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { state } from '../state.js';
 import { gameHooks } from '../game/hooks.js';
-import { detectRenderTier, type RenderTier } from '../effects/renderQuality.js';
+import { detectRenderTier, glRendererName, shadowMapAllowed, type RenderTier } from '../effects/renderQuality.js';
 import { createSky, updateSkyDome } from './sky.js';
 import { LOOK, SUN_DIRECTION, WORLD_UNIFORMS, createSceneFog, installGrade, installHeightFog } from './look.js';
 import { initWorldTextures, worldTexture, whenWorldTextureLoaded } from '../world/textures.js';
@@ -94,7 +94,8 @@ export function setupLighting(scene: THREE.Scene, renderer: THREE.WebGLRenderer)
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = LOOK.exposure;
     const tier = renderTier = detectRenderTier(renderer);
-    renderer.shadowMap.enabled = LIGHTING.shadow.enabled[tier];
+    // Some phone GPUs crash on the shadow pass (effects/renderQuality.ts)
+    renderer.shadowMap.enabled = LIGHTING.shadow.enabled[tier] && shadowMapAllowed(glRendererName(renderer.getContext()));
     // One filter for every tier (three r186 has no PCFSoftShadowMap): PCF
     // with the smooth 3 x 3 kernel of patchShadowFilter. Its nine hardware
     // lookups cost less than the 17 of r160's PCFShadowMap the software tier

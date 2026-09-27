@@ -198,10 +198,10 @@ describe('the loading screen', () => {
             ['?lite=0', { 'bulli-graphics': 'lite' }],
             ['?lite=10', {}],
             ['', { 'bulli-graphics': 'lite' }],
-            ['', { 'bulli-graphics': 'high', 'bulli-safe-mode-until': String(now + 60_000) }],
-            ['', { 'bulli-safe-mode-until': String(now + 60_000) }],
-            ['', { 'bulli-safe-mode-until': String(now - 60_000) }],
-            ['', { 'bulli-graphics': 'auto', 'bulli-safe-mode-until': 'soon' }]
+            ['', { 'bulli-graphics': 'high', 'bulli-safe-mode-until-v2': String(now + 60_000) }],
+            ['', { 'bulli-safe-mode-until-v2': String(now + 60_000) }],
+            ['', { 'bulli-safe-mode-until-v2': String(now - 60_000) }],
+            ['', { 'bulli-graphics': 'auto', 'bulli-safe-mode-until-v2': 'soon' }]
         ];
         for (const [search, stored] of cases) {
             const storage = new Map(Object.entries(stored));

@@ -12,7 +12,9 @@
 // the desktop tier (HDRI, MSAA) on phones too; graphics trouble puts a
 // High setting back to Auto, so the device falls back to lite graphics.
 
-export const SAFE_MODE_KEY = 'bulli-safe-mode-until';
+// v2: the lite flags set before the PowerVR shadow fix (most of them on that
+// GPU) no longer apply
+export const SAFE_MODE_KEY = 'bulli-safe-mode-until-v2';
 export const GRAPHICS_KEY = 'bulli-graphics';
 export const GRAPHICS_SETTINGS = ['auto', 'lite', 'high'] as const;
 export type GraphicsSetting = typeof GRAPHICS_SETTINGS[number];

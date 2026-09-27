@@ -58,7 +58,24 @@ export function isSoftwareRendererName(name: string): boolean {
     return SOFTWARE_RENDERER.test(name);
 }
 
-function glRendererName(gl: WebGLRenderingContext | WebGL2RenderingContext): string {
+// GPUs whose drivers lose the WebGL context on a feature. Found with the GPU
+// bisect (?gpudiag=1, debug/gpuDiag.ts): a Pixel with a PowerVR D-Series
+// DXT-48-1536 (Chrome 153) lost it within a second of the first shadow map
+// pass, every time, and was fine with every other part of the scene. Those
+// GPUs render without the shadow map; the contact shadows under the cars
+// stay. ?shadows=1 / ?shadows=0 override the list.
+const NO_SHADOW_MAP_GPUS = /powervr/i;
+
+/** Whether this GPU may render the shadow map (URL override first). */
+export function shadowMapAllowed(gpuName: string, search = typeof window === 'undefined' ? '' : window.location.search): boolean {
+    const forced = new URLSearchParams(search).get('shadows');
+    if (forced === '1') return true;
+    if (forced === '0') return false;
+    return !NO_SHADOW_MAP_GPUS.test(gpuName);
+}
+
+/** The GPU name WebGL reports (unmasked where the browser allows it). */
+export function glRendererName(gl: WebGLRenderingContext | WebGL2RenderingContext): string {
     const info = gl.getExtension('WEBGL_debug_renderer_info');
     return String(gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER) ?? '');
 }
