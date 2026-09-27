@@ -1,6 +1,7 @@
 import { releaseKeyboardInputs } from '../controls/keyboard.js';
 import { resetMobileControls } from '../controls/mobile.js';
 import { sendClientReport } from '../net/clientReport.js';
+import { gpuDiagStep } from '../debug/gpuDiag.js';
 import { isSafeMode, markGraphicsTrouble, safeModeReason } from '../render/safeMode.js';
 import { stopLoadingScreen } from './loadingScreen.js';
 
@@ -32,7 +33,7 @@ export function watchWebGLContext(canvas: HTMLCanvasElement) {
         // Phones usually lose it for want of GPU memory: the next loads use
         // lite graphics (render/safeMode.ts)
         markGraphicsTrouble();
-        sendClientReport('context-lost');
+        sendClientReport('context-lost', gpuDiagStep());
 
         // Drop held keys and touches: nobody can see where the car is going.
         releaseKeyboardInputs();
@@ -44,7 +45,7 @@ export function watchWebGLContext(canvas: HTMLCanvasElement) {
         if (!contextLost) return;
         contextLost = false;
         console.info('WebGL context restored');
-        sendClientReport('context-restored');
+        sendClientReport('context-restored', gpuDiagStep());
         hideOverlay();
     }, false);
 }

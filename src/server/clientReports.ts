@@ -6,11 +6,12 @@ import * as v from 'valibot';
 // GET /api/client-reports. Each address may send REPORTS_PER_MINUTE.
 
 export const MAX_REPORTS = 200;
-export const REPORTS_PER_MINUTE = 10;
+// The GPU bisect (?gpudiag=1) sends one report every 3 s
+export const REPORTS_PER_MINUTE = 30;
 const MINUTE_MS = 60_000;
 
 const ReportSchema = v.object({
-    event: v.picklist(['context-lost', 'context-restored', 'webgl-unavailable']),
+    event: v.picklist(['context-lost', 'context-restored', 'webgl-unavailable', 'diag-step']),
     detail: v.pipe(v.string(), v.maxLength(200)),
     build: v.pipe(v.string(), v.maxLength(64)),
     userAgent: v.pipe(v.string(), v.maxLength(300)),
