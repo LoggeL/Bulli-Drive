@@ -80,7 +80,7 @@ export const test = base.extend<Fixtures>({
 
 /**
  * For the paths that are about the flow, not the picture (touch controls,
- * the race, missing assets, a server restart): the page draws 5 frames a second while the
+ * a server restart): the page draws 5 frames a second while the
  * game, the netcode and the HUD run every frame (flags.ts). Software WebGL
  * drawing every frame took half the CPU of the E2E job on a 4-core runner;
  * the picture is measured in the render job (tests/e2e-render) and in the

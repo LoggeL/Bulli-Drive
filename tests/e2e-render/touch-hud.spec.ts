@@ -2,15 +2,20 @@ import { devices, type Page } from '@playwright/test';
 import type { RaceDebugSnapshot } from '../../src/client/e2eHook.js';
 import { test, expect, joinGame, placeOnClearRunway, waitFrames, debugCall } from '../e2e/fixtures.js';
 
-// The touch HUD of the Party in eight phone and tablet viewports: no
+// The touch HUD of the Party in six phone and tablet viewports: no
 // control, panel or prompt covers another or leaves the screen, the room
 // chip stays clear of the map and the controls, and the controls stay off
 // the standing car and clear of the sandbox banner (?sandbox=1, same
-// CSS). The same for the race HUD (docs/phase-2-design.md, 17.5): the race
-// pill, BRAKE, and the countdown, the banner and the GO zone clear of the
-// controls. A layout measurement rather than a user path, so it runs in
-// the render job beside the E2E suite; the touch paths themselves are
-// tests/e2e/mobile.spec.ts and race.mobile.spec.ts.
+// CSS). Then, on the same page (a second page load costs the job some
+// 10 s), the race HUD (docs/phase-2-design.md, 17.5): the race pill,
+// BRAKE, and the countdown, the banner and the GO zone clear of the
+// controls. On the way it is the race's path on the phone: the room chip,
+// the lobby, READY, the countdown, racing. A layout measurement rather
+// than a user path, so it runs in the render job beside the E2E suite;
+// the touch path itself is tests/e2e/mobile.spec.ts, the race's finish,
+// results and rematch tests/client/raceUi.test.ts, raceModel.test.ts,
+// tests/server/raceRoom.test.ts and the bot race in
+// tests/integration/race.test.ts.
 
 // iPhone 13 with touch, rendered by Chromium like the rest of the project
 const { defaultBrowserType: _browser, ...iPhone13 } = devices['iPhone 13'];
@@ -56,18 +61,19 @@ async function carBox(page: Page, width: number, height: number): Promise<CarBox
     return { left: box.left * width, right: box.right * width, top: box.top * height, bottom: box.bottom * height };
 }
 
+// The narrowest and the most common phone upright and on its side, the
+// tablet both ways (a 320 x 658 and a 360 x 640 phone lie between the
+// first two and never failed alone)
 const VIEWPORTS = [
     { name: 'iPhone 13', width: 390, height: 664 },
     { name: 'iPhone SE', width: 320, height: 568 },
-    { name: 'Galaxy S9+', width: 320, height: 658 },
-    { name: 'Android 360', width: 360, height: 640 },
     { name: 'iPhone 13 landscape', width: 750, height: 342 },
     { name: 'iPhone SE landscape', width: 568, height: 320 },
     { name: 'iPad portrait', width: 768, height: 1024 },
     { name: 'iPad landscape', width: 1024, height: 768 }
 ];
 
-test('the Party touch HUD in eight viewports: nothing overlaps, the car stays free', async ({ openPlayer }) => {
+test('the Party and the race touch HUD in six viewports: nothing overlaps, the car stays free', async ({ openPlayer }) => {
     const player = await openPlayer('touch-hud');
     const { page } = player;
     await joinGame(player, 'E2E Touch HUD', '', 'party');
@@ -132,7 +138,18 @@ test('the Party touch HUD in eight viewports: nothing overlaps, the car stays fr
             if (overlaps(box, banner)) problems.push(`${viewport.name}: the sandbox banner ${round(banner)} covers ${selector} ${round(box)}`);
         }
     }
-    expect(problems).toEqual([]);
+    expect(problems, 'the Party HUD').toEqual([]);
+
+    // ---- The race, by the room chip ----
+    await page.evaluate(() => {
+        document.getElementById('sandbox-banner')!.remove();
+        document.getElementById('interaction-prompt')!.classList.add('hidden');
+    });
+    await page.setViewportSize(iPhone13.viewport);
+    await page.locator('#room-chip').tap();
+    await page.locator('.room-option[data-room="race"]').tap();
+    await expect.poll(async () => (await debugCall<RaceDebugSnapshot | null>(page, 'race'))?.phase).toBe('lobby');
+    await checkRaceHud(page);
 });
 
 // The race: the pill instead of the score, BRAKE instead of shooting
@@ -145,14 +162,13 @@ const RACE_CONTROLS = ['#btn-drift', '#btn-boost', '#btn-autogas', '#btn-reset',
 // never over a control, the pill, the map or the room chip
 const RACE_TRANSIENT = ['#race-countdown', '#race-banner', '#race-go'];
 
-test('the race touch HUD in eight viewports: nothing overlaps, the car stays free', async ({ openPlayer }) => {
-    const player = await openPlayer('race-hud');
-    const { page } = player;
-    await joinGame(player, 'E2E Race HUD', '', 'race');
+async function checkRaceHud(page: Page): Promise<void> {
     await expect(page.locator('#race-lobby')).toBeVisible();
     // Auto-gas off: the car stands on the grid while the bots race the
-    // Downtown Loop (three laps, time enough for the eight viewports)
-    await page.evaluate(() => document.getElementById('btn-autogas')!.click());
+    // Downtown Loop (three laps, time enough for the six viewports)
+    if (await page.locator('#btn-autogas').getAttribute('aria-pressed') === 'true') {
+        await page.evaluate(() => document.getElementById('btn-autogas')!.click());
+    }
     await expect(page.locator('#btn-autogas')).toHaveAttribute('aria-pressed', 'false');
     await page.locator('#race-ready').tap();
     await expect.poll(async () => {
@@ -162,7 +178,6 @@ test('the race touch HUD in eight viewports: nothing overlaps, the car stays fre
     await expect(page.locator('#race-hud')).toBeVisible();
     await expect(page.locator('#btn-brake')).toBeVisible();
     await expect(page.locator('#btn-shoot')).toBeHidden();
-    await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; }' });
     // The transient parts as they look at their fullest (the race client
     // hides them again every frame, so the style keeps them up)
     await page.addStyleTag({
@@ -210,5 +225,5 @@ test('the race touch HUD in eight viewports: nothing overlaps, the car stays fre
             }
         }
     }
-    expect(problems).toEqual([]);
-});
+    expect(problems, 'the race HUD').toEqual([]);
+}

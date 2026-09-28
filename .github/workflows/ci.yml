@@ -110,7 +110,7 @@ jobs:
         run: npx playwright install-deps chromium
       # Builds, then runs the critical user paths against the production
       # server (see playwright.config.ts): desktop, two players, touch on a
-      # phone, a new deploy, missing assets. Everything a unit or bot test
+      # phone, a new deploy. Everything a unit or bot test
       # can check lives there instead; the suite stays under ~5 minutes.
       - run: npm run test:e2e
       - name: Upload Playwright report and traces
@@ -178,7 +178,7 @@ jobs:
         run: npx playwright install-deps chromium
       # The phone tier's draw call and triangle budget and its texture
       # placeholders, measured by the renderer (SwiftShader), and the touch
-      # HUD's layout in eight viewports: measurements, not user paths
+      # HUD's layout in six viewports: measurements, not user paths
       - run: npm run test:e2e:render
       - name: Upload Playwright report and traces
         if: failure()
