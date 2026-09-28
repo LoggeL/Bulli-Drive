@@ -271,7 +271,12 @@ describe('16 bots for 30 s behind netsim 150/30/3', () => {
             expect(bot.kbInPerSec, bot.name).toBeLessThanOrEqual(30);
             const steady = bot.mode === 'drive' || bot.mode === 'ram';
             expect(bot.snapshotsPerSec, bot.name).toBeGreaterThanOrEqual(steady ? 18 : 12);
-            if (steady) expect(bot.distanceM, bot.name).toBeGreaterThan(100);
+            // Every car kept moving. A ram bot chases the nearest car for 4 s
+            // every 4 to 8 s and then pushes against it, often at a standstill:
+            // 75, 89 and 92 m in 30 s on CI runs where the drivers made far more
+            // than 100 m. Half the lowest of those still tells a moving car
+            // from one stuck since the start.
+            if (steady) expect(bot.distanceM, bot.name).toBeGreaterThan(bot.mode === 'ram' ? 40 : 100);
         }
         expect(s.bots.every(bot => bot.stats.nonFinite === 0 && bot.stats.malformed === 0)).toBe(true);
         // Exit criterion: mean correction without contact under 10 cm (16)
