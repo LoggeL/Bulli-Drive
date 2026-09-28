@@ -1,17 +1,15 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { Page } from '@playwright/test';
-import { PROTOCOL_VERSION } from '../../src/shared/protocol.js';
-import { test, expect, FLOW_DRAW_FPS, joinGame, snapshot, netState, topmostAtCenter, type Player } from './fixtures.js';
+import { test, expect, FLOW_DRAW_FPS, joinGame, snapshot, netState, type Player } from './fixtures.js';
 
 // A new deploy while pages are open (docs/phase-1b-design.md, 3.2, 11.2,
 // 11.3, 15.3), against the production build: an index.html from the old
-// deploy whose hashed assets are gone reloads once and starts; a page that
-// speaks an older protocol reloads once and then says why it stops; a
-// server restart (SIGTERM) shows the banner, the page comes back on its own
-// and the resume ticket brings the Party score back. The page without
-// ?e2e=1 also shows that production players get no test hook. The guards'
-// logic is unit-tested (tests/client/assetGuard, buildVersion, reloadOnce);
-// the server's side in tests/server and tests/integration.
+// deploy whose hashed assets are gone reloads once and starts; a server
+// restart (SIGTERM) shows the banner, the page comes back on its own and
+// the resume ticket brings the Party score back. The page without ?e2e=1
+// also shows that production players get no test hook. The guards' logic
+// is unit-tested (tests/client/assetGuard, buildVersion, reloadOnce); an
+// old protocol's reject and close 4000 in tests/integration/bots.test.ts.
 
 test.use({ viewport: { width: 800, height: 500 } });
 
@@ -45,33 +43,6 @@ test('an old page whose assets are gone reloads once and starts', async ({ openP
     // no perf probe, no overlay in the production build
     expect(await player.page.evaluate(() => ['__bulliDebug', '__bulliPerf', '__bulliSim'].filter(key => key in window))).toEqual([]);
     await expect(player.page.locator('#perf-overlay')).toHaveCount(0);
-});
-
-test('a page with an old protocol reloads once, then says why it stops', async ({ openPlayer }) => {
-    const { page } = await openPlayer('version');
-    // A server that speaks a newer protocol than this page
-    await page.routeWebSocket(/\/ws$/, ws => {
-        ws.onMessage(message => {
-            const msg = JSON.parse(String(message)) as { type: string };
-            if (msg.type !== 'hello') return;
-            ws.send(JSON.stringify({ type: 'reject', reason: 'version', reload: true, serverProtocol: PROTOCOL_VERSION + 1 }));
-            ws.close({ code: 4000, reason: 'version' });
-        });
-    });
-    let loads = 0;
-    page.on('load', () => loads++);
-    await page.goto('/?e2e=1');
-    await expect.poll(() => loads, { timeout: 30_000 }).toBe(2);
-    const notice = page.locator('#net-notice');
-    await expect(notice).toBeVisible({ timeout: 30_000 });
-    await expect(notice).toContainText('A new version is out');
-    await expect(notice.locator('button')).toHaveText('Reload');
-    // The notice only shows once the reload guard held on the reloaded
-    // page: no second reload, no loop
-    expect(loads).toBe(2);
-    // On top: the page never got a room, so the loader is still there
-    // (visible alone would also pass underneath it)
-    expect(await topmostAtCenter(page, '#net-notice')).toBe(true);
 });
 
 // The browser logs every refused WebSocket while the server is down

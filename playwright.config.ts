@@ -3,7 +3,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 // The critical user paths (tests/e2e) run against the production build
 // (dist/), served by the real game server on its own port: desktop, two
-// players, touch on a phone, a new deploy, missing assets. "npm run
+// players, touch on a phone, a new deploy. "npm run
 // test:e2e" builds first and runs the desktop and mobile projects; the
 // render checks of the phone tier (tests/e2e-render) are their own
 // project, "npm run test:e2e:render". A bare "npx playwright test" reuses whatever
@@ -53,7 +53,7 @@ export default defineConfig({
         },
         {
             // Draw call budget and texture placeholders of the phone tier,
-            // the touch HUD layout in eight viewports: measurements, not
+            // the touch HUD layout in six viewports: measurements, not
             // user paths (own CI job)
             name: 'render',
             testDir: 'tests/e2e-render',

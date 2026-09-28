@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { test, expect, joinGame, snapshot, waitFrames, meanColor, debugCall } from '../e2e/fixtures.js';
-import type { MapWorldStats, WorldInfo } from '../../src/client/e2eHook.js';
+import type { BulliDebugSnapshot, CarInfo, MapWorldStats, WorldInfo } from '../../src/client/e2eHook.js';
 import { mapFor } from '../../src/server/maps.js';
 import { heightAt } from '../../src/shared/map/heightfield.js';
 
@@ -112,13 +112,28 @@ test('the phone tier stays within 150 draw calls and 500 k triangles including s
     await checkGroundColours(page);
 });
 
-test('without its KTX2 textures the world is plainly shaded, not black', async ({ openPlayer }) => {
-    const player = await openPlayer('world-no-textures', { allowedProblems: /\.ktx2|Failed to load resource|net::ERR_FAILED/ });
+// A page whose assets do not arrive (CDN, network, transcoder all end up
+// here) must still be playable: without the car models the procedural car
+// drives, without the KTX2 world textures the world keeps its placeholders.
+// The fallbacks themselves are unit-tested (tests/client/modelCache.test.ts,
+// worldTextures.test.ts).
+test('without its car models and KTX2 textures the game joins with the procedural car, the world plainly shaded, not black', async ({ openPlayer }) => {
+    const player = await openPlayer('no-assets', {
+        allowedProblems: /\/models\/manifest\.json|\.ktx2|Failed to load resource|net::ERR_FAILED/
+    });
     const { page } = player;
-    // Every world texture fails (network, CDN, transcoder all end up here)
+    await page.route('**/models/manifest.json', route => route.fulfill({ status: 404, body: 'gone' }));
     await page.route(/\/textures\/.*\.ktx2/, route => route.abort());
-    await joinGame(player, 'E2E No Textures', '&tier=low');
+    await joinGame(player, 'E2E No Assets', '&tier=low');
 
+    // The procedural car
+    const models = await debugCall<BulliDebugSnapshot['models']>(page, 'modelsSettled');
+    expect(models.status).toBe('failed');
+    expect(models.loaded).toEqual([]);
+    expect(models.errors.join()).toMatch(/HTTP 404/);
+    expect(await debugCall<CarInfo | null>(page, 'localCarInfo')).toMatchObject({ carType: 'bulli', gltf: false, lod: -1 });
+
+    // Every world texture failed
     const info = await settled(page);
     expect(info.tier).toBe('mobile');
     expect(info.textures.requested).toBeGreaterThan(5);

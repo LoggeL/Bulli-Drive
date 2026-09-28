@@ -10,7 +10,7 @@ import {
 // car leaves the ground and lands, 26), the RESET button held, the room
 // chip back to the Party, a short drop that resumes the same player, and a
 // lost connection that comes back as a new player after the grace time,
-// with a reconnect banner that leaves the HUD free. The HUD layout in eight
+// with a reconnect banner that leaves the HUD free. The HUD layout in six
 // viewports is a measurement in the render job
 // (tests/e2e-render/touch-hud.spec.ts). The touch rules (brake threshold,
 // auto-gas) are tested on InputManager in tests/client/input.test.ts, the
@@ -54,7 +54,7 @@ const HUD = [
     '#joystick-move', '#drive-meter', '#map-panel', '#score-container', '#player-list'
 ];
 // The phones the reconnect banner is checked on, portrait and landscape
-// (the whole touch HUD in eight viewports: tests/e2e-render/touch-hud.spec.ts)
+// (the whole touch HUD in six viewports: tests/e2e-render/touch-hud.spec.ts)
 const PHONES = [
     { name: 'iPhone 13', width: 390, height: 664 },
     { name: 'iPhone SE', width: 320, height: 568 },
