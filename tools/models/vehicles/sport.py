@@ -149,16 +149,29 @@ def details(S, q):
         strip(mb, pts2[:2], nrm[:2], prof, "chrome")
         strip(mb, pts2[1:], nrm[1:], [(-0.009, -0.001), (0.0, 0.008), (0.009, -0.001)], "chrome")
         mb.part("trim")
-    if q["louvers"]:                                          # twin engine grilles on the lid
+    if q["louvers"]:                                          # twin engine grilles on the lid (3D angled chrome louvers)
         for sx in (1, -1):
-            xc = sx * 0.095
+            xc = sx * 0.098
+            # recessed dark vent cavity backing + chrome surround frame
+            c0, n0 = S.ray((xc, Y(3.50), 3.0), (0, 0, -1))
+            frame = [(xc - 0.080, 3.385), (xc + 0.080, 3.385), (xc + 0.080, 3.615), (xc - 0.080, 3.615), (xc - 0.080, 3.385)]
+            seam(mb, S, [(x, Y(s), 3.0) for (x, s) in frame], Vector((0, 0, 1)), width=0.011, off=0.002, mat="chrome", seg=0.06)
+            # dark recess beneath louvers
+            fa, _ = S.ray((xc - 0.074, Y(3.39), 3.0), (0, 0, -1))
+            fb, _ = S.ray((xc + 0.074, Y(3.39), 3.0), (0, 0, -1))
+            fc, _ = S.ray((xc + 0.074, Y(3.61), 3.0), (0, 0, -1))
+            fd, _ = S.ray((xc - 0.074, Y(3.61), 3.0), (0, 0, -1))
+            mb.f([mb.v(p + n0 * 0.0012) for p in (fa, fb, fc, fd)], "trim_dark")
             for k in range(-4, 5):
-                x = xc + k * 0.016
-                a, na = S.ray((x, Y(3.40), 3.0), (0, 0, -1))
-                b, nb = S.ray((x, Y(3.60), 3.0), (0, 0, -1))
-                strip(mb, [a, a.lerp(b, 0.5), b], [na, na.lerp(nb, 0.5), nb], [(-0.004, 0.003), (0.004, 0.003)], "chrome")
-            frame = [(xc - 0.078, 3.39), (xc + 0.078, 3.39), (xc + 0.078, 3.61), (xc - 0.078, 3.61), (xc - 0.078, 3.39)]
-            seam(mb, S, [(x, Y(s), 3.0) for (x, s) in frame], Vector((0, 0, 1)), width=0.012, off=0.0015, mat="trim_dark", seg=0.05)
+                x = xc + k * 0.0165
+                a, na = S.ray((x, Y(3.395), 3.0), (0, 0, -1))
+                b, nb = S.ray((x, Y(3.605), 3.0), (0, 0, -1))
+                strip(mb, [a, a.lerp(b, 0.5), b], [na, na.lerp(nb, 0.5), nb],
+                      [(-0.0045, 0.001), (-0.0025, 0.0065), (0.0025, 0.0065), (0.0045, 0.001)], "chrome")
+        # signature Porsche 356 chrome trim bar along rear deck upper lip
+        deck_pts = [Vector((x, Y(3.31), 3.0)) for x in (-0.32, -0.16, 0.0, 0.16, 0.32)]
+        on_surface_strip(mb, S, deck_pts, (0, 0, 1),
+                         [(-0.007, 0.0), (-0.004, 0.006), (0.004, 0.006), (0.007, 0.0)], "chrome")
         mb.part("grilles")
     if q["handles"]:
         for sx in (1, -1):
@@ -166,6 +179,8 @@ def details(S, q):
             p0, p1 = loc + n * 0.014 + Vector((0, -0.045, 0)), loc + n * 0.014 + Vector((0, 0.045, 0))
             tube(mb, [loc + Vector((0, -0.05, 0)) - n * 0.002, p0, p1, loc + Vector((0, 0.05, 0)) - n * 0.002],
                  0.007, 6, "chrome")
+            # door push-button boss
+            box(mb, loc + n * 0.012 + Vector((0, 0.052, 0)), (0.014, 0.016, 0.016), "chrome")
         mb.part("handles")
 
     # ---------------- lamps ----------------
@@ -176,11 +191,16 @@ def details(S, q):
         if q["lamp"] > 8:
             loc, n = S.front(sx * 0.64, 0.445)
             round_lamp(mb, loc, n, 0.028, q, lens="lamp_amber")
-            # horn grille: chrome-rimmed dark slot
+            # horn grille: recessed chrome surround + dark slot + 3 horizontal chrome slats
             a, na = S.front(sx * 0.605, 0.452)
-            b, nb = S.front(sx * 0.48, 0.452)
-            strip(mb, [a, b], [na, nb], [(-0.014, 0.002), (-0.011, 0.005), (0.011, 0.005), (0.014, 0.002)], "chrome")
-            strip(mb, [a, b], [na, nb], [(-0.010, 0.0055), (0.010, 0.0055)], "trim_dark")
+            b, nb = S.front(sx * 0.465, 0.452)
+            strip(mb, [a, b], [na, nb], [(-0.020, 0.001), (-0.016, 0.007), (0.016, 0.007), (0.020, 0.001)], "chrome")
+            strip(mb, [a, b], [na, nb], [(-0.015, 0.0055), (0.015, 0.0055)], "trim_dark")
+            if q["lamp"] >= 24:
+                for dz in (-0.009, 0.0, 0.009):
+                    sa, sna = S.front(sx * 0.598, 0.452 + dz)
+                    sb, snb = S.front(sx * 0.472, 0.452 + dz)
+                    strip(mb, [sa, sb], [sna, snb], [(-0.0022, 0.006), (0.0022, 0.009)], "chrome")
         loc, n = S.rear(sx * 0.56, 0.49)
         sockets["socket_taillight_" + ("l" if sx > 0 else "r")] = round_lamp(
             mb, loc, n, 0.075, q, lens="lamp_tail", sx=1.0, sy=0.42, depth=0.03,
@@ -220,33 +240,42 @@ def details(S, q):
             ay = math.asin(0.39 / 0.80 * math.sin(1.25))
             y0 = Y(s_mid) - sg * 0.32 * (1 - math.cos(ay)) / (1 - math.cos(1.25)) + sg * 0.012
             overrider(mb, x, y0, sg, 0.20, 0.47 if front else 0.48, q, r=0.026)
+            if q["bumper_n"] > 12:
+                # sculpted rubber impact pad on bumper overrider face
+                box(mb, (x, y0 + sg * 0.025, 0.33 if front else 0.35), (0.032, 0.014, 0.14), "rubber")
     mb.part("bumpers")
 
-    # ---------------- mirror, wipers ----------------
+    # ---------------- dual Talbot bullet mirrors, wipers ----------------
     if q["mirrors"]:
-        base, n = S.ray((0.66, Y(1.45), 3.0), (0, 0, -1))
-        head = base + Vector((0.0, 0.0, 0.10))
-        tube(mb, [base, head], 0.007, max(5, q["tube"] - 3), "chrome")
-        M = frame_from_axis(Vector((0.1, -1, 0)))
-        lathe(mb, [(0.0, -0.014), (0.038, -0.010), (0.048, -0.003), (0.05, 0.004), (0.0, 0.008)],
-              max(12, q["lamp"] * 2 // 3), M, head, ["chrome"] * 4)
+        for sx in (1, -1):
+            base, n = S.ray((sx * 0.66, Y(1.45), 3.0), (0, 0, -1))
+            head = base + Vector((sx * 0.015, 0.0, 0.095))
+            tube(mb, [base, head], 0.007, max(5, q["tube"] - 3), "chrome")
+            M = frame_from_axis(Vector((sx * 0.08, -1, 0)))
+            lathe(mb, [(0.0, -0.028), (0.022, -0.020), (0.042, -0.006), (0.048, 0.004), (0.044, 0.008), (0.0, 0.008)],
+                  max(10, q["lamp"] * 2 // 3), M, head, ["chrome", "chrome", "chrome", "chrome", "glass"])
     if q["wipers"]:
         for sx in (1, -1):
-            a, na = S.front(sx * 0.12 + 0.10, 0.935)
-            b, nb = S.front(sx * 0.12 + 0.10 - 0.36, 0.955)
-            a, b = a + na * 0.01, b + nb * 0.012
-            tube(mb, [a, b], 0.0032, 4, "trim_dark")
+            a, na = S.front(sx * 0.14 + 0.08, 0.935)
+            mid, nmid = S.front(sx * 0.14 + 0.08 - 0.17, 0.950)
+            b, nb = S.front(sx * 0.14 + 0.08 - 0.36, 0.955)
+            a, mid, b = a + na * 0.011, mid + nmid * 0.013, b + nb * 0.012
+            tube(mb, [a, mid], 0.0032, 4, "chrome")
+            tube(mb, [mid - Vector((-0.07, 0, 0.004)), b], 0.0040, 4, "trim_dark")
             box(mb, a - na * 0.004, (0.014, 0.014, 0.014), "chrome")
     mb.part("mirror_wipers")
 
-    # ---------------- underbody, exhaust ----------------
+    # ---------------- underbody, twin chrome exhausts ----------------
     if q["under"]:
         box(mb, (0, Y(2.0), 0.20), (1.1, 2.6, 0.04), "trim_dark")
         box(mb, (0, Y(3.45), 0.34), (0.8, 0.6, 0.26), "trim_dark")
         for sx in (1, -1):
             tube(mb, [(0, Y(S_AXLE_R), 0.32), (sx * 0.5, Y(S_AXLE_R), WR)], 0.033, 6, "trim_dark")
-    p0, p1 = Vector((-0.39, Y(3.80), 0.21)), Vector((-0.39, Y(4.02), 0.20))
-    tube(mb, [p0, p1], 0.026, 8 if q["tube"] > 6 else 5, "chrome")
+    for sx in (1, -1):
+        p0, p1 = Vector((sx * 0.39, Y(3.78), 0.21)), Vector((sx * 0.39, Y(4.02), 0.20))
+        tube(mb, [p0, p1], 0.024, 8 if q["tube"] > 6 else 5, "chrome")
+        if q["tube"] > 6:
+            tube(mb, [p1 - Vector((0, 0.015, 0)), p1 + Vector((0, 0.002, 0))], 0.017, 6, "trim_dark")
     sockets["socket_exhaust"] = Vector((-0.39, Y(4.03), 0.20))
     mb.part("underbody")
 
@@ -265,9 +294,16 @@ def details(S, q):
         rim = [c + Mw @ Vector((0.20 * math.cos(2 * pi * k / segs), 0.20 * math.sin(2 * pi * k / segs), 0)) for k in range(segs)]
         tube(mb, rim, 0.011, 5 if q["int_seg"] > 8 else 4, "ivory", closed=True)
         tube(mb, [c - ax * 0.02, c - ax * 0.4], 0.018, 5, "trim_dark", cap_start=False)
-        for sx in (1, -1):                                                     # bucket seats
+        cabin_polish(mb, q, mirror_pos=(0.0, Y(1.88), 1.15), mirror_stalk_top=(0.0, Y(1.84), 1.22),
+                     shift_base=(0.0, Y(2.04), 0.40), shift_top=(0.0, Y(2.08), 0.66),
+                     steer_c=c, steer_ax=ax, steer_r=0.20, visor_y=Y(1.82), visor_z=1.18, visor_x=0.31)
+        for sx in (1, -1):                                                     # sculpted bucket seats
             box(mb, (sx * 0.36, Y(2.30), 0.38), (0.44, 0.46, 0.12), "seat")
             box(mb, (sx * 0.36, Y(2.58), 0.66), (0.42, 0.10, 0.56), "seat", M=Matrix.Rotation(-0.25, 3, "X"))
+            if q["int_seg"] > 8:
+                for bx in (-0.19, 0.19):
+                    box(mb, (sx * 0.36 + bx, Y(2.54), 0.64), (0.075, 0.13, 0.48), "seat",
+                        M=Matrix.Rotation(-0.25, 3, "X"))
         box(mb, (0, Y(2.85), 0.45), (1.05, 0.34, 0.10), "seat")                # small rear bench
         box(mb, (0, Y(3.05), 0.64), (1.05, 0.10, 0.36), "seat", M=Matrix.Rotation(-0.55, 3, "X"))
         mb.part("interior")
@@ -311,13 +347,13 @@ Q = {
             inner_u=2, ws_rings=0, curved=False,
             seal=3, glass_rings=2, nc=3, maxseg=0.28, sky_nc=1, strips=True, seams=True, louvers=True, handles=True,
             lamp=28, logo_seg=28, bumper_n=18, tube=8, mirrors=True, wipers=True, plate=True,
-            under=True, interior=True, blob=True, holes=True, vent_bar=6, int_seg=10, tire="hi", wheel_segs=32,
-            arch_segs=40, surf_n=12, merge_wheels=False, smooth=40),
+            under=True, interior=True, blob=True, holes=True, vent_bar=6, int_seg=10, tire="hi", wheel_segs=26,
+            arch_segs=32, surf_n=12, merge_wheels=False, smooth=40),
     1: dict(body_u=[1, 1, 2, 2, 2, 2, 2, 2, 2, 1], body_v=[1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
             inner_u=1, ws_rings=0, curved=False,
             seal=1, glass_rings=0, nc=2, maxseg=0.9, sky_nc=1, strips=True, seams=False, louvers=False, handles=False,
             lamp=14, logo_seg=14, bumper_n=10, tube=5, mirrors=True, wipers=False, plate=True,
-            under=False, interior=True, blob=True, holes=True, vent_bar=0, int_seg=6, tire="mid", wheel_segs=16,
+            under=False, interior=True, blob=True, holes=True, vent_bar=0, int_seg=6, tire="mid", wheel_segs=14,
             arch_segs=16, surf_n=6, merge_wheels=False, smooth=40),
     2: dict(body_u=1, keep=[0, 1, 2, 3, 4, 5, 6, 8, 10, 11, 12, 13, 14, 15, 16, 17], body_v=1,
             inner_u=1, ws_rings=0, curved=False,
@@ -328,7 +364,7 @@ Q = {
 }
 
 WHEEL = dict(R=WR, w=0.125, bead=0.19, ww=None, rim="rim_paint", hub_r=0.105, hub_h=0.05, holes=0.152, n_holes=10,
-             hole_size=(0.014, 0.009))
+             hole_size=(0.014, 0.009), beauty_ring=True, lugs=True, brakes=True)
 
 
 def build_lod(lod):

@@ -29,39 +29,41 @@ CAR = {}                                     # config of the car being built (in
 # name: base hex (sRGB), roughness, metallic, clearcoat, coat roughness, spec (Specular IOR Level),
 # emissive hex + strength, region (UV region of the atlas instead of a flat cell)
 BASE_SPECS = {
-    "paint_primary":   dict(col="#7A1418", rough=0.35, coat=1.0, coat_rough=0.03, spec=0.2),
-    "paint_secondary": dict(col="#D6CBB2", rough=0.35, coat=1.0, coat_rough=0.03, spec=0.2),
-    "chrome":          dict(col="#EDEDEF", rough=0.05, metal=1.0),
+    "paint_primary":   dict(col="#7A1418", rough=0.28, metal=0.10, coat=1.0, coat_rough=0.03, spec=0.30),
+    "paint_secondary": dict(col="#D6CBB2", rough=0.28, metal=0.08, coat=1.0, coat_rough=0.03, spec=0.30),
+    "chrome":          dict(col="#F0F1F3", rough=0.04, metal=1.0),
     "glass":           dict(col="#1C252C", rough=0.02, alpha=0.24),
     "glass_dark":      dict(col="#0B0F13", rough=0.04),
     "rubber":          dict(col="#141414", rough=0.86),
     "tread":           dict(col="#171717", rough=0.92, region="tread"),
     "trim_dark":       dict(col="#0D0D0D", rough=0.75),
     "wheel_white":     dict(col="#E8E2D4", rough=0.5),
-    "rim_paint":       dict(col="#D9D1BD", rough=0.3),
-    "lamp_head":       dict(col="#CFCFC6", rough=0.12, metal=0.4, emit="#FFE3B6", estr=0.4),
-    "lamp_tail":       dict(col="#6E0906", rough=0.10, emit="#FF2414", estr=0.35),
-    "lamp_amber":      dict(col="#C8600E", rough=0.10, emit="#FF8A1E", estr=0.12),
+    "rim_paint":       dict(col="#D9D1BD", rough=0.28, metal=0.25),
+    "lamp_head":       dict(col="#CFCFC6", rough=0.10, metal=0.45, emit="#FFE3B6", estr=0.42),
+    "lamp_tail":       dict(col="#6E0906", rough=0.08, emit="#FF2414", estr=0.38),
+    "lamp_amber":      dict(col="#C8600E", rough=0.08, emit="#FF8A1E", estr=0.14),
     "canvas":          dict(col="#4F4338", rough=0.95),
-    "plate":           dict(col="#FFFFFF", rough=0.45, region="plate"),
-    "hubcap":          dict(col="#EDEDEF", rough=0.05, metal=1.0, region="hubcap"),
-    "crest":           dict(col="#C9A24A", rough=0.3, metal=0.6, region="crest"),
+    "plate":           dict(col="#FFFFFF", rough=0.42, region="plate"),
+    "hubcap":          dict(col="#F0F1F3", rough=0.04, metal=1.0, region="hubcap"),
+    "crest":           dict(col="#C9A24A", rough=0.28, metal=0.65, region="crest"),
     "interior":        dict(col="#A69A86", rough=0.8, emit="#A69A86", estr=0.10),
     "headliner":       dict(col="#EFE8D6", rough=0.9, emit="#EFE8D6", estr=0.16),
     "floor":           dict(col="#4E473F", rough=0.95),
     "seat":            dict(col="#CFC2A4", rough=0.55, emit="#CFC2A4", estr=0.10),
-    "ivory":           dict(col="#ECE4CE", rough=0.3),
-    "surf_board":      dict(col="#EFE6CF", rough=0.28),
-    "surf_stripe":     dict(col="#1D7686", rough=0.28),
-    "paint_black":     dict(col="#141516", rough=0.42),
-    "steel_dark":      dict(col="#2B2C2E", rough=0.55, metal=0.7),
-    "wood":            dict(col="#8B6B47", rough=0.82),
+    "ivory":           dict(col="#ECE4CE", rough=0.26),
+    "surf_board":      dict(col="#EFE6CF", rough=0.25),
+    "surf_stripe":     dict(col="#1D7686", rough=0.25),
+    "paint_black":     dict(col="#141516", rough=0.40),
+    "steel_dark":      dict(col="#2E3033", rough=0.48, metal=0.78),
+    "wood":            dict(col="#8B6B47", rough=0.78),
+    "brake_disc":      dict(col="#A6ACB2", rough=0.22, metal=0.92),
+    "caliper":         dict(col="#B8251C", rough=0.32, metal=0.45),
     "cut_cap":         dict(col="#FF00FF", rough=1.0),                 # boolean helper, deleted
     "blob":            dict(col="#000000", rough=1.0),                 # placeholder -> 'glass' (blob region)
 }
 BASE_CELLS = ["chrome", "glass_dark", "rubber", "trim_dark", "wheel_white", "rim_paint", "lamp_head",
               "lamp_tail", "lamp_amber", "canvas", "interior", "headliner", "floor", "seat", "ivory",
-              "surf_board", "surf_stripe", "paint_black", "steel_dark", "wood"]
+              "surf_board", "surf_stripe", "paint_black", "steel_dark", "wood", "brake_disc", "caliper"]
 ATLAS_PX, ATLAS_CELL, ATLAS_COLS = 512, 32, 16
 REGIONS = {"plate": (0, 320, 256, 128), "tread": (0, 256, 512, 64), "hubcap": (256, 320, 128, 128),
            "crest": (384, 384, 64, 64)}
@@ -144,6 +146,47 @@ def region_uv(name, u, v):
     return ((x0 + u * w) / ATLAS_PX, (y0 + v * h) / ATLAS_PX)
 
 
+_TINY_FONT = {
+    "L": ("100", "100", "100", "100", "111"),
+    "M": ("101", "111", "111", "101", "101"),
+    "F": ("111", "100", "110", "100", "100"),
+    "R": ("110", "101", "110", "101", "101"),
+    "P": ("110", "101", "110", "100", "100"),
+    "D": ("110", "101", "101", "101", "110"),
+    "-": ("000", "000", "111", "000", "000"),
+    "2": ("111", "001", "111", "100", "111"),
+    "6": ("111", "100", "111", "101", "111"),
+}
+
+
+def stamp_plate_tags(px):
+    """subtle vintage California registration stickers in top corners: RP-LD (left) & LMF26 (right)"""
+    h, w, _ = px.shape
+
+    def sticker(x0, y_top, text, bg, fg):
+        pad_x, pad_y, sc = 3, 2, 2
+        gw = len(text) * (4 * sc) - sc + 2 * pad_x
+        gh = 5 * sc + 2 * pad_y
+        y0 = h - y_top - gh
+        px[y0:y0 + gh, x0:x0 + gw, :3] = bg
+        px[y0:y0 + 1, x0:x0 + gw, :3] = [c * 0.7 for c in bg]
+        px[y0 + gh - 1:y0 + gh, x0:x0 + gw, :3] = [c * 0.7 for c in bg]
+        cx = x0 + pad_x
+        for ch in text:
+            rows = _TINY_FONT.get(ch)
+            if rows:
+                for ry, row in enumerate(rows):
+                    for rx, bit in enumerate(row):
+                        if bit == "1":
+                            yy = y0 + gh - pad_y - (ry + 1) * sc
+                            xx = cx + rx * sc
+                            px[yy:yy + sc, xx:xx + sc, :3] = fg
+            cx += 4 * sc
+
+    sticker(22, 12, "RP-LD", (0.72, 0.11, 0.14), (0.96, 0.90, 0.68))
+    sticker(w - 66, 12, "LMF26", (0.86, 0.68, 0.18), (0.09, 0.08, 0.08))
+
+
 def plate_pixels(w=256, h=128):
     import numpy as np
     im = bpy.data.images.load(CAR["plate"])
@@ -154,6 +197,7 @@ def plate_pixels(w=256, h=128):
     a = px[..., 3:4]
     px[..., :3] = px[..., :3] * a + 0.02 * (1 - a)
     px[..., 3] = 1
+    stamp_plate_tags(px)
     bpy.data.images.remove(im)
     return px
 
@@ -288,16 +332,20 @@ def make_atlas_material():
             e = srgb(s["emit"])
             k = min(1.0, s["estr"])
             em[sl[0], sl[1], :3] = [c * k for c in e]
-    # hubcap: chrome with the relief in the normal map
+    # hubcap: chrome with the relief in the normal map + subtle radial spun sheen
     x0, y0, w, h = REGIONS["hubcap"]
     hs = specs["hubcap"]
     base[y0:y0 + h, x0:x0 + w, :3] = srgb(hs["col"])
     mr[y0 // 4:(y0 + h) // 4, x0 // 4:(x0 + w) // 4, 1] = hs["rough"]
     mr[y0 // 4:(y0 + h) // 4, x0 // 4:(x0 + w) // 4, 2] = hs.get("metal", 1.0)
     hl = hub_logo_height(w)
+    c_hc = (np.arange(w) + 0.5) / w * 2 - 1
+    Xh, Yh = np.meshgrid(c_hc, c_hc)
+    rh = np.hypot(Xh, Yh)
+    hl = np.clip(hl + 0.08 * np.sin(rh * 36.0) * (rh < 0.94), 0.0, 1.2)
     dpx = 2 * CAR["hub_r"] / w
-    gx = (np.roll(hl, -1, 1) - np.roll(hl, 1, 1)) / (2 * dpx) * 0.0016
-    gy = (np.roll(hl, -1, 0) - np.roll(hl, 1, 0)) / (2 * dpx) * 0.0016
+    gx = (np.roll(hl, -1, 1) - np.roll(hl, 1, 1)) / (2 * dpx) * 0.0020
+    gy = (np.roll(hl, -1, 0) - np.roll(hl, 1, 0)) / (2 * dpx) * 0.0020
     nv = np.stack([-gx, -gy, np.ones_like(gx)], -1)
     nv /= np.linalg.norm(nv, axis=-1, keepdims=True)
     nrm[y0:y0 + h, x0:x0 + w, :3] = nv * 0.5 + 0.5
@@ -310,13 +358,13 @@ def make_atlas_material():
     # licence plate
     x0, y0, w, h = REGIONS["plate"]
     base[y0:y0 + h, x0:x0 + w] = plate_pixels(w, h)
-    mr[y0 // 4:(y0 + h) // 4, x0 // 4:(x0 + w) // 4, 1] = 0.45
-    # tread
+    mr[y0 // 4:(y0 + h) // 4, x0 // 4:(x0 + w) // 4, 1] = 0.42
+    # tread: sharper relief + darker grooves
     x0, y0, w, h = REGIONS["tread"]
     ht = tread_height(w, h)
-    base[y0:y0 + h, x0:x0 + w, :3] = (0.075 + 0.03 * ht)[..., None]
-    mr[y0 // 4:(y0 + h) // 4, x0 // 4:(x0 + w) // 4, 1] = 0.92
-    du_m, dv_m, depth = 2 * math.pi * CAR["wr"] / w, CAR["tread_w"] / h, 0.0028
+    base[y0:y0 + h, x0:x0 + w, :3] = (0.060 + 0.042 * ht)[..., None]
+    mr[y0 // 4:(y0 + h) // 4, x0 // 4:(x0 + w) // 4, 1] = 0.90
+    du_m, dv_m, depth = 2 * math.pi * CAR["wr"] / w, CAR["tread_w"] / h, 0.0038
     gx = (np.roll(ht, -1, 1) - np.roll(ht, 1, 1)) / (2 * du_m) * depth
     gy = (np.roll(ht, -1, 0) - np.roll(ht, 1, 0)) / (2 * dv_m) * depth
     gy[0], gy[-1] = 0, 0
@@ -742,41 +790,48 @@ def crest(mb, O, N, w, h, up=Vector((0, 0, 1)), depth=0.004):
 
 
 def plate(mb, O, N, q, w=0.305, h=0.152, lamp=True):
-    """licence plate (atlas plate region) standing on the surface point O with normal N"""
+    """licence plate (atlas plate region) standing on the surface point O with normal N,
+    plus crisp chrome surround bezel on LOD0"""
     N = Vector((N.x, N.y, 0)).normalized()
     U = Vector((0, 0, 1)).cross(N).normalized()
     V = N.cross(U).normalized()
-    base = O + N * 0.006
+    M = Matrix((U, N, Vector((0, 0, 1)))).transposed()
+    base = O + N * 0.007
     if q["plate"]:
         vs = [mb.v(base + U * (sx * w / 2) + V * (sy * h / 2)) for (sx, sy) in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
         fc = mb.f(vs, "plate")
         mb.set_uv(fc, vs, [(0, 0), (1, 0), (1, 1), (0, 1)])
+        if q.get("lamp", 0) >= 24:
+            # thin chrome perimeter surround frame + backing plate
+            t = 0.009
+            d = 0.008
+            for sy in (-1, 1):
+                box(mb, O + N * 0.005 + V * (sy * (h / 2 + t / 2)), (w + 2 * t, d, t), "chrome", M=M)
+            for sx in (-1, 1):
+                box(mb, O + N * 0.005 + U * (sx * (w / 2 + t / 2)), (t, d, h), "chrome", M=M)
         if lamp:
-            box(mb, O + N * 0.02 + V * (h / 2 + 0.03), (0.13, 0.04, 0.035), "chrome",
-                M=Matrix((U, N, Vector((0, 0, 1)))).transposed())
+            box(mb, O + N * 0.02 + V * (h / 2 + 0.03), (0.13, 0.04, 0.035), "chrome", M=M)
 
 
 def headlight(mb, loc, n, R, q, pod_mat="paint_primary", pod=True):
-    """round headlight (R = outer radius of the chrome ring) facing n, like the T1 lamp scaled"""
+    """round headlight (R = outer radius of the chrome ring) facing n; LOD0 has sculpted stepped
+    chrome bezel, inner reflector recess, curved glass lens & subtle top eyebrow lip."""
     M = frame_from_axis(n)
     k = R / 0.132
-    prof = [(0.132, -0.03), (0.127, 0.006), (0.116, 0.016), (0.108, 0.027), (0.097, 0.030), (0.089, 0.022),
-            (0.087, 0.022), (0.074, 0.030), (0.071, 0.029), (0.045, 0.036), (0.0, 0.040)]
-    mats = [pod_mat] * 2 + ["chrome"] * 4 + ["lamp_head"] * 4
     if q["lamp"] >= 24:
-        prof = [(0.132, -0.03), (0.127, 0.006), (0.113, 0.021), (0.099, 0.030), (0.089, 0.022),
-                (0.074, 0.030), (0.045, 0.036), (0.0, 0.040)]
-        mats = [pod_mat, "chrome", "chrome", "chrome", "lamp_head", "lamp_head", "lamp_head"]
+        prof = [(0.134, -0.032), (0.128, 0.007), (0.120, 0.019), (0.107, 0.032), (0.095, 0.033),
+                (0.088, 0.020), (0.078, 0.027), (0.052, 0.035), (0.022, 0.039), (0.0, 0.041)]
+        mats = [pod_mat, "chrome", "chrome", "chrome", "chrome", "trim_dark", "lamp_head", "lamp_head", "lamp_head"]
     elif q["lamp"] > 8:
         prof = [(0.128, -0.02), (0.122, 0.012), (0.098, 0.029), (0.086, 0.023), (0.0, 0.038)]
         mats = [pod_mat, "chrome", "chrome", "lamp_head"]
-    if q["lamp"] <= 8:
+    else:
         prof = [(0.115, -0.01), (0.105, 0.025), (0.0, 0.034)]
         mats = ["chrome", "lamp_head"]
     if not pod and mats[0] == pod_mat:
         prof, mats = prof[1:], mats[1:]
     lathe(mb, [(r * k, h * k) for (r, h) in prof], q["lamp"], M, loc, mats)
-    return loc + n * 0.04 * k
+    return loc + n * 0.041 * k
 
 
 def round_lamp(mb, loc, n, R, q, lens="lamp_amber", ring="chrome", sx=1.0, sy=1.0, mat_fn=None, depth=None):
@@ -870,19 +925,20 @@ def build_wheel(q, name, style):
     side_z = hw + 0.034                               # outer sidewall bulge
     rim_face = hw + 0.012                            # flange plane
     if q["tire"] == "hi":
+        outer_rim_mat = "chrome" if style.get("beauty_ring") else rim
         prof = [(0.0, -hw * 0.6), (R - 0.035, -hw - 0.032), (R + 0.0025, -hw),
-                (R + 0.0025, hw), (R - 0.007, hw + 0.022), (R - 0.030, side_z - 0.0015)]
+                (R + 0.0025, hw), (R - 0.007, hw + 0.022), (R - 0.028, side_z - 0.001)]
         mats = ["trim_dark", "rubber", "tread", "rubber", "rubber"]
         if ww:
-            prof += [(ww[1], side_z + 0.002), (ww[0], side_z + 0.001)]
+            prof += [(ww[1], side_z + 0.003), (ww[0], side_z + 0.001)]
             mats += ["rubber", "wheel_white"]
         else:
-            prof += [((R + bead) / 2, side_z + 0.002)]
-            mats += ["rubber"]
-        prof += [(bead + 0.011, side_z - 0.003), (bead, rim_face + 0.008), (bead - 0.012, rim_face + 0.004)]
-        mats += ["rubber", "rubber", rim]
+            prof += [(bead + 0.032, side_z + 0.004), (bead + 0.018, side_z + 0.002)]
+            mats += ["rubber", "rubber"]
+        prof += [(bead + 0.009, side_z - 0.003), (bead, rim_face + 0.010), (bead - 0.013, rim_face + 0.006)]
+        mats += ["rubber", "rubber", outer_rim_mat]
         # rim dish down to the hubcap edge
-        prof += [(hub_r + 0.02, rim_face - 0.012), (hub_r + 0.004, rim_face - 0.011), (hub_r, rim_face - 0.001)]
+        prof += [(hub_r + 0.02, rim_face - 0.013), (hub_r + 0.004, rim_face - 0.011), (hub_r, rim_face - 0.001)]
         mats += [rim, rim, "chrome"]
         prof += [(hub_r * 0.88, rim_face + hub_h * 0.45), (hub_r * 0.62, rim_face + hub_h * 0.8),
                  (hub_r * 0.3, rim_face + hub_h * 0.97), (0.0, rim_face + hub_h)]
@@ -911,11 +967,11 @@ def build_wheel(q, name, style):
     assert len(mats) == len(prof) - 1, (len(mats), len(prof))
     lathe(mb, prof, q["wheel_segs"], M, Vector((0, 0, 0)), mats, uv_bands=uvb, uv_planar={"hubcap": CAR["hub_r"]})
     if style.get("holes") and q["tire"] == "hi":
-        # ring of dark vent holes on the rim dish (decals just above the paint of the dish cone)
+        # ring of dark vent holes on the rim dish + subtle metallic rotor hint inside each slot
         rr = style["holes"]
         k = style.get("n_holes", 8)
-        r0, h0 = bead - 0.012, rim_face + 0.004
-        r1, h1 = hub_r + 0.02, rim_face - 0.012
+        r0, h0 = bead - 0.013, rim_face + 0.006
+        r1, h1 = hub_r + 0.02, rim_face - 0.013
         hd = h0 + (h1 - h0) * (r0 - rr) / (r0 - r1) + 0.0015
         hl, hh = style.get("hole_size", (0.022, 0.012))
         for i in range(k):
@@ -927,7 +983,55 @@ def build_wheel(q, name, style):
             ring = [mb.v(c + t * (hl * math.cos(2 * pi * (j + 0.5) / n) * (1.0 if n == 8 else 1.41))
                          + rad * (hh * math.sin(2 * pi * (j + 0.5) / n) * (1.0 if n == 8 else 1.41))) for j in range(n)]
             mb.f(ring[::-1], "trim_dark")
+            # metallic brake disc glint peeking inside the lower/inner half of open slots
+            if style.get("brakes"):
+                glint_mat = "caliper" if (i == 1 or i == 2) else "brake_disc"
+                c_in = c + Vector((0.0008, 0, 0)) - rad * (hh * 0.25)
+                gr = [mb.v(c_in + t * (hl * 0.55 * sx) + rad * (hh * 0.35 * sy))
+                      for (sx, sy) in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+                mb.f(gr[::-1], glint_mat)
+    if style.get("lugs") and q["tire"] == "hi":
+        # 5 sculpted wheel lug bolts around the inner bolt circle
+        r_lug = style.get("lug_r", hub_r + 0.018)
+        r0, h0 = bead - 0.013, rim_face + 0.006
+        r1, h1 = hub_r + 0.02, rim_face - 0.013
+        hlug = h0 + (h1 - h0) * (r0 - r_lug) / max(r0 - r1, 1e-4)
+        lug_mat = style.get("lug_mat", "chrome")
+        for i in range(5):
+            a = 2 * math.pi * i / 5
+            box(mb, (hlug + 0.005, math.cos(a) * r_lug, math.sin(a) * r_lug), (0.011, 0.013, 0.013), lug_mat)
+    if style.get("brakes") and q["tire"] == "hi":
+        # inner brake rotor + caliper assembly on the inboard face (visible from low/angled views)
+        r_disc = bead * 0.72
+        lathe(mb, [(0.0, -hw * 0.58), (r_disc, -hw * 0.58), (r_disc, -hw * 0.48), (0.0, -hw * 0.48)],
+              14, M, Vector((0, 0, 0)), ["brake_disc", "steel_dark", "brake_disc"])
+        box(mb, (-hw * 0.52, -r_disc * 0.65, r_disc * 0.45), (0.036, 0.075, 0.095), "caliper")
     return mb.obj(name, smooth_angle=40)
+
+
+def cabin_polish(mb, q, mirror_pos, mirror_stalk_top, shift_base, shift_top, steer_c, steer_ax, steer_r,
+                 visor_y, visor_z, visor_x=0.34, knob_mat="ivory"):
+    """LOD0 cabin craft visible through tinted glass: steering spokes + horn boss, gear shifter +
+    knob, rear-view mirror on chrome stalk, and dual sun visors."""
+    if q.get("int_seg", 0) <= 8:
+        return
+    ax = Vector(steer_ax).normalized()
+    Mw = frame_from_axis(ax)
+    # steering center hub + chrome horn ring + 3 spokes
+    lathe(mb, [(0.0, 0.0), (0.038, 0.0), (0.034, 0.016), (0.0, 0.019)], 8, Mw, Vector(steer_c),
+          ["trim_dark", "chrome", "chrome"])
+    for a in (0.18, pi - 0.18, 1.5 * pi):
+        tube(mb, [Vector(steer_c), Vector(steer_c) + Mw @ Vector(((steer_r - 0.008) * math.cos(a),
+                  (steer_r - 0.008) * math.sin(a), 0))], 0.007, 4, "chrome", cap_start=False, cap_end=False)
+    # gear shifter stalk + glossy shift knob
+    tube(mb, [Vector(shift_base), Vector(shift_top)], 0.008, 4, "chrome", cap_start=False)
+    box(mb, Vector(shift_top) + Vector((0, 0, 0.015)), (0.032, 0.032, 0.032), knob_mat)
+    # rear-view mirror hanging from windshield header
+    tube(mb, [Vector(mirror_stalk_top), Vector(mirror_pos)], 0.005, 4, "chrome", cap_start=False, cap_end=False)
+    box(mb, Vector(mirror_pos), (0.16, 0.022, 0.048), "trim_dark")
+    # dual sun visors
+    for sx in (1, -1):
+        box(mb, (sx * visor_x, visor_y, visor_z), (0.34, 0.018, 0.11), "ivory", M=Matrix.Rotation(0.28, 3, "X"))
 
 
 # --------------------------------------------------------------------------

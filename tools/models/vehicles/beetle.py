@@ -193,9 +193,18 @@ def details(S, q):
             pts = [Vector((sx * 0.9, Y(s), z)) for s, z in ((1.02, 0.905), (1.4, 0.905), (1.9, 0.90), (2.4, 0.895),
                                                                  (2.9, 0.885), (3.25, 0.87))]
             on_surface_strip(mb, S, pts, (sx, 0, 0), [(-0.006, -0.001), (0.0, 0.0045), (0.006, -0.001)], "chrome")
-        # bonnet strip + handle
-        pts = [Vector((0, Y(s), 3.0)) for s in (0.27, 0.45, 0.7, 0.95, 1.12)]
-        on_surface_strip(mb, S, pts, (0, 0, 1), [(-0.006, -0.001), (0.0, 0.005), (0.006, -0.001)], "chrome")
+            if q["strips"] == "hi":
+                # sculpted chrome stone guards at the front base of the rear fenders
+                for dz in (0.0, 0.055):
+                    a, na = S.side(sx, Y(2.74), 0.34 + dz)
+                    b, nb = S.side(sx, Y(2.88), 0.36 + dz)
+                    strip(mb, [a, b], [na, nb], [(-0.014, 0.0), (0.0, 0.005), (0.014, 0.0)], "chrome")
+        # bonnet chrome spear strip + sculpted T-handle latch
+        pts = [Vector((0, Y(s), 3.0)) for s in (0.24, 0.45, 0.7, 0.95, 1.14)]
+        on_surface_strip(mb, S, pts, (0, 0, 1), [(-0.007, -0.001), (0.0, 0.006), (0.007, -0.001)], "chrome")
+        if q["strips"] == "hi":
+            lh, lhn = S.front(0.0, 0.56)
+            box(mb, lh + lhn * 0.012, (0.09, 0.022, 0.018), "chrome")
         mb.part("trim")
     if q["seams"]:
         for sx in (1, -1):
@@ -293,20 +302,23 @@ def details(S, q):
             tube(mb, path, rb, max(5, q["tube"] - 2), "chrome")
     mb.part("bumpers")
 
-    # ---------------- mirror, wipers ----------------
+    # ---------------- mirrors, wipers ----------------
     if q["mirrors"]:
-        base, n = S.side(1, Y(1.33), 0.93)
-        head = base + Vector((0.10, -0.02, 0.17))
-        tube(mb, [base, base + Vector((0.05, 0, 0.08)), head], 0.008, max(5, q["tube"] - 3), "chrome")
-        M = frame_from_axis(Vector((0.15, -1, 0)))
-        lathe(mb, [(0.0, -0.014), (0.04, -0.011), (0.052, -0.004), (0.054, 0.004), (0.0, 0.008)],
-              max(12, q["lamp"] * 2 // 3), M, head, ["chrome"] * 4)
+        sides_m = (1, -1) if q["lamp"] >= 24 else (1,)
+        for sx in sides_m:
+            base, n = S.side(sx, Y(1.33), 0.93)
+            head = base + Vector((sx * 0.10, -0.02, 0.17))
+            tube(mb, [base, base + Vector((sx * 0.05, 0, 0.08)), head], 0.008, max(5, q["tube"] - 3), "chrome")
+            M = frame_from_axis(Vector((sx * 0.15, -1, 0)))
+            lathe(mb, [(0.0, -0.014), (0.04, -0.011), (0.052, -0.004), (0.054, 0.004), (0.0, 0.008)],
+                  max(10, q["lamp"] // 2), M, head, ["chrome"] * 4)
     if q["wipers"]:
         for sx in (1, -1):
             a, na = S.front(sx * 0.10 + 0.12, 1.085)
             b, nb = S.front(sx * 0.10 + 0.12 - 0.34, 1.12)
             a, b = a + na * 0.01, b + nb * 0.012
-            tube(mb, [a, b], 0.0032, 4, "trim_dark")
+            tube(mb, [a, b], 0.0032, 4, "chrome")
+            tube(mb, [a.lerp(b, 0.25) + na * 0.003, b + nb * 0.001], 0.0038, 4, "rubber")
             box(mb, a - na * 0.004, (0.014, 0.014, 0.014), "chrome")
     mb.part("mirror_wipers")
 
@@ -320,15 +332,20 @@ def details(S, q):
             tube(mb, [(-0.55, ya, 0.30), (0.55, ya, 0.30)], 0.03, 6, "trim_dark")
     for sx in (1, -1):
         p0 = Vector((sx * 0.17, Y(3.86), 0.22))
-        p1 = Vector((sx * 0.17, Y(4.05), 0.215))
+        p1 = Vector((sx * 0.17, Y(4.06), 0.215))
         tube(mb, [p0, p1], 0.022, 8 if q["tube"] > 6 else 5, "chrome")
-    sockets["socket_exhaust"] = Vector((0.17, Y(4.06), 0.215))
+        if q["tube"] > 6:
+            tube(mb, [p1 - Vector((0, 0.015, 0)), p1 + Vector((0, 0.003, 0))], 0.016, 6, "trim_dark", cap_start=False)
+    sockets["socket_exhaust"] = Vector((0.17, Y(4.07), 0.215))
     mb.part("underbody")
 
     # ---------------- cabin ----------------
     if q["interior"]:
         box(mb, (0, Y(1.36), 0.93), (1.18, 0.16, 0.10), "paint_primary")      # dashboard (body colour)
         box(mb, (0, Y(1.34), 0.82), (1.10, 0.10, 0.14), "interior")
+        if q["int_seg"] > 8:
+            lathe(mb, [(0.0, 0.0), (0.062, 0.0), (0.062, 0.012), (0.0, 0.012)], 10,
+                  frame_from_axis(Vector((0, 1, 0.3))), Vector((0.36, Y(1.44), 0.94)), ["trim_dark", "chrome", "trim_dark"])
         c = Vector((0.36, Y(1.62), 0.98))
         ax = Vector((0, 0.55, 1.0)).normalized()
         Mw = frame_from_axis(ax)
@@ -336,6 +353,9 @@ def details(S, q):
         rim = [c + Mw @ Vector((0.19 * math.cos(2 * pi * k / segs), 0.19 * math.sin(2 * pi * k / segs), 0)) for k in range(segs)]
         tube(mb, rim, 0.011, 5 if q["int_seg"] > 8 else 4, "ivory", closed=True)
         tube(mb, [c - ax * 0.02, c - ax * 0.45], 0.018, 5, "trim_dark", cap_start=False)
+        cabin_polish(mb, q, mirror_pos=(0.0, Y(1.72), 1.23), mirror_stalk_top=(0.0, Y(1.74), 1.29),
+                     shift_base=(0.0, Y(1.75), 0.34), shift_top=(0.0, Y(1.80), 0.78),
+                     steer_c=c, steer_ax=ax, steer_r=0.19, visor_y=Y(1.75), visor_z=1.24, visor_x=0.22)
         for sx in (1, -1):                                                   # front seats
             box(mb, (sx * 0.30, Y(2.05), 0.50), (0.46, 0.46, 0.12), "seat")
             box(mb, (sx * 0.30, Y(2.33), 0.80), (0.44, 0.10, 0.56), "seat", M=Matrix.Rotation(-0.2, 3, "X"))
@@ -387,14 +407,14 @@ Q = {
     0: dict(body_u=[3, 3, 3, 3, 3, 3, 4, 3], body_v=[2, 2, 2, 2, 2, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1],
             fender_u=2, fender_v=[1, 2, 2, 2, 2, 2, 2, 1], fender_angles=A12, inner_u=2, ws_rings=0, curved=False,
             seal=3, glass_rings=2, nc=3, maxseg=0.28, sky_nc=1, strips="hi", seams=True, louvers=True, handles=True,
-            lamp=28, logo_seg=28, logo_strokes=True, bumper_n=16, tube=8, mirrors=True, wipers=True, plate=True,
-            under=True, interior=True, blob=True, holes=True, vent_bar=6, int_seg=10, tire="hi", wheel_segs=30,
-            arch_segs=40, surf_n=12, merge_wheels=False),
+            lamp=26, logo_seg=26, logo_strokes=True, bumper_n=16, tube=8, mirrors=True, wipers=True, plate=True,
+            under=True, interior=True, blob=True, holes=True, vent_bar=6, int_seg=10, tire="hi", wheel_segs=26,
+            arch_segs=32, surf_n=12, merge_wheels=False),
     1: dict(body_u=2, keep=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15, 16, 17, 18, 19], body_v=1,
             fender_u=1, fender_v=[1, 2, 1, 1, 1, 2, 1, 1], fender_angles=A12, inner_u=1, ws_rings=0, curved=False,
             seal=1, glass_rings=0, nc=2, maxseg=0.9, sky_nc=1, strips="lo", seams=False, louvers=False, handles=False,
             lamp=14, logo_seg=14, logo_strokes=True, bumper_n=9, tube=5, mirrors=True, wipers=False, plate=True,
-            under=False, interior=True, blob=True, holes=True, vent_bar=0, int_seg=6, tire="mid", wheel_segs=14,
+            under=False, interior=True, blob=True, holes=True, vent_bar=0, int_seg=6, tire="mid", wheel_segs=12,
             arch_segs=16, surf_n=6, merge_wheels=False),
     2: dict(body_u=1, keep=[0, 1, 2, 3, 5, 6, 8, 10, 12, 13, 14, 15, 16, 17, 18, 19], body_v=1,
             fender_u=1, fender_v=1, fender_angles=A8, fender_keep=[0, 1, 2, 4, 5, 6, 8], inner_u=1, ws_rings=0,
@@ -405,7 +425,8 @@ Q = {
             arch_segs=8, surf_n=4, merge_wheels=True),
 }
 
-WHEEL = dict(R=WR, w=0.10, bead=0.19, ww=(0.222, 0.282), rim="rim_paint", hub_r=0.118, hub_h=0.036)
+WHEEL = dict(R=WR, w=0.10, bead=0.19, ww=(0.222, 0.282), rim="rim_paint", hub_r=0.118, hub_h=0.036,
+             beauty_ring=True, lugs=True, brakes=True)
 
 
 def build_lod(lod):

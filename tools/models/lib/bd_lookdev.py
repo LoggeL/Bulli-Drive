@@ -20,16 +20,29 @@ ASPHALT_DIR = os.path.join(TOOLS, "textures", ".cache", "polyhaven", "asphalt_cl
 
 def load_env(name):
     p = os.path.join(ENV_DIR, "env_info.json")
-    if not os.path.exists(p):
-        raise SystemExit("look-dev renders need %s: run npm --prefix tools run textures:fetch and "
-                         "python3 tools/models/lib/make_env.py (or pass --no-render)" % p)
-    return json.load(open(p))[name]
+    if os.path.exists(p):
+        data = json.load(open(p))
+        if name in data:
+            return data[name]
+        if "victoria_sunset_1k" in data:
+            return data["victoria_sunset_1k"]
+    # Offline fallback: use the shipped 1k Victoria Sunset HDRI directly
+    repo = os.path.dirname(TOOLS)
+    fallback = os.path.join(repo, "public", "textures", "hdri", "victoria_sunset_1k.hdr")
+    if os.path.exists(fallback):
+        return {
+            "src": fallback,
+            "nosun": fallback,
+            "sun_dir_blender": [-0.805, 0.588, 0.077],
+        }
+    raise SystemExit("look-dev renders need %s: run npm --prefix tools run textures:fetch and "
+                     "python3 tools/models/lib/make_env.py (or pass --no-render)" % p)
 
 
 SUN_ELEV = 11.0
 
 
-def setup_render_scene(info):
+def setup_render_scene(info, need_ground=True):
     scene = bpy.context.scene
     col = scene.collection
     r = scene.render
@@ -105,49 +118,50 @@ def setup_render_scene(info):
     col.objects.link(so)
     # ground: asphalt (Poly Haven clean_asphalt, 2.1 m tile) with a dashed yellow centre line
     tex = ASPHALT_DIR
-    me = bpy.data.meshes.new("ground")
-    Sg = 120
-    me.from_pydata([(-Sg, -Sg, 0), (Sg, -Sg, 0), (Sg, Sg, 0), (-Sg, Sg, 0)], [], [(0, 1, 2, 3)])
-    me.uv_layers.new(name="UVMap")
-    k = Sg * 2 / 2.1
-    for li, uv in zip(range(4), [(0, 0), (k, 0), (k, k), (0, k)]):
-        me.uv_layers[0].data[li].uv = uv
-    gm = bpy.data.materials.new("scene_asphalt")
-    b = principled(gm)
-    gnt = gm.node_tree
+    if need_ground and os.path.exists(os.path.join(tex, "asphalt_clean_albedo_1k.jpg")):
+        me = bpy.data.meshes.new("ground")
+        Sg = 120
+        me.from_pydata([(-Sg, -Sg, 0), (Sg, -Sg, 0), (Sg, Sg, 0), (-Sg, Sg, 0)], [], [(0, 1, 2, 3)])
+        me.uv_layers.new(name="UVMap")
+        k = Sg * 2 / 2.1
+        for li, uv in zip(range(4), [(0, 0), (k, 0), (k, k), (0, k)]):
+            me.uv_layers[0].data[li].uv = uv
+        gm = bpy.data.materials.new("scene_asphalt")
+        b = principled(gm)
+        gnt = gm.node_tree
 
-    def timg(fn, cs):
-        t = gnt.nodes.new("ShaderNodeTexImage")
-        t.image = bpy.data.images.load(os.path.join(tex, fn))
-        t.image.colorspace_settings.name = cs
-        return t
-    ta = timg("asphalt_clean_albedo_1k.jpg", "sRGB")
-    dark = gnt.nodes.new("ShaderNodeMixRGB")
-    dark.blend_type = "MULTIPLY"
-    dark.inputs["Fac"].default_value = 1.0
-    dark.inputs["Color2"].default_value = (0.55, 0.52, 0.50, 1)
-    tr = timg("asphalt_clean_roughness_1k.jpg", "Non-Color")
-    tn = timg("asphalt_clean_normal_1k.jpg", "Non-Color")
-    nm = gnt.nodes.new("ShaderNodeNormalMap")
-    gnt.links.new(ta.outputs["Color"], dark.inputs["Color1"])
-    gnt.links.new(dark.outputs["Color"], b.inputs["Base Color"])
-    gnt.links.new(tr.outputs["Color"], b.inputs["Roughness"])
-    gnt.links.new(tn.outputs["Color"], nm.inputs["Color"])
-    gnt.links.new(nm.outputs["Normal"], b.inputs["Normal"])
-    me.materials.append(gm)
-    g = bpy.data.objects.new("ground", me)
-    col.objects.link(g)
-    lm = bpy.data.materials.new("scene_line")
-    lb = principled(lm)
-    lb.inputs["Base Color"].default_value = (*lin("#D9A23A"), 1)
-    lb.inputs["Roughness"].default_value = 0.7
-    for i in range(-10, 11):
-        lme = bpy.data.meshes.new("line")
-        y0 = i * 6.0
-        lme.from_pydata([(-2.2, y0, 0.002), (-2.08, y0, 0.002), (-2.08, y0 + 3.0, 0.002), (-2.2, y0 + 3.0, 0.002)], [], [(0, 1, 2, 3)])
-        lme.materials.append(lm)
-        lo = bpy.data.objects.new("line", lme)
-        col.objects.link(lo)
+        def timg(fn, cs):
+            t = gnt.nodes.new("ShaderNodeTexImage")
+            t.image = bpy.data.images.load(os.path.join(tex, fn))
+            t.image.colorspace_settings.name = cs
+            return t
+        ta = timg("asphalt_clean_albedo_1k.jpg", "sRGB")
+        dark = gnt.nodes.new("ShaderNodeMixRGB")
+        dark.blend_type = "MULTIPLY"
+        dark.inputs["Fac"].default_value = 1.0
+        dark.inputs["Color2"].default_value = (0.55, 0.52, 0.50, 1)
+        tr = timg("asphalt_clean_roughness_1k.jpg", "Non-Color")
+        tn = timg("asphalt_clean_normal_1k.jpg", "Non-Color")
+        nm = gnt.nodes.new("ShaderNodeNormalMap")
+        gnt.links.new(ta.outputs["Color"], dark.inputs["Color1"])
+        gnt.links.new(dark.outputs["Color"], b.inputs["Base Color"])
+        gnt.links.new(tr.outputs["Color"], b.inputs["Roughness"])
+        gnt.links.new(tn.outputs["Color"], nm.inputs["Color"])
+        gnt.links.new(nm.outputs["Normal"], b.inputs["Normal"])
+        me.materials.append(gm)
+        g = bpy.data.objects.new("ground", me)
+        col.objects.link(g)
+        lm = bpy.data.materials.new("scene_line")
+        lb = principled(lm)
+        lb.inputs["Base Color"].default_value = (*lin("#D9A23A"), 1)
+        lb.inputs["Roughness"].default_value = 0.7
+        for i in range(-10, 11):
+            lme = bpy.data.meshes.new("line")
+            y0 = i * 6.0
+            lme.from_pydata([(-2.2, y0, 0.002), (-2.08, y0, 0.002), (-2.08, y0 + 3.0, 0.002), (-2.2, y0 + 3.0, 0.002)], [], [(0, 1, 2, 3)])
+            lme.materials.append(lm)
+            lo = bpy.data.objects.new("line", lme)
+            col.objects.link(lo)
     return so, mp, info
 
 
@@ -279,7 +293,7 @@ def render_icon(car_root, info, path, size=(480, 300)):
     trims it and writes public/icons/car-<id>.webp."""
     scene = bpy.context.scene
     col = scene.collection
-    so, mp, info = setup_render_scene(info)
+    so, mp, info = setup_render_scene(info, need_ground=False)
     for o in list(col.objects):
         if o.name.startswith(("ground", "line")):
             o.hide_render = True
