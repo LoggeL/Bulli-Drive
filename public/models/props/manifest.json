@@ -248,8 +248,8 @@
     "prop_billboard_gantry": {
       "file": "prop_billboard_gantry.glb",
       "kind": "prop",
-      "hash": "fde05fac63c1",
-      "bytes": 29204,
+      "hash": "b95954759c05",
+      "bytes": 29708,
       "triangles": 2138,
       "bounds": {
         "min": [
@@ -388,8 +388,8 @@
     "prop_roadside_billboard": {
       "file": "prop_roadside_billboard.glb",
       "kind": "prop",
-      "hash": "4b29472c804d",
-      "bytes": 12244,
+      "hash": "017714963b31",
+      "bytes": 12748,
       "triangles": 748,
       "bounds": {
         "min": [
@@ -465,8 +465,8 @@
     "prop_win98_frame": {
       "file": "prop_win98_frame.glb",
       "kind": "prop",
-      "hash": "4259fdb22c31",
-      "bytes": 17648,
+      "hash": "6f61a695adb5",
+      "bytes": 18268,
       "triangles": 650,
       "bounds": {
         "min": [

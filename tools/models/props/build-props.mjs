@@ -11,6 +11,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { MeshoptDecoder } from '../../node_modules/meshoptimizer/meshopt_decoder.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '../../..');
@@ -59,13 +60,72 @@ function runBlenderAsync(script, extraArgs) {
   });
 }
 
-function readGlbJson(file) {
+function readGlb(file) {
   const data = fs.readFileSync(file);
   if (data.readUInt32LE(0) !== 0x46546c67 || data.readUInt32LE(4) !== 2) {
     throw new Error(`Not a valid GLB 2.0: ${file}`);
   }
   const jsonLen = data.readUInt32LE(12);
-  return JSON.parse(data.subarray(20, 20 + jsonLen).toString('utf8'));
+  const gltf = JSON.parse(data.subarray(20, 20 + jsonLen).toString('utf8'));
+  const binChunkOffset = 20 + jsonLen;
+  const binLen = data.readUInt32LE(binChunkOffset);
+  const bin = data.subarray(binChunkOffset + 8, binChunkOffset + 8 + binLen);
+  return { gltf, bin };
+}
+
+function decodeAccessorVec2Float(gltf, bin, accIdx) {
+  const acc = gltf.accessors[accIdx];
+  if (!acc || acc.type !== 'VEC2' || acc.componentType !== 5126) {
+    throw new Error(`TEXCOORD_0 accessor ${accIdx} must be FLOAT VEC2 (got ${acc?.componentType} ${acc?.type})`);
+  }
+  const bv = gltf.bufferViews[acc.bufferView];
+  const ext = bv.extensions?.EXT_meshopt_compression;
+  let bytes;
+  if (ext) {
+    const src = bin.subarray(ext.byteOffset ?? 0, (ext.byteOffset ?? 0) + ext.byteLength);
+    bytes = new Uint8Array(ext.count * ext.byteStride);
+    MeshoptDecoder.decodeGltfBuffer(bytes, ext.count, ext.byteStride, src, ext.mode, ext.filter ?? 'NONE');
+  } else {
+    const off = (bv.byteOffset ?? 0) + (acc.byteOffset ?? 0);
+    bytes = bin.subarray(off, off + acc.count * 8);
+  }
+  const stride = ext?.byteStride ?? bv.byteStride ?? 8;
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const out = [];
+  for (let i = 0; i < acc.count; i++) {
+    out.push([dv.getFloat32(i * stride, true), dv.getFloat32(i * stride + 4, true)]);
+  }
+  return out;
+}
+
+function verifyBillboardFaceUvs(gltf, bin, id) {
+  const nodes = gltf.nodes ?? [];
+  const rootIdx = nodes.findIndex(n => n.name === 'billboard_face');
+  if (rootIdx < 0) return `${id}: missing "billboard_face" node after gltfpack`;
+
+  const prims = [];
+  const stack = [rootIdx];
+  while (stack.length) {
+    const n = nodes[stack.pop()];
+    if (n.mesh !== undefined) prims.push(...gltf.meshes[n.mesh].primitives);
+    for (const c of n.children ?? []) stack.push(c);
+  }
+  if (prims.length === 0) return `${id}: "billboard_face" node has no mesh primitives`;
+
+  for (const prim of prims) {
+    const tcIdx = prim.attributes?.TEXCOORD_0;
+    if (tcIdx === undefined) return `${id}: "billboard_face" primitive is missing TEXCOORD_0`;
+    const uvs = decodeAccessorVec2Float(gltf, bin, tcIdx);
+    if (uvs.length < 4) return `${id}: "billboard_face" TEXCOORD_0 has only ${uvs.length} verts`;
+    const us = uvs.map(p => p[0]);
+    const vs = uvs.map(p => p[1]);
+    const uMin = Math.min(...us), uMax = Math.max(...us);
+    const vMin = Math.min(...vs), vMax = Math.max(...vs);
+    if (Math.abs(uMin) > 1e-4 || Math.abs(uMax - 1) > 1e-4 || Math.abs(vMin) > 1e-4 || Math.abs(vMax - 1) > 1e-4) {
+      return `${id}: "billboard_face" TEXCOORD_0 range [${uMin},${vMin}]..[${uMax},${vMax}] != [0,0]..[1,1]`;
+    }
+  }
+  return null;
 }
 
 function countGlbTris(gltf) {
@@ -81,6 +141,7 @@ function countGlbTris(gltf) {
 }
 
 async function main() {
+  await MeshoptDecoder.ready;
   fs.mkdirSync(RAW_DIR, { recursive: true });
   fs.mkdirSync(OUT_DIR, { recursive: true });
 
@@ -112,11 +173,13 @@ async function main() {
   let failures = [];
   for (const item of rawMeta) {
     const outGlb = path.join(OUT_DIR, `${item.id}.glb`);
-    const pack = spawnSync(GLTFPACK, [
-      '-i', item.raw,
-      '-o', outGlb,
-      '-cc', '-kn', '-km', '-ke',
-    ], { cwd: ROOT, encoding: 'utf8' });
+    const packArgs = ['-i', item.raw, '-o', outGlb, '-cc', '-kn', '-km', '-ke'];
+    if (item.hasBillboard) {
+      // Keep unused TEXCOORD_0 on billboard_face (texture is bound dynamically at runtime)
+      // as unquantized FLOAT [0..1] so no KHR_texture_transform compensation is required.
+      packArgs.push('-kv', '-vtf');
+    }
+    const pack = spawnSync(GLTFPACK, packArgs, { cwd: ROOT, encoding: 'utf8' });
 
     if (pack.status !== 0) {
       throw new Error(`gltfpack failed on ${item.id}: ${pack.stderr || pack.stdout}`);
@@ -124,7 +187,7 @@ async function main() {
 
     const buf = fs.readFileSync(outGlb);
     const hash = crypto.createHash('sha256').update(buf).digest('hex').slice(0, 12);
-    const gltf = readGlbJson(outGlb);
+    const { gltf, bin } = readGlb(outGlb);
     const tris = countGlbTris(gltf);
     const nodeNames = new Set((gltf.nodes ?? []).map(n => n.name).filter(Boolean));
     const exts = gltf.extensionsUsed ?? [];
@@ -136,8 +199,9 @@ async function main() {
     for (const an of item.animNodes ?? []) {
       if (!nodeNames.has(an)) failures.push(`${item.id}: missing animNode "${an}" after gltfpack`);
     }
-    if (item.hasBillboard && !nodeNames.has('billboard_face')) {
-      failures.push(`${item.id}: missing "billboard_face" node after gltfpack`);
+    if (item.hasBillboard) {
+      const uvErr = verifyBillboardFaceUvs(gltf, bin, item.id);
+      if (uvErr) failures.push(uvErr);
     }
 
     const entry = {
