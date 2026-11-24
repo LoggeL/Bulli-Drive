@@ -20,6 +20,7 @@ def build_lmf_forge_arch(root):
     for sx in (-1, 1):
         cx = sx * 7.2
         bevel_box(mb, (cx, 0, 0.55), (3.8, 4.4, 1.1), "stone_dark", bev=0.14)
+        foundation_skirt_box(mb, cx, 0, 3.8, 4.4, 2.8, mat="stone_dark", bev=0.14)
         bevel_box(mb, (cx, 0, 1.45), (3.2, 3.8, 0.7), "forge_coal", bev=0.10)
         # Tapered forged-steel buttress column
         bevel_box(mb, (cx, 0, 4.9), (2.5, 3.0, 6.2), "forge_steel", bev=0.12)
@@ -87,11 +88,11 @@ def build_lmf_forge_arch(root):
 def build_lmf_red_knopf(root):
     mb = MB()
     M_id = Matrix.Identity(3)
-    # Heavy octagonal steel pedestal base (r = 3.25m -> 2.75m, z = 0..2.42m)
-    lathe(mb, [(0.0, 0.0), (3.30, 0.0), (3.30, 0.45), (3.05, 0.65),
+    # Heavy octagonal steel pedestal base (r = 3.30m -> 2.75m, z = -1.5..2.42m incl. foundation skirt)
+    lathe(mb, [(0.0, -1.5), (3.30, -1.5), (3.30, 0.0), (3.30, 0.45), (3.05, 0.65),
                (2.88, 1.85), (3.08, 2.02), (3.08, 2.42), (2.45, 2.42), (2.45, 2.15), (0.0, 2.15)],
           8, M_id, Vector((0, 0, 0)),
-          ["concrete", "forge_coal", "forge_steel", "forge_coal", "steel_dark",
+          ["concrete", "concrete", "forge_coal", "forge_steel", "forge_coal", "steel_dark",
            "forge_steel", "steel_light", "forge_coal", "forge_coal"])
 
     # Alternating hazard yellow warning chevron blocks around the mid skirt
@@ -131,9 +132,9 @@ def build_lmf_jet_loop_reactor(root):
     mb = MB()
     M_id = Matrix.Identity(3)
 
-    # Reinforced octagonal concrete plinth + steel ring foundation
-    lathe(mb, [(0.0, 0.0), (4.1, 0.0), (4.1, 0.6), (3.7, 0.9), (3.5, 1.35), (0.0, 1.35)],
-          8, M_id, Vector((0, 0, 0)), ["concrete", "concrete", "concrete", "steel_dark", "steel_dark"])
+    # Reinforced octagonal concrete plinth + steel ring foundation (skirt to z = -2.8m)
+    lathe(mb, [(0.0, -2.8), (4.1, -2.8), (4.1, 0.0), (4.1, 0.6), (3.7, 0.9), (3.5, 1.35), (0.0, 1.35)],
+          8, M_id, Vector((0, 0, 0)), ["concrete", "concrete", "concrete", "concrete", "steel_dark", "steel_dark"])
 
     # 6 angled heavy steel support legs cradling the lower reactor flange
     for k in range(6):
@@ -222,11 +223,11 @@ def build_lmf_arcanum_tower(root):
     mb = MB()
     M_id = Matrix.Identity(3)
 
-    # Octagonal battered medieval stone base + main tower shaft + corbeled observatory
-    lathe(mb, [(0.0, 0.0), (4.15, 0.0), (3.85, 2.2), (3.25, 3.0),
+    # Octagonal battered medieval stone base + underground plinth skirt to z = -3.0m
+    lathe(mb, [(0.0, -3.0), (4.15, -3.0), (4.15, 0.0), (3.85, 2.2), (3.25, 3.0),
                (3.05, 11.2), (3.45, 11.75), (3.45, 15.1), (3.75, 15.35), (0.0, 15.35)],
           8, M_id, Vector((0, 0, 0)),
-          ["stone_dark", "stone_dark", "stone_warm", "stone_warm",
+          ["stone_dark", "stone_dark", "stone_dark", "stone_warm", "stone_warm",
            "stone_light", "stone_warm", "stone_light", "stone_dark"])
 
     # 8 stepped vertical corner stone buttresses
@@ -235,8 +236,9 @@ def build_lmf_arcanum_tower(root):
         c = Vector((math.cos(a) * 3.35, math.sin(a) * 3.35, 5.2))
         bevel_box(mb, c, (0.75, 0.65, 10.4), "stone_dark", bev=0.06, M=rot_z(math.degrees(a)))
 
-    # Front (-Y) Gothic pointed wizard doorway with glowing arcane interior
+    # Front (-Y) Gothic pointed wizard doorway with glowing arcane interior + foundation skirt
     bevel_box(mb, (0, -3.55, 1.9), (2.7, 0.9, 3.8), "stone_light", bev=0.08)
+    foundation_skirt_box(mb, 0, -3.55, 2.7, 0.9, 3.0, mat="stone_dark", bev=0.08)
     arch_vault(mb, -3.85, 2.2, 0.95, 1.35, 0.65, 0.32, 10, "stone_dark", pointed=True)
     box(mb, (0, -3.72, 1.65), (1.72, 0.25, 3.15), "rune_violet")
 
@@ -298,6 +300,7 @@ def build_lmf_selantis_arch(root):
     for sx, th in tower_heights:
         cx = sx * 6.8
         bevel_box(mb, (cx, 0, 0.9), (4.2, 4.6, 1.8), "stone_dark", bev=0.14)
+        foundation_skirt_box(mb, cx, 0, 4.2, 4.6, 3.0, mat="stone_dark", bev=0.14)
         bevel_box(mb, (cx, 0, 1.8 + (th - 1.8) / 2), (3.6, 4.0, th - 1.8), "stone_warm", bev=0.12)
         # Projecting upper parapet ring
         bevel_box(mb, (cx, 0, th - 0.3), (3.9, 4.3, 0.65), "stone_light", bev=0.08)
@@ -349,10 +352,13 @@ def build_lmf_selantis_arch(root):
 # --------------------------------------------------------------------------
 def build_lmf_theater_facade(root):
     mb = MB()
-    # 3-step grand stone entrance plinth (20m W x 5.2m D)
+    # 3-step grand stone entrance plinth (20m W x 5.4m D) + deep foundation skirt to z = -2.8m
     for k in range(3):
         bevel_box(mb, (0, -0.35 * (2 - k), 0.10 + k * 0.20), (20.0 - k * 0.4, 5.4 - k * 0.35, 0.20),
                   "stone_light", bev=0.03)
+    foundation_skirt_box(mb, 0, -0.70, 20.0, 5.4, 2.8, mat="stone_dark", bev=0.03)
+    # Rear stone foundation supporting the rear hall wall overhang (y in [1.94, 2.38], z in [-2.8, 0.68])
+    box(mb, (0, 2.16, -1.06), (19.04, 0.44, 3.48), "stone_dark")
 
     # Main Neo-classical hall facade blocks flanking the grand proscenium stage opening
     bevel_box(mb, (0, 1.35, 5.1), (19.2, 2.1, 9.0), "plaster_cream", bev=0.08)
@@ -415,6 +421,7 @@ def build_lmf_melodai_arch(root):
     for sx in (-1, 1):
         cx = sx * 6.6
         bevel_box(mb, (cx, 0, 0.45), (3.3, 4.0, 0.9), "steel_dark", bev=0.08)
+        foundation_skirt_box(mb, cx, 0, 3.3, 4.0, 2.8, mat="stone_dark", bev=0.08)
         bevel_box(mb, (cx, 0, 6.45), (2.8, 3.5, 11.2), "forge_coal", bev=0.10)
         # Brushed aluminum side cheek trim
         bevel_box(mb, (cx + sx * 1.44, 0, 6.45), (0.18, 3.3, 10.9), "steel_light", bev=0.04)
@@ -472,8 +479,9 @@ def build_lmf_melodai_arch(root):
 # --------------------------------------------------------------------------
 def build_lmf_codex_monolith(root):
     mb = MB()
-    # Heavy stepped dark plinth
+    # Heavy stepped dark plinth + deep underground foundation skirt to z = -3.0m
     bevel_box(mb, (0, 0, 0.55), (6.6, 3.8, 1.1), "forge_coal", bev=0.10)
+    foundation_skirt_box(mb, 0, 0, 6.6, 3.8, 3.0, mat="stone_dark", bev=0.10)
     bevel_box(mb, (0, 0, 1.20), (5.8, 3.0, 0.22), "alloy_blau", bev=0.04)
 
     # Tall sleek 4x1 dark-steel & glass quota widget tower (x in [-2.6, +2.6], z in [1.3, 14.3])
@@ -529,11 +537,16 @@ def build_lmf_codex_monolith(root):
 # --------------------------------------------------------------------------
 def build_lmf_festival_stage(root):
     mb = MB()
-    # Raised concert stage deck (20m W x 10m D x 1.5m H) + front stairs
+    # Raised concert stage deck (20m W x 10m D x 1.5m H) + front stairs + deep foundation skirt (-2.8m)
     bevel_box(mb, (0, 0, 0.70), (20.2, 10.2, 1.40), "forge_coal", bev=0.06)
+    foundation_skirt_box(mb, 0, 0, 20.2, 10.2, 2.8, mat="stone_dark", bev=0.06)
     box(mb, (0, 0, 1.45), (19.8, 9.8, 0.14), "timber_dark")
     for k in range(3):
-        box(mb, (0, -5.25 - k * 0.35, 1.20 - k * 0.42), (4.6, 0.38, 0.22), "steel_dark")
+        sy = -5.25 - k * 0.35
+        sz = 1.20 - k * 0.42
+        box(mb, (0, sy, sz), (4.6, 0.38, 0.22), "steel_dark")
+        h_sub = (sz - 0.10) - (-2.80)
+        box(mb, (0, sy, -2.80 + h_sub / 2), (4.52, 0.36, h_sub), "stone_dark")
 
     # 4 corner aluminum box-truss towers (x = +-8.2, y = +-4.2, z = 1.5 .. 10.8)
     for sx in (-1, 1):
@@ -706,8 +719,9 @@ def build_lmf_sailboat_ijsselmeer(root):
 # --------------------------------------------------------------------------
 def build_lmf_alpine_chalet(root):
     mb = MB()
-    # Ground-floor Alpine stone masonry foundation (10.6m W x 9.2m D x 2.85m H)
+    # Ground-floor Alpine stone masonry foundation (10.6m W x 9.2m D x 2.85m H) + deep skirt to z = -3.0m
     bevel_box(mb, (0, 0, 1.425), (10.6, 9.2, 2.85), "stone_warm", bev=0.10)
+    foundation_skirt_box(mb, 0, 0, 10.6, 9.2, 3.0, mat="stone_dark", bev=0.10)
     # Corner stone quoins
     for sx in (-1, 1):
         for sy in (-1, 1):
@@ -783,9 +797,9 @@ def build_lmf_alpine_chalet(root):
 # --------------------------------------------------------------------------
 def build_lmf_ski_gondola_pylon(root):
     mb = MB()
-    # Tapered concrete Alpine tower base
-    lathe(mb, [(0.0, 0.0), (2.25, 0.0), (1.85, 2.2), (0.0, 2.2)], 8, Matrix.Identity(3), Vector((0, 0, 0)),
-          ["concrete", "concrete", "concrete"])
+    # Tapered concrete Alpine tower base with deep underground foundation pier to z = -3.0m
+    lathe(mb, [(0.0, -3.0), (2.25, -3.0), (2.25, 0.0), (1.85, 2.2), (0.0, 2.2)], 8, Matrix.Identity(3), Vector((0, 0, 0)),
+          ["concrete", "concrete", "concrete", "concrete"])
     # Galvanized steel tapered lattice pylon mast (4 tapered chords + cross bracing to z = 16.4m)
     legs0 = [(-1.05, -1.05), (1.05, -1.05), (1.05, 1.05), (-1.05, 1.05)]
     legs1 = [(-0.52, -0.52), (0.52, -0.52), (0.52, 0.52), (-0.52, 0.52)]

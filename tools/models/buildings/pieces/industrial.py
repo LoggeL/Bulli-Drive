@@ -14,7 +14,7 @@ from mathutils import Vector
 BAY = 6.0
 PITCH = 9.0
 PLINTH = 1.2
-FOUNDATION = 1.0
+FOUNDATION = 2.0
 DOCK = 3.0
 CLAD = ["#9DA3A3", "#8E6B5A", "#7F97A5", "#8FA394", "#D8D6CF", "#B7ABA0"]
 ROOF = ["#A7ABA8", "#8F5F4E", "#9EA7A4"]
@@ -114,7 +114,7 @@ def build(spec, lod):
                     y = yb + D * i / nb
                     y = min(max(y, yb + 0.3), y1 - 0.3)
                     xp = x - 0.07 if sgn < 0 else x + 0.07
-                    cylinder(k, (xp, y, 0.0), (xp, y, zg - 0.1), 0.06, 8, flash, cap_top=False)   # downpipe
+                    cylinder(k, (xp, y, -FOUNDATION), (xp, y, zg - 0.1), 0.06, 8, flash, cap_top=False)   # downpipe
     # wall lights over the doors, bollards beside the ground-level doors
     if lod < 2:
         for c in door_x:
@@ -125,14 +125,15 @@ def build(spec, lod):
                 for s_ in (-1, 1):
                     bx = lx + s_ * (dw / 2 + 0.5)
                     cylinder(k, (bx, yb - 0.5, 0.0), (bx, yb - 0.5, 1.1), 0.1, 10, pal("safety_yellow"))
+                    cylinder(k, (bx, yb - 0.5, -FOUNDATION), (bx, yb - 0.5, 0.04), 0.13, 8, pal("concrete", lin("#C9C3B8")), cap_top=True)
     # corner flashings
     if lod < 2:
         for (cx, cy) in ((x0, yb), (x1, yb), (x1, y1), (x0, y1)):
             box(k, (cx - 0.08, cy - 0.08, PLINTH), (cx + 0.08, cy + 0.08, H), flash, "xXyY")
 
-    # --- loading dock along the front
+    # --- loading dock along the front (skirt & steps extended down to -FOUNDATION for sloped lots)
     if dock:
-        box(k, (x0, 0.0, -0.5), (x1, yb, dz), conc, "yxXZ")
+        box(k, (x0, 0.0, -FOUNDATION), (x1, yb, dz), conc, "yxXZ")
         if lod < 2:
             for c in door_x:
                 for s_ in (-1, 1):
@@ -141,9 +142,19 @@ def build(spec, lod):
             # steps at one end
             for i in range(4):
                 z = dz * (i + 1) / 4
-                box(k, (x1 - 1.4, -0.3 * (4 - i), -0.2), (x1 - 0.2, 0.0, z), conc, "yxXZ")
+                box(k, (x1 - 1.4, -0.3 * (4 - i), -FOUNDATION), (x1 - 0.2, 0.0, z), conc, "yxXZ")
     return k, {"footprint": [x0, x1, 0.0, y1], "height": top + 0.6, "overhang": 1.05, "foundation": FOUNDATION,
                "ao_dist": 3.0, "params": {"dock": bool(dock), "sign": p["sign"]}}
+
+
+def _plinth_band(k, o, axv, L, conc, gaps, lod, s0=0.0):
+    if lod < 2:
+        band(k, o, axv, L, -FOUNDATION, PLINTH, 0.06, conc, gaps, s0=s0)
+    else:
+        # Keep LOD2 inside the 1000-triangle building budget: tiled concrete covers z=-1.1..1.2
+        # (2.3m <= 2.4m period = 1 row), palette concrete extends cleanly to -FOUNDATION
+        band(k, o, axv, L, -1.1, PLINTH, 0.06, conc, gaps, s0=s0)
+        band(k, o, axv, L, -FOUNDATION, -1.1, 0.06, pal("concrete", lin("#C9C3B8")), (), s0=s0)
 
 
 def front_wall(k, xs, y, W, H, ops, clad, conc, p, lod, rear=False):
@@ -152,7 +163,7 @@ def front_wall(k, xs, y, W, H, ops, clad, conc, p, lod, rear=False):
     o = Vector((xs, y, 0))
     n = axv.cross(UP)
     wall(k, o, axv, W, H, clad, ops, s0=xs, v_base=-FOUNDATION)
-    band(k, o, axv, W, -FOUNDATION, PLINTH, 0.06, conc, [(q.u0, q.u1) for q in ops if q.v0 < PLINTH], s0=xs)
+    _plinth_band(k, o, axv, W, conc, [(q.u0, q.u1) for q in ops if q.v0 < PLINTH], lod, s0=xs)
     half = W / 2
     zr = H + half * math.tan(math.radians(PITCH))
     plane_poly(k, o, axv, UP, [(0, H), (W, H), (half, zr)], clad, xs, 0.0)
@@ -195,7 +206,7 @@ def box_along(k, a, ax, length, n, depth, z0, z1, mat):
 def side_wall(k, o, ax, L, H, ops, clad, conc, lod):
     o, axv = Vector(o), Vector(ax)
     wall(k, o, axv, L, H, clad, ops, s0=0.0, v_base=-FOUNDATION)
-    band(k, o, axv, L, -FOUNDATION, PLINTH, 0.06, conc, [(q.u0, q.u1) for q in ops if q.v0 < PLINTH])
+    _plinth_band(k, o, axv, L, conc, [(q.u0, q.u1) for q in ops if q.v0 < PLINTH], lod)
 
 
 def render(objs, R, out_dir, tag):

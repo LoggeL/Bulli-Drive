@@ -16,8 +16,9 @@ from bd_props import *  # noqa: E402,F403
 # --------------------------------------------------------------------------
 def build_prop_fi_toaster_shrine(root):
     mb = MB()
-    # Timber shrine pedestal altar with brass dedication plaque
+    # Timber shrine pedestal altar with brass dedication plaque + stone foundation skirt (-1.5m)
     bevel_box(mb, (0, 0, 0.14), (3.4, 2.2, 0.28), "stone_dark", bev=0.05)
+    foundation_skirt_box(mb, 0, 0, 3.4, 2.2, 1.5, mat="stone_dark", bev=0.05)
     bevel_box(mb, (0, 0, 0.72), (3.0, 1.85, 0.88), "timber_warm", bev=0.06)
     bevel_box(mb, (0, 0, 1.22), (3.2, 2.05, 0.14), "timber_dark", bev=0.04)
     bevel_box(mb, (0, -0.95, 0.72), (1.15, 0.08, 0.42), "brass", bev=0.02)
@@ -74,8 +75,9 @@ def build_prop_kniffel_die(root):
     mb = MB()
     S = 5.0
     h = S / 2.0
-    # Chunky chamfered ivory die sitting flat on z = 0
+    # Chunky chamfered ivory die sitting on z = 0 with embedded dark-stone foundation plinth (-1.5m)
     bevel_box(mb, (0, 0, h), (S, S, S), "ivory", bev=0.48)
+    foundation_skirt_box(mb, 0, 0, S, S, 1.5, mat="stone_dark", bev=0.48)
 
     # Opposite faces strictly sum to 7:
     #   Front (-Y) = 1 (iconic LMF crimson red ace!), Back (+Y) = 6
@@ -120,8 +122,9 @@ def build_prop_kniffel_die(root):
 # --------------------------------------------------------------------------
 def build_prop_sudsblaster(root):
     mb = MB()
-    # Stepped retro-voxel pedestal (z = 0..1.35)
+    # Stepped retro-voxel pedestal (z = 0..1.35) + underground stone foundation skirt (-1.5m)
     bevel_box(mb, (0, 0, 0.30), (3.6, 3.6, 0.60), "suds_teal", bev=0.08)
+    foundation_skirt_box(mb, 0, 0, 3.6, 3.6, 1.5, mat="stone_dark", bev=0.08)
     bevel_box(mb, (0, 0, 0.85), (2.7, 2.7, 0.50), "ivory", bev=0.06)
     bevel_box(mb, (0, 0, 1.25), (1.8, 2.2, 0.30), "suds_purple", bev=0.05)
 
@@ -172,10 +175,11 @@ def build_prop_sudsblaster(root):
 def build_prop_nether_portal(root):
     mb = MB()
     # Chunky beveled obsidian block arch (10.0m W x 8.5m H, clear 6.2m W x 5.8m H opening)
-    # Bottom threshold flush at z = 0..0.45 (drivable speed-bump sill!)
+    # Bottom threshold flush at z = 0..0.45 (drivable speed-bump sill!) + obsidian foundation skirt (-1.5m)
     for ix in range(5):
         bx = -3.8 + ix * 1.9
         bevel_box(mb, (bx, 0, 0.22), (1.84, 1.85, 0.44), "obsidian", bev=0.09)
+    foundation_skirt_box(mb, 0, 0, 9.44, 1.85, 1.5, mat="obsidian", bev=0.09)
     # Left and right stacked obsidian pillar blocks (x = +-4.05, z = 0.45 .. 6.75)
     for sx in (-1, 1):
         for iz in range(4):
@@ -220,9 +224,9 @@ def build_prop_nether_portal(root):
 def build_prop_stadtpin_marker(root):
     mb = MB()
     M_id = Matrix.Identity(3)
-    # Brushed-gold & stone compass-rose ground medallion (r = 3.2m, z = 0..0.45m)
-    lathe(mb, [(0.0, 0.0), (3.25, 0.0), (3.15, 0.28), (2.75, 0.34), (2.75, 0.42), (0.0, 0.42)],
-          24, M_id, Vector((0, 0, 0)), ["stone_warm", "stone_light", "brass", "stone_light", "stone_light"])
+    # Brushed-gold & stone compass-rose ground medallion (r = 3.25m, z = -1.5..0.42m incl. foundation skirt)
+    lathe(mb, [(0.0, -1.5), (3.25, -1.5), (3.25, 0.0), (3.15, 0.28), (2.75, 0.34), (2.75, 0.42), (0.0, 0.42)],
+          24, M_id, Vector((0, 0, 0)), ["stone_dark", "stone_dark", "stone_light", "brass", "stone_light", "stone_light"])
     # 4 raised cardinal compass points (N/S/E/W)
     for k in range(4):
         a = k * 90
@@ -249,8 +253,9 @@ def build_prop_stadtpin_marker(root):
 # --------------------------------------------------------------------------
 def build_prop_embedding_cube(root):
     mb = MB()
-    # Sleek chamfered dark-steel exhibition pedestal (z = 0..1.35)
+    # Sleek chamfered dark-steel exhibition pedestal (z = 0..1.35) + underground stone skirt (-1.5m)
     bevel_box(mb, (0, 0, 0.25), (4.2, 4.2, 0.50), "forge_coal", bev=0.08)
+    foundation_skirt_box(mb, 0, 0, 4.2, 4.2, 1.5, mat="stone_dark", bev=0.08)
     bevel_box(mb, (0, 0, 0.90), (2.8, 2.8, 0.80), "forge_steel", bev=0.08)
     bevel_box(mb, (0, 0, 1.36), (2.2, 2.2, 0.12), "alloy_blau", bev=0.03)
     # Angled chrome mounting stem holding the cube corner
@@ -298,8 +303,9 @@ def build_prop_embedding_cube(root):
 # --------------------------------------------------------------------------
 def build_prop_oilbert_icons(root):
     mb = MB()
-    # Stepped retro-platformer showcase plinth (lush green grass deck + orange hazard ledge)
+    # Stepped retro-platformer showcase plinth (lush green grass deck + soil skirt to z = -1.5m)
     bevel_box(mb, (0, 0, 0.36), (7.6, 3.0, 0.72), "oilbert_soil", bev=0.07)
+    foundation_skirt_box(mb, 0, 0, 7.6, 3.0, 1.5, mat="oilbert_soil", bev=0.07)
     bevel_box(mb, (0, 0, 0.86), (7.8, 3.2, 0.30), "oilbert_green", bev=0.08)
     # Flanking orange cracked-block platform step on right
     bevel_box(mb, (2.25, 0, 1.24), (2.25, 2.25, 0.48), "oilbert_orange", bev=0.07)
@@ -350,8 +356,9 @@ def build_prop_oilbert_icons(root):
 # --------------------------------------------------------------------------
 def build_prop_jp_whirlpool_tent(root):
     mb = MB()
-    # Ground party platform deck (9.6m W x 7.6m D x 0.26m H)
+    # Ground party platform deck (9.6m W x 7.6m D x 0.26m H) + underground terrace skirt (-1.5m)
     bevel_box(mb, (0, 0, 0.13), (9.6, 7.6, 0.26), "timber_dark", bev=0.05)
+    foundation_skirt_box(mb, 0, 0, 9.6, 7.6, 1.5, mat="stone_dark", bev=0.05)
 
     # 4 chrome corner tent poles + side valance beams
     for sx in (-1, 1):
@@ -411,9 +418,10 @@ def build_prop_jp_whirlpool_tent(root):
 # --------------------------------------------------------------------------
 def build_prop_win98_frame(root):
     mb = MB()
-    # Twin dark steel industrial H-frame support legs (z = 0..1.55)
+    # Twin dark steel industrial H-frame support legs (z = 0..1.55) + concrete foundation skirts (-1.5m)
     for sx in (-1, 1):
         bevel_box(mb, (sx * 6.8, 0, 0.20), (2.6, 3.4, 0.40), "concrete", bev=0.05)
+        foundation_skirt_box(mb, sx * 6.8, 0, 2.6, 3.4, 1.5, mat="concrete", bev=0.05)
         bevel_box(mb, (sx * 6.8, 0, 1.10), (0.85, 0.85, 1.60), "steel_dark", bev=0.05)
         # Rear angled steel brace struts
         cyl(mb, (sx * 6.8, 1.45, 0.35), (sx * 6.8, 0.45, 5.2), 0.14, 0.14, 6, "steel_dark")
@@ -468,9 +476,10 @@ def build_prop_win98_frame(root):
 # --------------------------------------------------------------------------
 def build_prop_vertical_frame_916(root):
     mb = MB()
-    # Grounded dark steel anchor shoes on both legs (clear 5.4m W x 9.5m H jump opening!)
+    # Grounded dark steel anchor shoes on both legs + concrete footing skirts to z = -1.5m
     for sx in (-1, 1):
         bevel_box(mb, (sx * 3.10, 0, 0.22), (1.35, 2.4, 0.44), "steel_dark", bev=0.05)
+        foundation_skirt_box(mb, sx * 3.10, 0, 1.35, 2.4, 1.5, mat="concrete", bev=0.05)
 
     # Entire giant smartphone frame tilted 8° backward so cars jump dramatically through it
     Mt = rot_x(-8)
@@ -515,9 +524,10 @@ def build_prop_vertical_frame_916(root):
 # --------------------------------------------------------------------------
 def build_prop_billboard_gantry(root):
     mb = MB()
-    # Twin concrete highway footings + galvanized steel box-truss vertical legs (clear 13.2m W x 6.4m H)
+    # Twin concrete highway footings (with -1.2m foundation skirts) + galvanized steel box-truss legs
     for sx in (-1, 1):
         bevel_box(mb, (sx * 7.2, 0, 0.45), (1.6, 2.0, 0.90), "concrete", bev=0.08)
+        foundation_skirt_box(mb, sx * 7.2, 0, 1.6, 2.0, 1.2, mat="concrete", bev=0.08)
         truss_beam(mb, (sx * 7.2, 0, 0.90), (sx * 7.2, 0, 9.35), 0.78, 0.78, 5, 0.075, 0.038, "steel_galv")
 
     # Overhead horizontal highway box-truss span (z = 6.9 .. 8.3)
@@ -549,11 +559,16 @@ def build_prop_billboard_gantry(root):
 # --------------------------------------------------------------------------
 def build_prop_roadside_billboard(root):
     mb = MB()
-    # Twin concrete footings + galvanized-steel support posts + rear diagonal braces
+    # Twin concrete footings (to z = -1.0m) + galvanized-steel support posts + anchored rear diagonal braces
     for sx in (-1, 1):
         bevel_box(mb, (sx * 2.65, 0, 0.30), (1.15, 1.45, 0.60), "concrete", bev=0.06)
-        cyl(mb, (sx * 2.65, 0, 0.55), (sx * 2.65, 0, 5.85), 0.19, 0.17, 10, "steel_galv")
-        cyl(mb, (sx * 2.65, 1.35, 0.35), (sx * 2.65, 0.15, 4.45), 0.10, 0.10, 6, "steel_galv")
+        foundation_skirt_box(mb, sx * 2.65, 0, 1.15, 1.45, 1.0, mat="concrete", bev=0.06)
+        cyl(mb, (sx * 2.65, 0, -1.0), (sx * 2.65, 0, 5.85), 0.19, 0.17, 10, "steel_galv")
+        # Rear diagonal brace seated cleanly in its own concrete anchor footing (z = -1.0..0.36m)
+        bevel_box(mb, (sx * 2.65, 1.45, 0.18), (0.72, 0.82, 0.36), "concrete", bev=0.05)
+        foundation_skirt_box(mb, sx * 2.65, 1.45, 0.72, 0.82, 1.0, mat="concrete", bev=0.05)
+        cyl(mb, (sx * 2.65, 1.45, -1.0), (sx * 2.65, 1.45, 0.18), 0.10, 0.10, 6, "steel_galv")
+        cyl(mb, (sx * 2.65, 1.45, 0.0), (sx * 2.65, 0.15, 4.45), 0.10, 0.10, 6, "steel_galv")
     # Horizontal cross brace between posts
     cyl(mb, (-2.65, 0, 2.0), (2.65, 0, 2.0), 0.09, 0.09, 6, "steel_galv")
 

@@ -21,7 +21,7 @@ BAY = 4.0
 GROUND = 4.4        # ground floor storey height
 UPPER = 3.5         # upper storey height
 PARAPET = 1.0       # parapet above the roof deck
-FOUNDATION = 1.2    # walls reach this far below the ground (sloped lots)
+FOUNDATION = 2.0    # walls reach this far below the ground (sloped lots)
 SHOP_W = 3.5        # shop front opening per bay (texture aspect 1.06)
 SHOP_H = 3.3
 SIGN_H = 0.62
@@ -186,7 +186,7 @@ def build(spec, lod):
         for b in range(spec["bays"] + 1):
             u = b * BAY
             ua, ub = max(0.0, u - 0.22), min(W, u + 0.22)
-            box(k, (x0 + ua, -0.1, -0.2), (x0 + ub, 0.0, GROUND - 0.25), trim, "yxXZ")
+            box(k, (x0 + ua, -0.1, -FOUNDATION), (x0 + ub, 0.0, GROUND - 0.25), trim, "yxXZ")
         # belt course over the shop fronts
         box(k, (x0 - 0.04, -0.14, GROUND - 0.25), (x1 + 0.04, 0.0, GROUND), trim, "yxXzZ")
     for s in p["shops"]:
@@ -195,7 +195,7 @@ def build(spec, lod):
                 u = x0 + s["bay0"] * BAY + BAY / 2
                 if not arched:
                     box(k, (u - 0.75, -0.12, 2.45), (u + 0.75, 0.0, 2.75), trim, "yxXzZ")        # door head
-                box(k, (u - 0.8, -0.3, -0.2), (u + 0.8, 0.0, 0.12), tile("concrete").scaled(sc), "yxXZ")  # step
+                box(k, (u - 0.8, -0.3, -FOUNDATION), (u + 0.8, 0.0, 0.12), tile("concrete").scaled(sc), "yxXZ")  # step
             continue
         u0 = s["bay0"] * BAY
         u1 = u0 + s["bays"] * BAY

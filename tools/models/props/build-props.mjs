@@ -204,12 +204,14 @@ async function main() {
       if (uvErr) failures.push(uvErr);
     }
 
+    const foundation = Number(Math.max(0, -(item.bounds?.min?.[1] ?? 0)).toFixed(3));
     const entry = {
       file: `${item.id}.glb`,
       kind: item.kind,
       hash,
       bytes: buf.length,
       triangles: tris,
+      foundation,
       bounds: item.bounds,
     };
     if (item.animNodes && item.animNodes.length > 0) entry.animNodes = item.animNodes;
@@ -218,6 +220,7 @@ async function main() {
 
     console.log(
       `  [pack] ${item.id.padEnd(26)} ${String(tris).padStart(5)} tris  ${(buf.length / 1024).toFixed(1).padStart(6)} KB` +
+      `  found=${foundation.toFixed(1)}m` +
       (item.animNodes?.length ? `  anim=[${item.animNodes.join(',')}]` : '') +
       (item.hasBillboard ? '  [billboard_face]' : '')
     );
