@@ -25,6 +25,7 @@ export interface FingerprintInput {
     base: string;
     tracks: string;
     pois: string;
+    discoveries: string;
     terrain: Uint8Array;
 }
 
@@ -68,11 +69,12 @@ export function fingerprint(input: FingerprintInput): Record<string, string> {
     const encoder = new TextEncoder();
     const bake = bakeSources('bulli-bay', {
         roads: encoder.encode(input.roads), map: encoder.encode(input.map),
-        zones: encoder.encode(input.zones), base: encoder.encode(input.base)
+        zones: encoder.encode(input.zones), base: encoder.encode(input.base),
+        pois: encoder.encode(input.pois), discoveries: encoder.encode(input.discoveries)
     });
     const map = createMapData(parseMapSources({
         roads: JSON.parse(input.roads), map: JSON.parse(input.map), zones: JSON.parse(input.zones),
-        pois: JSON.parse(input.pois), tracks: JSON.parse(input.tracks)
+        pois: JSON.parse(input.pois), tracks: JSON.parse(input.tracks), discoveries: JSON.parse(input.discoveries)
     }), hf);
     return {
         world: map.worldHash,

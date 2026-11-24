@@ -11,9 +11,11 @@ import roadsText from '../../../src/shared/maps/bulli-bay/roads.json?raw';
 import mapText from '../../../src/shared/maps/bulli-bay/map.json?raw';
 import zonesText from '../../../src/shared/maps/bulli-bay/zones.json?raw';
 import poisText from '../../../src/shared/maps/bulli-bay/pois.json?raw';
+import discoveriesText from '../../../src/shared/maps/bulli-bay/discoveries.json?raw';
 import tracksText from '../../../src/shared/maps/bulli-bay/tracks.json?raw';
 import baseText from '../../../src/shared/maps/bulli-bay/base.json?raw';
 import terrainUrl from '../../../public/maps/bulli-bay/terrain.bhf?url';
+import { parseDiscoveriesFile } from '../../../src/shared/map/discoverySchema.js';
 import { BULLI_BAY_GRID, decodeHeightfield, heightAt, surfaceAt, zoneAt, type Heightfield } from '../../../src/shared/map/heightfield.js';
 import { parseMapFile, parsePoisFile, parseTracksFile, parseZonesFile, type TrackRoute } from '../../../src/shared/map/mapFiles.js';
 import { buildRoadNetwork, junctionRadius, nearestRoad, type RoadHit, type RoadNetwork } from '../../../src/shared/map/roadNetwork.js';
@@ -63,6 +65,7 @@ parsed('roads.json', parseRoadNetwork(loadedRoads));
 const mapFile = parsed('map.json', parseMapFile(JSON.parse(mapText)));
 const zonesFile = parsed('zones.json', parseZonesFile(JSON.parse(zonesText)));
 const poisFile = parsed('pois.json', parsePoisFile(JSON.parse(poisText)));
+const discoveriesFile = parsed('discoveries.json', parseDiscoveriesFile(JSON.parse(discoveriesText)));
 const tracksFile = parsed('tracks.json', parseTracksFile(JSON.parse(tracksText)));
 
 const SURFACE_NAMES = Object.fromEntries(Object.entries(SURFACE).map(([name, id]) => [id, name]));
@@ -252,7 +255,10 @@ function rebake(): void {
     renderPanel();
     worker ??= new Worker(new URL('./bakeWorker.ts', import.meta.url), { type: 'module' });
     const roads = formatMapJson(file);
-    const request: BakeRequest = { mapId: MAP_ID, sources: { roads, map: mapText, zones: zonesText, base: baseText } };
+    const request: BakeRequest = {
+        mapId: MAP_ID,
+        sources: { roads, map: mapText, zones: zonesText, base: baseText, pois: poisText, discoveries: discoveriesText }
+    };
     worker.onmessage = (event: MessageEvent<BakeResponse & { ms: number }>) => {
         bakeRunning = false;
         const response = event.data;
@@ -704,7 +710,7 @@ function renderCheck(): HTMLElement[] {
     return section('Check',
         el('button', {
             onclick: () => {
-                findings = validateMap({ net, map: mapFile, zones: zonesFile, pois: poisFile, tracks: tracksFile, hf }).findings;
+                findings = validateMap({ net, map: mapFile, zones: zonesFile, pois: poisFile, tracks: tracksFile, discoveries: discoveriesFile, hf }).findings;
                 renderPanel();
             }
         }, 'Validate map'),

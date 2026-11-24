@@ -20,7 +20,7 @@ const text = (name: string) => readFileSync(path.join(MAP, name), 'utf8');
 function input(): FingerprintInput {
     return {
         roads: text('roads.json'), map: text('map.json'), zones: text('zones.json'), base: text('base.json'),
-        tracks: text('tracks.json'), pois: text('pois.json'),
+        tracks: text('tracks.json'), pois: text('pois.json'), discoveries: text('discoveries.json'),
         terrain: new Uint8Array(readFileSync(path.join(ROOT, 'public/maps/bulli-bay/terrain.bhf')))
     };
 }

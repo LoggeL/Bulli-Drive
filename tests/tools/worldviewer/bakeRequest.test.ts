@@ -15,7 +15,10 @@ const source = (name: string) => readFileSync(path.join(ROOT, 'src/shared/maps/b
 function request(): BakeRequest {
     return {
         mapId: 'bulli-bay',
-        sources: { roads: source('roads.json'), map: source('map.json'), zones: source('zones.json'), base: source('base.json') }
+        sources: {
+            roads: source('roads.json'), map: source('map.json'), zones: source('zones.json'),
+            base: source('base.json'), pois: source('pois.json'), discoveries: source('discoveries.json')
+        }
     };
 }
 

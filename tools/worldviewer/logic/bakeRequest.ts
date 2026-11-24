@@ -8,7 +8,7 @@ import { bakeSources, type MapSources } from '../../map/bakeSources.js';
 export interface BakeRequest {
     mapId: string;
     // Exact file texts (the hash covers the bytes, formatting included)
-    sources: { roads: string; map: string; zones: string; base: string };
+    sources: { roads: string; map: string; zones: string; base: string; pois?: string; discoveries?: string };
 }
 
 export interface BakeSummary {
@@ -34,7 +34,9 @@ export function runBake(request: BakeRequest): BakeResponse {
             roads: encoder.encode(text.roads),
             map: encoder.encode(text.map),
             zones: encoder.encode(text.zones),
-            base: encoder.encode(text.base)
+            base: encoder.encode(text.base),
+            ...(text.pois !== undefined ? { pois: encoder.encode(text.pois) } : {}),
+            ...(text.discoveries !== undefined ? { discoveries: encoder.encode(text.discoveries) } : {})
         };
         const { bytes, report } = bakeSources(mapId, sources);
         return {
