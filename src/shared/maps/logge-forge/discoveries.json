@@ -1,0 +1,1216 @@
+{
+  "format": "bulli-discoveries",
+  "version": 1,
+  "mapId": "logge-forge",
+  "discoveries": [
+    {
+      "id": "forge-knopf",
+      "title": "Der Rote Knopf",
+      "subtitle": "I'm Just Pressing Buttons · Die Esse",
+      "alloy": "forge",
+      "projectRef": "https://lmf.logge.top/#werkstatt",
+      "x": 0,
+      "z": -28,
+      "hint": "Drive into the center of Die Esse beneath the LMF Forge Arch and press the giant red button — or honk on it!",
+      "codexEntry": "'I'm just pressing buttons.' — Logge's motto since the very first 2020 version of lmf.logge.top. REC is a button. Play is a button. Your horn is a button. Siehste.",
+      "toast": "SIEHSTE. — I'm just pressing buttons!",
+      "rewardEffect": "sparks",
+      "trigger": {
+        "kind": "horn",
+        "radius": 22
+      },
+      "heroPropId": "hp-red-knopf"
+    },
+    {
+      "id": "oilbert-runway",
+      "title": "Oilbert's Platform Runway",
+      "subtitle": "Oilbert's Adventure · 2025",
+      "alloy": "games",
+      "projectRef": "https://lmf.logge.top/#werk/oilbert",
+      "x": 265,
+      "z": -240,
+      "hint": "Send your Bulli airborne across the green-and-orange jump chain in the Purpur Arcade quadrant!",
+      "codexEntry": "Before Bulli Drive went 3D, a brave little red-and-white VW bus named Oilbert jumped green and crumbling orange platforms dodging bombs and collecting golden wrenches (+100 pts) & double-jump wings.",
+      "toast": "+100 Golden Wrenches! Oilbert approves!",
+      "rewardEffect": "confetti",
+      "trigger": {
+        "kind": "airtime",
+        "radius": 55,
+        "minAirSec": 0.7
+      },
+      "heroPropId": "hp-oilbert-icons"
+    },
+    {
+      "id": "bomberman-arena",
+      "title": "15×13 Neon Reactor Arena",
+      "subtitle": "Bomberman Multiplayer · 60 Ticks/s",
+      "alloy": "games",
+      "projectRef": "https://lmf.logge.top/#werk/bomberman-web",
+      "x": 540,
+      "z": -360,
+      "hint": "Enter the Neon Reactor Party Arena in NE and honk on the glowing cross-tile at center.",
+      "codexEntry": "Vanilla JS & Canvas, running the exact same deterministic 60-tick simulation on the couch and online across 6 arenas (Neon Reactor, Magma Foundry, Cryo Circuit…). Eliminated players return as stun-bombing ghosts as Sudden Death spirals inward.",
+      "toast": "CHAIN REACTION! Sudden Death Spiral Active!",
+      "rewardEffect": "shockwave",
+      "trigger": {
+        "kind": "horn",
+        "radius": 26
+      }
+    },
+    {
+      "id": "sudsblaster-quarry",
+      "title": "SB-1 Sudsblaster & Nether Portal",
+      "subtitle": "Voxel Blitz · 32-Player Browser Shooter",
+      "alloy": "games",
+      "projectRef": "https://lmf.logge.top/#werk/voxel-blitz",
+      "x": 640,
+      "z": -140,
+      "hint": "Drive through the glowing purple Nether Portal arch guarding the Sudsblaster Quarry!",
+      "codexEntry": "15 weapons, 15 maps (including Dust 2 and ttt_minecraft_b5 with working Nether portals!), and the deadliest gun in Voxel Blitz history: the SB-1 SUDSBLASTER, firing rising soap bubbles that pop and shove opponents.",
+      "toast": "PORTAL BREACHED! SB-1 Sudsblaster Bubbles!",
+      "rewardEffect": "bubbles",
+      "trigger": {
+        "kind": "proximity",
+        "radius": 18
+      },
+      "heroPropId": "hp-nether-portal",
+      "secret": true
+    },
+    {
+      "id": "arcanum-tower",
+      "title": "Turm des Erzmagiers",
+      "subtitle": "Arcanum · 3D Fantasy Escape Room",
+      "alloy": "games",
+      "projectRef": "https://lmf.logge.top/#werk/arcanum",
+      "x": 760,
+      "z": -640,
+      "hint": "Climb to the NE headland stone tower and honk inside the glowing rune circle (ᚠ ᛗ ᛏ).",
+      "codexEntry": "Two chambers, one exit, many dead ends. The Archmage locked you in while popping out 'nur kurz etwas Schwefel holen' — three hours ago. Don't forget the Dragon's Eye, Nixie's Tear, Phoenix Heart, and Brass Key (⚷).",
+      "toast": "ᚠ ᛗ ᛏ Runes Lit! Messingschlüssel ⚷ Unlocked!",
+      "rewardEffect": "runes",
+      "trigger": {
+        "kind": "horn",
+        "radius": 28
+      },
+      "heroPropId": "hp-arcanum-tower"
+    },
+    {
+      "id": "kniffel-meadow",
+      "title": "Kniffel Tulip Dice Meadow",
+      "subtitle": "Kniffel Multiplayer · Rapier 3D Dice",
+      "alloy": "games",
+      "projectRef": "https://lmf.logge.top/#werk/kniffel",
+      "x": 380,
+      "z": -580,
+      "hint": "Park peacefully among the giant 6-pip dice in the NE tulip meadow.",
+      "codexEntry": "Kitchen-table Yahtzee brought online for 1–6 players with Rapier 3D dice physics, 25+ achievements, emoji reaction bubbles instead of chat, upper-block bonus at 63+, and an AI-generated tulip meadow backdrop.",
+      "toast": "KNIFFEL! 5×6 + Upper Bonus 63+!",
+      "rewardEffect": "confetti",
+      "trigger": {
+        "kind": "park",
+        "radius": 26,
+        "holdSec": 1.5,
+        "maxSpeed": 2.5
+      },
+      "heroPropId": "hp-kniffel-die-1"
+    },
+    {
+      "id": "christmas-twins",
+      "title": "Weihnachtsnacht Twin Pavilions",
+      "subtitle": "BeatGuessr & Coop Sudoku · Dec 24/25, 2025",
+      "alloy": "games",
+      "projectRef": "https://lmf.logge.top/#werk/beatguessr",
+      "x": 190,
+      "z": -500,
+      "hint": "Roll right across the luminous 9×9 Sudoku floor grid between BeatGuessr and Coop Sudoku.",
+      "codexEntry": "Two complete multiplayer games shipped in a single Christmas night, less than three hours apart: BeatGuessr (660 songs across 66 years, 1960–2025) and real-time collaborative/versus Coop Sudoku.",
+      "toast": "24./25. DEZ 2025 · Two Games in <3 Hours!",
+      "rewardEffect": "music",
+      "trigger": {
+        "kind": "proximity",
+        "radius": 22
+      }
+    },
+    {
+      "id": "geogames-compass",
+      "title": "GeoGames StadtPin Compass",
+      "subtitle": "geo.logge.top · 10 Daily Geo Challenges",
+      "alloy": "games",
+      "projectRef": "https://lmf.logge.top/#werk/geo-game",
+      "x": 490,
+      "z": -60,
+      "hint": "Stop cleanly on the giant red StadtPin compass rose off GeoGames Avenue.",
+      "codexEntry": "Ten daily geography rituals — GeoWordle, MapPin, Silhouette, Capital Streak, BorderRun, StadtPin, FlagQuiz and more — hand-audited down to Western Sahara's borders for an ambitiously competitive evening leaderboard.",
+      "toast": "0 km off! GeoGames Weltrekord-Badge!",
+      "rewardEffect": "confetti",
+      "trigger": {
+        "kind": "park",
+        "radius": 22,
+        "holdSec": 1.5,
+        "maxSpeed": 2.5
+      },
+      "heroPropId": "hp-stadtpin"
+    },
+    {
+      "id": "kolpingtheater-ramsen",
+      "title": "Kolpingtheater Ramsen & Rampenlicht",
+      "subtitle": "68 Seats A–G · Deutscher Engagementpreis 2026",
+      "alloy": "web",
+      "projectRef": "https://lmf.logge.top/#werk/theater-website",
+      "x": -340,
+      "z": -260,
+      "hint": "Park neatly on the A–G drive-in seating chart in front of Kolpingtheater Ramsen (no single-seat gaps!).",
+      "codexEntry": "Since 2020 Logge has built the website, 68-seat booking map (with single-seat-gap warning!), QR & Google Wallet tickets, rehearsal script app, and the Rampenlicht member card game. On stage in Creepshow (2026): Bote / Diener.",
+      "toast": "Platz D4 reserviert! Auf der Bühne: Bote / Diener.",
+      "rewardEffect": "flash",
+      "trigger": {
+        "kind": "park",
+        "radius": 24,
+        "holdSec": 1.5,
+        "maxSpeed": 2.5
+      },
+      "heroPropId": "hp-theater-facade"
+    },
+    {
+      "id": "jp-poolparty",
+      "title": "JP Poolparty Resort (#ff2d87)",
+      "subtitle": "Ramsen · Whirlpool, Laser & Busse",
+      "alloy": "web",
+      "projectRef": "https://lmf.logge.top/#werk/poolparty-website",
+      "x": -640,
+      "z": -240,
+      "hint": "Honk beside the hot-pink #ff2d87 party pavilion and whirlpool on the NW coast!",
+      "codexEntry": "Pool parties, group trips, and a shared enthusiasm for buses — the annual Ramsen event powered by Logge's jpCore backend, a Mitbringliste, a new accent color every year (#ff2d87 in 2026), and 'a small easter egg or two (don't tell)'.",
+      "toast": "jpCore DJ Mode! A small easter egg or two (don't tell).",
+      "rewardEffect": "laser",
+      "trigger": {
+        "kind": "horn",
+        "radius": 26
+      },
+      "heroPropId": "hp-jp-tent"
+    },
+    {
+      "id": "win98-plaza",
+      "title": "ShareX Windows 98 Desktop",
+      "subtitle": "Three ShareX Concepts in One Day · ★1",
+      "alloy": "web",
+      "projectRef": "https://lmf.logge.top/#werk/sharex-win98",
+      "x": -180,
+      "z": -640,
+      "hint": "Cruise past the colossal retro teal Windows 98 CRT screen north of Ramsen.",
+      "codexEntry": "On July 15, 2026 Logge built three ShareX website redesigns in a single day: Capture Engine (Three.js reactor), Afterimage Lab, and a playable Windows 98 desktop — the only one that earned a GitHub star!",
+      "toast": "CAPTURE 100% — ShareX Win98 (★1 on GitHub!)",
+      "rewardEffect": "flash",
+      "trigger": {
+        "kind": "proximity",
+        "radius": 24
+      },
+      "heroPropId": "hp-win98-frame"
+    },
+    {
+      "id": "voll-o-meter-tavern",
+      "title": "Voll-O-Meter Crooked Roadhouse",
+      "subtitle": "Party-Chaos · 0.00 ‰ Designated Driver",
+      "alloy": "web",
+      "projectRef": "https://lmf.logge.top/#werk/voll-o-meter",
+      "x": -670,
+      "z": -620,
+      "hint": "Stop responsibly in the 0.00 ‰ Designated Driver bay outside the tilted roadhouse in far NW.",
+      "codexEntry": "Logge's tongue-in-cheek mobile BAC estimator tilts and blurs its UI as Party-Chaos rises — strictly an estimate, never for driving! Launch day needed three fixes, including the immortal commit 'Fix BAC calc (again)'.",
+      "toast": "0.00 ‰ Verified! Commit: Fix BAC calc (again).",
+      "rewardEffect": "confetti",
+      "trigger": {
+        "kind": "park",
+        "radius": 24,
+        "holdSec": 1.5,
+        "maxSpeed": 2.5
+      }
+    },
+    {
+      "id": "ppk-billboard-alley",
+      "title": "PowerPoint Karaoke Drive-In",
+      "subtitle": "VW-Bus vs. Wohnwagen: Image First",
+      "alloy": "web",
+      "projectRef": "https://lmf.logge.top/#werk/powerpoint-karaoke",
+      "x": -450,
+      "z": -520,
+      "hint": "Blast past the 'VW-Bus vs. Wohnwagen: Image First' gantry on PowerPoint Alley at 100+ km/h!",
+      "codexEntry": "17 absurd German image-first slide decks (10 slides each) with Random Deck and Panik-Notiz — from 'Wal Timmy sprengen' and 'Spa in der Hölle: Businessplan' to 'VW-Bus vs. Wohnwagen: Image First'.",
+      "toast": "Folie 10/10 — VW-Bus Image First Confirmed!",
+      "rewardEffect": "flash",
+      "trigger": {
+        "kind": "speed",
+        "radius": 34,
+        "minSpeedKmh": 100
+      },
+      "heroPropId": "hp-ppk-gantry"
+    },
+    {
+      "id": "jet-loop-reactor",
+      "title": "Der Strahlschlaufenreaktor",
+      "subtitle": "Chemieingenieurwesen zum Anfassen. Mit Blasen.",
+      "alloy": "ai",
+      "projectRef": "https://lmf.logge.top/#werk/jet-loop-reactor",
+      "x": 440,
+      "z": 340,
+      "hint": "Approach the towering 26 m glass chemical reactor in the SE Blau Lab at 70+ km/h!",
+      "codexEntry": "Interactive 3D process engineering simulator of catalytic hydrogenation (Nitrobenzol → Anilin) with Calderbank & Blenke correlations, Hatta number, 10× enlarged bubbles, 3× flow timelapse, and live cavitation warnings.",
+      "toast": "Nitrobenzol → Anilin: 99% Umsatz! Achtung Kavitation!",
+      "rewardEffect": "bubbles",
+      "trigger": {
+        "kind": "speed",
+        "radius": 36,
+        "minSpeedKmh": 70
+      },
+      "heroPropId": "hp-jet-loop-reactor"
+    },
+    {
+      "id": "learn-ai-campus",
+      "title": "Learn AI 3D Embedding Observatory",
+      "subtitle": "learn.logge.top · 68 Interactive AI Topics",
+      "alloy": "ai",
+      "projectRef": "https://lmf.logge.top/#werk/learn-ai",
+      "x": 220,
+      "z": 220,
+      "hint": "Drive fast past the floating 3D Embedding Space Cube in the SE AI Campus (80+ km/h)!",
+      "codexEntry": "68 interactive bilingual AI guides built around 'Learn by doing, not just reading': tweak temperature, run o200k_base tokenization live in-browser, orbit 3D embeddings, and dive into Mega-Kernels.",
+      "toast": "[Bulli][ ][Drive][!] — o200k_base Tokenized!",
+      "rewardEffect": "sparks",
+      "trigger": {
+        "kind": "speed",
+        "radius": 32,
+        "minSpeedKmh": 80
+      },
+      "heroPropId": "hp-embedding-cube"
+    },
+    {
+      "id": "melodai-stage",
+      "title": "MelodAI Karaoke Mixer Arch",
+      "subtitle": "Gesang raus. Du rein. · Demucs + WhisperX",
+      "alloy": "ai",
+      "projectRef": "https://lmf.logge.top/#werk/melodai",
+      "x": 640,
+      "z": 180,
+      "hint": "Drive into the giant dual-fader mixer arch on the SE coast and honk your best solo!",
+      "codexEntry": "Open-source AI karaoke pipeline: Search → Download → Demucs stem separation → WhisperX word timestamps → LLM singable lines → Web Audio player with separate Gesang and Instrumental faders.",
+      "toast": "GESANG RAUS. DU REIN. — Fader at 100%!",
+      "rewardEffect": "music",
+      "trigger": {
+        "kind": "horn",
+        "radius": 24
+      },
+      "heroPropId": "hp-melodai-arch"
+    },
+    {
+      "id": "codex-quota-tower",
+      "title": "Codex Quota Beacon (W 25→175%)",
+      "subtitle": "Android 4×1 Widget · Uncapped Forecast",
+      "alloy": "ai",
+      "projectRef": "https://lmf.logge.top/#werk/codex-quota-widget",
+      "x": 650,
+      "z": 530,
+      "hint": "Climb the steep dirt Quota Ridge Trail in far SE to find a red progress bar escaping its frame!",
+      "codexEntry": "Logge's Kotlin Android 4×1 homescreen widget monitors Codex usage across accounts using projected = used% × D / elapsed — intentionally never capped at 100%, proudly warning W 25→175% (+11pp)!",
+      "toast": "QUOTA ALERT: W 25 → 175% (absichtlich nicht gekappt!)",
+      "rewardEffect": "laser",
+      "trigger": {
+        "kind": "proximity",
+        "radius": 26
+      },
+      "heroPropId": "hp-codex-monolith",
+      "secret": true
+    },
+    {
+      "id": "transcripator-vault",
+      "title": "Transcripator PoW Bunker",
+      "subtitle": "SHA-256 Proof-of-Work · 0000… Verified",
+      "alloy": "ai",
+      "projectRef": "https://lmf.logge.top/#werk/transcripator",
+      "x": 290,
+      "z": 620,
+      "hint": "Stop for 2 seconds in Transcripator Canyon so your Bulli can mine a 4-zero SHA-256 nonce.",
+      "codexEntry": "Audio in, cleaned transcript + summary out. Started as a Telegram bot in 2024; the web app skips CAPTCHAs entirely by quietly mining ~65,000 SHA-256 hashes in a Web Worker until four leading zeros appear.",
+      "toast": "NONCE FOUND: 0000a9f3… (~65,000 Hashes)",
+      "rewardEffect": "laser",
+      "trigger": {
+        "kind": "park",
+        "radius": 26,
+        "holdSec": 2,
+        "maxSpeed": 2.5
+      }
+    },
+    {
+      "id": "mount-aftermovie",
+      "title": "Mount Aftermovie & FI-Toaster-Schrein",
+      "subtitle": "7 Ski Aftermovies (2019–2026) · Summit Peak",
+      "alloy": "film",
+      "projectRef": "https://lmf.logge.top/#werk/skiing-2026",
+      "x": -650,
+      "z": 650,
+      "hint": "Conquer the winding summit of Mount Aftermovie in SW to discover the legendary FI-Toaster Shrine!",
+      "codexEntry": "Seven winter aftermovies from Feldberg 2019 to vertical 9:16 Portes du Soleil 2026 — honoring Bad Gastein's 50 fps Flowframes cut, Flachau's 'nach dem Sturz lief es wie wild', and Ski 2023's legendary FI-Toaster & invisible baking trays.",
+      "toast": "Grüße an den FI-Toaster und die unsichtbaren Backbleche!",
+      "rewardEffect": "sparks",
+      "trigger": {
+        "kind": "proximity",
+        "radius": 28
+      },
+      "heroPropId": "hp-fi-toaster",
+      "secret": true
+    },
+    {
+      "id": "selantis-ruins",
+      "title": "Die Chroniken von Selantis",
+      "subtitle": "Palatina Films (2015–2020) · Harras",
+      "alloy": "film",
+      "projectRef": "https://lmf.logge.top/#werk/selantis",
+      "x": -740,
+      "z": 240,
+      "hint": "Launch across the wooden drawbridge kicker through the ruined Selantis castle archway on the SW coast!",
+      "codexEntry": "Planned as a medieval short in 2015, snowballed into a two-hour fantasy trilogy with Logge on VFX, homepage duty ('We bring you fantasy'), and starring as Harras in Part 3. The 2018 website README still promises a redesign in 'Anfangs 2019'.",
+      "toast": "PALATINA FILMS! Harras clears the Selantis Arch!",
+      "rewardEffect": "runes",
+      "trigger": {
+        "kind": "airtime",
+        "radius": 46,
+        "minAirSec": 0.6
+      },
+      "heroPropId": "hp-selantis-arch"
+    },
+    {
+      "id": "abseits-promenade",
+      "title": "Abseits der Tabs & IJsselmeer Pier",
+      "subtitle": "77 Night Photos · Blue Sailboat · AE Test (2014)",
+      "alloy": "film",
+      "projectRef": "https://lmf.logge.top/gallery/",
+      "x": -475,
+      "z": 555,
+      "hint": "Cruise out to the very tip of the wooden IJsselmeer Pier beside the moored blue sailboat.",
+      "codexEntry": "77 handheld night photos shot across 17 autumn nights in 2020 between 20:00 and 02:00 (01A–77A), overlooking the blue sailboat from Segeln 2019 & 2022 and a plaque for Logge's very first YouTube upload: 'AE Test' (7 seconds, Nov 22, 2014).",
+      "toast": "Frame 77A · 21:55 — AE Test (0:07, 2014)!",
+      "rewardEffect": "flash",
+      "trigger": {
+        "kind": "proximity",
+        "radius": 24
+      },
+      "heroPropId": "hp-sailboat"
+    },
+    {
+      "id": "bands-festival-bowl",
+      "title": "Bands Amphitheater & spotifrei.db",
+      "subtitle": "437,138 Plays · 22,476 Hours · Sonic Noir → Setlist → Bands",
+      "alloy": "film",
+      "projectRef": "https://lmf.logge.top/#werk/spotify-viz",
+      "x": -200,
+      "z": 340,
+      "hint": "Pull up to the SW Festival Stage along Bands Promenade and honk for an encore!",
+      "codexEntry": "437,138 plays and 22,476 hours of music since Oct 2017 — 497-day listening streak, peak hour 21:00, fueled by Swiss & Die Andern, Alligatoah, Linkin Park, Kraftklub, and KAFFKIEZ (45× in one day). Formerly Sonic Noir, then Setlist, now Bands — right beside LoggeRythm's spotifrei.db.",
+      "toast": "ENCORE! 437,138 Plays · spotifrei.db Live!",
+      "rewardEffect": "music",
+      "trigger": {
+        "kind": "horn",
+        "radius": 28
+      },
+      "heroPropId": "hp-festival-stage"
+    }
+  ],
+  "heroProps": [
+    {
+      "id": "hp-forge-arch",
+      "model": "lmf_forge_arch",
+      "x": 0,
+      "z": -56,
+      "yaw": 0,
+      "scale": 1,
+      "colliders": [
+        {
+          "kind": "obox",
+          "dx": -8,
+          "dz": 0,
+          "hw": 1.6,
+          "hd": 2,
+          "top": "infinity"
+        },
+        {
+          "kind": "obox",
+          "dx": 8,
+          "dz": 0,
+          "hw": 1.6,
+          "hd": 2,
+          "top": "infinity"
+        }
+      ],
+      "clearRadius": 12
+    },
+    {
+      "id": "hp-red-knopf",
+      "model": "lmf_red_knopf",
+      "x": 0,
+      "z": -28,
+      "yaw": 0,
+      "scale": 1,
+      "clearRadius": 6,
+      "discoveryId": "forge-knopf"
+    },
+    {
+      "id": "hp-oilbert-icons",
+      "model": "prop_oilbert_icons",
+      "x": 265,
+      "z": -215,
+      "yaw": 3.1416,
+      "scale": 1.1,
+      "collider": {
+        "kind": "circle",
+        "r": 3.2,
+        "top": "infinity"
+      },
+      "clearRadius": 8,
+      "discoveryId": "oilbert-runway"
+    },
+    {
+      "id": "hp-sudsblaster",
+      "model": "prop_sudsblaster",
+      "x": 668,
+      "z": -140,
+      "yaw": -1.5708,
+      "scale": 1.15,
+      "collider": {
+        "kind": "circle",
+        "r": 3.5,
+        "top": "infinity"
+      },
+      "clearRadius": 8,
+      "discoveryId": "sudsblaster-quarry"
+    },
+    {
+      "id": "hp-nether-portal",
+      "model": "prop_nether_portal",
+      "x": 640,
+      "z": -140,
+      "yaw": -0.78,
+      "scale": 1,
+      "colliders": [
+        {
+          "kind": "obox",
+          "dx": -5,
+          "dz": 0,
+          "hw": 1.1,
+          "hd": 1.2,
+          "top": "infinity"
+        },
+        {
+          "kind": "obox",
+          "dx": 5,
+          "dz": 0,
+          "hw": 1.1,
+          "hd": 1.2,
+          "top": "infinity"
+        }
+      ],
+      "clearRadius": 8,
+      "discoveryId": "sudsblaster-quarry"
+    },
+    {
+      "id": "hp-arcanum-tower",
+      "model": "lmf_arcanum_tower",
+      "x": 775,
+      "z": -640,
+      "yaw": -2.2,
+      "scale": 1,
+      "collider": {
+        "kind": "circle",
+        "r": 5.5,
+        "top": "infinity"
+      },
+      "clearRadius": 12,
+      "discoveryId": "arcanum-tower"
+    },
+    {
+      "id": "hp-kniffel-die-1",
+      "model": "prop_kniffel_die",
+      "x": 365,
+      "z": -565,
+      "yaw": 0.3,
+      "scale": 1,
+      "collider": {
+        "kind": "obox",
+        "hw": 2.6,
+        "hd": 2.6,
+        "top": 5.2
+      },
+      "clearRadius": 6,
+      "discoveryId": "kniffel-meadow"
+    },
+    {
+      "id": "hp-kniffel-die-2",
+      "model": "prop_kniffel_die",
+      "x": 398,
+      "z": -568,
+      "yaw": 1.1,
+      "scale": 0.9,
+      "collider": {
+        "kind": "obox",
+        "hw": 2.4,
+        "hd": 2.4,
+        "top": 4.8
+      },
+      "clearRadius": 5,
+      "discoveryId": "kniffel-meadow"
+    },
+    {
+      "id": "hp-kniffel-die-3",
+      "model": "prop_kniffel_die",
+      "x": 382,
+      "z": -605,
+      "yaw": -0.5,
+      "scale": 1.05,
+      "collider": {
+        "kind": "obox",
+        "hw": 2.7,
+        "hd": 2.7,
+        "top": 5.4
+      },
+      "clearRadius": 6,
+      "discoveryId": "kniffel-meadow"
+    },
+    {
+      "id": "hp-stadtpin",
+      "model": "prop_stadtpin_marker",
+      "x": 490,
+      "z": -82,
+      "yaw": 0,
+      "scale": 1,
+      "collider": {
+        "kind": "circle",
+        "r": 2.2,
+        "top": "infinity"
+      },
+      "clearRadius": 7,
+      "discoveryId": "geogames-compass"
+    },
+    {
+      "id": "hp-theater-facade",
+      "model": "lmf_theater_facade",
+      "x": -340,
+      "z": -222,
+      "yaw": 3.1416,
+      "scale": 1,
+      "collider": {
+        "kind": "obox",
+        "hw": 10,
+        "hd": 4.5,
+        "top": "infinity"
+      },
+      "clearRadius": 14,
+      "discoveryId": "kolpingtheater-ramsen"
+    },
+    {
+      "id": "hp-jp-tent",
+      "model": "prop_jp_whirlpool_tent",
+      "x": -616,
+      "z": -240,
+      "yaw": -1.5708,
+      "scale": 1,
+      "collider": {
+        "kind": "obox",
+        "hw": 5.5,
+        "hd": 5.5,
+        "top": "infinity"
+      },
+      "clearRadius": 10,
+      "discoveryId": "jp-poolparty"
+    },
+    {
+      "id": "hp-win98-frame",
+      "model": "prop_win98_frame",
+      "x": -180,
+      "z": -662,
+      "yaw": 0,
+      "scale": 1,
+      "collider": {
+        "kind": "obox",
+        "hw": 9,
+        "hd": 2.2,
+        "top": "infinity"
+      },
+      "clearRadius": 12,
+      "discoveryId": "win98-plaza"
+    },
+    {
+      "id": "hp-ppk-gantry",
+      "model": "prop_billboard_gantry",
+      "x": -450,
+      "z": -520,
+      "yaw": 0.25,
+      "scale": 1,
+      "colliders": [
+        {
+          "kind": "obox",
+          "dx": -8.5,
+          "dz": 0,
+          "hw": 1,
+          "hd": 1,
+          "top": "infinity"
+        },
+        {
+          "kind": "obox",
+          "dx": 8.5,
+          "dz": 0,
+          "hw": 1,
+          "hd": 1,
+          "top": "infinity"
+        }
+      ],
+      "clearRadius": 10,
+      "discoveryId": "ppk-billboard-alley"
+    },
+    {
+      "id": "hp-voll-billboard",
+      "model": "prop_roadside_billboard",
+      "x": -665,
+      "z": -600,
+      "yaw": 0.78,
+      "scale": 1,
+      "collider": {
+        "kind": "obox",
+        "hw": 4,
+        "hd": 1.2,
+        "top": "infinity"
+      },
+      "clearRadius": 6,
+      "discoveryId": "voll-o-meter-tavern"
+    },
+    {
+      "id": "hp-jet-loop-reactor",
+      "model": "lmf_jet_loop_reactor",
+      "x": 440,
+      "z": 382,
+      "yaw": 3.1416,
+      "scale": 1,
+      "collider": {
+        "kind": "circle",
+        "r": 5.5,
+        "top": "infinity"
+      },
+      "clearRadius": 12,
+      "discoveryId": "jet-loop-reactor"
+    },
+    {
+      "id": "hp-embedding-cube",
+      "model": "prop_embedding_cube",
+      "x": 220,
+      "z": 220,
+      "yaw": 0.5,
+      "scale": 1.1,
+      "collider": {
+        "kind": "circle",
+        "r": 3.5,
+        "top": "infinity"
+      },
+      "clearRadius": 8,
+      "discoveryId": "learn-ai-campus"
+    },
+    {
+      "id": "hp-melodai-arch",
+      "model": "lmf_melodai_arch",
+      "x": 640,
+      "z": 180,
+      "yaw": -1.5708,
+      "scale": 1,
+      "colliders": [
+        {
+          "kind": "obox",
+          "dx": -7.5,
+          "dz": 0,
+          "hw": 1.4,
+          "hd": 1.8,
+          "top": "infinity"
+        },
+        {
+          "kind": "obox",
+          "dx": 7.5,
+          "dz": 0,
+          "hw": 1.4,
+          "hd": 1.8,
+          "top": "infinity"
+        }
+      ],
+      "clearRadius": 11,
+      "discoveryId": "melodai-stage"
+    },
+    {
+      "id": "hp-codex-monolith",
+      "model": "lmf_codex_monolith",
+      "x": 640,
+      "z": 508,
+      "yaw": 0.7,
+      "scale": 1,
+      "collider": {
+        "kind": "obox",
+        "hw": 5,
+        "hd": 2.5,
+        "top": "infinity"
+      },
+      "clearRadius": 9,
+      "discoveryId": "codex-quota-tower"
+    },
+    {
+      "id": "hp-alpine-chalet",
+      "model": "lmf_alpine_chalet",
+      "x": -665,
+      "z": 630,
+      "yaw": 2.6,
+      "scale": 0.95,
+      "collider": {
+        "kind": "obox",
+        "hw": 6.5,
+        "hd": 4.5,
+        "top": "infinity"
+      },
+      "clearRadius": 11,
+      "discoveryId": "mount-aftermovie"
+    },
+    {
+      "id": "hp-ski-pylon",
+      "model": "lmf_ski_gondola_pylon",
+      "x": -690,
+      "z": 520,
+      "yaw": 0.3,
+      "scale": 1,
+      "collider": {
+        "kind": "circle",
+        "r": 1.5,
+        "top": "infinity"
+      },
+      "clearRadius": 5
+    },
+    {
+      "id": "hp-fi-toaster",
+      "model": "prop_fi_toaster_shrine",
+      "x": -655,
+      "z": 642,
+      "yaw": 2.8,
+      "scale": 1,
+      "collider": {
+        "kind": "circle",
+        "r": 1.6,
+        "top": 3
+      },
+      "clearRadius": 5,
+      "discoveryId": "mount-aftermovie"
+    },
+    {
+      "id": "hp-vertical-frame",
+      "model": "prop_vertical_frame_916",
+      "x": -620,
+      "z": 540,
+      "yaw": 1.5708,
+      "scale": 1,
+      "clearRadius": 7,
+      "discoveryId": "mount-aftermovie"
+    },
+    {
+      "id": "hp-selantis-arch",
+      "model": "lmf_selantis_arch",
+      "x": -740,
+      "z": 262,
+      "yaw": 0,
+      "scale": 1,
+      "colliders": [
+        {
+          "kind": "obox",
+          "dx": -7.5,
+          "dz": 0,
+          "hw": 1.8,
+          "hd": 2.4,
+          "top": "infinity"
+        },
+        {
+          "kind": "obox",
+          "dx": 7.5,
+          "dz": 0,
+          "hw": 1.8,
+          "hd": 2.4,
+          "top": "infinity"
+        }
+      ],
+      "clearRadius": 11,
+      "discoveryId": "selantis-ruins"
+    },
+    {
+      "id": "hp-sailboat",
+      "model": "lmf_sailboat_ijsselmeer",
+      "x": -492,
+      "z": 582,
+      "yaw": 0.6,
+      "scale": 1,
+      "clearRadius": 10,
+      "discoveryId": "abseits-promenade"
+    },
+    {
+      "id": "hp-festival-stage",
+      "model": "lmf_festival_stage",
+      "x": -200,
+      "z": 382,
+      "yaw": 3.1416,
+      "scale": 1,
+      "collider": {
+        "kind": "obox",
+        "hw": 9.5,
+        "hd": 5,
+        "top": "infinity"
+      },
+      "clearRadius": 14,
+      "discoveryId": "bands-festival-bowl"
+    }
+  ],
+  "billboards": [
+    {
+      "id": "bb-lmf-welcome",
+      "texture": "sign_lmf_welcome",
+      "kind": "gantry",
+      "x": 0,
+      "z": -56,
+      "yOffset": 8.2,
+      "yaw": 0,
+      "width": 12,
+      "height": 4,
+      "emissive": true,
+      "discoveryId": "forge-knopf"
+    },
+    {
+      "id": "bb-werkzeugwand",
+      "texture": "sign_werkzeugwand",
+      "kind": "roadside",
+      "x": 46,
+      "z": 36,
+      "yaw": -2.35,
+      "width": 9,
+      "height": 4.5,
+      "emissive": true
+    },
+    {
+      "id": "bb-ppk-bulli",
+      "texture": "sign_ppk_bulli",
+      "kind": "gantry",
+      "x": -450,
+      "z": -520,
+      "yOffset": 6.5,
+      "yaw": 0.25,
+      "width": 12,
+      "height": 4.5,
+      "emissive": true,
+      "discoveryId": "ppk-billboard-alley"
+    },
+    {
+      "id": "bb-ppk-trio",
+      "texture": "sign_ppk_trio",
+      "kind": "roadside",
+      "x": -415,
+      "z": -460,
+      "yaw": 1.8,
+      "width": 8,
+      "height": 4,
+      "emissive": true,
+      "discoveryId": "ppk-billboard-alley"
+    },
+    {
+      "id": "bb-kolpingtheater",
+      "texture": "sign_kolpingtheater",
+      "kind": "wall",
+      "x": -340,
+      "z": -227,
+      "yOffset": 6,
+      "yaw": 3.1416,
+      "width": 10,
+      "height": 4,
+      "emissive": true,
+      "discoveryId": "kolpingtheater-ramsen"
+    },
+    {
+      "id": "bb-oilbert-ad",
+      "texture": "sign_oilbert_ad",
+      "kind": "roadside",
+      "x": 225,
+      "z": -215,
+      "yaw": 3.1416,
+      "width": 8,
+      "height": 4,
+      "emissive": true,
+      "discoveryId": "oilbert-runway"
+    },
+    {
+      "id": "bb-win98-desktop",
+      "texture": "sign_win98_desktop",
+      "kind": "wall",
+      "x": -180,
+      "z": -660,
+      "yOffset": 5.5,
+      "yaw": 0,
+      "width": 14,
+      "height": 7,
+      "emissive": true,
+      "discoveryId": "win98-plaza"
+    },
+    {
+      "id": "bb-codex-widget",
+      "texture": "sign_codex_widget",
+      "kind": "wall",
+      "x": 642,
+      "z": 510,
+      "yOffset": 6.5,
+      "yaw": 0.7,
+      "width": 10,
+      "height": 4,
+      "emissive": true,
+      "discoveryId": "codex-quota-tower"
+    },
+    {
+      "id": "bb-bands-marquee",
+      "texture": "sign_bands_marquee",
+      "kind": "wall",
+      "x": -200,
+      "z": 376,
+      "yOffset": 7.2,
+      "yaw": 3.1416,
+      "width": 12,
+      "height": 4.5,
+      "emissive": true,
+      "discoveryId": "bands-festival-bowl"
+    },
+    {
+      "id": "bb-reactor-safety",
+      "texture": "sign_reactor_safety",
+      "kind": "roadside",
+      "x": 410,
+      "z": 360,
+      "yaw": 2.35,
+      "width": 7,
+      "height": 3.5,
+      "emissive": true,
+      "discoveryId": "jet-loop-reactor"
+    },
+    {
+      "id": "bb-arcanum-note",
+      "texture": "sign_arcanum_note",
+      "kind": "roadside",
+      "x": 752,
+      "z": -632,
+      "yaw": -2.2,
+      "width": 5,
+      "height": 3,
+      "emissive": false,
+      "discoveryId": "arcanum-tower"
+    },
+    {
+      "id": "bb-voll-o-meter",
+      "texture": "sign_voll_o_meter",
+      "kind": "roadside",
+      "x": -665,
+      "z": -600,
+      "yaw": 0.78,
+      "width": 7,
+      "height": 3.5,
+      "emissive": true,
+      "discoveryId": "voll-o-meter-tavern"
+    },
+    {
+      "id": "bb-selantis-poster",
+      "texture": "sign_selantis_poster",
+      "kind": "roadside",
+      "x": -720,
+      "z": 220,
+      "yaw": 0.4,
+      "width": 8,
+      "height": 4,
+      "emissive": false,
+      "discoveryId": "selantis-ruins"
+    },
+    {
+      "id": "bb-jp-poolparty",
+      "texture": "sign_jp_poolparty",
+      "kind": "roadside",
+      "x": -626,
+      "z": -222,
+      "yaw": 0,
+      "width": 8,
+      "height": 4,
+      "emissive": true,
+      "discoveryId": "jp-poolparty"
+    },
+    {
+      "id": "bb-abseits-contact",
+      "texture": "sign_abseits_contact",
+      "kind": "roadside",
+      "x": -460,
+      "z": 486,
+      "yaw": 1.2,
+      "width": 8,
+      "height": 4,
+      "emissive": true,
+      "discoveryId": "abseits-promenade"
+    },
+    {
+      "id": "dec-saalplan",
+      "texture": "decal_saalplan_ag",
+      "kind": "decal",
+      "x": -340,
+      "z": -260,
+      "yaw": 0,
+      "width": 22,
+      "height": 18,
+      "emissive": false,
+      "discoveryId": "kolpingtheater-ramsen"
+    },
+    {
+      "id": "dec-bomberman",
+      "texture": "decal_bomberman_grid",
+      "kind": "decal",
+      "x": 540,
+      "z": -360,
+      "yaw": 0,
+      "width": 32,
+      "height": 28,
+      "emissive": true,
+      "discoveryId": "bomberman-arena"
+    },
+    {
+      "id": "dec-sudoku",
+      "texture": "decal_sudoku_grid",
+      "kind": "decal",
+      "x": 190,
+      "z": -500,
+      "yaw": 0,
+      "width": 24,
+      "height": 24,
+      "emissive": true,
+      "discoveryId": "christmas-twins"
+    },
+    {
+      "id": "dec-geogames",
+      "texture": "decal_geogames_map",
+      "kind": "decal",
+      "x": 490,
+      "z": -60,
+      "yaw": 0,
+      "width": 26,
+      "height": 26,
+      "emissive": false,
+      "discoveryId": "geogames-compass"
+    },
+    {
+      "id": "dec-kniffel",
+      "texture": "decal_kniffel_pips",
+      "kind": "decal",
+      "x": 380,
+      "z": -580,
+      "yaw": 0,
+      "width": 22,
+      "height": 22,
+      "emissive": false,
+      "discoveryId": "kniffel-meadow"
+    }
+  ],
+  "boostPads": [
+    {
+      "id": "bp-forge-n",
+      "x": 0,
+      "z": -200,
+      "yaw": 3.1416,
+      "width": 7,
+      "length": 14,
+      "impulseSpeed": 13,
+      "boostFill": 0.5
+    },
+    {
+      "id": "bp-forge-e",
+      "x": 180,
+      "z": 0,
+      "yaw": 1.5708,
+      "width": 7,
+      "length": 14,
+      "impulseSpeed": 13,
+      "boostFill": 0.5
+    },
+    {
+      "id": "bp-forge-s",
+      "x": 0,
+      "z": 210,
+      "yaw": 0,
+      "width": 7,
+      "length": 14,
+      "impulseSpeed": 13,
+      "boostFill": 0.5
+    },
+    {
+      "id": "bp-forge-w",
+      "x": -180,
+      "z": -24,
+      "yaw": -1.5708,
+      "width": 7,
+      "length": 14,
+      "impulseSpeed": 13,
+      "boostFill": 0.5
+    },
+    {
+      "id": "bp-oilbert-runup",
+      "x": 185,
+      "z": -240,
+      "yaw": 1.5708,
+      "width": 7,
+      "length": 14,
+      "impulseSpeed": 15,
+      "boostFill": 0.7
+    },
+    {
+      "id": "bp-ppk-speed",
+      "x": -425,
+      "z": -480,
+      "yaw": -0.25,
+      "width": 7,
+      "length": 14,
+      "impulseSpeed": 15,
+      "boostFill": 0.7
+    },
+    {
+      "id": "bp-reactor-boost",
+      "x": 440,
+      "z": 325,
+      "yaw": 1.5708,
+      "width": 7,
+      "length": 14,
+      "impulseSpeed": 14,
+      "boostFill": 0.6
+    },
+    {
+      "id": "bp-selantis-jump",
+      "x": -740,
+      "z": 205,
+      "yaw": 0,
+      "width": 7,
+      "length": 14,
+      "impulseSpeed": 15,
+      "boostFill": 0.7
+    },
+    {
+      "id": "bp-aftermovie-kicker",
+      "x": -340,
+      "z": 185,
+      "yaw": 0,
+      "width": 7,
+      "length": 12,
+      "impulseSpeed": 14,
+      "boostFill": 0.6
+    },
+    {
+      "id": "bp-ring-ne",
+      "x": 120,
+      "z": -720,
+      "yaw": 1.5708,
+      "width": 8,
+      "length": 14,
+      "impulseSpeed": 13,
+      "boostFill": 0.5
+    }
+  ]
+}

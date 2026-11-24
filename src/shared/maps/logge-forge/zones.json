@@ -1,0 +1,165 @@
+{
+  "format": "bulli-zones",
+  "version": 1,
+  "mapId": "logge-forge",
+  "zones": [
+    {
+      "id": "forge-hub",
+      "zone": "park",
+      "name": "Die Esse · Forge Hub",
+      "label": [
+        0,
+        0
+      ],
+      "polygon": [
+        [
+          -130,
+          -130
+        ],
+        [
+          130,
+          -130
+        ],
+        [
+          130,
+          130
+        ],
+        [
+          -130,
+          130
+        ]
+      ]
+    },
+    {
+      "id": "strohgelb-nw",
+      "zone": "residential",
+      "name": "Strohgelb · Ramsen & Web",
+      "label": [
+        -440,
+        -420
+      ],
+      "polygon": [
+        [
+          -880,
+          -880
+        ],
+        [
+          -40,
+          -880
+        ],
+        [
+          -40,
+          -40
+        ],
+        [
+          -880,
+          -40
+        ]
+      ]
+    },
+    {
+      "id": "purpur-ne",
+      "zone": "park",
+      "name": "Purpur · Arcade Peninsula",
+      "label": [
+        440,
+        -420
+      ],
+      "polygon": [
+        [
+          40,
+          -880
+        ],
+        [
+          880,
+          -880
+        ],
+        [
+          880,
+          -40
+        ],
+        [
+          40,
+          -40
+        ]
+      ]
+    },
+    {
+      "id": "bomberman-lot",
+      "zone": "arena",
+      "name": "Bomberman 15×13 Arena",
+      "polygon": [
+        [
+          450,
+          -430
+        ],
+        [
+          450,
+          -290
+        ],
+        [
+          630,
+          -290
+        ],
+        [
+          630,
+          -430
+        ]
+      ]
+    },
+    {
+      "id": "blau-se",
+      "zone": "industrial",
+      "name": "Blau · AI & Reactor Lab",
+      "label": [
+        440,
+        420
+      ],
+      "polygon": [
+        [
+          40,
+          40
+        ],
+        [
+          880,
+          40
+        ],
+        [
+          880,
+          880
+        ],
+        [
+          40,
+          880
+        ]
+      ]
+    },
+    {
+      "id": "rotglut-sw",
+      "zone": "hills",
+      "name": "Rotglut · Film & Harbor",
+      "label": [
+        -440,
+        420
+      ],
+      "polygon": [
+        [
+          -880,
+          40
+        ],
+        [
+          -40,
+          40
+        ],
+        [
+          -40,
+          880
+        ],
+        [
+          -880,
+          880
+        ]
+      ]
+    }
+  ]
+}

@@ -1,0 +1,179 @@
+{
+  "format": "bulli-base",
+  "version": 1,
+  "mapId": "stunt-forge",
+  "seed": 4096,
+  "sea": {
+    "floor": -19,
+    "shelf": 40
+  },
+  "coast": [
+    [
+      -700,
+      -700
+    ],
+    [
+      700,
+      -700
+    ],
+    [
+      700,
+      700
+    ],
+    [
+      -700,
+      700
+    ]
+  ],
+  "beach": {
+    "width": 5,
+    "top": 0,
+    "blend": 10
+  },
+  "land": {
+    "base": 14,
+    "tilt": [
+      0,
+      0
+    ],
+    "tiltOrigin": [
+      0,
+      0
+    ]
+  },
+  "hills": [
+    {
+      "id": "north-bluff",
+      "x": 0,
+      "z": -600,
+      "radii": [
+        460,
+        110
+      ],
+      "height": 34
+    },
+    {
+      "id": "east-bluff",
+      "x": 600,
+      "z": 0,
+      "radii": [
+        120,
+        460
+      ],
+      "height": 48
+    },
+    {
+      "id": "west-bluff",
+      "x": -600,
+      "z": 0,
+      "radii": [
+        120,
+        460
+      ],
+      "height": 36
+    },
+    {
+      "id": "south-bluff",
+      "x": 0,
+      "z": 600,
+      "radii": [
+        460,
+        110
+      ],
+      "height": 28
+    }
+  ],
+  "flats": [
+    {
+      "id": "quarry-pit",
+      "x": 0,
+      "z": 0,
+      "radii": [
+        140,
+        120
+      ],
+      "height": -4,
+      "strength": 1
+    }
+  ],
+  "cliffs": [],
+  "ridges": [
+    {
+      "id": "east-crest",
+      "line": [
+        [
+          575,
+          -340,
+          58
+        ],
+        [
+          590,
+          0,
+          68
+        ],
+        [
+          575,
+          340,
+          54
+        ]
+      ],
+      "width": 95
+    }
+  ],
+  "noise": {
+    "amplitude": 1.2,
+    "wavelength": 180,
+    "octaves": 4,
+    "gain": 0.45,
+    "ridged": 0.25,
+    "regions": [
+      {
+        "id": "bowl-flat",
+        "polygon": [
+          [
+            -220,
+            -200
+          ],
+          [
+            220,
+            -200
+          ],
+          [
+            220,
+            200
+          ],
+          [
+            -220,
+            200
+          ]
+        ],
+        "amplitude": 0.1,
+        "blend": 50
+      }
+    ]
+  },
+  "regions": [
+    {
+      "id": "quarry-rock-all",
+      "surface": "rock",
+      "polygon": [
+        [
+          -600,
+          -600
+        ],
+        [
+          600,
+          -600
+        ],
+        [
+          600,
+          600
+        ],
+        [
+          -600,
+          600
+        ]
+      ]
+    }
+  ]
+}

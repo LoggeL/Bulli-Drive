@@ -1,0 +1,112 @@
+{
+  "format": "bulli-tracks",
+  "version": 1,
+  "mapId": "alpen-pass",
+  "tracks": [
+    {
+      "id": "alpen-touge-descent",
+      "name": "Alpen Touge Descent",
+      "kind": "sprint",
+      "laps": 1,
+      "trackVersion": 1,
+      "route": [
+        "-summit-crest-e",
+        "-summit-crest-w",
+        "-touge-7",
+        "-touge-6",
+        "-touge-5",
+        "-touge-4",
+        "-touge-3",
+        "-touge-2",
+        "-touge-1",
+        "-touge-0",
+        "-val-w2"
+      ],
+      "start": {
+        "edge": "summit-crest-e",
+        "s": 55
+      },
+      "finish": {
+        "edge": "val-w2",
+        "s": 40
+      },
+      "gateSpacing": 220,
+      "minCornerSpeed": 24,
+      "chevronCurvature": 0.025,
+      "ramps": [
+        {
+          "edge": "val-w2",
+          "s": 140,
+          "length": 12,
+          "height": 1.4,
+          "look": "wood"
+        }
+      ],
+      "minJumps": 1
+    },
+    {
+      "id": "gipfel-climb",
+      "name": "Gipfel Climb",
+      "kind": "sprint",
+      "laps": 1,
+      "trackVersion": 1,
+      "route": [
+        "val-e1",
+        "-val-s3b",
+        "val-ice-w",
+        "ice-nw",
+        "ice-ne",
+        "-glacier-7",
+        "-glacier-6",
+        "-glacier-5",
+        "-glacier-4",
+        "-glacier-3",
+        "-glacier-2",
+        "-glacier-1",
+        "-summit-crest-e",
+        "-summit-crest-w"
+      ],
+      "start": {
+        "edge": "val-e1",
+        "s": 75
+      },
+      "finish": {
+        "edge": "summit-crest-w",
+        "s": 55
+      },
+      "gateSpacing": 240,
+      "minCornerSpeed": 22,
+      "chevronCurvature": 0.025,
+      "ramps": [
+        {
+          "edge": "val-e1",
+          "s": 135,
+          "length": 12,
+          "height": 1.2,
+          "look": "wood"
+        }
+      ],
+      "minJumps": 1
+    },
+    {
+      "id": "frozen-lake-drift",
+      "name": "Frozen Lake Drift",
+      "kind": "circuit",
+      "laps": 3,
+      "trackVersion": 1,
+      "route": [
+        "ice-nw",
+        "ice-ne",
+        "ice-se",
+        "ice-sw"
+      ],
+      "start": {
+        "edge": "ice-ne",
+        "s": 60
+      },
+      "gateSpacing": 200,
+      "minCornerSpeed": 20,
+      "chevronCurvature": 0.02
+    }
+  ]
+}

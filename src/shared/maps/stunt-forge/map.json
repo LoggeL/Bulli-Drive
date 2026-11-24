@@ -1,0 +1,29 @@
+{
+  "format": "bulli-map",
+  "version": 1,
+  "mapId": "stunt-forge",
+  "mapVersion": 1,
+  "name": "Kiesgrube Stunt Park",
+  "boundary": [
+    [
+      -550,
+      -550
+    ],
+    [
+      550,
+      -550
+    ],
+    [
+      550,
+      550
+    ],
+    [
+      -550,
+      550
+    ]
+  ],
+  "lighting": {
+    "sunAzimuth": 245,
+    "sunElevation": 26
+  }
+}

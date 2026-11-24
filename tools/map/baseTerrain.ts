@@ -134,10 +134,10 @@ export const BaseTerrainSchema = v.strictObject({
         // `blend` metres across its outline (later regions win)
         regions: v.optional(v.array(v.strictObject({ id: v.string(), polygon: Polygon, amplitude: NonNegative, blend: Positive })))
     }),
-    // Surface overrides of the natural ground (dunes, fields); later wins
+    // Surface overrides of the natural ground (dunes, fields, snow, ice); later wins
     regions: v.array(v.strictObject({
         id: v.string(),
-        surface: v.picklist(['grass', 'sand', 'dirt', 'gravel', 'rock']),
+        surface: v.picklist(['grass', 'sand', 'dirt', 'gravel', 'rock', 'snow', 'ice']),
         polygon: Polygon
     }))
 });

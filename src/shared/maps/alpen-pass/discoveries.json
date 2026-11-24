@@ -1,0 +1,283 @@
+{
+  "format": "bulli-discoveries",
+  "version": 1,
+  "mapId": "alpen-pass",
+  "discoveries": [
+    {
+      "id": "alpen-gipfel-2026",
+      "title": "Gipfelstation Portes du Soleil 2026",
+      "subtitle": "Ski Aftermovie · 9:16 Vertikal",
+      "alloy": "alpine",
+      "projectRef": "https://lmf.logge.top/#werk/skiing-2026",
+      "x": 0,
+      "z": -620,
+      "hint": "Climb to 210 m summit and honk through the tilted vertical camera frame.",
+      "codexEntry": "Logge's 7th ski aftermovie (Portes du Soleil 2026) broke tradition by going full 9:16 vertical: 'Die Welt steht schief diesmal in vertikal.'",
+      "toast": "Gipfel 2026! Die Welt steht schief diesmal in vertikal.",
+      "rewardEffect": "flash",
+      "trigger": {
+        "kind": "horn",
+        "radius": 28
+      },
+      "heroPropId": "alpen-frame-916"
+    },
+    {
+      "id": "alpen-fi-toaster",
+      "title": "Der FI-Toaster von Ski 2023",
+      "subtitle": "Hütten-Legende · Unsichtbare Backbleche",
+      "alloy": "film",
+      "projectRef": "https://lmf.logge.top/#werk/skiing-2023",
+      "x": 340,
+      "z": -310,
+      "hint": "Find the glowing breaker box and smoking toaster outside the mid-mountain chalet.",
+      "codexEntry": "On YouTube, Logge's Ski 2023 aftermovie sends official greetings to 'den FI-Toaster und die unsichtbaren Backbleche'. Never plug in a ski-hut toaster without checking the breaker.",
+      "toast": "Grüße gehen raus an den FI-Toaster!",
+      "rewardEffect": "sparks",
+      "trigger": {
+        "kind": "proximity",
+        "radius": 20
+      },
+      "heroPropId": "alpen-toaster",
+      "secret": true
+    },
+    {
+      "id": "alpen-eissee-drift",
+      "title": "Eissee Drift Oval",
+      "subtitle": "Frozen Alpine Lake · Low Grip",
+      "alloy": "alpine",
+      "x": 380,
+      "z": 300,
+      "hint": "Carry 85+ km/h onto the frozen Eissee oval and hold the slide!",
+      "codexEntry": "Pure 0.35-grip glacial ice modeled for long, smoky Scandinavian flicks across the valley floor.",
+      "toast": "Ice Drift Master! 0.35 Grip Unlocked.",
+      "rewardEffect": "shockwave",
+      "trigger": {
+        "kind": "speed",
+        "radius": 36,
+        "minSpeedKmh": 85
+      }
+    },
+    {
+      "id": "alpen-feldberg-kicker",
+      "title": "Feldberg 2019 Ski Kicker",
+      "subtitle": "Where the Ski Aftermovies Began",
+      "alloy": "film",
+      "projectRef": "https://lmf.logge.top/#werk/skiing-2019",
+      "x": -560,
+      "z": 262,
+      "hint": "Launch off the wooden ski kicker on the snowy Feldberg Piste.",
+      "codexEntry": "February 2019 at Feldberg in the Black Forest kicked off seven consecutive winters of ski aftermovies — later upgraded with 50 fps Flowframes in Bad Gastein and AI tracks in Flachau.",
+      "toast": "Nach dem Sturz lief es wie wild!",
+      "rewardEffect": "confetti",
+      "trigger": {
+        "kind": "airtime",
+        "radius": 36,
+        "minAirSec": 0.7
+      }
+    }
+  ],
+  "heroProps": [
+    {
+      "id": "alpen-chalet-summit",
+      "model": "lmf_alpine_chalet",
+      "x": 0,
+      "z": -654,
+      "yaw": 0,
+      "scale": 1,
+      "collider": {
+        "kind": "obox",
+        "hw": 7,
+        "hd": 5,
+        "top": "infinity"
+      },
+      "clearRadius": 12
+    },
+    {
+      "id": "alpen-frame-916",
+      "model": "prop_vertical_frame_916",
+      "x": 46,
+      "z": -638,
+      "yaw": -0.35,
+      "scale": 1,
+      "clearRadius": 8,
+      "discoveryId": "alpen-gipfel-2026"
+    },
+    {
+      "id": "alpen-chalet-mid",
+      "model": "lmf_alpine_chalet",
+      "x": 355,
+      "z": -318,
+      "yaw": -1.5708,
+      "scale": 0.9,
+      "collider": {
+        "kind": "obox",
+        "hw": 6.5,
+        "hd": 4.5,
+        "top": "infinity"
+      },
+      "clearRadius": 11
+    },
+    {
+      "id": "alpen-toaster",
+      "model": "prop_fi_toaster_shrine",
+      "x": 340,
+      "z": -310,
+      "yaw": -1.5708,
+      "scale": 1,
+      "collider": {
+        "kind": "circle",
+        "r": 1.8,
+        "top": 3
+      },
+      "clearRadius": 5,
+      "discoveryId": "alpen-fi-toaster"
+    },
+    {
+      "id": "alpen-chalet-valley",
+      "model": "lmf_alpine_chalet",
+      "x": -300,
+      "z": 390,
+      "yaw": 3.1416,
+      "scale": 1,
+      "collider": {
+        "kind": "obox",
+        "hw": 7,
+        "hd": 5,
+        "top": "infinity"
+      },
+      "clearRadius": 12
+    },
+    {
+      "id": "alpen-pylon-1",
+      "model": "lmf_ski_gondola_pylon",
+      "x": -380,
+      "z": 240,
+      "yaw": 0,
+      "scale": 1,
+      "collider": {
+        "kind": "circle",
+        "r": 1.5,
+        "top": "infinity"
+      },
+      "clearRadius": 5
+    },
+    {
+      "id": "alpen-pylon-2",
+      "model": "lmf_ski_gondola_pylon",
+      "x": -380,
+      "z": 0,
+      "yaw": 0,
+      "scale": 1,
+      "collider": {
+        "kind": "circle",
+        "r": 1.5,
+        "top": "infinity"
+      },
+      "clearRadius": 5
+    },
+    {
+      "id": "alpen-pylon-3",
+      "model": "lmf_ski_gondola_pylon",
+      "x": -380,
+      "z": -240,
+      "yaw": 0,
+      "scale": 1,
+      "collider": {
+        "kind": "circle",
+        "r": 1.5,
+        "top": "infinity"
+      },
+      "clearRadius": 5
+    },
+    {
+      "id": "alpen-pylon-4",
+      "model": "lmf_ski_gondola_pylon",
+      "x": -380,
+      "z": -480,
+      "yaw": 0,
+      "scale": 1,
+      "collider": {
+        "kind": "circle",
+        "r": 1.5,
+        "top": "infinity"
+      },
+      "clearRadius": 5
+    }
+  ],
+  "billboards": [
+    {
+      "id": "bb-alpen-welcome",
+      "texture": "sign_lmf_welcome",
+      "kind": "roadside",
+      "x": -230,
+      "z": 320,
+      "yaw": 0,
+      "width": 8,
+      "height": 4,
+      "emissive": true
+    },
+    {
+      "id": "bb-alpen-ppk",
+      "texture": "sign_ppk_bulli",
+      "kind": "roadside",
+      "x": 100,
+      "z": 315,
+      "yaw": 0,
+      "width": 7,
+      "height": 3.5,
+      "emissive": false
+    }
+  ],
+  "boostPads": [
+    {
+      "id": "bp-alpen-touge-1",
+      "x": 0,
+      "z": 200,
+      "yaw": 1.5708,
+      "width": 6,
+      "length": 12,
+      "impulseSpeed": 12,
+      "boostFill": 0.5
+    },
+    {
+      "id": "bp-alpen-touge-2",
+      "x": 0,
+      "z": -60,
+      "yaw": 1.5708,
+      "width": 6,
+      "length": 12,
+      "impulseSpeed": 12,
+      "boostFill": 0.5
+    },
+    {
+      "id": "bp-alpen-piste",
+      "x": -580,
+      "z": -20,
+      "yaw": 0,
+      "width": 7,
+      "length": 14,
+      "impulseSpeed": 14,
+      "boostFill": 0.6
+    },
+    {
+      "id": "bp-alpen-glacier",
+      "x": 580,
+      "z": 100,
+      "yaw": 0,
+      "width": 6,
+      "length": 12,
+      "impulseSpeed": 12,
+      "boostFill": 0.5
+    },
+    {
+      "id": "bp-alpen-ice",
+      "x": 380,
+      "z": 595,
+      "yaw": -1.5708,
+      "width": 8,
+      "length": 14,
+      "impulseSpeed": 10,
+      "boostFill": 0.45
+    }
+  ]
+}

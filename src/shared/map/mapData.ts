@@ -15,6 +15,10 @@ import {
     createSimWorld, rampEdgeColliders, type ColliderInput, type GroundModel, type RampDef, type SimWorld
 } from '../world/colliders.js';
 import { canonicalStringify, fnv1a } from '../world/mapData.js';
+import {
+    billboardReservedBox, boostPadReservedBox, heroPropColliders, heroPropReservedBoxes,
+    type BillboardDef, type BoostPadDef, type DiscoveryDef, type HeroPropDef
+} from './discoverySchema.js';
 import { placeBuildings, type BuildingLot } from './buildings.js';
 import { pointInPolygon, type Vec2 } from './geometry.js';
 import { heightAt, surfaceAt, type Heightfield } from './heightfield.js';
@@ -23,6 +27,7 @@ import type { MapSources } from './mapSources.js';
 import { placePlants, PLANT_COLLIDERS, type Plant } from './plants.js';
 import { benchBox, FURNITURE_COLLIDERS, litLots, placeFurniture, type Furniture } from './furniture.js';
 import { networkRailColliders, RAIL_RADIUS, type SegmentCollider } from './rails.js';
+import { DEFAULT_MAP_ID, isMapId, MAP_REGISTRY, type MapAtmosphereSpec } from './registry.js';
 import { buildRoadNetwork, nearestRoad, type RoadHit, type RoadNetwork } from './roadNetwork.js';
 import { AXIS_SNAP, snapYaw } from './routeToTrack.js';
 import type { RoadArea } from './roadSchema.js';
@@ -99,6 +104,12 @@ export interface MapData {
     // The Party's coins and power-ups (rooms copy them)
     items: MapItems;
     spawns: { freeRoam: readonly SpawnSlot[]; party: readonly SpawnSlot[] };
+    // Curated discoveries, hero monuments/props, lore billboards, boost pads & atmosphere
+    discoveries: readonly DiscoveryDef[];
+    heroProps: readonly HeroPropDef[];
+    billboards: readonly BillboardDef[];
+    boostPads: readonly BoostPadDef[];
+    atmosphere: MapAtmosphereSpec;
     // FNV-1a over the canonical colliders, ramps, items, spawns and the heightfield
     worldHash: string;
 }
@@ -384,12 +395,23 @@ export function createMapData(sources: MapSources, hf: Heightfield): MapData {
     if (!arenaArea) throw new Error(`pois.json: the arena's area ${pois.arena.area} is not in roads.json`);
     const arena = arenaFence(arenaArea, pois.arena.gate);
 
-    // Reserved for landmarks, jumps and spawns: no building or plant there
+    const discoveries: readonly DiscoveryDef[] = sources.discoveries?.discoveries ?? [];
+    const heroProps: readonly HeroPropDef[] = sources.discoveries?.heroProps ?? [];
+    const billboards: readonly BillboardDef[] = sources.discoveries?.billboards ?? [];
+    const boostPads: readonly BoostPadDef[] = sources.discoveries?.boostPads ?? [];
+    const atmosphere: MapAtmosphereSpec = isMapId(map.mapId)
+        ? MAP_REGISTRY[map.mapId].atmosphere
+        : MAP_REGISTRY[DEFAULT_MAP_ID].atmosphere;
+
+    // Reserved for landmarks, jumps, spawns, hero monuments, billboards & boost pads
     const reserved: OBox[] = [
         ...structures.map(placementBox),
         ...ramps.map(jumpZone),
         ...pois.spawns.freeRoam.map(slot => spawnZone(slot.x, slot.z)),
-        ...pois.spawns.party.map(slot => spawnZone(slot.x, slot.z))
+        ...pois.spawns.party.map(slot => spawnZone(slot.x, slot.z)),
+        ...heroProps.flatMap(heroPropReservedBoxes),
+        ...billboards.map(billboardReservedBox),
+        ...boostPads.map(boostPadReservedBox)
     ];
     const buildings = placeBuildings({ net, hf, areas: net.areas, reserved });
     const buildingIndex = new BoxIndex();
@@ -407,7 +429,7 @@ export function createMapData(sources: MapSources, hf: Heightfield): MapData {
     // The colliders, in a fixed order (it decides the order of the
     // collision response): rails, the border, the arena fence, landmarks
     // and containers, the ramps' edge walls, buildings, plants, street
-    // furniture
+    // furniture, and any hero-prop monument colliders
     const colliders: ColliderInput[] = [...networkRailColliders(net), ...boundaryFence(map.boundary, hf)];
     for (const line of arena.lines) {
         for (let i = 1; i < line.length; i++) segmentChain(line[i - 1], line[i], 8, Infinity, colliders as SegmentCollider[]);
@@ -428,6 +450,9 @@ export function createMapData(sources: MapSources, hf: Heightfield): MapData {
         if (piece.kind === 'bench') colliders.push(boxCollider(benchBox(piece), FURNITURE_COLLIDERS.bench.top));
         else colliders.push({ kind: 'circle', x: piece.x, z: piece.z, r: FURNITURE_COLLIDERS[piece.kind].r, top: FURNITURE_COLLIDERS[piece.kind].top });
     }
+    for (const prop of heroProps) {
+        colliders.push(...heroPropColliders(prop));
+    }
 
     const spec = hf.spec;
     const extent = (spec.cols - 1) * spec.cellSize;
@@ -444,6 +469,11 @@ export function createMapData(sources: MapSources, hf: Heightfield): MapData {
     const rampDefs: RampDef[] = ramps.map(({ x, z, yaw, width, length, height }) => ({ x, z, yaw, width, length, height }));
     const simWorld = createSimWorld(model, colliders, rampDefs);
     simWorld.resetPose = roadResetPose(net);
+    // Attach boost pads onto SimWorld (evaluated deterministically in stepVehicle
+    // when physics-author's boost-pad support is present)
+    if (boostPads.length) {
+        (simWorld as SimWorld & { boostPads?: readonly BoostPadDef[] }).boostPads = boostPads;
+    }
     // The Party's world: its zone fenced (the arena's gate open), or without
     // a zone the arena behind its closed gate; a reset there leaves the car
     // where it is. The world border is the zone's (the fence's) rectangle,
@@ -458,6 +488,9 @@ export function createMapData(sources: MapSources, hf: Heightfield): MapData {
     if (!pois.party) partyColliders.push(arena.gate);
     const partyWorld = createSimWorld(model, [...colliders, ...partyColliders], rampDefs);
     partyWorld.border = partyZone;
+    if (boostPads.length) {
+        (partyWorld as SimWorld & { boostPads?: readonly BoostPadDef[] }).boostPads = boostPads;
+    }
 
     // The arena's items first, then the yards' (ids in that order, power-up
     // types in turn over all of them)
@@ -474,10 +507,12 @@ export function createMapData(sources: MapSources, hf: Heightfield): MapData {
         freeRoam: pois.spawns.freeRoam.map(({ group, x, z, yaw }) => ({ group, x, z, yaw })),
         party: pois.spawns.party.map(({ group, x, z, yaw }) => ({ group: group ?? 'arena', x, z, yaw }))
     };
-    const worldHash = fnv1a(canonicalStringify({
+    const hashPayload: Record<string, unknown> = {
         mapId: map.mapId, mapVersion: map.mapVersion, terrain: heightfieldHash(hf),
         colliders, gate: arena.gate, party: { zone: partyZone, colliders: partyColliders }, ramps: rampDefs, items, spawns
-    }));
+    };
+    if (boostPads.length) hashPayload.boostPads = boostPads;
+    const worldHash = fnv1a(canonicalStringify(hashPayload));
 
     return {
         mapId: map.mapId, mapVersion: map.mapVersion, name: map.name,
@@ -489,6 +524,7 @@ export function createMapData(sources: MapSources, hf: Heightfield): MapData {
         arenaGate: arena.gate,
         arenaBounds: arena.border,
         partyZone,
-        colliders, ground: model, simWorld, partyWorld, items, spawns, worldHash
+        colliders, ground: model, simWorld, partyWorld, items, spawns,
+        discoveries, heroProps, billboards, boostPads, atmosphere, worldHash
     };
 }

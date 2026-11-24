@@ -4,14 +4,15 @@
 // same bytes the same way, so a worldviewer bake of an exported roads.json
 // carries the sourceHash the CLI bake gives it.
 
-import { BULLI_BAY_GRID, type GridSpec } from '../../src/shared/map/heightfield.js';
+import type { GridSpec } from '../../src/shared/map/heightfield.js';
+import { MAP_GRIDS } from '../../src/shared/map/registry.js';
 import { parseMapFile, parseZonesFile } from '../../src/shared/map/mapFiles.js';
 import { parseRoadNetwork } from '../../src/shared/map/roadSchema.js';
 import { parseBaseTerrain } from './baseTerrain.js';
 import { BAKE_VERSION, bakeTerrain, type BakeResult } from './bakeTerrain.js';
 import { fnv1a128 } from './hash.js';
 
-export const GRIDS: Record<string, GridSpec> = { 'bulli-bay': BULLI_BAY_GRID };
+export const GRIDS: Readonly<Record<string, GridSpec>> = MAP_GRIDS;
 
 // The sources the bake reads. pois.json and tracks.json do not shape the
 // terrain and are not part of the hash.

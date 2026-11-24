@@ -2,9 +2,10 @@
 // preview): the JSON files through their schemas, the road network and
 // public/maps/<map>/terrain.bhf. Node only.
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseDiscoveriesFile } from '../../src/shared/map/discoverySchema.js';
 import { decodeHeightfield } from '../../src/shared/map/heightfield.js';
 import { parseMapFile, parsePoisFile, parseTracksFile, parseZonesFile } from '../../src/shared/map/mapFiles.js';
 import { buildRoadNetwork } from '../../src/shared/map/roadNetwork.js';
@@ -31,6 +32,8 @@ export function loadMapBundle(mapId: string, terrainPath?: string): LoadedMap {
     const dir = path.join(ROOT, 'src/shared/maps', mapId);
     const roads = load(dir, 'roads.json', parseRoadNetwork);
     const bytes = readFileSync(terrainPath ?? path.join(ROOT, 'public/maps', mapId, 'terrain.bhf'));
+    const discoveriesPath = path.join(dir, 'discoveries.json');
+    const discoveries = existsSync(discoveriesPath) ? load(dir, 'discoveries.json', parseDiscoveriesFile) : undefined;
     return {
         roads,
         net: buildRoadNetwork(roads),
@@ -38,6 +41,7 @@ export function loadMapBundle(mapId: string, terrainPath?: string): LoadedMap {
         zones: load(dir, 'zones.json', parseZonesFile),
         pois: load(dir, 'pois.json', parsePoisFile),
         tracks: load(dir, 'tracks.json', parseTracksFile),
+        discoveries,
         hf: decodeHeightfield(new Uint8Array(bytes), spec)
     };
 }

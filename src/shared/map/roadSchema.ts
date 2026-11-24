@@ -16,7 +16,7 @@ export const Id = v.pipe(v.string(), v.regex(/^[a-z0-9][a-z0-9-]*$/, 'IDs are lo
 const LaneCount = v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(4));
 const Side = v.picklist(['left', 'right']);
 
-export const ROAD_SURFACES = ['asphalt', 'concrete', 'dirt', 'gravel', 'sand', 'wood'] as const;
+export const ROAD_SURFACES = ['asphalt', 'concrete', 'dirt', 'gravel', 'sand', 'wood', 'snow', 'ice'] as const;
 const RoadSurfaceSchema = v.picklist(ROAD_SURFACES);
 
 export const RoadProfileSchema = v.strictObject({
