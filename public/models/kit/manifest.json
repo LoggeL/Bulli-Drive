@@ -264,8 +264,8 @@
   },
   "beach": {
    "file": "kit_beach.glb",
-   "bytes": 157812,
-   "hash": "f74aa9b5e94f",
+   "bytes": 157660,
+   "hash": "5ef2c2b304b3",
    "pieces": {
     "beach_w8_f1": {
      "category": "building",
@@ -1665,7 +1665,7 @@
  },
  "_doc": "Written by tools/models/buildings/build-kit.mjs. One GLB per kit group; every piece is a node with extras (footprint in three.js axes, height, LOD distances, params) and one mesh child per LOD. The material kit_atlas references the KTX2 atlas files next to the GLBs (glTF convention, no flipY). Not loaded by the game yet (phase 3, M4).",
  "totals": {
-  "glbBytes": 2375512,
+  "glbBytes": 2375360,
   "atlasBytes": 1031335
  }
 }
