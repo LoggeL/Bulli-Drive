@@ -26,8 +26,10 @@ import { MAX_RACERS } from '../../../src/shared/race/rules.js';
 import { isTrackId, mapTracks, nextTrack, trackDef, trackIdsForMap } from '../../../src/shared/race/tracks/index.js';
 import { ALL_TRACK_IDS, MAP_TRACK_IDS, TRACK_IDS } from '../../../src/shared/race/types.js';
 import { readSources, sourceHash } from '../../../tools/map/bake.js';
+import { WALL_FLAT_EXTRA, corridorLine } from '../../../tools/map/bakeTerrain.js';
 import { toHex } from '../../../tools/map/hash.js';
 import { loadMapBundle } from '../../../tools/map/mapBundle.js';
+import { leftNormal, pointAt } from '../../../src/shared/map/spline.js';
 import {
     checkBoostPads, checkDuplicateRamps, checkSheerCliffs, checkStructureGrounding, validateMap
 } from '../../../tools/map/validateMap.js';
@@ -382,10 +384,11 @@ describe('biome features and flagship Logge Forge easter-egg catalog', () => {
 
     it('gates tropical palms and lake-ice trees out of alpen-pass and pins bulli-bay BAKE_VERSION=4 worldHash', () => {
         const bulli = buildMapFromRaw('bulli-bay', readRawSources('bulli-bay'), readTerrainBytes('bulli-bay'));
-        // Updated for BAKE_VERSION=4: structure/ramp pads, smooth noFill cliff blend, C1 fillets,
-        // LOT_MAX_RELIEF=1.4 + foundation/burial lot filter, beach_w8_f1 pier restaurant, water-tower keepout
-        expect(bulli.worldHash).toBe('2558cc83');
-        expect(bulli.plants.filter(p => p.kind === 'palm')).toHaveLength(132);
+        // Updated for BAKE_VERSION=4 polish: corridorLine retaining-wall flat clamp (+0.8 m beyond sidewalk),
+        // addArea boundary surface stamping, deepened 2.0 m kit foundations (0.3 m beach_w8_f1) + LOT_MAX_RELIEF=2.2
+        // restoring hillside residential density (359 -> 430 buildings, 0 floating/buried).
+        expect(bulli.worldHash).toBe('7eeec622');
+        expect(bulli.plants.filter(p => p.kind === 'palm')).toHaveLength(131);
 
         const alpen = buildMapFromRaw('alpen-pass', readRawSources('alpen-pass'), readTerrainBytes('alpen-pass'));
         expect(alpen.plants.filter(p => p.kind === 'palm')).toEqual([]);
@@ -455,11 +458,56 @@ describe('biome features and flagship Logge Forge easter-egg catalog', () => {
             }
         }
 
-        // logge-forge: sailboat floats in genuine open harbor water (h < -3 m) & ijsselmeer-pier is a wooden area
+        // logge-forge: sailboat floats in genuine open harbor water (h < -3 m), ijsselmeer-pier is a wooden area
+        // whose far tip boundary cells (z = 560) are stamped SURFACE.wood (eliminating seabed rock pillar),
+        // and dec-saalplan faces east (yaw = -pi/2) toward hp-theater-facade.
         const forge = buildMapFromRaw('logge-forge', readRawSources('logge-forge'), readTerrainBytes('logge-forge'));
         const boat = forge.heroProps.find(p => p.id === 'hp-sailboat')!;
         expect(heightAt(forge.hf, boat.x, boat.z)).toBeLessThan(-3);
         expect(forge.net.areas.some(a => a.id === 'ijsselmeer-pier' && a.surface === 'wood')).toBe(true);
+        expect(surfaceAt(forge.hf, -460, 560)).toBe(SURFACE.wood);
+        expect(surfaceAt(forge.hf, -464, 560)).toBe(SURFACE.wood);
+        expect(surfaceAt(forge.hf, -456, 560)).toBe(SURFACE.wood);
+        expect(surfaceAt(forge.hf, -466, 560)).toBe(SURFACE.water);
+        const saalplan = forge.billboards.find(b => b.id === 'dec-saalplan')!;
+        expect(saalplan.yaw).toBeCloseTo(-Math.PI / 2, 3);
+
+        // bulli-bay: corridorLine clamps walled flat margins so concrete retaining walls (5.0..6.5 m)
+        // on laurel-court and cypress-court are exposed (>0.5 m drop at 6.5 m) while asphalt (3.5 m) stays flat (<= 5 cm)
+        const bulli = buildMapFromRaw('bulli-bay', readRawSources('bulli-bay'), readTerrainBytes('bulli-bay'));
+        for (const edgeId of ['laurel-court', 'cypress-court'] as const) {
+            const edge = bulli.net.edgeById.get(edgeId)!;
+            const heights = new Map([[edge.id, new Float64Array(edge.samples.length).fill(15)]]);
+            const fwd = corridorLine(bulli.net, { parts: [{ edge: edge.index, reversed: false }], startNode: edge.from, endNode: edge.to, closed: false, length: edge.length }, heights);
+            const rev = corridorLine(bulli.net, { parts: [{ edge: edge.index, reversed: true }], startNode: edge.to, endNode: edge.from, closed: false, length: edge.length }, heights);
+            const clampedHalf = edge.halfWidth + edge.profile.sidewalk.left + edge.profile.shoulder + WALL_FLAT_EXTRA;
+            // Forward & reversed wall samples clamp to 5.8 m; unwalled samples keep full flat width (7.5 m)
+            const fwdWallLeft = Array.from(fwd.wallLeft ?? []);
+            const revWallRight = Array.from(rev.wallRight ?? []);
+            const walledIdx = fwdWallLeft.indexOf(1);
+            const unwalledIdx = fwdWallLeft.indexOf(0);
+            expect(walledIdx).toBeGreaterThanOrEqual(0);
+            expect(fwd.halfLeft[walledIdx]).toBeCloseTo(clampedHalf, 6);
+            if (unwalledIdx >= 0) expect(fwd.halfLeft[unwalledIdx]).toBeCloseTo(7.5, 6);
+            // When reversed, edge's left wall maps to corridor's right wall and clamps halfRight
+            const revWalledIdx = revWallRight.indexOf(1);
+            expect(revWalledIdx).toBeGreaterThanOrEqual(0);
+            expect(rev.halfRight[revWalledIdx]).toBeCloseTo(clampedHalf, 6);
+
+            for (const wall of edge.def.walls ?? []) {
+                const to = wall.to < 0 ? edge.length : wall.to;
+                const side = wall.side === 'left' ? 1 : -1;
+                for (let s = wall.from + 4; s <= to - 4; s += 4) {
+                    const pt = pointAt(edge.samples, s);
+                    const [nx, nz] = leftNormal(pt.tx, pt.tz);
+                    const h0 = heightAt(bulli.hf, pt.x, pt.z);
+                    const hAsph = heightAt(bulli.hf, pt.x + nx * side * edge.halfWidth, pt.z + nz * side * edge.halfWidth);
+                    const hWallOut = heightAt(bulli.hf, pt.x + nx * side * 6.5, pt.z + nz * side * 6.5);
+                    expect(Math.abs(hAsph - h0), `${edgeId} ${wall.side} asphalt at s=${s}`).toBeLessThanOrEqual(0.05);
+                    expect(hWallOut - h0, `${edgeId} ${wall.side} wall face exposed at s=${s}`).toBeLessThan(-0.5);
+                }
+            }
+        }
 
         // alpen-pass: Eissee frozen lake is flat (< 0.5 m relief) and has zero beach surf shacks
         const alpen = buildMapFromRaw('alpen-pass', readRawSources('alpen-pass'), readTerrainBytes('alpen-pass'));

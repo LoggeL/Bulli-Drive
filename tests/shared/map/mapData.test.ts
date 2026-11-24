@@ -540,17 +540,29 @@ describe('heightfieldHash', () => {
 describe('systemic placement rules: building relief/seat/biome, multi-gate arena fences & flora limits', () => {
     it('rejects building lots that float past foundation or bury uphill doors even when relief <= LOT_MAX_RELIEF', () => {
         const net = buildRoadNetwork(network([node('a', 0, 0), node('b', 160, 0)], [edge('ab', 'a', 'b')]));
-        // Road runs along z=0 (width 10 -> edge at z=±5). Residential lots have setback 4 -> front at z=9, back ~z=23.
-        // Case 1: downhill drop of 1.1 m across lot depth (total relief 1.1 <= 1.4, but originH - minH = 1.1 > foundation(1.0) - 0.15 = 0.85)
-        const downhillHf = makeHeightfield((_, z) => (z <= 9 ? 10 : Math.max(8.9, 10 - (z - 9) * 0.085)), () => ZONE.residential);
+        // Road runs along z=0 (width 10 -> edge at z=±5). Residential lots have setback 6 -> front at z=11, back ~z=25.
+        // Verify deepened foundation depths match rebuilt GLBs (2.0 m houses, 0.30 m pier shack, 2.5 m lighthouse, 1.5 m water tower)
+        expect(pieceFoundation('spanish_w12_f2_rect')).toBe(2.0);
+        expect(pieceFoundation('beach_w8_f1')).toBe(0.3);
+        expect(pieceFoundation('beach_w9_f1_shop')).toBe(2.0);
+        expect(pieceFoundation('landmark_lighthouse')).toBe(2.5);
+        expect(pieceFoundation('landmark_water_tower')).toBe(1.5);
+
+        // Case 1: downhill drop of 2.0 m across the first 8 m of lot depth (total relief 2.0 <= LOT_MAX_RELIEF=2.2,
+        // but originH - minH = 2.0 > foundation(2.0) - 0.15 = 1.85 -> rejected!)
+        const downhillHf = makeHeightfield((_, z) => (z <= 11 ? 10 : Math.max(8.0, 10 - (z - 11) * 0.25)), () => ZONE.residential);
         expect(placeBuildings({ net, hf: downhillHf, areas: [], reserved: [], biome: 'coastal' }).filter(b => b.side === 'right')).toEqual([]);
 
-        // Case 2: uphill rise of 0.70 m across lot depth (total relief 0.70 <= 1.4, but maxH - originH = 0.70 > 0.50 max burial)
-        const uphillHf = makeHeightfield((_, z) => (z <= 9 ? 10 : Math.min(10.7, 10 + (z - 9) * 0.06)), () => ZONE.residential);
+        // Case 1b: downhill drop of 1.4 m across lot depth (1.4 <= 1.85 foundation skirt and <= LOT_MAX_RELIEF=2.2 -> accepted cleanly!)
+        const hillsideHf = makeHeightfield((_, z) => (z <= 11 ? 10 : Math.max(8.6, 10 - (z - 11) * 0.11)), () => ZONE.residential);
+        expect(placeBuildings({ net, hf: hillsideHf, areas: [], reserved: [], biome: 'coastal' }).filter(b => b.side === 'right').length).toBeGreaterThan(0);
+
+        // Case 2: uphill rise of 0.70 m across lot depth (total relief 0.70 <= LOT_MAX_RELIEF, but maxH - originH = 0.70 > 0.50 max burial)
+        const uphillHf = makeHeightfield((_, z) => (z <= 11 ? 10 : Math.min(10.7, 10 + (z - 11) * 0.06)), () => ZONE.residential);
         expect(placeBuildings({ net, hf: uphillHf, areas: [], reserved: [], biome: 'coastal' }).filter(b => b.side === 'right')).toEqual([]);
 
         // Case 3: gentle 0.35 m rise passes cleanly
-        const gentleHf = makeHeightfield((_, z) => (z <= 9 ? 10 : Math.min(10.35, 10 + (z - 9) * 0.03)), () => ZONE.residential);
+        const gentleHf = makeHeightfield((_, z) => (z <= 11 ? 10 : Math.min(10.35, 10 + (z - 11) * 0.03)), () => ZONE.residential);
         const placed = placeBuildings({ net, hf: gentleHf, areas: [], reserved: [], biome: 'coastal' }).filter(b => b.side === 'right');
         expect(placed.length).toBeGreaterThan(0);
         for (const lot of placed) {
@@ -649,8 +661,8 @@ describe('Bulli Bay', () => {
         expect(map.structures.filter(s => s.kind === 'container')).toHaveLength(12);
         // The jumps of pois.json and the arena's two ramps
         expect(map.ramps).toHaveLength((map.sources.pois.jumps ?? []).length + 2);
-        // A town and a countryside (regression lock after BAKE_VERSION=4 + LOT_MAX_RELIEF=1.4 + foundation/burial filter: 359 grounded buildings, 0 floating/buried)
-        expect(map.buildings.length).toBeGreaterThan(300);
+        // A town and a countryside (regression lock after BAKE_VERSION=4 + deepened 2.0 m foundations + LOT_MAX_RELIEF=2.2: 430 grounded buildings, 0 floating/buried)
+        expect(map.buildings.length).toBeGreaterThan(400);
         expect(map.plants.length).toBeGreaterThan(1500);
         // Water tower 6 m keepout: no plants overlap tower legs
         expect(map.plants.filter(p => Math.hypot(p.x - 150, p.z + 150) < 6)).toEqual([]);

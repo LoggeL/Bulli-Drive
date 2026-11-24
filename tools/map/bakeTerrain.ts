@@ -305,6 +305,11 @@ function inRanges(ranges: readonly { from: number; to: number }[], edge: RoadEdg
     return false;
 }
 
+// Extra flat margin beyond sidewalk/shoulder on walled road sides (m): keeps
+// the 2 m heightfield flat across the drivable asphalt while letting natural
+// ground drop cleanly below the poured retaining-wall face (+1.5 m beyond sidewalk).
+export const WALL_FLAT_EXTRA = 0.8;
+
 // One corridor polyline per chain: the samples of its edges in chain order
 // (the joint sample once), with per-vertex height, flat half widths, walls
 // and surface. Left and right swap on edges walked against their direction.
@@ -317,6 +322,8 @@ export function corridorLine(net: RoadNetwork, chain: RoadChain, heights: Map<st
         const edge = net.edges[part.edge];
         const ys = heights.get(edge.id)!;
         const flat = flatHalfWidths(edge.profile);
+        const wallHalfLeft = edge.halfWidth + edge.profile.sidewalk.left + edge.profile.shoulder + WALL_FLAT_EXTRA;
+        const wallHalfRight = edge.halfWidth + edge.profile.sidewalk.right + edge.profile.shoulder + WALL_FLAT_EXTRA;
         const walls = edge.def.walls ?? [];
         const leftWalls = walls.filter(w => w.side === (part.reversed ? 'right' : 'left'));
         const rightWalls = walls.filter(w => w.side === (part.reversed ? 'left' : 'right'));
@@ -324,11 +331,19 @@ export function corridorLine(net: RoadNetwork, chain: RoadChain, heights: Map<st
         for (let i = p === 0 ? 0 : 1; i < n; i++) {
             const k = part.reversed ? n - 1 - i : i;
             const sample = edge.samples[k];
+            const wLeft = inRanges(leftWalls, edge, sample.s) ? 1 : 0;
+            const wRight = inRanges(rightWalls, edge, sample.s) ? 1 : 0;
+            const fLeft = part.reversed ? flat.right : flat.left;
+            const fRight = part.reversed ? flat.left : flat.right;
+            const eLeft = part.reversed ? wallHalfRight : wallHalfLeft;
+            const eRight = part.reversed ? wallHalfLeft : wallHalfRight;
             x.push(sample.x); z.push(sample.z); y.push(ys[k]);
-            halfLeft.push(part.reversed ? flat.right : flat.left);
-            halfRight.push(part.reversed ? flat.left : flat.right);
-            wallLeft.push(inRanges(leftWalls, edge, sample.s) ? 1 : 0);
-            wallRight.push(inRanges(rightWalls, edge, sample.s) ? 1 : 0);
+            // Clamp flat margin to road + sidewalk + shoulder on walled sides so
+            // the poured retaining wall face drops cleanly into natural ground.
+            halfLeft.push(wLeft ? Math.min(fLeft, eLeft) : fLeft);
+            halfRight.push(wRight ? Math.min(fRight, eRight) : fRight);
+            wallLeft.push(wLeft);
+            wallRight.push(wRight);
             surface.push(SURFACE[edge.profile.surface]);
             // Drivable width + 1 m (8.1)
             surfaceHalf.push(edge.halfWidth + 1);
