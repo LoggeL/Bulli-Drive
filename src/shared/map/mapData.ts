@@ -467,13 +467,8 @@ export function createMapData(sources: MapSources, hf: Heightfield): MapData {
         grid: { origin: spec.originX, cellSize: MAP_GRID_CELL, cells: Math.ceil(extent / MAP_GRID_CELL) }
     };
     const rampDefs: RampDef[] = ramps.map(({ x, z, yaw, width, length, height }) => ({ x, z, yaw, width, length, height }));
-    const simWorld = createSimWorld(model, colliders, rampDefs);
+    const simWorld = createSimWorld(model, colliders, rampDefs, boostPads);
     simWorld.resetPose = roadResetPose(net);
-    // Attach boost pads onto SimWorld (evaluated deterministically in stepVehicle
-    // when physics-author's boost-pad support is present)
-    if (boostPads.length) {
-        (simWorld as SimWorld & { boostPads?: readonly BoostPadDef[] }).boostPads = boostPads;
-    }
     // The Party's world: its zone fenced (the arena's gate open), or without
     // a zone the arena behind its closed gate; a reset there leaves the car
     // where it is. The world border is the zone's (the fence's) rectangle,
@@ -486,11 +481,8 @@ export function createMapData(sources: MapSources, hf: Heightfield): MapData {
     const partyColliders: SegmentCollider[] = [];
     for (const [a, b] of partyFence) segmentChain(a, b, 8, Infinity, partyColliders);
     if (!pois.party) partyColliders.push(arena.gate);
-    const partyWorld = createSimWorld(model, [...colliders, ...partyColliders], rampDefs);
+    const partyWorld = createSimWorld(model, [...colliders, ...partyColliders], rampDefs, boostPads);
     partyWorld.border = partyZone;
-    if (boostPads.length) {
-        (partyWorld as SimWorld & { boostPads?: readonly BoostPadDef[] }).boostPads = boostPads;
-    }
 
     // The arena's items first, then the yards' (ids in that order, power-up
     // types in turn over all of them)

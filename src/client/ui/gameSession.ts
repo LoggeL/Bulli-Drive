@@ -90,6 +90,9 @@ export function updateRaceCamera(
         _chaseTarget.yaw = spectate.yaw;
         _chaseTarget.speedRatio = 0.5;
         _chaseTarget.boost = false;
+        _chaseTarget.slipAngle = 0;
+        _chaseTarget.airHeight = spectate.airHeight;
+        _chaseTarget.reverse = false;
         if (chaseCamera.update(dt, camera, _chaseTarget, state.cameraSnapPending)) state.cameraSnapPending = false;
         return;
     }
@@ -101,6 +104,9 @@ export function updateRaceCamera(
         + RACE_CAMERA_SLIP_BLEND * vehicle.slipAngle * Math.max(0, Math.min(1, u / 10));
     _chaseTarget.speedRatio = Math.min(1, Math.abs(u) / Math.max(1, vehicle.car.params.topSpeed));
     _chaseTarget.boost = s.boosting || vehicle.car.mods.turbo;
+    _chaseTarget.slipAngle = vehicle.slipAngle;
+    _chaseTarget.airHeight = vehicle.airHeight;
+    _chaseTarget.reverse = u < -1.5;
     if (chaseCamera.update(dt, camera, _chaseTarget, state.cameraSnapPending)) {
         state.cameraSnapPending = false;
     }
