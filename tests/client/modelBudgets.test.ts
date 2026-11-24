@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { BILLBOARD_TEXTURES, HERO_PROP_MODELS } from '../../src/shared/map/discoverySchema.js';
 import { sha256 } from '../helpers.js';
 
 // Budget and convention checks of the committed, packed assets (tools/models,
@@ -16,7 +17,14 @@ const readJson = (file: string) => JSON.parse(fs.readFileSync(file, 'utf8'));
 const budgets = readJson(path.join(ROOT, 'tools/models/budgets.json'));
 const registry = readJson(path.join(ROOT, 'tools/models/models.json')).models as Record<string, { lods: number[] }>;
 const manifest = readJson(path.join(MODELS_DIR, 'manifest.json'));
+const propsManifest = readJson(path.join(MODELS_DIR, 'props/manifest.json'));
 const textureManifest = readJson(path.join(TEXTURES_DIR, 'manifest.json'));
+const biomesManifest = readJson(path.join(TEXTURES_DIR, 'biomes/manifest.json'));
+const billboardsManifest = readJson(path.join(TEXTURES_DIR, 'billboards/manifest.json'));
+
+function isPowerOfTwo(n: number): boolean {
+    return n > 0 && (n & (n - 1)) === 0;
+}
 
 // All new binary assets together (models + textures + HDRIs), see docs/assets.md
 const MAX_PUBLIC_ASSET_BYTES = 30 * 1024 * 1024;
@@ -179,9 +187,11 @@ describe('textures (public/textures)', () => {
     }][];
 
     it('has a KTX2 file for every manifest entry and no strays', () => {
+        // Subdirectories owned by public/textures/manifest.json (biomes/ and billboards/ have their own manifests below)
+        const ownDirs = new Set(entries.map(([, e]) => e.file.split('/')[0]));
         const onDisk: string[] = [];
         for (const dir of fs.readdirSync(TEXTURES_DIR, { withFileTypes: true })) {
-            if (!dir.isDirectory()) continue;
+            if (!dir.isDirectory() || !ownDirs.has(dir.name)) continue;
             for (const f of fs.readdirSync(path.join(TEXTURES_DIR, dir.name))) {
                 if (f.endsWith('.ktx2')) onDisk.push(`${dir.name}/${f}`);
             }
@@ -226,6 +236,117 @@ describe('textures (public/textures)', () => {
             expect(data.subarray(0, 10).toString('latin1')).toBe('#?RADIANCE');
         }
     });
+});
+
+describe('hero monuments & easter-egg props (public/models/props)', () => {
+    const propsDir = path.join(MODELS_DIR, 'props');
+    const entries = Object.entries(propsManifest.props) as [string, {
+        file: string; kind: 'monument' | 'prop'; hash: string; bytes: number; triangles: number;
+        bounds: { min: number[]; max: number[] }; animNodes?: string[]; billboardNode?: string;
+    }][];
+
+    it('uses the three-plane-flipY-true UV convention and covers every HERO_PROP_MODELS id with zero strays', () => {
+        expect(propsManifest.billboardUvConvention).toBe('three-plane-flipY-true');
+        expect(entries.map(([id]) => id).sort()).toEqual([...HERO_PROP_MODELS].sort());
+        const onDisk = fs.readdirSync(propsDir).filter(f => f.endsWith('.glb')).sort();
+        expect(onDisk).toEqual(entries.map(([, e]) => e.file).sort());
+    });
+
+    for (const [id, entry] of entries) {
+        it(`${id}: meshopt GLB, valid hash/tris/budget/nodes`, () => {
+            const file = path.join(propsDir, entry.file);
+            const data = fs.readFileSync(file);
+            expect(data.length).toBe(entry.bytes);
+            expect(sha256(data).slice(0, 12)).toBe(entry.hash);
+            const gltf = readGlbJson(file);
+            const { triangles } = countGeometry(gltf);
+            expect(triangles).toBe(entry.triangles);
+            expect(triangles).toBeLessThanOrEqual(entry.kind === 'monument' ? 10000 : 4000);
+            expect(data.length).toBeLessThanOrEqual(150 * 1024);
+
+            const used = gltf.extensionsUsed ?? [];
+            expect(used).toContain('EXT_meshopt_compression');
+            expect(used).not.toContain('KHR_draco_mesh_compression');
+            for (const image of gltf.images ?? []) expect(image.mimeType).toBe('image/ktx2');
+
+            const nodeNames = new Set(gltf.nodes.map(n => n.name ?? ''));
+            for (const anim of entry.animNodes ?? []) expect(nodeNames.has(anim), `${id} animNode ${anim}`).toBe(true);
+            if (entry.billboardNode) expect(nodeNames.has(entry.billboardNode), `${id} billboardNode`).toBe(true);
+        });
+    }
+});
+
+describe('biome PBR textures (public/textures/biomes)', () => {
+    const biomesDir = path.join(TEXTURES_DIR, 'biomes');
+    const entries = Object.entries(biomesManifest.textures) as [string, {
+        file: string; kind: string; width: number; height: number; encoding: string; bytes: number; hash: string;
+    }][];
+
+    it('declares flipY: true and has zero stray KTX2 files', () => {
+        expect(biomesManifest.flipY).toBe(true);
+        const onDisk = fs.readdirSync(biomesDir).filter(f => f.endsWith('.ktx2')).sort();
+        expect(onDisk).toEqual(entries.map(([, e]) => e.file).sort());
+    });
+
+    for (const [key, entry] of entries) {
+        it(`${key}: Basis KTX2, POT <= 1024, exact hash & mipmaps`, () => {
+            const file = path.join(biomesDir, entry.file);
+            const data = fs.readFileSync(file);
+            expect(sha256(data).slice(0, 16)).toBe(entry.hash);
+            const header = ktx2Header(file);
+            expect(header.vkFormat).toBe(0);
+            expect(header.width).toBe(entry.width);
+            expect(header.height).toBe(entry.height);
+            expect(header.bytes).toBe(entry.bytes);
+            expect(isPowerOfTwo(entry.width)).toBe(true);
+            expect(isPowerOfTwo(entry.height)).toBe(true);
+            expect(Math.max(entry.width, entry.height)).toBeLessThanOrEqual(1024);
+            expect(header.levels).toBe(Math.floor(Math.log2(Math.max(entry.width, entry.height))) + 1);
+            expect(header.supercompression).toBe(entry.encoding === 'etc1s' ? 1 : 2);
+            if (entry.kind === 'normal') expect(entry.encoding).toBe('uastc');
+        });
+    }
+
+    it('ships complete albedo + normal + arm maps for every biome material set', () => {
+        for (const [setName, mat] of Object.entries(biomesManifest.materials) as [string, Record<string, unknown>][]) {
+            expect(mat.tileMeters, setName).toBeGreaterThan(0);
+            for (const map of ['albedo', 'normal', 'arm']) {
+                expect(biomesManifest.textures[mat[map] as string], `${setName} ${map}`).toBeDefined();
+            }
+        }
+    });
+});
+
+describe('billboard & decal textures (public/textures/billboards)', () => {
+    const billboardsDir = path.join(TEXTURES_DIR, 'billboards');
+    const entries = Object.entries(billboardsManifest.textures) as [string, {
+        file: string; kind: string; width: number; height: number; encoding: string; bytes: number; hash: string;
+    }][];
+
+    it('declares flipY: true, covers every BILLBOARD_TEXTURES id, and has zero strays', () => {
+        expect(billboardsManifest.flipY).toBe(true);
+        expect(entries.map(([id]) => id).sort()).toEqual([...BILLBOARD_TEXTURES].sort());
+        const onDisk = fs.readdirSync(billboardsDir).filter(f => f.endsWith('.ktx2')).sort();
+        expect(onDisk).toEqual(entries.map(([, e]) => e.file).sort());
+    });
+
+    for (const [key, entry] of entries) {
+        it(`${key}: Basis ETC1S KTX2, POT <= 1024, exact hash & mipmaps`, () => {
+            const file = path.join(billboardsDir, entry.file);
+            const data = fs.readFileSync(file);
+            expect(sha256(data).slice(0, 16)).toBe(entry.hash);
+            const header = ktx2Header(file);
+            expect(header.vkFormat).toBe(0);
+            expect(header.width).toBe(entry.width);
+            expect(header.height).toBe(entry.height);
+            expect(header.bytes).toBe(entry.bytes);
+            expect(isPowerOfTwo(entry.width)).toBe(true);
+            expect(isPowerOfTwo(entry.height)).toBe(true);
+            expect(Math.max(entry.width, entry.height)).toBeLessThanOrEqual(1024);
+            expect(header.levels).toBe(Math.floor(Math.log2(Math.max(entry.width, entry.height))) + 1);
+            expect(header.supercompression).toBe(entry.encoding === 'etc1s' ? 1 : 2);
+        });
+    }
 });
 
 describe('asset size', () => {

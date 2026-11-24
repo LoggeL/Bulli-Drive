@@ -1,7 +1,9 @@
 import * as THREE from 'three';
+import { heightAt } from '../../shared/map/heightfield.js';
+import type { MapData } from '../../shared/map/mapData.js';
 import {
     cameraStateOf, directPose, fitDistance, SHOWROOM_FRAMING, SHOWROOM_SPOT, showroomPose, TRANSITION, transitionKind, transitionPose,
-    type CameraState, type ShowroomFraming, type TransitionKind
+    type CameraState, type ShowroomFraming, type ShowroomSpot, type TransitionKind
 } from './showroom.js';
 
 // The menu's showroom (docs/ui.md 4.1) and the way from it into the game
@@ -72,11 +74,25 @@ export class ShowroomCamera {
     private stillTaken = false;
     private finished: (() => void) | null = null;
     private readonly now: () => number;
+    private spot: ShowroomSpot = { ...SHOWROOM_SPOT };
+    private spotMap: MapData | null = null;
 
     constructor(private readonly env: ShowroomEnv) {
         this.now = env.now ?? (() => performance.now());
         this.startedAt = this.now();
         this.invalidate();
+    }
+
+    /** Moves the showroom spot when switching maps (preserves default Bulli Bay pier spot if never called). */
+    setSpot(spot: { x: number; z: number; yaw: number }, map?: MapData): void {
+        this.spot = { x: spot.x, z: spot.z, yaw: spot.yaw };
+        this.spotMap = map ?? null;
+        this.invalidate();
+    }
+
+    /** Current showroom spot (x, z, yaw). */
+    get currentSpot(): Readonly<ShowroomSpot> {
+        return this.spot;
     }
 
     /** Whether the menu or the way into the game still owns the camera. */
@@ -105,7 +121,8 @@ export class ShowroomCamera {
     }
 
     private deckY(): number {
-        return this.env.groundHeight?.(SHOWROOM_SPOT.x, SHOWROOM_SPOT.z) ?? DECK_FALLBACK;
+        if (this.spotMap) return heightAt(this.spotMap.hf, this.spot.x, this.spot.z);
+        return this.env.groundHeight?.(this.spot.x, this.spot.z) ?? DECK_FALLBACK;
     }
 
     /** Something in the frame changed (car, paint, layout): lite graphics draw again for a moment. */
@@ -149,6 +166,7 @@ export class ShowroomCamera {
             const lite = this.env.lite;
             const pose = showroomPose(t, this.framing(camera), this.deckY(), {
                 reducedMotion: lite || this.env.reducedMotion(),
+                spot: this.spot,
                 ...this.layout(camera)
             });
             this.apply(camera, cameraStateOf(pose));
@@ -161,13 +179,13 @@ export class ShowroomCamera {
     }
 
     private showAtSpot(car: ShowroomCar): void {
-        car.group.position.set(SHOWROOM_SPOT.x, this.deckY(), SHOWROOM_SPOT.z);
-        car.group.rotation.y = SHOWROOM_SPOT.yaw;
+        car.group.position.set(this.spot.x, this.deckY(), this.spot.z);
+        car.group.rotation.y = this.spot.yaw;
         car.bodyGroup.visible = true;
     }
 
     private placeCar(car: ShowroomCar, now: number): void {
-        const { x, z, yaw } = SHOWROOM_SPOT;
+        const { x, z, yaw } = this.spot;
         const y = this.deckY();
         if (Math.abs(car.group.position.x - x) > 1e-3 || Math.abs(car.group.position.z - z) > 1e-3 || car.angle !== yaw) {
             car.vehicle?.place(x, z, yaw);
@@ -218,10 +236,11 @@ export class ShowroomCamera {
         this.active = false;
         const t = (this.now() - this.startedAt) / 1000;
         const hint = this.env.spawnHint();
-        const spawnDistance = hint ? Math.hypot(hint.x - SHOWROOM_SPOT.x, hint.z - SHOWROOM_SPOT.z) : null;
+        const spawnDistance = hint ? Math.hypot(hint.x - this.spot.x, hint.z - this.spot.z) : null;
         const kind = transitionKind({ reducedMotion: this.env.reducedMotion(), lite: this.env.lite, spawnDistance });
         this.from = cameraStateOf(showroomPose(t, this.framing(camera), this.deckY(), {
             reducedMotion: this.env.lite || this.env.reducedMotion(),
+            spot: this.spot,
             ...this.layout(camera)
         }));
         this.transitionKind = kind;

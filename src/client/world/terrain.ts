@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { heightAt, surfaceAt, type Heightfield } from '../../shared/map/heightfield.js';
+import type { MapAtmosphereSpec } from '../../shared/map/registry.js';
 import { SURFACE } from '../../shared/map/types.js';
 import type { RenderTier } from '../effects/renderQuality.js';
+import { biomePbr, biomeTexture } from './biomeTextures.js';
 import { patchWorldMaterial } from './materials.js';
 import { buildTerrainSplat } from './terrainSplat.js';
 import {
@@ -51,18 +53,21 @@ const SPLAT_DECL = /* glsl */`
 uniform sampler2D tSplatA;
 uniform sampler2D tSplatB;
 uniform vec4 uSplatFrame;
+uniform float uHasSea;
 float terrainWet = 0.0;
+float terrainIce = 0.0;
 vec2 terrainSplatUv( vec3 wp ) {
 	return ( ( wp.xz - uSplatFrame.xy ) * uSplatFrame.z + 0.5 ) / uSplatFrame.w;
 }`;
 
-// The full shading (desktop and phones): textures per layer
+// The full shading (desktop and phones): textures per layer, plus optional snow & ice
 const TERRAIN_COLOR = /* glsl */`
 	{
 		vec2 suv = terrainSplatUv( vWPos );
 		vec4 sa = texture2D( tSplatA, suv );
 		vec4 sb = texture2D( tSplatB, suv );
-		float covered = clamp( sa.r + sa.b + sa.a + sb.r + sb.b + sb.g, 0.0, 1.0 );
+		float snowIce = sb.a;
+		float covered = clamp( sa.r + sa.b + sa.a + sb.r + sb.b + sb.g + snowIce, 0.0, 1.0 );
 		float grass = 1.0 - covered;
 		vec3 nw = normalize( cross( dFdx( vWPos ), dFdy( vWPos ) ) );
 		float slope = 1.0 - abs( nw.y );
@@ -78,7 +83,7 @@ const TERRAIN_COLOR = /* glsl */`
 		diffuseColor.rgb *= mix( 0.85, 1.1, fine );
 		float bare = smoothstep( 0.56, 0.76, texture2D( uNoise, vWPos.xz / 140.0 + 0.3 ).a * 0.5 + texture2D( uNoise, vWPos.xz / 33.0 ).r * 0.5 - north * 0.08 + grain * 0.1 );
 		diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.4, 0.31, 0.21 ), bare * 0.4 * grass );
-		// Lawns
+		// Lawns / meadows
 		vec3 lawn = texture2D( tGrass, vWPos.xz / 5.0 ).rgb * vec3( 0.92, 1.0, 0.86 );
 		lawn *= mix( 0.85, 1.1, texture2D( uNoise, vWPos.xz / 23.0 ).g );
 		float lawnMask = sb.g * smoothstep( 0.25, 0.6, texture2D( uNoise, vWPos.xz / 47.0 ).r + sb.g * 0.3 );
@@ -92,14 +97,20 @@ const TERRAIN_COLOR = /* glsl */`
 		diffuseColor.rgb = mix( diffuseColor.rgb, gravel, sa.a );
 		vec3 sand = sandTex * vec3( 1.3, 1.45, 1.55 ) * mix( 0.94, 1.06, texture2D( uNoise, vWPos.xz / 31.0 ).b );
 		diffuseColor.rgb = mix( diffuseColor.rgb, sand, sa.r );
-		// Wet sand at the water line and the sea floor: darker, a little cooler
-		// (soft at the water level: the flats lie within centimetres of it,
-		// a hard step there would follow the triangles in blocks)
-		terrainWet = sa.g * smoothstep( -0.6, 1.2, vWPos.y + ( texture2D( uNoise, vWPos.xz / 13.0 ).r - 0.5 ) * 0.8 ) + sa.g * smoothstep( 0.15, -0.15, vWPos.y );
-		terrainWet = clamp( terrainWet, 0.0, 1.0 );
+		// Wet sand at the water line and the sea floor (ignored on ice and dry maps)
+		float wetFlag = sa.g * ( 1.0 - snowIce );
+		terrainWet = wetFlag * smoothstep( -0.6, 1.2, vWPos.y + ( texture2D( uNoise, vWPos.xz / 13.0 ).r - 0.5 ) * 0.8 ) + wetFlag * smoothstep( 0.15, -0.15, vWPos.y );
+		terrainWet = clamp( terrainWet * uHasSea, 0.0, 1.0 );
 		diffuseColor.rgb *= mix( vec3( 1.0 ), vec3( 0.6, 0.62, 0.64 ), terrainWet );
-		float under = smoothstep( 0.0, -7.0, vWPos.y );
+		float under = smoothstep( 0.0, -7.0, vWPos.y ) * uHasSea;
 		diffuseColor.rgb = mix( diffuseColor.rgb, diffuseColor.rgb * vec3( 0.42, 0.56, 0.55 ), under );
+		// Snow and frozen lake ice (active when sb.a > 0)
+		if ( snowIce > 0.004 ) {
+			terrainIce = snowIce * sa.g;
+			vec3 snowCol = texture2D( tSnow, vWPos.xz / 4.0 ).rgb * mix( 0.94, 1.06, texture2D( uNoise, vWPos.xz / 19.0 ).r );
+			vec3 iceCol = texture2D( tIce, vWPos.xz / 4.0 ).rgb * vec3( 0.9, 0.97, 1.06 );
+			diffuseColor.rgb = mix( diffuseColor.rgb, mix( snowCol, iceCol, sa.g ), snowIce );
+		}
 		// Rock on steep slopes and on the rock layer (triplanar, a coarse and a
 		// fine scale): grey sandstone in strata
 		vec3 blend = pow( abs( nw ), vec3( 4.0 ) );
@@ -107,14 +118,14 @@ const TERRAIN_COLOR = /* glsl */`
 		vec3 rockColor = texture2D( tRock, vWPos.zy / 23.0 ).rgb * blend.x + texture2D( tRock, vWPos.xy / 23.0 ).rgb * blend.z + texture2D( tRock, vWPos.xz / 23.0 ).rgb * blend.y;
 		rockColor = mix( rockColor, texture2D( tRock, vWPos.zy / 7.0 ).rgb * blend.x + texture2D( tRock, vWPos.xy / 7.0 ).rgb * blend.z + texture2D( tRock, vWPos.xz / 7.0 ).rgb * blend.y, 0.35 );
 		// Grey, a touch cool: the evening sun warms it (look.ts)
-		rockColor = mix( rockColor, vec3( dot( rockColor, vec3( 0.3, 0.59, 0.11 ) ) ), 0.8 ) * vec3( 0.9, 0.95, 1.04 );
+		rockColor = mix( rockColor, vec3( dot( rockColor, vec3( 0.3, 0.59, 0.11 ) ) ), 0.65 ) * vec3( 0.94, 0.96, 1.02 );
 		// Strata 2 to 6 m thick, dipping and wandering over the face; lighter
 		// and darker patches over 30 to 60 m; streaks run down from the edge
 		float strata = texture2D( uNoise, vec2( vWPos.y / 48.0 + texture2D( uNoise, vWPos.xz / 170.0 ).r * 0.15, ( vWPos.x - vWPos.z ) / 1400.0 ) ).r;
 		float bands = texture2D( uNoise, vWPos.xz / 55.0 + vWPos.y / 110.0 ).b;
 		float streaks = texture2D( uNoise, vec2( ( vWPos.x + vWPos.z ) / 19.0, vWPos.y / 260.0 ) ).g;
 		rockColor *= mix( 0.62, 1.2, smoothstep( 0.25, 0.75, strata ) ) * mix( 0.8, 1.15, bands ) * mix( 0.85, 1.05, streaks );
-		float rockMask = smoothstep( 0.22, 0.42, slope + ( texture2D( uNoise, vWPos.xz / 60.0 ).g - 0.5 ) * 0.25 ) * ( 1.0 - sa.r * 0.7 );
+		float rockMask = smoothstep( 0.22, 0.42, slope + ( texture2D( uNoise, vWPos.xz / 60.0 ).g - 0.5 ) * 0.25 ) * ( 1.0 - sa.r * 0.7 - snowIce * 0.55 );
 		rockMask = max( rockMask, sb.r * 0.9 );
 		diffuseColor.rgb = mix( diffuseColor.rgb, rockColor, rockMask );
 	}`;
@@ -131,8 +142,9 @@ function softwareColor(): string {
 		c = mix( c, vec3( ${lin(0x86684b)} ), clamp( sa.b + sb.b * 0.85, 0.0, 1.0 ) );
 		c = mix( c, vec3( ${lin(0x8f887d)} ), sa.a );
 		c = mix( c, vec3( ${lin(0xe4dcc4)} ), sa.r );
-		c = mix( c, c * 0.62, sa.g );
-		c = mix( c, c * vec3( 0.42, 0.56, 0.55 ), smoothstep( 0.0, -7.0, vWPos.y ) );
+		c = mix( c, c * 0.62, sa.g * ( 1.0 - sb.a ) * uHasSea );
+		c = mix( c, c * vec3( 0.42, 0.56, 0.55 ), smoothstep( 0.0, -7.0, vWPos.y ) * uHasSea );
+		c = mix( c, mix( vec3( ${lin(0xdce6f0)} ), vec3( ${lin(0xa2cde4)} ), sa.g ), sb.a );
 		c = mix( c, vec3( ${lin(0x8d8478)} ), sb.r * 0.9 );
 		diffuseColor.rgb = c;
 	}`;
@@ -161,42 +173,67 @@ export function createTerrainTextures(hf: Heightfield, tier: RenderTier): Terrai
     };
 }
 
-export function createTerrainMaterial(tier: RenderTier, hf: Heightfield, textures: TerrainTextures): THREE.Material {
+export function createTerrainMaterial(
+    tier: RenderTier,
+    hf: Heightfield,
+    textures: TerrainTextures,
+    atmosphere?: MapAtmosphereSpec
+): THREE.Material {
     const spec = hf.spec;
+    const biome = atmosphere?.biome ?? 'coastal';
+    const hasSea = atmosphere?.hasSea ?? true;
     const uniforms: Record<string, THREE.IUniform> = {
         tSplatA: { value: textures.splatA },
         tSplatB: { value: textures.splatB },
-        uSplatFrame: { value: new THREE.Vector4(spec.originX, spec.originZ, 1 / spec.cellSize, spec.cols) }
+        uSplatFrame: { value: new THREE.Vector4(spec.originX, spec.originZ, 1 / spec.cellSize, spec.cols) },
+        uHasSea: { value: hasSea ? 1 : 0 }
     };
     if (tier === 'software') {
         const material = new THREE.MeshLambertMaterial({ color: 0xffffff });
         return patchWorldMaterial(material, { uniforms, decl: SPLAT_DECL, color: softwareColor() });
     }
     const normals = tier === 'desktop';
+    const baseSand = worldTexture('pbr/sand_albedo', { fallback: 0xc9b596 });
+    const baseGrass = worldTexture('pbr/grass_albedo', { fallback: 0x6f7a44 });
+    const baseGravel = worldTexture('pbr/roof_gravel_albedo', { fallback: 0x8f887d });
+    const baseRock = worldTexture('generated/rock_albedo');
+
+    const tGrass = biome === 'forge' ? biomeTexture('tulip_meadow_albedo') : baseGrass;
+    const tGravel = biome === 'quarry' ? biomeTexture('quarry_gravel_albedo') : baseGravel;
+    const tRock = biome === 'quarry'
+        ? biomeTexture('quarry_red_rock_albedo')
+        : biome === 'alpine' || biome === 'forge'
+            ? biomeTexture('alpine_rock_albedo')
+            : baseRock;
+    const tSnow = biome === 'coastal' ? baseSand : biomeTexture('alpine_snow_albedo');
+    const tIce = biome === 'coastal' ? baseSand : biomeTexture('alpine_ice_albedo');
+
     Object.assign(uniforms, {
-        tSand: { value: worldTexture('pbr/sand_albedo', { fallback: 0xc9b596 }) },
-        tGrass: { value: worldTexture('pbr/grass_albedo', { fallback: 0x6f7a44 }) },
-        tGravel: { value: worldTexture('pbr/roof_gravel_albedo', { fallback: 0x8f887d }) },
-        tRock: { value: worldTexture('generated/rock_albedo') }
+        tSand: { value: baseSand },
+        tGrass: { value: tGrass },
+        tGravel: { value: tGravel },
+        tRock: { value: tRock },
+        tSnow: { value: tSnow },
+        tIce: { value: tIce }
     });
-    const grass = pbr('grass_dry');
+    const baseSet = biome === 'quarry' ? biomePbr('quarry_gravel') : pbr('grass_dry');
     const material = new THREE.MeshStandardMaterial({
-        map: grass.map,
-        ...(normals ? { normalMap: grass.normalMap() } : {}),
-        aoMap: grass.arm,
-        roughnessMap: grass.arm,
+        map: baseSet.map,
+        ...(normals ? { normalMap: baseSet.normalMap() } : {}),
+        aoMap: baseSet.arm,
+        roughnessMap: baseSet.arm,
         roughness: 1,
         metalness: 0,
-        envMapIntensity: 0.5
+        envMapIntensity: biome === 'alpine' ? 0.65 : 0.5
     });
     const patched = patchWorldMaterial(material, {
         macro: 0.16,
         macroScale: 80,
         uniforms,
-        decl: SPLAT_DECL + '\nuniform sampler2D tSand;\nuniform sampler2D tGrass;\nuniform sampler2D tGravel;\nuniform sampler2D tRock;',
+        decl: SPLAT_DECL + '\nuniform sampler2D tSand;\nuniform sampler2D tGrass;\nuniform sampler2D tGravel;\nuniform sampler2D tRock;\nuniform sampler2D tSnow;\nuniform sampler2D tIce;',
         color: TERRAIN_COLOR,
-        // Wet sand is glossy
-        rough: 'roughnessFactor = mix( roughnessFactor, 0.32, terrainWet );'
+        // Wet sand is glossy; frozen lake ice is mirror-slick
+        rough: 'roughnessFactor = mix( mix( roughnessFactor, 0.32, terrainWet ), 0.16, terrainIce );'
     });
     // Tree shadows fade on grazing slopes and in the distance (lighting.ts)
     patched.defines = { ...patched.defines, BULLI_GRAZING_SHADOW_FADE: '' };
@@ -333,5 +370,19 @@ export class TerrainField {
     /** Triangles drawn by all levels. */
     triangles(): number {
         return this.levels.reduce((sum, level) => sum + level.arrays.indexCount / 3, 0);
+    }
+
+    /** Frees every clipmap geometry and the terrain material. */
+    dispose(): void {
+        const materials = new Set<THREE.Material>();
+        for (const level of this.levels) {
+            level.mesh.geometry.dispose();
+            const mat = level.mesh.material;
+            if (Array.isArray(mat)) mat.forEach(m => materials.add(m));
+            else materials.add(mat);
+        }
+        for (const mat of materials) mat.dispose();
+        this.levels.length = 0;
+        this.group.clear();
     }
 }

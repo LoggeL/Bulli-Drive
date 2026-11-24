@@ -1,9 +1,26 @@
 import * as THREE from 'three';
+import type { RewardEffect } from '../../shared/map/discoverySchema.js';
+import { SURFACE } from '../../shared/map/types.js';
 import { state } from '../state.js';
 
-const MAX_PARTICLES = 200;
+const MAX_PARTICLES = 320;
 const EXPLOSION_COLORS = [0x333333, 0x555555, 0xFF4400, 0xFF6600];
 const FIRE_COLORS = [0xFF4500, 0xFF6600, 0xFFAA00, 0xFF2200, 0xFFDD00];
+const DRIFT_SPARK_PALETTES: Record<1 | 2 | 3, readonly number[]> = {
+    1: [0x38BDF8, 0x7DD3FC, 0xFACC15],
+    2: [0xFF7B00, 0xFF9E00, 0xFFD166],
+    3: [0xE879F9, 0xA855F7, 0xFEF08A, 0xFFFFFF]
+};
+const REWARD_PALETTES: Record<RewardEffect, readonly number[]> = {
+    sparks: [0xFF6A24, 0xFFB703, 0xFFE699, 0xFFFFFF],
+    confetti: [0xFF4D6D, 0x22D3EE, 0xFACC15, 0x4ADE80, 0xA855F7],
+    bubbles: [0x7DD3FC, 0xBAE6FD, 0xE0F2FE, 0x38BDF8],
+    runes: [0xC084FC, 0x818CF8, 0xFDE047, 0x38BDF8],
+    music: [0xF43F5E, 0xFB923C, 0xFACC15, 0xA855F7],
+    laser: [0x22D3EE, 0x34D399, 0xEF4444, 0xFFFFFF],
+    flash: [0xFFFFFF, 0xFEF08A, 0xFDE68A, 0xBAE6FD],
+    shockwave: [0xFF6A24, 0x22D3EE, 0xFFFFFF, 0xFACC15]
+};
 
 interface Particle {
     x: number;
@@ -353,6 +370,156 @@ export function spawnDriftParticle() {
         initialOpacity: 0.55,
         color: 0xF2EDE6,
         grows: true,
+        followTarget: null,
+        localX: 0,
+        localY: 0,
+        localZ: 0
+    });
+}
+
+/** Celebratory themed burst fired on unlocking a discovery POI. */
+export function spawnDiscoveryBurst(x: number, y: number, z: number, effect: RewardEffect = 'sparks'): void {
+    const palette = REWARD_PALETTES[effect] ?? REWARD_PALETTES.sparks;
+    const count = effect === 'shockwave' || effect === 'confetti' ? 36 : 28;
+    const ring = effect === 'shockwave';
+    const floaty = effect === 'bubbles' || effect === 'confetti';
+    for (let i = 0; i < count; i++) {
+        if (state.particles.length >= MAX_PARTICLES) return;
+        const angle = ring ? (i / count) * Math.PI * 2 : Math.random() * Math.PI * 2;
+        const speed = ring ? 0.45 + Math.random() * 0.15 : 0.16 + Math.random() * 0.36;
+        const vy = ring
+            ? 0.08 + Math.random() * 0.14
+            : floaty
+                ? 0.22 + Math.random() * 0.32
+                : 0.25 + Math.random() * 0.45;
+        addParticle({
+            x: x + Math.cos(angle) * (ring ? 1.2 : 0.5),
+            y: y + Math.random() * 0.8,
+            z: z + Math.sin(angle) * (ring ? 1.2 : 0.5),
+            vx: Math.cos(angle) * speed,
+            vy,
+            vz: Math.sin(angle) * speed,
+            life: 1.0,
+            decay: floaty ? 0.011 + Math.random() * 0.01 : 0.016 + Math.random() * 0.016,
+            initialScale: effect === 'flash' ? 0.8 + Math.random() * 0.6 : 0.35 + Math.random() * 0.45,
+            initialOpacity: effect === 'bubbles' ? 0.8 : 1.0,
+            color: palette[i % palette.length],
+            grows: effect === 'bubbles' || effect === 'flash',
+            followTarget: null,
+            localX: 0,
+            localY: 0,
+            localZ: 0
+        });
+    }
+}
+
+/** Cyan/ember speed surge particles emitted when crossing a boost pad. */
+export function spawnBoostPadBurst(x: number, y: number, z: number, yaw: number): void {
+    const fx = Math.sin(yaw), fz = Math.cos(yaw);
+    const colors = [0x22D3EE, 0x38BDF8, 0xFF6A24, 0xFFFFFF];
+    for (let i = 0; i < 18; i++) {
+        if (state.particles.length >= MAX_PARTICLES) return;
+        const lateral = (Math.random() - 0.5) * 2.2;
+        const back = 1.4 + Math.random() * 1.4;
+        addParticle({
+            x: x - fx * back + fz * lateral,
+            y: y + 0.3 + Math.random() * 0.5,
+            z: z - fz * back - fx * lateral,
+            vx: -fx * (0.28 + Math.random() * 0.25) + (Math.random() - 0.5) * 0.14,
+            vy: 0.08 + Math.random() * 0.14,
+            vz: -fz * (0.28 + Math.random() * 0.25) + (Math.random() - 0.5) * 0.14,
+            life: 1.0,
+            decay: 0.032 + Math.random() * 0.02,
+            initialScale: 0.38 + Math.random() * 0.3,
+            initialOpacity: 0.95,
+            color: colors[i % colors.length],
+            followTarget: null,
+            localX: 0,
+            localY: 0,
+            localZ: 0
+        });
+    }
+}
+
+/** Tiered drift mini-turbo sparks from both rear tires (tier 1 blue/gold, 2 orange, 3 violet-white). */
+export function spawnDriftSparks(x: number, y: number, z: number, yaw: number, tier: 1 | 2 | 3): void {
+    const palette = DRIFT_SPARK_PALETTES[tier];
+    const fx = Math.sin(yaw), fz = Math.cos(yaw);
+    const backX = x - fx * 1.65, backZ = z - fz * 1.65;
+    const perWheel = tier === 3 ? 2 : 1;
+    for (const side of [-1, 1]) {
+        for (let k = 0; k < perWheel; k++) {
+            if (state.particles.length >= MAX_PARTICLES) return;
+            addParticle({
+                x: backX + fz * side * 0.92 + (Math.random() - 0.5) * 0.2,
+                y: y + 0.18 + Math.random() * 0.12,
+                z: backZ - fx * side * 0.92 + (Math.random() - 0.5) * 0.2,
+                vx: -fx * (0.18 + tier * 0.06) + fz * side * 0.08 + (Math.random() - 0.5) * 0.12,
+                vy: 0.09 + Math.random() * (0.08 + tier * 0.03),
+                vz: -fz * (0.18 + tier * 0.06) - fx * side * 0.08 + (Math.random() - 0.5) * 0.12,
+                life: 1.0,
+                decay: 0.045 + Math.random() * 0.03,
+                initialScale: 0.22 + tier * 0.08,
+                initialOpacity: 0.95,
+                color: palette[Math.floor(Math.random() * palette.length)],
+                followTarget: null,
+                localX: 0,
+                localY: 0,
+                localZ: 0
+            });
+        }
+    }
+}
+
+/** Surface-aware tire spray/dust/ice-glint emitted at a wheel contact point. */
+export function spawnSurfaceTireParticle(x: number, y: number, z: number, surface: number, intensity = 1): void {
+    if (state.particles.length >= MAX_PARTICLES) return;
+    let color = 0xF2EDE6;
+    let grows = true;
+    let scale = 0.42 * intensity;
+    let opacity = 0.5;
+    let decay = 0.025 + Math.random() * 0.02;
+    let vy = 0.08 + Math.random() * 0.09;
+
+    if (surface === SURFACE.snow) {
+        color = Math.random() < 0.5 ? 0xEEF6FF : 0xD6E9FF;
+        scale = 0.55 * intensity;
+        opacity = 0.72;
+        vy = 0.12 + Math.random() * 0.14;
+    } else if (surface === SURFACE.ice) {
+        color = Math.random() < 0.5 ? 0xA5F3FC : 0xFFFFFF;
+        grows = false;
+        scale = 0.24 * intensity;
+        opacity = 0.9;
+        decay = 0.045 + Math.random() * 0.025;
+        vy = 0.1 + Math.random() * 0.12;
+    } else if (surface === SURFACE.sand) {
+        color = 0xE2C799;
+        scale = 0.5 * intensity;
+        opacity = 0.58;
+    } else if (surface === SURFACE.dirt || surface === SURFACE.gravel) {
+        color = surface === SURFACE.gravel ? 0xA89882 : 0xBA9B74;
+        scale = 0.54 * intensity;
+        opacity = 0.62;
+    } else if (surface === SURFACE.grass) {
+        color = 0x7D9258;
+        scale = 0.34 * intensity;
+        opacity = 0.48;
+    }
+
+    addParticle({
+        x: x + (Math.random() - 0.5) * 0.35,
+        y: y + 0.18,
+        z: z + (Math.random() - 0.5) * 0.35,
+        vx: (Math.random() - 0.5) * 0.18,
+        vy,
+        vz: (Math.random() - 0.5) * 0.18,
+        life: 1.0,
+        decay,
+        initialScale: scale,
+        initialOpacity: opacity,
+        color,
+        grows,
         followTarget: null,
         localX: 0,
         localY: 0,

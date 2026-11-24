@@ -89,7 +89,7 @@ export function scatterDecor(map: MapData, density = 1): DecorSpot[] {
     for (const structure of map.structures) walls.add(placementBox(structure));
     // Plants with a collider, in 8 m buckets
     const plantCells = new Map<number, number[]>();
-    const bucket = (x: number, z: number) => Math.floor((x + 1000) / 8) * 1024 + Math.floor((z + 1000) / 8);
+    const bucket = (x: number, z: number) => Math.floor((x - spec.originX) / 8) * 1024 + Math.floor((z - spec.originZ) / 8);
     map.plants.forEach((plant, i) => {
         const key = bucket(plant.x, plant.z);
         const list = plantCells.get(key);

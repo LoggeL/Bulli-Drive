@@ -11,9 +11,26 @@ export const CHUNK_SIZE = 250;
 export const CHUNK_ORIGIN = -1000;
 export const CHUNKS = 8;
 
-export function chunkOf(x: number, z: number): number {
-    const i = Math.min(CHUNKS - 1, Math.max(0, Math.floor((x - CHUNK_ORIGIN) / CHUNK_SIZE)));
-    const j = Math.min(CHUNKS - 1, Math.max(0, Math.floor((z - CHUNK_ORIGIN) / CHUNK_SIZE)));
+export interface ChunkGrid {
+    originX: number;
+    originZ: number;
+    chunkSize: number;
+}
+
+export const DEFAULT_CHUNK_GRID: ChunkGrid = {
+    originX: CHUNK_ORIGIN,
+    originZ: CHUNK_ORIGIN,
+    chunkSize: CHUNK_SIZE
+};
+
+export function chunkGridFor(spec: { originX: number; originZ: number; cols: number; cellSize: number }): ChunkGrid {
+    const extent = Math.max(1, (spec.cols - 1) * spec.cellSize);
+    return { originX: spec.originX, originZ: spec.originZ, chunkSize: extent / CHUNKS };
+}
+
+export function chunkOf(x: number, z: number, grid: ChunkGrid = DEFAULT_CHUNK_GRID): number {
+    const i = Math.min(CHUNKS - 1, Math.max(0, Math.floor((x - grid.originX) / grid.chunkSize)));
+    const j = Math.min(CHUNKS - 1, Math.max(0, Math.floor((z - grid.originZ) / grid.chunkSize)));
     return j * CHUNKS + i;
 }
 
@@ -31,11 +48,11 @@ export class ChunkView {
     private readonly matrix = new THREE.Matrix4();
     private readonly grown = new THREE.Box3();
 
-    constructor(minY: number, maxY: number) {
+    constructor(minY: number, maxY: number, grid: ChunkGrid = DEFAULT_CHUNK_GRID) {
         for (let j = 0; j < CHUNKS; j++) {
             for (let i = 0; i < CHUNKS; i++) {
-                const x = CHUNK_ORIGIN + i * CHUNK_SIZE, z = CHUNK_ORIGIN + j * CHUNK_SIZE;
-                this.boxes.push(new THREE.Box3(new THREE.Vector3(x, minY, z), new THREE.Vector3(x + CHUNK_SIZE, maxY, z + CHUNK_SIZE)));
+                const x = grid.originX + i * grid.chunkSize, z = grid.originZ + j * grid.chunkSize;
+                this.boxes.push(new THREE.Box3(new THREE.Vector3(x, minY, z), new THREE.Vector3(x + grid.chunkSize, maxY, z + grid.chunkSize)));
             }
         }
     }
@@ -75,8 +92,16 @@ export class ChunkedInstances {
     // one kind: two ChunkedInstances with adjoining ranges)
     from: number;
 
-    constructor(geometry: THREE.BufferGeometry, material: THREE.Material, specs: readonly InstanceSpec[], sight: number, name: string, from = 0) {
-        const order = specs.map((spec, i) => ({ spec, i, chunk: chunkOf(spec.matrix.elements[12], spec.matrix.elements[14]) }))
+    constructor(
+        geometry: THREE.BufferGeometry,
+        material: THREE.Material,
+        specs: readonly InstanceSpec[],
+        sight: number,
+        name: string,
+        from = 0,
+        grid: ChunkGrid = DEFAULT_CHUNK_GRID
+    ) {
+        const order = specs.map((spec, i) => ({ spec, i, chunk: chunkOf(spec.matrix.elements[12], spec.matrix.elements[14], grid) }))
             .sort((a, b) => a.chunk - b.chunk || a.i - b.i);
         this.matrices = new Float32Array(specs.length * 16);
         this.colors = specs.some(spec => spec.color) ? new Float32Array(specs.length * 3) : null;
@@ -131,5 +156,11 @@ export class ChunkedInstances {
         this.mesh.visible = count > 0;
         this.mesh.instanceMatrix.needsUpdate = true;
         if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
+    }
+
+    /** Disposes owned geometry and instanced GPU buffers (shared materials stay managed by caller). */
+    dispose(): void {
+        this.mesh.geometry.dispose();
+        this.mesh.dispose();
     }
 }

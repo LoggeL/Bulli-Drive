@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import { describe, expect, it } from 'vitest';
+import { MAP_REGISTRY } from '../../src/shared/map/registry.js';
+import { biomeFallbackColor } from '../../src/client/world/biomeTextures.js';
 import { placeholderTexel } from '../../src/client/world/texturePlaceholders.js';
 import { TREE_UV } from '../../src/client/world/vegetation.js';
 
@@ -13,6 +15,13 @@ const ROOT = path.resolve(__dirname, '../..');
 const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'public/textures/manifest.json'), 'utf8')) as {
     textures: Record<string, { file: string }>;
     generated: Record<string, { sidecar?: string }>;
+};
+const biomesManifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'public/textures/biomes/manifest.json'), 'utf8')) as {
+    textures: Record<string, { file: string }>;
+    materials: Record<string, { albedo: string; normal: string; arm: string }>;
+};
+const billboardsManifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'public/textures/billboards/manifest.json'), 'utf8')) as {
+    textures: Record<string, { file: string }>;
 };
 
 function clientSources(dir: string): string[] {
@@ -39,13 +48,27 @@ describe('world textures', () => {
     it('has no stray files next to the manifest', () => {
         const shipped = new Set([
             'manifest.json', 'LICENSES.md',
+            'biomes/manifest.json', 'billboards/manifest.json',
             ...Object.values(manifest.textures).map(entry => entry.file),
-            ...Object.values(manifest.generated).flatMap(entry => (entry.sidecar ? [entry.sidecar] : []))
+            ...Object.values(manifest.generated).flatMap(entry => (entry.sidecar ? [entry.sidecar] : [])),
+            ...Object.values(biomesManifest.textures).map(entry => `biomes/${entry.file}`),
+            ...Object.values(billboardsManifest.textures).map(entry => `billboards/${entry.file}`)
         ]);
         const onDisk = (dir: string, prefix = ''): string[] => fs.readdirSync(dir, { withFileTypes: true }).flatMap(entry =>
             entry.isDirectory() ? onDisk(path.join(dir, entry.name), `${prefix}${entry.name}/`) : [`${prefix}${entry.name}`]);
         const files = onDisk(path.join(ROOT, 'public/textures')).filter(file => !file.startsWith('hdri/'));
         expect(files.filter(file => !shipped.has(file))).toEqual([]);
+    });
+
+    it('ships every biome PBR set referenced by MAP_REGISTRY and provides non-black fallback colors', () => {
+        const sets = new Set<string>();
+        for (const desc of Object.values(MAP_REGISTRY)) {
+            for (const set of desc.atmosphere.biomeTextures) sets.add(set);
+        }
+        expect([...sets].sort()).toEqual(Object.keys(biomesManifest.materials).sort());
+        for (const set of sets) {
+            expect(biomeFallbackColor(set)).toBeGreaterThan(0);
+        }
     });
 
     it('uses the tree card rects of the atlas sidecar', () => {

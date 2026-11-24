@@ -29,14 +29,14 @@ export function cellKey(level: CellLevel, i: number, j: number): string {
     return `${level}:${i}:${j}`;
 }
 
-export function cellIndex(v: number, level: CellLevel): number {
-    return Math.floor((v - CELL_ORIGIN) / CELL_SIZES[level]);
+export function cellIndex(v: number, level: CellLevel, origin = CELL_ORIGIN): number {
+    return Math.floor((v - origin) / CELL_SIZES[level]);
 }
 
 /** Horizontal distance from (x, z) to the cell's square (0 inside). */
-export function cellDistance(x: number, z: number, level: CellLevel, i: number, j: number): number {
+export function cellDistance(x: number, z: number, level: CellLevel, i: number, j: number, originX = CELL_ORIGIN, originZ = CELL_ORIGIN): number {
     const size = CELL_SIZES[level];
-    const minX = CELL_ORIGIN + i * size, minZ = CELL_ORIGIN + j * size;
+    const minX = originX + i * size, minZ = originZ + j * size;
     const dx = Math.max(minX - x, 0, x - (minX + size));
     const dz = Math.max(minZ - z, 0, z - (minZ + size));
     return Math.sqrt(dx * dx + dz * dz);
@@ -60,10 +60,10 @@ export interface CellDistances {
 }
 
 /** Which cells hold pieces: keys of all three levels for the pieces' positions. */
-export function occupiedCells(points: readonly { x: number; z: number }[]): Set<string> {
+export function occupiedCells(points: readonly { x: number; z: number }[], originX = CELL_ORIGIN, originZ = CELL_ORIGIN): Set<string> {
     const occupied = new Set<string>();
     for (const p of points) {
-        for (const level of [0, 1, 2] as const) occupied.add(cellKey(level, cellIndex(p.x, level), cellIndex(p.z, level)));
+        for (const level of [0, 1, 2] as const) occupied.add(cellKey(level, cellIndex(p.x, level, originX), cellIndex(p.z, level, originZ)));
     }
     return occupied;
 }
@@ -73,9 +73,18 @@ export function occupiedCells(points: readonly { x: number; z: number }[]): Set<
  * described above. `previous` (keys of the last choice) keeps a split
  * cell split within the hysteresis band.
  */
-export function selectCells(occupied: ReadonlySet<string>, x: number, z: number, distances: CellDistances, previous?: ReadonlySet<string>): CellRef[] {
+export function selectCells(
+    occupied: ReadonlySet<string>,
+    x: number,
+    z: number,
+    distances: CellDistances,
+    previous?: ReadonlySet<string>,
+    originX = CELL_ORIGIN,
+    originZ = CELL_ORIGIN,
+    extent = 2000
+): CellRef[] {
     const out: CellRef[] = [];
-    const chunks = Math.round(2000 / CELL_SIZES[0]);
+    const chunks = Math.max(1, Math.ceil(extent / CELL_SIZES[0]));
     const band = (level: CellLevel, i: number, j: number) => {
         // Split last time: one of its children was drawn (or split)
         if (!previous) return 0;
@@ -97,7 +106,7 @@ export function selectCells(occupied: ReadonlySet<string>, x: number, z: number,
     for (let i = 0; i < chunks; i++) {
         for (let j = 0; j < chunks; j++) {
             if (!occupied.has(cellKey(0, i, j))) continue;
-            const d = cellDistance(x, z, 0, i, j);
+            const d = cellDistance(x, z, 0, i, j, originX, originZ);
             if (d > distances.sight) continue;
             if (d > distances.lod1 + band(0, i, j)) {
                 out.push({ level: 0, i, j });
@@ -107,7 +116,7 @@ export function selectCells(occupied: ReadonlySet<string>, x: number, z: number,
                 for (let dj = 0; dj < 2; dj++) {
                     const ci = 2 * i + di, cj = 2 * j + dj;
                     if (!occupied.has(cellKey(1, ci, cj))) continue;
-                    const d1 = cellDistance(x, z, 1, ci, cj);
+                    const d1 = cellDistance(x, z, 1, ci, cj, originX, originZ);
                     if (d1 > distances.sight) continue;
                     if (d1 > distances.lod0 + band(1, ci, cj)) {
                         out.push({ level: 1, i: ci, j: cj });

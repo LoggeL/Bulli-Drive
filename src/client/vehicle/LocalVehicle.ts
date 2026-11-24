@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { BTN_HANDBRAKE, DT, SIM_TUNING } from '../../shared/sim/constants.js';
-import { copyVehicleState, createVehicleState, type AssistProfile, type CarClassId, type SimCar, type VehicleState } from '../../shared/sim/types.js';
+import { copyVehicleState, createVehicleState, type AssistProfile, type CarClassId, type DriftTier, type SimCar, type VehicleState } from '../../shared/sim/types.js';
 import { createSimCar, placeVehicle } from '../../shared/sim/vehicle.js';
 import { isCarClassId } from '../../shared/sim/vehicleClasses.js';
 import { stepWorld } from '../../shared/sim/world.js';
@@ -45,6 +45,11 @@ export interface FrameEvents {
     carImpact: number;
     landedImpact: number;
     boostStarted: boolean;
+    driftTier: DriftTier;
+    driftKick: number;
+    boostPadTriggered: boolean;
+    boostPadId: string;
+    surface: number;
     reset: boolean;
 }
 
@@ -66,7 +71,7 @@ export class LocalVehicle {
     private readonly cars: SimCar[] = [];
     readonly events: FrameEvents = {
         wallImpact: 0, wallX: 0, wallZ: 0, carImpact: 0, landedImpact: 0,
-        boostStarted: false, reset: false
+        boostStarted: false, driftTier: 0, driftKick: 0, boostPadTriggered: false, boostPadId: '', surface: 0, reset: false
     };
     // Counters for the e2e hook
     ticks = 0;
@@ -200,8 +205,9 @@ export class LocalVehicle {
     /** Clears the events of the frame (after the sounds and particles played). */
     endFrame(): void {
         const ev = this.events;
-        ev.wallImpact = ev.carImpact = ev.landedImpact = 0;
-        ev.boostStarted = ev.reset = false;
+        ev.wallImpact = ev.carImpact = ev.landedImpact = ev.driftKick = 0;
+        ev.boostStarted = ev.boostPadTriggered = ev.reset = false;
+        ev.boostPadId = '';
         this.hintChanged = false;
     }
 
@@ -262,6 +268,13 @@ export class LocalVehicle {
         }
         ev.carImpact = Math.max(ev.carImpact, tickEvents.carImpact);
         ev.landedImpact = Math.max(ev.landedImpact, tickEvents.landedImpact);
+        ev.driftTier = tickEvents.driftTier;
+        ev.driftKick = Math.max(ev.driftKick, tickEvents.driftKick);
+        if (tickEvents.boostPadTriggered) {
+            ev.boostPadTriggered = true;
+            ev.boostPadId = tickEvents.boostPadId;
+        }
+        ev.surface = tickEvents.surface;
         // Online a correction can bring a reset the player already saw a
         // few ticks later again (the server got the input late); a real
         // second one needs another full hold
@@ -338,6 +351,10 @@ export class LocalVehicle {
         input.horizontalSpeed = Math.hypot(curr.vx, curr.vz);
         input.loadX = curr.loadX;
         input.yawRate = curr.yawRate;
+        input.rollGain = this.car.params.rollGain;
+        input.pitchGain = this.car.params.pitchGain;
+        input.suspFreq = this.car.params.suspFreq;
+        input.suspTravel = this.car.params.suspTravel;
         this.body.update(dt, input, this.world.groundHeight);
         host.setBodyPose?.(this.body, pose.scale);
 

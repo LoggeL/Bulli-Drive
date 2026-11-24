@@ -22,8 +22,8 @@ import { leftNormal, pointAt } from '../../shared/map/spline.js';
 
 export type HeightFn = (x: number, z: number) => number;
 
-export type RoadLayer = 'asphalt' | 'concrete' | 'dirt' | 'gravel' | 'sand' | 'walk' | 'pavers';
-export const ROAD_LAYERS: readonly RoadLayer[] = ['asphalt', 'concrete', 'dirt', 'gravel', 'sand', 'walk', 'pavers'];
+export type RoadLayer = 'asphalt' | 'concrete' | 'dirt' | 'gravel' | 'sand' | 'snow' | 'ice' | 'walk' | 'pavers';
+export const ROAD_LAYERS: readonly RoadLayer[] = ['asphalt', 'concrete', 'dirt', 'gravel', 'sand', 'snow', 'ice', 'walk', 'pavers'];
 
 // Centre line codes of roadA.x (-1: no line markings at all)
 export const CENTRE_CODE: Record<RoadProfile['markings']['center'], number> = {
@@ -290,7 +290,7 @@ export function cornerCurve(r: Vec2, rDir: Vec2, l: Vec2, lDir: Vec2, steps = CO
     return points;
 }
 
-const SURFACE_RANK: Record<RoadSurfaceName, number> = { asphalt: 5, concrete: 4, gravel: 3, dirt: 2, sand: 1, wood: 0 };
+const SURFACE_RANK: Record<RoadSurfaceName, number> = { asphalt: 7, concrete: 6, ice: 5, snow: 4, gravel: 3, dirt: 2, sand: 1, wood: 0 };
 
 function addJunction(layers: Record<RoadLayer, MeshArrays>, net: RoadNetwork, node: RoadNodeData, height: HeightFn): void {
     const ends = junctionEnds(net, node);

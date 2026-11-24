@@ -36,6 +36,8 @@ export function splatTexel(surface: number, zone: number, a: Uint8Array, b: Uint
         case SURFACE.dirt: a[k + 2] = 255; break;
         case SURFACE.gravel: a[k + 3] = 255; break;
         case SURFACE.rock: b[k] = 255; break;
+        case SURFACE.snow: b[k + 3] = 255; break;
+        case SURFACE.ice: b[k + 3] = 255; a[k + 1] = 255; break;
         case SURFACE.asphalt:
         case SURFACE.concrete:
         case SURFACE.wood:

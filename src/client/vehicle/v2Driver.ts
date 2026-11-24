@@ -1,7 +1,8 @@
-import { DEFAULT_TERRAIN_CONFIG } from '../../shared/constants.js';
+import { SURFACE } from '../../shared/map/types.js';
+import { kickActiveChaseCamera } from '../camera/ChaseCamera.js';
 import type { Bulli } from '../entities/Bulli.js';
-import { playCollisionSound } from '../effects/sounds.js';
-import { spawnParticles } from '../effects/particles.js';
+import { playBoostPadSound, playCollisionSound, playDriftKickSound, updateSurfaceSound } from '../effects/sounds.js';
+import { spawnBoostPadBurst, spawnDriftSparks, spawnParticles, spawnSurfaceTireParticle } from '../effects/particles.js';
 import { gameHooks } from '../game/hooks.js';
 import { createPadState, findStandardPad, readPad } from '../input/gamepad.js';
 import { inputManager } from '../input/InputManager.js';
@@ -126,6 +127,9 @@ function showPowerupWindows(car: Bulli): void {
 function playEventEffects(vehicle: LocalVehicle): void {
     const ev = vehicle.events;
     const s = vehicle.car.state;
+    const fx = Math.sin(s.yaw), fz = Math.cos(s.yaw);
+    const forwardSpeed = vehicle.forwardSpeed;
+
     if (ev.wallImpact > WALL_SOUND_FROM) {
         playCollisionSound(ev.wallImpact / 30);
         const y = vehicle.world.groundHeight(ev.wallX, ev.wallZ) + 1.2;
@@ -139,17 +143,46 @@ function playEventEffects(vehicle: LocalVehicle): void {
     }
     if (ev.landedImpact > 6) {
         spawnParticles(s.x, s.y + 0.2, s.z, 0xCFC6B8, Math.min(10, Math.floor(ev.landedImpact / 2)), 0.5, 3.0, 0.2);
+        if (ev.landedImpact > 10) kickActiveChaseCamera(Math.min(0.14, ev.landedImpact * 0.008));
+    }
+    if (ev.boostStarted) {
+        kickActiveChaseCamera(0.06, 2.5);
+    }
+    if (ev.boostPadTriggered) {
+        spawnBoostPadBurst(s.x, s.y, s.z, s.yaw);
+        playBoostPadSound();
+        kickActiveChaseCamera(0.14, 5.5);
+    }
+    if (ev.driftKick > 0.1) {
+        const kickTier: 1 | 2 | 3 = ev.driftKick >= 5.5 ? 3 : ev.driftKick >= 3.2 ? 2 : 1;
+        playDriftKickSound(kickTier);
+        kickActiveChaseCamera(0.05 + kickTier * 0.03, 1.5 + kickTier * 1.2);
+        const exhaustX = s.x - fx * 2.1, exhaustZ = s.z - fz * 2.1;
+        spawnParticles(exhaustX, s.y + 0.45, exhaustZ, kickTier === 3 ? 0xE879F9 : 0xFF8800, 10 + kickTier * 4, 0.45, 1.4, 0.45);
     }
     if (ev.reset) state.cameraSnapPending = true;
     if (vehicle.hintChanged && vehicle.resetHint) {
         showInteractionPrompt(inputManager.touchUi ? 'HOLD RESET BUTTON' : 'HOLD R TO RESET');
     }
-    // Tyre smoke from both rear wheels while drifting
+
+    const backX = s.x - fx * 1.6, backZ = s.z - fz * 1.6;
+    // Tiered drift sparks & surface-aware rear tire smoke/spray
     if (s.driftTicks > 0 && s.grounded) {
-        const fx = Math.sin(s.yaw), fz = Math.cos(s.yaw);
-        const back = s.x - fx * 1.6, backZ = s.z - fz * 1.6;
         for (const side of [-1, 1]) {
-            spawnParticles(back + fz * side, s.y + 0.3, backZ - fx * side, 0xEEEEEE, 1, 0.6, 0.4, 0.15);
+            spawnSurfaceTireParticle(backX + fz * side * 0.9, s.y, backZ - fx * side * 0.9, ev.surface, 1.15);
+        }
+        if (ev.driftTier !== 0) {
+            spawnDriftSparks(s.x, s.y, s.z, s.yaw, ev.driftTier);
+        }
+    } else if (s.grounded && Math.abs(forwardSpeed) > 7) {
+        // Loose / winter surface spray even while driving straight
+        const loose = ev.surface === SURFACE.snow || ev.surface === SURFACE.ice
+            || ev.surface === SURFACE.sand || ev.surface === SURFACE.gravel || ev.surface === SURFACE.dirt;
+        if (loose && (vehicle.ticks % 2 === 0)) {
+            const side = (vehicle.ticks % 4 === 0) ? 1 : -1;
+            spawnSurfaceTireParticle(backX + fz * side * 0.9, s.y, backZ - fx * side * 0.9, ev.surface, Math.min(1, Math.abs(forwardSpeed) / 22));
         }
     }
+
+    updateSurfaceSound(ev.surface, forwardSpeed, vehicle.slipAngle, s.grounded);
 }

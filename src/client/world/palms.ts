@@ -359,15 +359,21 @@ interface KindMeshes {
     geometry: PalmGeometry;
 }
 
-class PalmField {
+export class PalmField {
     readonly group = new THREE.Group();
     private readonly kinds: Partial<Record<PalmKind, KindMeshes>> = {};
     private readonly spots: PalmSpot[];
     private readonly near: Uint8Array;
+    private readonly depthMaterials: THREE.Material[] = [];
     private impostors: THREE.InstancedMesh | null = null;
+    private impostorMat: THREE.Material | null = null;
     private bake: ImpostorBake | null = null;
     private baked = false;
     private dirty = true;
+    private disposed = false;
+    private boundRenderer: THREE.WebGLRenderer | null = null;
+    private onContextLost: (() => void) | null = null;
+    private onContextRestored: (() => void) | null = null;
     distance: number;
 
     constructor(private readonly M: WorldMaterials, spots: PalmSpot[], private readonly tier: RenderTier) {
@@ -390,7 +396,11 @@ class PalmField {
                 mesh.castShadow = true;
                 mesh.receiveShadow = true;
                 // The shadows sway with the palms
-                if (wind) mesh.customDepthMaterial = windDepthMaterial();
+                if (wind) {
+                    const depth = windDepthMaterial();
+                    mesh.customDepthMaterial = depth;
+                    this.depthMaterials.push(depth);
+                }
                 this.group.add(mesh);
             }
             this.kinds[kind] = { spots: list, trunk, fronds, geometry };
@@ -400,7 +410,9 @@ class PalmField {
 
     /** Bakes the impostor atlas once the palm textures are in (again after a lost context). */
     async prepareImpostors(renderer: THREE.WebGLRenderer): Promise<void> {
+        if (!this.spots.length) return;
         await Promise.all(['generated/palm_trunk', 'generated/fan_fronds', 'generated/palm_fronds'].map(whenWorldTextureLoaded));
+        if (this.disposed) return;
         const [width, height] = ATLAS_SIZE[this.tier];
         const target = new THREE.WebGLRenderTarget(width, height, {
             colorSpace: THREE.SRGBColorSpace,
@@ -416,7 +428,9 @@ class PalmField {
         bakeImpostors(renderer, geometry, this.M, target);
 
         const card = new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0);
-        const mesh = new THREE.InstancedMesh(card, impostorMaterial(this.M, target.texture, this.tier), this.spots.length);
+        const mat = impostorMaterial(this.M, target.texture, this.tier);
+        this.impostorMat = mat;
+        const mesh = new THREE.InstancedMesh(card, mat, this.spots.length);
         mesh.name = 'palm-impostors';
         mesh.geometry.setAttribute('impostor', new THREE.InstancedBufferAttribute(new Float32Array(this.spots.length * 4), 4));
         mesh.castShadow = false;
@@ -428,15 +442,59 @@ class PalmField {
 
         // A lost context takes the rendered atlas with it: near geometry
         // until it is baked again on the restored context
-        renderer.domElement.addEventListener('webglcontextlost', () => {
+        this.boundRenderer = renderer;
+        this.onContextLost = () => {
             this.baked = false;
             this.dirty = true;
-        });
-        renderer.domElement.addEventListener('webglcontextrestored', () => {
+        };
+        this.onContextRestored = () => {
+            if (this.disposed) return;
             bakeImpostors(renderer, geometry, this.M, target);
             this.baked = true;
             this.dirty = true;
-        });
+        };
+        renderer.domElement.addEventListener('webglcontextlost', this.onContextLost);
+        renderer.domElement.addEventListener('webglcontextrestored', this.onContextRestored);
+    }
+
+    /** Disposes every GPU buffer, depth material, impostor render target, and context listener. */
+    dispose(): void {
+        if (this.disposed) return;
+        this.disposed = true;
+        if (this.boundRenderer?.domElement) {
+            if (this.onContextLost) this.boundRenderer.domElement.removeEventListener('webglcontextlost', this.onContextLost);
+            if (this.onContextRestored) this.boundRenderer.domElement.removeEventListener('webglcontextrestored', this.onContextRestored);
+        }
+        this.boundRenderer = null;
+        this.onContextLost = null;
+        this.onContextRestored = null;
+        for (const kind of KINDS) {
+            const meshes = this.kinds[kind];
+            if (!meshes) continue;
+            meshes.geometry.trunk.dispose();
+            meshes.geometry.fronds.dispose();
+            meshes.trunk.dispose();
+            meshes.fronds.dispose();
+            delete this.kinds[kind];
+        }
+        for (const mat of this.depthMaterials) mat.dispose();
+        this.depthMaterials.length = 0;
+        if (this.impostors) {
+            this.impostors.geometry.dispose();
+            this.impostors.dispose();
+            this.impostors = null;
+        }
+        if (this.impostorMat) {
+            this.impostorMat.dispose();
+            this.impostorMat = null;
+        }
+        if (this.bake) {
+            this.bake.target.dispose();
+            this.bake = null;
+        }
+        this.baked = false;
+        this.group.clear();
+        if (field === this) field = null;
     }
 
     /** Picks near geometry or impostor per palm for this camera position. */
@@ -531,13 +589,25 @@ function windDepthMaterial(): THREE.MeshDepthMaterial {
 let field: PalmField | null = null;
 let impostorsReady: Promise<void> = Promise.resolve();
 
+/** Creates an owned PalmField instance and kicks off impostor baking when a renderer is present. */
+export function createPalmField(M: WorldMaterials, spots: PalmSpot[], tier: RenderTier, renderer: THREE.WebGLRenderer | null): PalmField {
+    const next = new PalmField(M, spots, tier);
+    field = next;
+    impostorsReady = renderer && spots.length
+        ? next.prepareImpostors(renderer).catch(error => console.warn('Palm impostors failed', error))
+        : Promise.resolve();
+    return next;
+}
+
 /** Instanced palms with wind and far impostors (one field per city). */
 export function createPalms(M: WorldMaterials, spots: PalmSpot[], tier: RenderTier, renderer: THREE.WebGLRenderer | null): THREE.Group {
-    field = new PalmField(M, spots, tier);
-    if (renderer) {
-        impostorsReady = field.prepareImpostors(renderer).catch(error => console.warn('Palm impostors failed', error));
-    }
-    return field.group;
+    return createPalmField(M, spots, tier, renderer).group;
+}
+
+/** Disposes the active palm field (if any). */
+export function disposePalms(): void {
+    field?.dispose();
+    field = null;
 }
 
 /** Resolves once the impostor atlas is baked (or failed). */

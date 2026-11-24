@@ -223,6 +223,7 @@ export function patchWorldMaterial<T extends THREE.Material>(material: T, option
 		vWPos = ( modelMatrix * worldPosition4 ).xyz;
 	}`);
         let f = shader.fragmentShader.replace('#include <common>', /* glsl */`#include <common>
+#define BULLI_HAS_SUN_DIR
 uniform vec3 uSunDir;
 uniform vec3 uSunColor;
 uniform sampler2D uNoise;

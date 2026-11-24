@@ -37,6 +37,18 @@ interface ManifestEntry {
 const manifest = JSON.parse(fs.readFileSync(path.join(TEXTURES, 'manifest.json'), 'utf8')) as {
     textures: Record<string, ManifestEntry>;
 };
+const biomesManifest = JSON.parse(fs.readFileSync(path.join(TEXTURES, 'biomes/manifest.json'), 'utf8')) as {
+    textures: Record<string, ManifestEntry>;
+};
+const billboardsManifest = JSON.parse(fs.readFileSync(path.join(TEXTURES, 'billboards/manifest.json'), 'utf8')) as {
+    textures: Record<string, ManifestEntry>;
+};
+
+const ALL_MANIFEST_ENTRIES: ManifestEntry[] = [
+    ...Object.values(manifest.textures),
+    ...Object.values(biomesManifest.textures).map(e => ({ ...e, file: `biomes/${e.file}` })),
+    ...Object.values(billboardsManifest.textures).map(e => ({ ...e, file: `billboards/${e.file}` }))
+];
 
 interface Ktx2Info {
     width: number;
@@ -77,7 +89,7 @@ function transferByName(file: string): number | null {
 
 describe('the shipped KTX2 textures', () => {
     const files = ktx2Files(TEXTURES).sort();
-    const entries = Object.values(manifest.textures);
+    const entries = ALL_MANIFEST_ENTRIES;
 
     it('are exactly the ones in the manifest', () => {
         expect(files.length).toBeGreaterThan(0);

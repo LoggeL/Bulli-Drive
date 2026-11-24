@@ -77,6 +77,16 @@ export class Bulli {
         this.model.setBodyPose(motion, scale);
     }
 
+    /** Forward speed in metres per second (unambiguous SI units; `speed` stays legacy m/tick). */
+    get speedMetersPerSec(): number {
+        return this.vehicle ? this.vehicle.forwardSpeed : this.speed * 60;
+    }
+
+    /** Top speed in metres per second (unambiguous SI units; `maxSpeed` stays legacy m/tick). */
+    get maxSpeedMetersPerSec(): number {
+        return this.vehicle ? this.vehicle.car.params.topSpeed : this.maxSpeed * 60;
+    }
+
     /** Height of the wheels over the ground on screen (m): the contact shadow fades. */
     get airHeight(): number {
         return this.model.airHeight;

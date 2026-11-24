@@ -87,6 +87,12 @@ export interface ChaseTarget {
     // 0..1, speed relative to the current top speed
     speedRatio: number;
     boost: boolean;
+    // Optional lateral slip angle (rad) for gentle drift counter-framing
+    slipAngle?: number;
+    // Optional wheel height above terrain (m) for crest/airtime downward look bias
+    airHeight?: number;
+    // Optional reverse flag for smooth reverse peek
+    reverse?: boolean;
 }
 
 function dampingFactor(rate: number, dt: number): number {
@@ -96,6 +102,19 @@ function dampingFactor(rate: number, dt: number): number {
 function dampAngle(current: number, target: number, amount: number): number {
     const shortestDelta = Math.atan2(Math.sin(target - current), Math.cos(target - current));
     return current + shortestDelta * amount;
+}
+
+function clamp(v: number, lo: number, hi: number): number {
+    return v < lo ? lo : v > hi ? hi : v;
+}
+
+let activeChaseCamera: ChaseCamera | null = null;
+
+/** Triggers subtle micro-shake / FOV punch on the active ChaseCamera (no-op if none active). */
+export function kickActiveChaseCamera(shake: number, fovDeg = 0): void {
+    if (!activeChaseCamera) return;
+    if (shake > 0) activeChaseCamera.kickShake(shake);
+    if (fovDeg > 0) activeChaseCamera.kickBoostFov(fovDeg);
 }
 
 export class ChaseCamera {
@@ -111,6 +130,13 @@ export class ChaseCamera {
     // The height the rig follows and its vertical speed
     private followY = 0;
     private followVy = 0;
+    // Dynamic feel layers (zero effect when idle)
+    private shakeAmp = 0;
+    private shakePhase = 0;
+    private fovKick = 0;
+    private driftShift = 0;
+    private reverseBlend = 0;
+    private airLookBias = 0;
 
     constructor(profile: ChaseProfile) {
         this.profile = profile;
@@ -126,12 +152,23 @@ export class ChaseCamera {
         return this.mobile ? this.profile.mobileFov : this.profile.baseFov;
     }
 
+    /** Adds a brief, damped micro-shake impulse (e.g. boost pad, drift mini-turbo, hard landing). */
+    kickShake(intensity: number): void {
+        this.shakeAmp = Math.min(0.22, Math.max(this.shakeAmp, Math.max(0, intensity)));
+    }
+
+    /** Adds a temporary FOV punch (degrees) that smoothly settles back to target FOV. */
+    kickBoostFov(degrees = 4.5): void {
+        this.fovKick = Math.min(8, Math.max(this.fovKick, Math.max(0, degrees)));
+    }
+
     /**
      * Moves the camera towards its place behind the target. With snap (spawn,
      * teleport) or a jump of more than CONFIG.cameraTeleportDistance it jumps
      * there directly. Returns whether it snapped.
      */
     update(dt: number, camera: THREE.PerspectiveCamera, target: ChaseTarget, snap: boolean): boolean {
+        activeChaseCamera = this;
         const p = this.profile;
         const carPos = target.position;
         const speedRatio = target.speedRatio;
@@ -139,48 +176,75 @@ export class ChaseCamera {
         const movedDistanceSq = this.rigReady ? this.lastCarPosition.distanceToSquared(carPos) : 0;
         const teleportThresholdSq = CONFIG.cameraTeleportDistance * CONFIG.cameraTeleportDistance;
         const shouldSnap = !this.rigReady || snap || movedDistanceSq > teleportThresholdSq;
+        const clampedDt = Math.min(Math.max(dt, 0), 0.1);
 
         if (shouldSnap) {
             this.cameraYaw = target.yaw;
             this.followY = carPos.y;
             this.followVy = 0;
+            this.shakeAmp = 0;
+            this.fovKick = 0;
+            this.driftShift = 0;
+            this.reverseBlend = target.reverse ? 1 : 0;
+            this.airLookBias = 0;
         } else {
             this.cameraYaw = dampAngle(this.cameraYaw, target.yaw, dampingFactor(p.yawDamping, dt));
             if (dt > 0) {
                 const vy = (carPos.y - this.lastCarPosition.y) / dt;
                 this.followVy += (vy - this.followVy) * dampingFactor(p.verticalSpeedDamping, dt);
-                this.followY += this.followVy * Math.min(dt, 0.1);
+                this.followY += this.followVy * clampedDt;
                 this.followY += (carPos.y - this.followY) * dampingFactor(p.verticalDamping, dt);
             }
+            // Decay punch/shake layers
+            this.shakeAmp *= Math.exp(-11 * clampedDt);
+            if (this.shakeAmp < 1e-4) this.shakeAmp = 0;
+            this.shakePhase += clampedDt * 58;
+            this.fovKick *= Math.exp(-4.5 * clampedDt);
+            if (this.fovKick < 1e-3) this.fovKick = 0;
+
+            const desiredDrift = target.slipAngle ? clamp(-target.slipAngle * 1.15, -0.9, 0.9) : 0;
+            this.driftShift += (desiredDrift - this.driftShift) * dampingFactor(5.5, dt);
+
+            const desiredReverse = target.reverse ? 1 : 0;
+            this.reverseBlend += (desiredReverse - this.reverseBlend) * dampingFactor(4.5, dt);
+
+            const airH = target.airHeight ?? 0;
+            const desiredAirBias = airH > 1.2 ? -Math.min(1.6, (airH - 1.2) * 0.28) : 0;
+            this.airLookBias += (desiredAirBias - this.airLookBias) * dampingFactor(5.0, dt);
         }
         const followY = this.followY;
 
         const portraitScale = camera.aspect < 1 ? p.portraitScale : 1;
         const distanceScale = (this.mobile ? p.mobileDistanceScale : 1) * portraitScale;
         const heightScale = (this.mobile ? p.mobileHeightScale : 1) * portraitScale;
+        const boostPull = (boostActive ? p.distanceBoostGain : 0) + (this.fovKick / 8) * 0.04;
         const distance = p.distance * distanceScale
-            * (1 + speedRatio * p.distanceSpeedGain + (boostActive ? p.distanceBoostGain : 0));
+            * (1 + speedRatio * p.distanceSpeedGain + boostPull);
         let height = p.height * heightScale
-            * (1 + speedRatio * p.heightSpeedGain + (boostActive ? p.heightBoostGain : 0));
+            * (1 + speedRatio * p.heightSpeedGain + (boostActive ? p.heightBoostGain : 0))
+            + this.reverseBlend * 0.75;
         if (portraitScale !== 1) height = Math.min(height, p.portraitMaxHeight);
         const forwardX = Math.sin(this.cameraYaw);
         const forwardZ = Math.cos(this.cameraYaw);
-        const lookAhead = p.lookAhead + p.speedLookAhead * speedRatio;
+        // Right vector perpendicular to cameraYaw
+        const rightX = forwardZ;
+        const rightZ = -forwardX;
+        const lookAhead = (p.lookAhead + p.speedLookAhead * speedRatio) * (1 - this.reverseBlend * 1.4);
 
         this.cameraTarget.set(
-            carPos.x - forwardX * distance,
+            carPos.x - forwardX * distance + rightX * this.driftShift,
             followY + height,
-            carPos.z - forwardZ * distance
+            carPos.z - forwardZ * distance + rightZ * this.driftShift
         );
         this.desiredLookAt.set(
-            carPos.x + forwardX * lookAhead,
-            followY + p.lookAtY,
-            carPos.z + forwardZ * lookAhead
+            carPos.x + forwardX * lookAhead + rightX * (this.driftShift * 0.45),
+            followY + p.lookAtY + this.airLookBias,
+            carPos.z + forwardZ * lookAhead + rightZ * (this.driftShift * 0.45)
         );
 
         const targetFov = Math.min(
             p.maxFov,
-            this.baseFov + speedRatio * p.speedFov + (boostActive ? p.boostFov : 0)
+            this.baseFov + speedRatio * p.speedFov + (boostActive ? p.boostFov : 0) + this.fovKick
         );
 
         if (shouldSnap) {
@@ -192,6 +256,15 @@ export class ChaseCamera {
             camera.position.lerp(this.cameraTarget, dampingFactor(p.positionDamping, dt));
             this.smoothedLookAt.lerp(this.desiredLookAt, dampingFactor(p.lookDamping, dt));
             camera.fov += (targetFov - camera.fov) * dampingFactor(p.fovDamping, dt);
+        }
+
+        // Apply subtle damped micro-shake offset without polluting smoothed base pose
+        if (this.shakeAmp > 0 && !shouldSnap) {
+            const sx = Math.sin(this.shakePhase) * this.shakeAmp;
+            const sy = Math.cos(this.shakePhase * 1.37) * this.shakeAmp * 0.7;
+            camera.position.x += rightX * sx;
+            camera.position.y += sy;
+            camera.position.z += rightZ * sx;
         }
 
         camera.lookAt(this.smoothedLookAt);

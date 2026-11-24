@@ -54,6 +54,11 @@ export interface BodyMotionInput {
     // for the spring; 0 where unknown (remote cars)
     loadX: number;
     yawRate: number;
+    // Optional per-class chassis response scalars (from VehicleParams)
+    rollGain?: number;
+    pitchGain?: number;
+    suspFreq?: number;
+    suspTravel?: number;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -109,10 +114,12 @@ export class BodyMotion {
         this.groundRoll += (terrainRoll - this.groundRoll) * tilt;
 
         const grounded = input.grounded;
+        const pitchGain = input.pitchGain ?? 1;
+        const rollGain = input.rollGain ?? 1;
         // Nose up when accelerating, down when braking; the body leans out
         // of turns; nothing of it in the air
-        const pitchTarget = grounded ? clamp(-input.loadX * PITCH_PER_ACCEL, -MAX_PITCH, MAX_PITCH) : 0;
-        const rollTarget = grounded ? clamp(input.speed * input.yawRate * ROLL_PER_ACCEL, -MAX_ROLL, MAX_ROLL) : 0;
+        const pitchTarget = grounded ? clamp(-input.loadX * PITCH_PER_ACCEL * pitchGain, -MAX_PITCH * Math.max(1, pitchGain), MAX_PITCH * Math.max(1, pitchGain)) : 0;
+        const rollTarget = grounded ? clamp(input.speed * input.yawRate * ROLL_PER_ACCEL * rollGain, -MAX_ROLL * Math.max(1, rollGain), MAX_ROLL * Math.max(1, rollGain)) : 0;
         const spring = damp(SPRING_RATE, dt);
         this.springPitch += (pitchTarget - this.springPitch) * spring;
         this.springRoll += (rollTarget - this.springRoll) * spring;
@@ -131,8 +138,10 @@ export class BodyMotion {
         this.bodyRoll = this.worldRoll - this.groundRoll + this.springRoll;
 
         const T = SIM_TUNING;
-        const k = (2 * Math.PI * T.SUSP_FREQ) ** 2;
-        const travel = clamp(input.susp, -T.SUSP_TRAVEL, T.GRAVITY / k) * SUSP_VISUAL;
+        const freq = input.suspFreq ?? T.SUSP_FREQ;
+        const maxTravel = input.suspTravel ?? T.SUSP_TRAVEL;
+        const k = (2 * Math.PI * freq) ** 2;
+        const travel = clamp(input.susp, -maxTravel, T.GRAVITY / k) * SUSP_VISUAL;
         this.airHeight = Math.max(0, input.airHeight);
         this.bodyY = this.airHeight + travel;
         this.wheelDrop = travel;

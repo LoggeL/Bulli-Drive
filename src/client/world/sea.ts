@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Heightfield } from '../../shared/map/heightfield.js';
+import type { MapAtmosphereSpec } from '../../shared/map/registry.js';
 import type { RenderTier } from '../effects/renderQuality.js';
 import { patchWorldMaterial } from './materials.js';
 
@@ -50,18 +51,31 @@ float groundAt( vec2 p ) {
 float seaDepth = 0.0;
 float seaFoam = 0.0;`;
 
-export function createSea(hf: Heightfield, tier: RenderTier): THREE.Mesh {
+export function createSea(hf: Heightfield, tier: RenderTier, atmosphere?: MapAtmosphereSpec): THREE.Mesh {
     const geometry = new THREE.PlaneGeometry(SEA_EXTENT, SEA_EXTENT, 1, 1).rotateX(-Math.PI / 2);
     geometry.translate(0, hf.spec.waterLevel, 0);
+    const shallowColor = atmosphere && atmosphere.biome !== 'coastal'
+        ? new THREE.Color(atmosphere.waterColor)
+        : new THREE.Color(0.08, 0.3, 0.27);
+    const deepColor = atmosphere && atmosphere.biome !== 'coastal'
+        ? new THREE.Color(atmosphere.waterDeepColor)
+        : new THREE.Color(0.012, 0.055, 0.075);
     let material: THREE.Material;
+    let hTex: THREE.DataTexture | null = null;
     if (tier === 'software') {
-        material = patchWorldMaterial(new THREE.MeshLambertMaterial({ color: new THREE.Color(0.05, 0.19, 0.21) }), {});
+        const lambertColor = atmosphere && atmosphere.biome !== 'coastal'
+            ? new THREE.Color(atmosphere.waterColor).lerp(new THREE.Color(atmosphere.waterDeepColor), 0.35)
+            : new THREE.Color(0.05, 0.19, 0.21);
+        material = patchWorldMaterial(new THREE.MeshLambertMaterial({ color: lambertColor }), {});
     } else {
         const spec = hf.spec;
+        hTex = heightTexture(hf);
         const uniforms = {
-            tHeights: { value: heightTexture(hf) },
+            tHeights: { value: hTex },
             uHeightGrid: { value: new THREE.Vector4(spec.originX, spec.originZ, spec.cellSize, spec.cols) },
-            uHeightScale: { value: new THREE.Vector2(spec.heightOffset, spec.heightScale) }
+            uHeightScale: { value: new THREE.Vector2(spec.heightOffset, spec.heightScale) },
+            uSeaShallow: { value: shallowColor },
+            uSeaDeep: { value: deepColor }
         };
         const standard = new THREE.MeshStandardMaterial({
             color: new THREE.Color(0.02, 0.09, 0.1),
@@ -72,15 +86,13 @@ export function createSea(hf: Heightfield, tier: RenderTier): THREE.Mesh {
         });
         material = patchWorldMaterial(standard, {
             uniforms,
-            decl: HEIGHT_GLSL,
+            decl: `${HEIGHT_GLSL}\nuniform vec3 uSeaShallow;\nuniform vec3 uSeaDeep;`,
             color: /* glsl */`
 	{
 		float ground = groundAt( vWPos.xz );
 		seaDepth = max( 0.0, vWPos.y - ground );
-		// Turquoise over sand, deep blue green further out
-		vec3 shallow = vec3( 0.08, 0.3, 0.27 );
-		vec3 deep = vec3( 0.012, 0.055, 0.075 );
-		diffuseColor.rgb = mix( shallow, deep, smoothstep( 0.4, 7.0, seaDepth ) );
+		// Turquoise over sand, deep blue green further out (or map-tinted water)
+		diffuseColor.rgb = mix( uSeaShallow, uSeaDeep, smoothstep( 0.4, 7.0, seaDepth ) );
 		// Surf: bands of foam running in, broken up by noise, thickest where it breaks
 		float n = texture2D( uNoise, vWPos.xz / 23.0 + vec2( uTime * 0.01, 0.0 ) ).r;
 		float n2 = texture2D( uNoise, vWPos.xz / 3.7 - vec2( 0.0, uTime * 0.03 ) ).g;
@@ -112,6 +124,7 @@ export function createSea(hf: Heightfield, tier: RenderTier): THREE.Mesh {
     }
     const mesh = new THREE.Mesh(geometry, material);
     mesh.name = 'sea';
+    if (hTex) mesh.userData.heightTexture = hTex;
     mesh.receiveShadow = tier !== 'software';
     mesh.castShadow = false;
     mesh.matrixAutoUpdate = false;

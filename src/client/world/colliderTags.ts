@@ -26,3 +26,8 @@ export function markColliderAt(tag: ColliderTag, x: number, z: number): void {
 export function listTaggedColliders(): TaggedCollider[] {
     return drawnAt.map(prop => ({ ...prop }));
 }
+
+/** Clears tagged colliders before rebuilding a new map world. */
+export function clearColliderTags(): void {
+    drawnAt.length = 0;
+}

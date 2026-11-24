@@ -1,6 +1,9 @@
 import * as THREE from 'three';
+import type { GridSpec } from '../../shared/map/heightfield.js';
+import type { MapAtmosphereSpec } from '../../shared/map/registry.js';
 import type { RoadNetwork } from '../../shared/map/roadNetwork.js';
 import type { RenderTier } from '../effects/renderQuality.js';
+import { biomePbr } from './biomeTextures.js';
 import { patchWorldMaterial } from './materials.js';
 import { buildRoadGeometry, ROAD_LAYERS, splitByChunk, type HeightFn, type MeshArrays, type RoadLayer } from './roadGeometry.js';
 import { worldTexture } from './textures.js';
@@ -224,6 +227,29 @@ const PAVER_COLOR = /* glsl */`
 		diffuseColor.rgb = mix( diffuseColor.rgb * vec3( 0.93, 0.88, 0.8 ) * 0.85, diffuseColor.rgb * tile * 1.6, paverJoint );
 	}`;
 
+// Snow piste: groomed powder ruts, softly ragged snowbank edges
+const SNOW_ROAD_COLOR = /* glsl */`
+	{
+		float a = abs( vRoad.x );
+		float hw = vRoadB.x;
+		vec4 n1 = texture2D( uNoise, vWPos.xz / 7.5 );
+		float edge = hw - 0.25 - 0.85 * n1.r;
+		if ( a > edge ) discard;
+		float t = abs( a - hw * 0.45 ) - 0.25;
+		float ruts = exp( -( t * t ) / 0.22 );
+		diffuseColor.rgb *= mix( 0.94, 1.05, texture2D( uNoise, vWPos.xz / 18.0 ).b );
+		diffuseColor.rgb *= 1.0 - 0.08 * ruts * ( 0.5 + 0.5 * n1.g );
+	}`;
+
+// Frozen lake ice oval: glossy sheen with subtle skate/tire scrape streaks
+const ICE_ROAD_COLOR = /* glsl */`
+	{
+		vec4 n1 = texture2D( uNoise, vWPos.xz / 9.0 );
+		vec4 n2 = texture2D( uNoise, vWPos.xz / 29.0 + 0.17 );
+		float frost = smoothstep( 0.52, 0.78, n1.g * 0.65 + n2.r * 0.35 );
+		diffuseColor.rgb = mix( diffuseColor.rgb * vec3( 0.88, 0.96, 1.04 ), vec3( 0.84, 0.9, 0.96 ), frost * 0.35 );
+	}`;
+
 interface PbrMaps {
     map: THREE.Texture;
     // Desktop only (phones skip the download)
@@ -270,12 +296,47 @@ const LOOKS: Record<RoadLayer, LayerLook> = {
     dirt: { maps: () => pbr('sand'), period: 3, albedo: 0x8a7458, tint: [0.72, 0.58, 0.45], color: TRACK_COLOR, envMapIntensity: 0.4, offset: -2, paint: false },
     gravel: { maps: () => pbr('roof_gravel'), period: 2.5, albedo: 0x8f887d, tint: [0.92, 0.88, 0.82], color: TRACK_COLOR, envMapIntensity: 0.4, offset: -2, paint: false },
     sand: { maps: () => pbr('sand'), period: 3, albedo: 0xc9b596, tint: [0.95, 0.93, 0.9], color: TRACK_COLOR, envMapIntensity: 0.45, offset: -2, paint: false },
+    snow: {
+        maps: () => biomePbr('alpine_snow'), period: 4, albedo: 0xdce6f0, color: SNOW_ROAD_COLOR, envMapIntensity: 0.65, offset: -2, paint: false,
+        rough: 'roughnessFactor = clamp( roughnessFactor * 0.95, 0.55, 0.95 );'
+    },
+    ice: {
+        maps: () => biomePbr('alpine_ice'), period: 4, albedo: 0xa2cde4, color: ICE_ROAD_COLOR, envMapIntensity: 1.05, offset: -2, paint: false,
+        rough: 'roughnessFactor = clamp( roughnessFactor * 0.42, 0.14, 0.42 );'
+    },
     walk: { maps: () => pbr('sidewalk'), period: 2, albedo: 0xcee6ea, tint: [1.1, 1.33, 1.42], color: WALK_COLOR, envMapIntensity: 0.7, offset: -1, paint: false },
     pavers: { maps: () => pbr('sidewalk'), period: 2, albedo: 0xb9b2a8, color: PAVER_COLOR, envMapIntensity: 0.6, offset: -1, paint: false }
 };
 
-export function createRoadMaterial(layer: RoadLayer, tier: RenderTier): THREE.Material {
-    const look = LOOKS[layer];
+function layerLookForBiome(layer: RoadLayer, biome: MapAtmosphereSpec['biome']): LayerLook {
+    const base = LOOKS[layer];
+    if (biome === 'coastal') return base;
+    if (biome === 'quarry') {
+        if (layer === 'gravel') return { ...base, maps: () => biomePbr('quarry_gravel'), period: 3, albedo: 0x9c8971, tint: undefined };
+        if (layer === 'dirt') return { ...base, maps: () => biomePbr('quarry_red_rock'), period: 4, albedo: 0xa86c4a, tint: undefined };
+        if (layer === 'concrete') return { ...base, maps: () => biomePbr('concrete_bowl'), period: 3.5, albedo: 0xb6b0a6, tint: undefined };
+    }
+    if (biome === 'alpine') {
+        if (layer === 'gravel') return { ...base, maps: () => biomePbr('alpine_rock'), period: 4, albedo: 0x7b7f85, tint: undefined };
+    }
+    if (biome === 'forge') {
+        if (layer === 'pavers') {
+            return {
+                ...base,
+                maps: () => biomePbr('forge_cobble'),
+                period: 3,
+                albedo: 0x565254,
+                tint: undefined,
+                color: '{ diffuseColor.rgb *= mix( 0.92, 1.08, texture2D( uNoise, vWPos.xz / 14.0 ).r ); }',
+                envMapIntensity: 0.75
+            };
+        }
+    }
+    return base;
+}
+
+export function createRoadMaterial(layer: RoadLayer, tier: RenderTier, biome: MapAtmosphereSpec['biome'] = 'coastal'): THREE.Material {
+    const look = layerLookForBiome(layer, biome);
     const software = tier === 'software';
     // The albedo maps carry the colour; a tint only where a texture stands in
     // for another material (sand for earth, gravel)
@@ -338,23 +399,34 @@ function toGeometry(arrays: MeshArrays): THREE.BufferGeometry {
     return geometry;
 }
 
-// The 4 × 4 blocks of 500 m over the map's data square (-1000 to 1000 m)
+// The 4 × 4 blocks over the map's data square (default: -1000 to 1000 m, 500 m blocks)
 const BLOCK_SIZE = 500;
-export function roadBlock(x: number, z: number): number {
-    const i = Math.min(3, Math.max(0, Math.floor((x + 1000) / BLOCK_SIZE)));
-    const j = Math.min(3, Math.max(0, Math.floor((z + 1000) / BLOCK_SIZE)));
+export function roadBlock(x: number, z: number, originX = -1000, originZ = -1000, blockSize = BLOCK_SIZE): number {
+    const i = Math.min(3, Math.max(0, Math.floor((x - originX) / blockSize)));
+    const j = Math.min(3, Math.max(0, Math.floor((z - originZ) / blockSize)));
     return j * 4 + i;
 }
 
-/** The roads, lots and sidewalks of the map: one mesh per layer and 500 m block. */
-export function createRoads(net: RoadNetwork, height: HeightFn, tier: RenderTier): THREE.Group {
+/** The roads, lots and sidewalks of the map: one mesh per layer and block. */
+export function createRoads(
+    net: RoadNetwork,
+    height: HeightFn,
+    tier: RenderTier,
+    biome: MapAtmosphereSpec['biome'] = 'coastal',
+    grid?: GridSpec
+): THREE.Group {
     const group = new THREE.Group();
     group.name = 'roads';
+    const originX = grid?.originX ?? -1000;
+    const originZ = grid?.originZ ?? -1000;
+    const extent = grid ? (grid.cols - 1) * grid.cellSize : 2000;
+    const blockSize = Math.max(250, extent / 4);
+    const blockOf = (x: number, z: number) => roadBlock(x, z, originX, originZ, blockSize);
     const layers = buildRoadGeometry(net, height);
     for (const layer of ROAD_LAYERS) {
         if (!layers[layer].index.length) continue;
-        const material = createRoadMaterial(layer, tier);
-        for (const [block, arrays] of splitByChunk(layers[layer], roadBlock)) {
+        const material = createRoadMaterial(layer, tier, biome);
+        for (const [block, arrays] of splitByChunk(layers[layer], blockOf)) {
             const mesh = new THREE.Mesh(toGeometry(arrays), material);
             mesh.name = `road-${layer}-${block}`;
             mesh.receiveShadow = true;

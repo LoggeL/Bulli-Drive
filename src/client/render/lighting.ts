@@ -1,9 +1,13 @@
 import * as THREE from 'three';
+import type { MapAtmosphereSpec } from '../../shared/map/registry.js';
 import { state } from '../state.js';
 import { gameHooks } from '../game/hooks.js';
 import { detectRenderTier, glRendererName, shadowMapAllowed, type RenderTier } from '../effects/renderQuality.js';
-import { createSky, updateSkyDome } from './sky.js';
-import { LOOK, SUN_DIRECTION, WORLD_UNIFORMS, createSceneFog, installGrade, installHeightFog } from './look.js';
+import { createSky, updateSkyDome, type Sky } from './sky.js';
+import {
+    applyMapAtmosphere as applyAtmosphereUniforms, LOOK, SUN_DIRECTION, WORLD_UNIFORMS,
+    createSceneFog, installGrade, installHeightFog, type AtmosphereContext
+} from './look.js';
 import { initWorldTextures, worldTexture, whenWorldTextureLoaded } from '../world/textures.js';
 
 // Realistic sunset lighting (graphics G1, values in look.ts): ACES with a mild
@@ -58,13 +62,25 @@ export const LIGHTING = {
     }
 };
 
-// Shadow camera basis (see Matrix4.lookAt): texel snapping and the coverage
-// test work in these axes
-const _lightX = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), SUN_DIRECTION).normalize();
-const _lightY = new THREE.Vector3().crossVectors(SUN_DIRECTION, _lightX);
+// Shadow camera basis (recomputed whenever the active map's sun direction changes)
+const _up = new THREE.Vector3(0, 1, 0);
+const _lightX = new THREE.Vector3();
+const _lightY = new THREE.Vector3();
+function updateLightBasis(): void {
+    const dir = WORLD_UNIFORMS.uSunDir.value;
+    _lightX.crossVectors(_up, dir);
+    if (_lightX.lengthSq() < 1e-6) _lightX.set(1, 0, 0);
+    else _lightX.normalize();
+    _lightY.crossVectors(dir, _lightX);
+}
+updateLightBasis();
 
 let sun: THREE.DirectionalLight | null = null;
+let hemi: THREE.HemisphereLight | null = null;
+let skyHandle: Sky | null = null;
 let skyDome: THREE.Mesh | null = null;
+let activeScene: THREE.Scene | null = null;
+let activeRenderer: THREE.WebGLRenderer | null = null;
 let shadowHalfExtent = 0;
 let shadowTexel = 0;
 let renderTier: RenderTier = 'desktop';
@@ -74,6 +90,28 @@ const _focus = new THREE.Vector3();
 const _viewDirection = new THREE.Vector3();
 const _side = new THREE.Vector3();
 const _snapped = new THREE.Vector3();
+
+/**
+ * Applies a map's atmosphere to live lighting, fog, sky, and shadow basis.
+ * Works both with explicit context (from server-ui / tests) and with the
+ * renderer/scene/lights set up by setupLighting().
+ */
+export function applyMapAtmosphere(spec: MapAtmosphereSpec, ctx?: Partial<AtmosphereContext>): void {
+    const scene = ctx?.scene ?? activeScene;
+    if (scene) {
+        applyAtmosphereUniforms(spec, {
+            scene,
+            sun: ctx?.sun ?? sun ?? undefined,
+            hemi: ctx?.hemi ?? hemi ?? undefined,
+            renderer: ctx?.renderer ?? activeRenderer ?? undefined,
+            sky: ctx?.sky ?? skyHandle ?? undefined
+        });
+    } else {
+        applyAtmosphereUniforms(spec);
+    }
+    updateLightBasis();
+    if (sun) placeSun(_focus);
+}
 
 /** The render tier the lighting (and the world materials) were set up for. */
 export function lightingTier(): RenderTier {
@@ -120,16 +158,21 @@ export function setupLighting(scene: THREE.Scene, renderer: THREE.WebGLRenderer)
     // rate. A hemisphere fill in the sky's colors takes over. Phones render
     // it from the procedural sky without the 2.7 MB of HDRIs.
     const useEnvironment = tier !== 'software';
+    activeScene = scene;
+    activeRenderer = renderer;
     const sky = createSky(renderer, scene, {
         environment: useEnvironment,
         hdri: tier === 'desktop',
         simple: tier === 'software',
         beforeEnvironment: whenWorldTextureLoaded('generated/world_noise')
     });
+    skyHandle = sky;
     skyDome = sky.dome;
     skyReady = sky.ready;
+    hemi = null;
     if (!useEnvironment) {
-        scene.add(new THREE.HemisphereLight(LOOK.hemiSky, LOOK.hemiGround, LOOK.hemiIntensity));
+        hemi = new THREE.HemisphereLight(LOOK.hemiSky, LOOK.hemiGround, LOOK.hemiIntensity);
+        scene.add(hemi);
     }
 
     const shadow = LIGHTING.shadow;
@@ -218,14 +261,15 @@ function shadowLookAhead(view: THREE.Vector3): number {
 // the light's view plane, so static shadow edges do not crawl as the car moves.
 function placeSun(focus: THREE.Vector3): void {
     if (!sun) return;
+    const sunDir = WORLD_UNIFORMS.uSunDir.value;
     const x = Math.round(focus.dot(_lightX) / shadowTexel) * shadowTexel;
     const y = Math.round(focus.dot(_lightY) / shadowTexel) * shadowTexel;
-    const z = focus.dot(SUN_DIRECTION);
+    const z = focus.dot(sunDir);
     _snapped.copy(_lightX).multiplyScalar(x)
         .addScaledVector(_lightY, y)
-        .addScaledVector(SUN_DIRECTION, z);
+        .addScaledVector(sunDir, z);
     sun.target.position.copy(_snapped);
-    sun.position.copy(_snapped).addScaledVector(SUN_DIRECTION, LIGHTING.shadow.distance);
+    sun.position.copy(_snapped).addScaledVector(sunDir, LIGHTING.shadow.distance);
     sun.target.updateMatrixWorld();
 }
 

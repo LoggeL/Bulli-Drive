@@ -2,8 +2,9 @@ import type * as THREE from 'three';
 import type { MapData } from '../../shared/map/mapData.js';
 import type { RoomKind } from '../../shared/protocol.js';
 import { FetchTally } from '../assets/fetchTally.js';
-import { lightingTier } from '../render/lighting.js';
+import { applyMapAtmosphere, lightingTier } from '../render/lighting.js';
 import { state } from '../state.js';
+import { clearColliderTags } from './colliderTags.js';
 import { loadKit, type KitCatalog } from './kit.js';
 import { MapWorld } from './mapWorld.js';
 import { worldMaterials } from './worldMaterials.js';
@@ -49,21 +50,51 @@ export function kitStatus(): 'none' | 'loading' | 'ready' | 'failed' {
     return world?.hasKit() ? 'ready' : 'loading';
 }
 
-/** Builds the map's world into the scene (once per page). */
-export function createMapScene(map: MapData): MapWorld {
-    if (world) return world;
+/** Disposes the active map world (if any) and removes it from the scene. */
+export function disposeMapScene(): void {
+    if (!world) return;
+    const prev = world;
+    world = null;
+    state.scene.remove(prev.group);
+    prev.dispose();
+}
+
+/** Builds a MapWorld for `map`, disposing any prior map world first, and applies its atmosphere. */
+export function buildMapWorld(map: MapData): MapWorld {
+    if (world && world.map === map && !world.isDisposed) return world;
+    if (world) disposeMapScene();
+    clearColliderTags();
     const tier = lightingTier();
     detail = worldDetailFor(tier, typeof window === 'undefined' ? '' : window.location.search);
+    applyMapAtmosphere(map.atmosphere);
     world = new MapWorld(map, tier, worldMaterials(), WORLD_QUALITY[detail], state.renderer ?? null);
     state.scene.add(world.group);
     const built = world;
-    kit.then(catalog => { if (catalog) built.attachKit(catalog); });
+    kit.then(catalog => { if (catalog && !built.isDisposed) built.attachKit(catalog); });
     return world;
+}
+
+/** Builds the map's world into the scene (replaces cleanly if switched to another map). */
+export function createMapScene(map: MapData): MapWorld {
+    return buildMapWorld(map);
 }
 
 /** Per frame before rendering. */
 export function updateMapScene(camera: THREE.Camera): void {
     world?.update(camera);
+}
+
+/** Per frame dynamic updates (hero monuments, boost pads, discovery beacons). */
+export function updateMapDynamic(dt: number, elapsedSec: number, focusPos: { x: number; y: number; z: number }): void {
+    world?.updateDynamic(dt, elapsedSec, focusPos);
+}
+
+export function setMapDiscoveredIds(foundIds: ReadonlySet<string>, pinnedId: string | null): void {
+    world?.setDiscoveredIds(foundIds, pinnedId);
+}
+
+export function triggerMapDiscoveryFx(discoveryId: string): void {
+    world?.triggerDiscoveryFx(discoveryId);
 }
 
 export function setMapSceneRoom(kind: RoomKind | null): void {

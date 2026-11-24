@@ -1,3 +1,5 @@
+import type { DiscoveryAlloy } from '../../shared/map/discoverySchema.js';
+import { SURFACE } from '../../shared/map/types.js';
 import { state } from '../state.js';
 
 // Sound on or off (the menu's settings and its quick switch, docs/ui.md
@@ -295,4 +297,205 @@ export function playCollisionSound(intensity: number) {
 
     osc.start(curTime);
     osc.stop(curTime + 0.2);
+}
+
+const ALLOY_CHORDS: Record<DiscoveryAlloy, readonly number[]> = {
+    forge: [392.0, 493.88, 587.33, 783.99],
+    web: [523.25, 659.25, 783.99, 1046.5],
+    games: [440.0, 554.37, 659.25, 880.0],
+    ai: [329.63, 493.88, 659.25, 987.77],
+    film: [293.66, 440.0, 587.33, 880.0],
+    alpine: [587.33, 739.99, 880.0, 1174.66],
+    stunt: [349.23, 440.0, 523.25, 698.46],
+    coastal: [440.0, 523.25, 659.25, 880.0]
+};
+
+/** Harmonic arpeggio chime played when a player unlocks a discovery POI. */
+export function playDiscoveryChime(alloy: DiscoveryAlloy = 'forge'): void {
+    if (!state.audioCtx) return;
+    if (state.audioCtx.state === 'suspended') state.audioCtx.resume();
+
+    const ctx = state.audioCtx;
+    const t0 = ctx.currentTime;
+    const notes = ALLOY_CHORDS[alloy] ?? ALLOY_CHORDS.forge;
+    const out = soundOutput(ctx);
+
+    notes.forEach((freq, idx) => {
+        const start = t0 + idx * 0.065;
+        const dur = idx === notes.length - 1 ? 0.55 : 0.28;
+        const osc = ctx.createOscillator();
+        const over = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        over.type = 'sine';
+        osc.frequency.setValueAtTime(freq, start);
+        over.frequency.setValueAtTime(freq * 2, start);
+
+        const overGain = ctx.createGain();
+        overGain.gain.value = 0.22;
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.linearRampToValueAtTime(0.11, start + 0.018);
+        gain.gain.exponentialRampToValueAtTime(0.0008, start + dur);
+
+        osc.connect(gain);
+        over.connect(overGain);
+        overGain.connect(gain);
+        gain.connect(out);
+
+        osc.start(start);
+        over.start(start);
+        osc.stop(start + dur + 0.02);
+        over.stop(start + dur + 0.02);
+    });
+}
+
+/** Crisp futuristic turbo-zap played when hitting a boost pad. */
+export function playBoostPadSound(): void {
+    if (!state.audioCtx) return;
+    if (state.audioCtx.state === 'suspended') state.audioCtx.resume();
+
+    const ctx = state.audioCtx;
+    const t = ctx.currentTime;
+    const out = soundOutput(ctx);
+
+    const osc1 = ctx.createOscillator();
+    const osc2 = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc1.type = 'sawtooth';
+    osc2.type = 'triangle';
+    osc1.frequency.setValueAtTime(220, t);
+    osc1.frequency.exponentialRampToValueAtTime(940, t + 0.26);
+    osc2.frequency.setValueAtTime(330, t);
+    osc2.frequency.exponentialRampToValueAtTime(1410, t + 0.26);
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(600, t);
+    filter.frequency.exponentialRampToValueAtTime(2400, t + 0.26);
+    filter.Q.value = 1.8;
+
+    gain.gain.setValueAtTime(0.001, t);
+    gain.gain.linearRampToValueAtTime(0.14, t + 0.025);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.34);
+
+    osc1.connect(filter);
+    osc2.connect(filter);
+    filter.connect(gain);
+    gain.connect(out);
+
+    osc1.start(t);
+    osc2.start(t);
+    osc1.stop(t + 0.36);
+    osc2.stop(t + 0.36);
+}
+
+/** Punchy mini-turbo release whoosh scaled by drift charge tier (1..3). */
+export function playDriftKickSound(tier: 1 | 2 | 3): void {
+    if (!state.audioCtx) return;
+    if (state.audioCtx.state === 'suspended') state.audioCtx.resume();
+
+    const ctx = state.audioCtx;
+    const t = ctx.currentTime;
+    const out = soundOutput(ctx);
+    const dur = 0.2 + tier * 0.06;
+    const base = 180 + tier * 85;
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(base, t);
+    osc.frequency.exponentialRampToValueAtTime(base * 2.4, t + dur * 0.75);
+
+    gain.gain.setValueAtTime(0.001, t);
+    gain.gain.linearRampToValueAtTime(0.09 + tier * 0.025, t + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+
+    osc.connect(gain);
+    gain.connect(out);
+    osc.start(t);
+    osc.stop(t + dur + 0.02);
+}
+
+// Continuous subtle tire-surface noise synth (snow crunch, ice hiss, gravel rustle, drift screech)
+let surfaceNoise: AudioBufferSourceNode | null = null;
+let surfaceFilter: BiquadFilterNode | null = null;
+let surfaceGain: GainNode | null = null;
+let surfaceCtx: AudioContext | null = null;
+
+function ensureSurfaceNodes(ctx: AudioContext): boolean {
+    if (surfaceNoise && surfaceFilter && surfaceGain && surfaceCtx === ctx) return true;
+    try {
+        const len = Math.max(1, Math.floor(ctx.sampleRate * 1.5));
+        const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+        const data = buf.getChannelData(0);
+        // Deterministic LCG white noise so no unpredictable spikes
+        let seed = 0x51a7c3;
+        for (let i = 0; i < len; i++) {
+            seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+            data[i] = (seed / 0xffffffff) * 2 - 1;
+        }
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.loop = true;
+        const filter = ctx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.value = 900;
+        filter.Q.value = 1.2;
+        const gain = ctx.createGain();
+        gain.gain.value = 0;
+        src.connect(filter);
+        filter.connect(gain);
+        gain.connect(soundOutput(ctx));
+        src.start();
+        surfaceNoise = src;
+        surfaceFilter = filter;
+        surfaceGain = gain;
+        surfaceCtx = ctx;
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+/** Updates continuous tire/surface audio feedback (snow crunch, ice glide, gravel, asphalt slip). */
+export function updateSurfaceSound(surface: number, speedMs: number, slipAngle: number, grounded: boolean): void {
+    const ctx = state.audioCtx;
+    if (!ctx || ctx.state !== 'running') return;
+    if (!ensureSurfaceNodes(ctx) || !surfaceFilter || !surfaceGain) return;
+
+    const now = ctx.currentTime;
+    const speed = Math.abs(speedMs);
+    if (!grounded || speed < 1.5 || surface < 0) {
+        surfaceGain.gain.setTargetAtTime(0, now, 0.05);
+        return;
+    }
+
+    const slip = Math.min(1, Math.abs(slipAngle) / 0.45);
+    const speedFactor = Math.min(1, speed / 32);
+    let freq = 950;
+    let q = 1.4;
+    let targetGain = 0;
+
+    if (surface === SURFACE.snow) {
+        freq = 520 + speedFactor * 480;
+        q = 0.85;
+        targetGain = (0.028 + slip * 0.04) * speedFactor;
+    } else if (surface === SURFACE.ice) {
+        freq = 2200 + speedFactor * 1400;
+        q = 3.2;
+        targetGain = (0.014 + slip * 0.045) * speedFactor;
+    } else if (surface === SURFACE.gravel || surface === SURFACE.dirt || surface === SURFACE.sand) {
+        freq = 700 + speedFactor * 550;
+        q = 0.9;
+        targetGain = (0.025 + slip * 0.035) * speedFactor;
+    } else if (slip > 0.2) {
+        // Paved tire squeal on hard drift
+        freq = 1550 + slip * 700;
+        q = 4.2;
+        targetGain = (slip - 0.2) * 0.055 * speedFactor;
+    }
+
+    surfaceFilter.frequency.setTargetAtTime(freq, now, 0.06);
+    surfaceFilter.Q.setTargetAtTime(q, now, 0.06);
+    surfaceGain.gain.setTargetAtTime(targetGain, now, 0.06);
 }

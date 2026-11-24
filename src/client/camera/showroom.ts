@@ -19,8 +19,14 @@ export interface ShowroomFraming {
     maxWidth: number;
 }
 
+export interface ShowroomSpot {
+    x: number;
+    z: number;
+    yaw: number;
+}
+
 /** Where the car stands: on the pier deck (5 m above the sea), heading east-northeast back to the town. */
-export const SHOWROOM_SPOT = { x: -745, z: -18, yaw: 1.75 } as const;
+export const SHOWROOM_SPOT: Readonly<ShowroomSpot> = { x: -745, z: -18, yaw: 1.75 };
 
 /**
  * The camera's direction from the car, added to the car's heading (radians,
@@ -49,12 +55,18 @@ export interface ShowroomPose {
 // rail, less 1.2 m (the deck is z -25..-15, the car at z -18)
 const RAIL_CLEARANCE = 5.8;
 
+function isDefaultPierSpot(spot?: ShowroomSpot): boolean {
+    if (!spot) return true;
+    return Math.abs(spot.x - SHOWROOM_SPOT.x) < 1e-3 && Math.abs(spot.z - SHOWROOM_SPOT.z) < 1e-3;
+}
+
 /**
  * The hero angle for a camera this far out: SHOWROOM_HERO_ANGLE, or less
- * when the camera would otherwise stand over the sea side rail (a wider
- * shot comes round more from the front, along the pier).
+ * when the camera would otherwise stand over the sea side rail on the Bulli Bay pier
+ * (a wider shot comes round more from the front, along the pier).
  */
-export function heroAngleFor(distance: number): number {
+export function heroAngleFor(distance: number, spot?: ShowroomSpot): number {
+    if (!isDefaultPierSpot(spot)) return SHOWROOM_HERO_ANGLE;
     const limit = Math.acos(Math.max(-1, -RAIL_CLEARANCE / distance)) - SHOWROOM_SPOT.yaw;
     return Math.min(SHOWROOM_HERO_ANGLE, limit);
 }
@@ -79,11 +91,11 @@ export function fitDistance(framing: ShowroomFraming, box: [number, number], asp
 }
 
 /** The camera's start pose for a framing, with the deck at deckY. */
-export function showroomStartPose(framing: ShowroomFraming, deckY: number): ShowroomPose {
-    const { x, z, yaw } = SHOWROOM_SPOT;
+export function showroomStartPose(framing: ShowroomFraming, deckY: number, spot: ShowroomSpot = SHOWROOM_SPOT): ShowroomPose {
+    const { x, z, yaw } = spot;
     // Heading yaw points along (sin yaw, cos yaw); the camera sits in the
     // direction yaw + hero angle from the car
-    const direction = yaw + heroAngleFor(framing.distance);
+    const direction = yaw + heroAngleFor(framing.distance, spot);
     return {
         position: [x + Math.sin(direction) * framing.distance, deckY + framing.height, z + Math.cos(direction) * framing.distance],
         lookAt: [x, deckY + framing.lookHeight, z],
@@ -117,10 +129,11 @@ export function showroomSwing(t: number, reducedMotion = false): number {
  * own by default (the menu fits it to the free stage, fitDistance).
  */
 export function showroomPose(t: number, framing: ShowroomFraming, deckY: number,
-    options: { reducedMotion?: boolean; center?: [number, number]; distance?: number } = {}): ShowroomPose {
-    const { x, z, yaw } = SHOWROOM_SPOT;
+    options: { reducedMotion?: boolean; center?: [number, number]; distance?: number; spot?: ShowroomSpot } = {}): ShowroomPose {
+    const spot = options.spot ?? SHOWROOM_SPOT;
+    const { x, z, yaw } = spot;
     const distance = options.distance ?? framing.distance;
-    const direction = yaw + heroAngleFor(distance) + showroomSwing(t, options.reducedMotion);
+    const direction = yaw + heroAngleFor(distance, spot) + showroomSwing(t, options.reducedMotion);
     return {
         position: [x + Math.sin(direction) * distance, deckY + framing.height, z + Math.cos(direction) * distance],
         lookAt: [x, deckY + framing.lookHeight, z],

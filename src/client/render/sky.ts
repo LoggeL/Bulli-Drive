@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { LOOK, WORLD_UNIFORMS } from './look.js';
+import type { MapAtmosphereSpec } from '../../shared/map/registry.js';
+import { atmosphereTuningFor, LOOK, WORLD_UNIFORMS } from './look.js';
 
 // Sky and image based light (from the world probe).
 //
@@ -211,7 +212,29 @@ function uOffset(sunDirection: THREE.Vector3): number {
     return HDRI_SUN_U - (Math.atan2(sunDirection.z, sunDirection.x) / (2 * Math.PI) + 0.5);
 }
 
-function createSkyMaterial(textures: SkyTextures, environment: boolean, simple = false): THREE.ShaderMaterial {
+interface SkyUniformSet {
+    zenith: [number, number, number];
+    skyMid: [number, number, number];
+    cloudSun: [number, number, number];
+    cloudFar: [number, number, number];
+    cloudTop: [number, number, number];
+    cloudCoverage: number;
+    groundTint: [number, number, number];
+    groundGain: number;
+}
+
+const DEFAULT_SKY_UNIFORMS: SkyUniformSet = {
+    zenith: [...LOOK.zenith],
+    skyMid: [...LOOK.skyMid],
+    cloudSun: [...LOOK.cloudSun],
+    cloudFar: [...LOOK.cloudFar],
+    cloudTop: [...LOOK.cloudTop],
+    cloudCoverage: LOOK.cloudCoverage,
+    groundTint: [...LOOK.groundTint],
+    groundGain: LOOK.groundGain
+};
+
+function createSkyMaterial(textures: SkyTextures, environment: boolean, simple = false, set: SkyUniformSet = DEFAULT_SKY_UNIFORMS): THREE.ShaderMaterial {
     const sun = WORLD_UNIFORMS.uSunDir.value;
     return new THREE.ShaderMaterial({
         // Gradient and sun only, without clouds (software tier)
@@ -229,32 +252,34 @@ function createSkyMaterial(textures: SkyTextures, environment: boolean, simple =
             tGround: { value: textures.ground },
             uUOff: { value: uOffset(sun) },
             uSrcElev: { value: HDRI_SUN_ELEVATION },
-            uDstElev: { value: Math.asin(sun.y) },
+            uDstElev: { value: Math.asin(Math.max(-1, Math.min(1, sun.y))) },
             uSunDir: WORLD_UNIFORMS.uSunDir,
             uSunColor: WORLD_UNIFORMS.uSunColor,
             uFogColor: WORLD_UNIFORMS.uFogColor,
             uFogSunColor: WORLD_UNIFORMS.uFogSunColor,
             uNoise: WORLD_UNIFORMS.uNoise,
-            uZenith: { value: new THREE.Color().setRGB(...LOOK.zenith) },
-            uMid: { value: new THREE.Color().setRGB(...LOOK.skyMid) },
+            uZenith: { value: new THREE.Color().setRGB(...set.zenith) },
+            uMid: { value: new THREE.Color().setRGB(...set.skyMid) },
             uCloud: { value: environment ? LOOK.cloud * 0.6 : LOOK.cloud },
             uEnv: { value: environment ? 1 : 0 },
             uSunDisk: { value: environment ? 0 : LOOK.sunDisk },
             uGlow: { value: environment ? 0.5 : 1 },
-            uGroundTint: { value: new THREE.Color().setRGB(...LOOK.groundTint) },
-            uGroundGain: { value: LOOK.groundGain },
-            uCloudCov: { value: LOOK.cloudCoverage },
-            uCloudSun: { value: new THREE.Color().setRGB(...LOOK.cloudSun) },
-            uCloudFar: { value: new THREE.Color().setRGB(...LOOK.cloudFar) },
-            uCloudTop: { value: new THREE.Color().setRGB(...LOOK.cloudTop) }
+            uGroundTint: { value: new THREE.Color().setRGB(...set.groundTint) },
+            uGroundGain: { value: set.groundGain },
+            uCloudCov: { value: set.cloudCoverage },
+            uCloudSun: { value: new THREE.Color().setRGB(...set.cloudSun) },
+            uCloudFar: { value: new THREE.Color().setRGB(...set.cloudFar) },
+            uCloudTop: { value: new THREE.Color().setRGB(...set.cloudTop) }
         }
     });
 }
 
 export interface Sky {
     dome: THREE.Mesh;
-    /** Renders the environment map again (after the HDRIs loaded, after a context loss). */
+    /** Renders the environment map again (after the HDRIs loaded, after a context loss, or on map switch). */
     rebuildEnvironment(): void;
+    /** Updates sky dome colors, cloud mood, and sun alignment for a map atmosphere preset. */
+    applyAtmosphere(spec: MapAtmosphereSpec): void;
     /** Resolves once the HDRIs are in and the environment has been rebuilt with them. */
     ready: Promise<void>;
 }
@@ -278,7 +303,8 @@ export function createSky(
     options: { environment: boolean; hdri: boolean; simple: boolean; beforeEnvironment: Promise<void>; pmrem?: PmremFactory }
 ): Sky {
     let textures = fallbackTextures();
-    const skyMaterial = createSkyMaterial(textures, false, options.simple);
+    let currentSet: SkyUniformSet = { ...DEFAULT_SKY_UNIFORMS };
+    const skyMaterial = createSkyMaterial(textures, false, options.simple, currentSet);
     const dome = new THREE.Mesh(new THREE.SphereGeometry(1, options.simple ? 24 : 48, options.simple ? 12 : 24), skyMaterial);
     dome.name = 'sky-dome';
     dome.scale.setScalar(500);
@@ -291,7 +317,7 @@ export function createSky(
     const rebuildEnvironment = () => {
         if (!options.environment) return;
         const envScene = new THREE.Scene();
-        const material = createSkyMaterial(textures, true);
+        const material = createSkyMaterial(textures, true, false, currentSet);
         const geometry = new THREE.SphereGeometry(50, 64, 32);
         envScene.add(new THREE.Mesh(geometry, material));
         const pmrem = (options.pmrem ?? createPmrem)(renderer);
@@ -304,6 +330,32 @@ export function createSky(
         scene.environment = target.texture;
     };
     rebuildEnvironment();
+
+    const applyAtmosphere = (spec: MapAtmosphereSpec) => {
+        const tuning = atmosphereTuningFor(spec);
+        currentSet = {
+            zenith: tuning.zenith,
+            skyMid: tuning.skyMid,
+            cloudSun: tuning.cloudSun,
+            cloudFar: tuning.cloudFar,
+            cloudTop: tuning.cloudTop,
+            cloudCoverage: tuning.cloudCoverage,
+            groundTint: tuning.groundTint,
+            groundGain: tuning.groundGain
+        };
+        const sun = WORLD_UNIFORMS.uSunDir.value;
+        skyMaterial.uniforms.uUOff.value = uOffset(sun);
+        skyMaterial.uniforms.uDstElev.value = Math.asin(Math.max(-1, Math.min(1, sun.y)));
+        (skyMaterial.uniforms.uZenith.value as THREE.Color).setRGB(...currentSet.zenith);
+        (skyMaterial.uniforms.uMid.value as THREE.Color).setRGB(...currentSet.skyMid);
+        (skyMaterial.uniforms.uCloudSun.value as THREE.Color).setRGB(...currentSet.cloudSun);
+        (skyMaterial.uniforms.uCloudFar.value as THREE.Color).setRGB(...currentSet.cloudFar);
+        (skyMaterial.uniforms.uCloudTop.value as THREE.Color).setRGB(...currentSet.cloudTop);
+        skyMaterial.uniforms.uCloudCov.value = currentSet.cloudCoverage;
+        (skyMaterial.uniforms.uGroundTint.value as THREE.Color).setRGB(...currentSet.groundTint);
+        skyMaterial.uniforms.uGroundGain.value = currentSet.groundGain;
+        rebuildEnvironment();
+    };
 
     const ready = (async () => {
         if (options.hdri) {
@@ -329,7 +381,7 @@ export function createSky(
         rebuildEnvironment();
     });
 
-    return { dome, rebuildEnvironment, ready };
+    return { dome, rebuildEnvironment, applyAtmosphere, ready };
 }
 
 export function updateSkyDome(dome: THREE.Mesh, camera: THREE.Camera): void {

@@ -10,21 +10,24 @@ import { leftNormal, pointAt } from '../../shared/map/spline.js';
 import type { RoomKind } from '../../shared/protocol.js';
 import type { RenderTier } from '../effects/renderQuality.js';
 import { Batch, rgb } from './batch.js';
-import { ChunkedInstances, ChunkView, type InstanceSpec } from './chunkedInstances.js';
+import { initBiomeTextures, preloadBiomeTextures } from './biomeTextures.js';
+import { ChunkedInstances, chunkGridFor, ChunkView, type ChunkGrid, type InstanceSpec } from './chunkedInstances.js';
 import { markColliderAt } from './colliderTags.js';
+import { DiscoveryRenderer } from './discoveryRenderer.js';
 import { buildFountain } from './fountain.js';
 import { furnitureGeometry } from './streetFurniture.js';
 import { FINISH, PropBatch, type Finish } from './furniture.js';
+import { HeroPropsLayer } from './heroProps.js';
 import { mergeKit, pieceGeometry, type KitCatalog, type KitInstance } from './kit.js';
 import { cellDistance, cellKey, cellLod, CELL_SIZES, occupiedCells, selectCells, type CellLevel, type CellRef } from './kitCells.js';
 import type { WorldMaterials } from './materials.js';
-import { createPalms, type PalmSpot } from './palms.js';
+import { createPalmField, type PalmField, type PalmSpot } from './palms.js';
 import { alongPolyline, polylineLength, postsAlong, railPieces } from './railings.js';
 import { railSpots } from './viewpoint.js';
 import { createRoads } from './roads.js';
 import { mailboxSpots, ranchFences, scatterDecor, type DecorSpot } from './scatter.js';
 import { createSea } from './sea.js';
-import { createTerrainMaterial, createTerrainTextures, TerrainField } from './terrain.js';
+import { createTerrainMaterial, createTerrainTextures, TerrainField, type TerrainTextures } from './terrain.js';
 import { shrubGeometry, treeCardGeometry, treeCardInstances, type TreeSpot } from './vegetation.js';
 import { WORLD_QUALITY, type WorldQuality } from './worldQuality.js';
 
@@ -111,7 +114,21 @@ function sunshadeGeometry(canopy: number, stripe: number): THREE.BufferGeometry 
 export class MapWorld {
     readonly group = new THREE.Group();
     readonly terrain: TerrainField;
-    private readonly view = new ChunkView(-25, 220);
+    private readonly originX: number;
+    private readonly originZ: number;
+    private readonly extent: number;
+    private readonly grid: ChunkGrid;
+    private readonly view: ChunkView;
+    private readonly terrainTextures: TerrainTextures;
+    private readonly terrainMaterial: THREE.Material;
+    private readonly seaMesh: THREE.Mesh | null = null;
+    private readonly roadsGroup: THREE.Group;
+    private readonly plantsGroup = new THREE.Group();
+    private readonly propsGroup = new THREE.Group();
+    private readonly palms: PalmField;
+    private readonly heroPropsLayer: HeroPropsLayer;
+    private readonly discoveryRenderer: DiscoveryRenderer;
+    private readonly sharedMaterials = new Set<THREE.Material>();
     private readonly instanced: ChunkedInstances[] = [];
     private readonly partyOnly: THREE.Object3D[] = [];
     private kit: KitCatalog | null = null;
@@ -121,6 +138,7 @@ export class MapWorld {
     private readonly occupied: Set<string>;
     private previousCells = new Set<string>();
     private frame = 0;
+    private disposed = false;
     quality: WorldQuality;
     // Scatter spots (e2e hook, tests)
     readonly decor: DecorSpot[];
@@ -129,35 +147,71 @@ export class MapWorld {
         this.quality = quality;
         this.group.name = 'map';
         const hf = map.hf;
+        const spec = hf.spec;
+        this.originX = spec.originX;
+        this.originZ = spec.originZ;
+        this.extent = (spec.cols - 1) * spec.cellSize;
+        this.grid = chunkGridFor(spec);
+        this.view = new ChunkView(-25, 260, this.grid);
+
+        for (const value of Object.values(M)) {
+            if (value instanceof THREE.Material) this.sharedMaterials.add(value);
+        }
+
+        // Lazy biome PBR textures: only fetches sets required by this map
+        initBiomeTextures(renderer, tier === 'desktop' ? 8 : 4);
+        void preloadBiomeTextures(map.atmosphere.biomeTextures, renderer, tier);
+
         const ground = (x: number, z: number) => heightAt(hf, x, z);
 
-        this.terrain = new TerrainField(hf, quality.terrain, createTerrainMaterial(tier, hf, createTerrainTextures(hf, tier)));
+        this.terrainTextures = createTerrainTextures(hf, tier);
+        this.terrainMaterial = createTerrainMaterial(tier, hf, this.terrainTextures, map.atmosphere);
+        this.terrain = new TerrainField(hf, quality.terrain, this.terrainMaterial);
         this.group.add(this.terrain.group);
-        this.group.add(createSea(hf, tier));
-        this.group.add(createRoads(map.net, ground, tier));
+
+        if (map.atmosphere.hasSea) {
+            this.seaMesh = createSea(hf, tier, map.atmosphere);
+            this.group.add(this.seaMesh);
+        }
+
+        this.roadsGroup = createRoads(map.net, ground, tier, map.atmosphere.biome, spec);
+        this.group.add(this.roadsGroup);
 
         this.kitGroup.name = 'kit';
         this.group.add(this.kitGroup);
         this.kitInstances = this.buildKitInstances();
-        this.occupied = occupiedCells(this.kitInstances);
+        this.occupied = occupiedCells(this.kitInstances, this.originX, this.originZ);
         for (const lot of map.buildings) markColliderAt('building', lot.x, lot.z);
         for (const structure of map.structures) markColliderAt(structure.kind === 'container' ? 'container' : 'landmark', structure.x, structure.z);
 
-        const plants = new THREE.Group();
+        const plants = this.plantsGroup;
         plants.name = 'plants';
         this.group.add(plants);
         this.addTrees(plants);
-        plants.add(createPalms(M, this.palmSpots(), tier, renderer));
+        this.palms = createPalmField(M, this.palmSpots(), tier, renderer);
+        plants.add(this.palms.group);
         this.decor = scatterDecor(map, quality.scatter);
         this.addScatter(plants);
 
-        const props = new THREE.Group();
+        const props = this.propsGroup;
         props.name = 'props';
         this.group.add(props);
         this.addFences(props);
         this.addRailings(props);
         this.addFountain(props);
         this.addFurniture(props);
+
+        // Hero monuments, easter-egg props, billboards, decals, boost pads & discovery beacons
+        this.heroPropsLayer = new HeroPropsLayer(map, tier, renderer);
+        this.discoveryRenderer = new DiscoveryRenderer(map, tier);
+        props.add(this.heroPropsLayer.heroGroup);
+        props.add(this.heroPropsLayer.billboardsGroup);
+        props.add(this.heroPropsLayer.boostPadsGroup);
+        props.add(this.discoveryRenderer.group);
+    }
+
+    get isDisposed(): boolean {
+        return this.disposed;
     }
 
     // ---- The kit ----
@@ -211,8 +265,9 @@ export class MapWorld {
 
     /** The kit has loaded: merge its cells and add the instanced kit props. */
     attachKit(kit: KitCatalog): void {
-        if (this.kit) return;
+        if (this.kit || this.disposed) return;
         this.kit = kit;
+        this.sharedMaterials.add(kit.material);
         // The far LOD of every chunk right away; nearer cells when needed
         for (const key of this.occupied) {
             if (!key.startsWith('0:')) continue;
@@ -224,7 +279,7 @@ export class MapWorld {
 
     private cellMembers(ref: CellRef): KitInstance[] {
         const size = CELL_SIZES[ref.level];
-        const minX = -1000 + ref.i * size, minZ = -1000 + ref.j * size;
+        const minX = this.originX + ref.i * size, minZ = this.originZ + ref.j * size;
         return this.kitInstances.filter(instance => instance.x >= minX && instance.x < minX + size && instance.z >= minZ && instance.z < minZ + size);
     }
 
@@ -250,7 +305,7 @@ export class MapWorld {
 
     private updateKit(x: number, z: number): void {
         if (!this.kit) return;
-        const selected = selectCells(this.occupied, x, z, this.quality.kit, this.previousCells);
+        const selected = selectCells(this.occupied, x, z, this.quality.kit, this.previousCells, this.originX, this.originZ, this.extent);
         const keys = new Set(selected.map(ref => cellKey(ref.level, ref.i, ref.j)));
         // Build at most a few missing cells per frame; a chunk with a cell
         // that is not built yet draws its far LOD meanwhile
@@ -286,7 +341,7 @@ export class MapWorld {
             const on = draw.has(cell);
             if (cell.mesh) {
                 cell.mesh.visible = on;
-                cell.mesh.castShadow = on && cell.ref.level > 0 && cellDistance(x, z, cell.ref.level, cell.ref.i, cell.ref.j) < reach;
+                cell.mesh.castShadow = on && cell.ref.level > 0 && cellDistance(x, z, cell.ref.level, cell.ref.i, cell.ref.j, this.originX, this.originZ) < reach;
             }
             if (on) cell.lastUsed = this.frame;
         }
@@ -295,7 +350,7 @@ export class MapWorld {
             for (const [key, cell] of this.cells) {
                 if (cell.ref.level === 0 || this.frame - cell.lastUsed < 600) continue;
                 const reach = cell.ref.level === 2 ? this.quality.kit.lod0 : this.quality.kit.lod1;
-                if (cellDistance(x, z, cell.ref.level, cell.ref.i, cell.ref.j) < 2 * reach + 60) continue;
+                if (cellDistance(x, z, cell.ref.level, cell.ref.i, cell.ref.j, this.originX, this.originZ) < 2 * reach + 60) continue;
                 if (cell.mesh) {
                     cell.mesh.geometry.dispose();
                     this.kitGroup.remove(cell.mesh);
@@ -364,7 +419,7 @@ export class MapWorld {
         for (const kind of ['wbeam', 'concrete'] as const) {
             const geometry = pieceGeometry(kit, kind === 'wbeam' ? GUARDRAIL.piece : JERSEY.piece, lod);
             if (!geometry || !specs[kind].length) continue;
-            const instances = new ChunkedInstances(geometry, kit.material, specs[kind], this.quality.sight.rails, `rails-${kind}`);
+            const instances = new ChunkedInstances(geometry, kit.material, specs[kind], this.quality.sight.rails, `rails-${kind}`, 0, this.grid);
             instances.mesh.castShadow = true;
             instances.mesh.receiveShadow = true;
             this.instanced.push(instances);
@@ -390,7 +445,7 @@ export class MapWorld {
                 // Sunk a little into the slope
                 return { matrix: new THREE.Matrix4().compose(p.set(rock.x, heightAt(hf, rock.x, rock.z) - 0.25 * rock.size, rock.z), q, s) };
             });
-            const instances = new ChunkedInstances(geometry, kit.material, rockSpecs, this.quality.sight.rocks, `rocks-${kind}`);
+            const instances = new ChunkedInstances(geometry, kit.material, rockSpecs, this.quality.sight.rocks, `rocks-${kind}`, 0, this.grid);
             instances.mesh.castShadow = true;
             instances.mesh.receiveShadow = true;
             this.instanced.push(instances);
@@ -424,7 +479,7 @@ export class MapWorld {
                 spots.push({ x: plant.x, y: heightAt(hf, plant.x, plant.z), z: plant.z, scale: plant.size * (kind === 'oak' ? 1 : 0.95) });
             }
             if (!spots.length) continue;
-            const instances = new ChunkedInstances(treeCardGeometry(kind), this.M.tree, treeCardInstances(kind, spots, seed), this.quality.sight.trees, `trees-${kind}`);
+            const instances = new ChunkedInstances(treeCardGeometry(kind), this.M.tree, treeCardInstances(kind, spots, seed), this.quality.sight.trees, `trees-${kind}`, 0, this.grid);
             instances.mesh.castShadow = true;
             // Crossed cards would shadow each other in hard halves (vegetation.ts)
             instances.mesh.receiveShadow = false;
@@ -442,7 +497,7 @@ export class MapWorld {
         // Chaparral: the bush cards of the tree atlas, low and wide
         const chaparral = byKind('chaparral').map(spot => ({ x: spot.x, y: spot.y + 0.3, z: spot.z, scale: spot.size }));
         if (chaparral.length) {
-            const instances = new ChunkedInstances(treeCardGeometry('bush'), this.M.tree, treeCardInstances('bush', chaparral, 13), sight, 'scatter-chaparral');
+            const instances = new ChunkedInstances(treeCardGeometry('bush'), this.M.tree, treeCardInstances('bush', chaparral, 13), sight, 'scatter-chaparral', 0, this.grid);
             instances.mesh.receiveShadow = true;
             this.instanced.push(instances);
             group.add(instances.mesh);
@@ -456,7 +511,7 @@ export class MapWorld {
                 s.set(spot.size, spot.size * heightScale, spot.size);
                 return { matrix: new THREE.Matrix4().compose(p.set(spot.x, spot.y - 0.08, spot.z), q, s), color: tint(spot.seed) };
             });
-            const instances = new ChunkedInstances(shrubGeometry(card), this.M.shrub, specs, sight, `scatter-${kind}`);
+            const instances = new ChunkedInstances(shrubGeometry(card), this.M.shrub, specs, sight, `scatter-${kind}`, 0, this.grid);
             instances.mesh.receiveShadow = true;
             this.instanced.push(instances);
             group.add(instances.mesh);
@@ -499,7 +554,7 @@ export class MapWorld {
     }
 
     private addInstanced(group: THREE.Group, geometry: THREE.BufferGeometry, specs: InstanceSpec[], sight: number, name: string, cast: boolean): void {
-        const instances = new ChunkedInstances(geometry, this.M.furniture, specs, sight, name);
+        const instances = new ChunkedInstances(geometry, this.M.furniture, specs, sight, name, 0, this.grid);
         instances.mesh.castShadow = cast && this.tier !== 'software';
         instances.mesh.receiveShadow = true;
         this.instanced.push(instances);
@@ -737,9 +792,9 @@ export class MapWorld {
         }
         const { furniture, furnitureNear } = this.quality.sight;
         for (const [kind, list] of specs) {
-            const near = new ChunkedInstances(furnitureGeometry(kind, this.tier === 'desktop' ? 'high' : 'low'), this.M.furniture, list, furnitureNear, `furniture-${kind}`);
+            const near = new ChunkedInstances(furnitureGeometry(kind, this.tier === 'desktop' ? 'high' : 'low'), this.M.furniture, list, furnitureNear, `furniture-${kind}`, 0, this.grid);
             near.mesh.castShadow = this.tier !== 'software' && (kind === 'lamp' || kind === 'signal');
-            const far = new ChunkedInstances(furnitureGeometry(kind, 'far'), this.M.furniture, list, furniture, `furniture-${kind}-far`, furnitureNear);
+            const far = new ChunkedInstances(furnitureGeometry(kind, 'far'), this.M.furniture, list, furniture, `furniture-${kind}-far`, furnitureNear, this.grid);
             for (const instances of [near, far]) {
                 instances.mesh.receiveShadow = true;
                 this.instanced.push(instances);
@@ -752,12 +807,114 @@ export class MapWorld {
 
     /** Re-centres the terrain, picks the kit cells and packs the instances for this camera. */
     update(camera: THREE.Camera): void {
+        if (this.disposed) return;
         this.frame++;
         const { x, z } = camera.position;
         this.terrain.update(x, z);
         const key = this.view.update(camera);
         for (const instances of this.instanced) instances.update(this.view, key, x, z);
         this.updateKit(x, z);
+    }
+
+    /** Animates hero monuments, boost pads, discovery beacons, and FX bursts around `focusPos`. */
+    updateDynamic(dt: number, elapsedSec: number, focusPos: { x: number; y: number; z: number }): void {
+        if (this.disposed) return;
+        this.heroPropsLayer.update(dt, elapsedSec, focusPos);
+        this.discoveryRenderer.update(dt, elapsedSec, focusPos);
+    }
+
+    /** Updates discovered POI state & optional pinned guidance beacon. */
+    setDiscoveredIds(foundIds: ReadonlySet<string>, pinnedId: string | null): void {
+        if (this.disposed) return;
+        this.discoveryRenderer.setDiscoveredIds(foundIds, pinnedId);
+    }
+
+    /** Fires monument reaction animation, celebratory particle burst, and audio chime for a discovery. */
+    triggerDiscoveryFx(discoveryId: string): void {
+        if (this.disposed) return;
+        const info = this.discoveryRenderer.triggerDiscoveryFx(discoveryId);
+        if (info?.heroPropId) this.heroPropsLayer.triggerReaction(info.heroPropId);
+        this.heroPropsLayer.triggerReaction(discoveryId);
+    }
+
+    /** Disposes every GPU buffer, texture, render target, and event listener owned by this map world. */
+    dispose(): void {
+        if (this.disposed) return;
+        this.disposed = true;
+
+        // 1. Terrain mesh rings, material, and baked splat DataTextures
+        this.terrain.dispose();
+        this.terrainMaterial.dispose();
+        for (const tex of Object.values(this.terrainTextures)) {
+            if (tex instanceof THREE.Texture) tex.dispose();
+        }
+
+        // 2. Sea plane, material, and R16UI height texture
+        if (this.seaMesh) {
+            this.seaMesh.geometry.dispose();
+            const seaMats = Array.isArray(this.seaMesh.material) ? this.seaMesh.material : [this.seaMesh.material];
+            for (const m of seaMats) m.dispose();
+            const hTex = this.seaMesh.userData.heightTexture as THREE.Texture | undefined;
+            hTex?.dispose();
+        }
+
+        // 3. Roads: per-map road meshes and road layer materials
+        const disposedGeoms = new Set<THREE.BufferGeometry>();
+        const disposedMats = new Set<THREE.Material>();
+        const disposeOwned = (root: THREE.Object3D, disposeMaterials: boolean) => {
+            root.traverse(obj => {
+                const mesh = obj as THREE.Mesh;
+                if (!mesh.isMesh) return;
+                if (mesh.userData?.sharedAsset) return;
+                if (mesh.geometry && !disposedGeoms.has(mesh.geometry)) {
+                    mesh.geometry.dispose();
+                    disposedGeoms.add(mesh.geometry);
+                }
+                if (disposeMaterials && mesh.material) {
+                    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+                    for (const m of mats) {
+                        if (!this.sharedMaterials.has(m) && !disposedMats.has(m)) {
+                            m.dispose();
+                            disposedMats.add(m);
+                        }
+                    }
+                }
+            });
+        };
+        disposeOwned(this.roadsGroup, true);
+
+        // 4. Merged kit cells & rail terminals (KitCatalog.material stays shared)
+        for (const cell of this.cells.values()) {
+            if (cell.mesh && !disposedGeoms.has(cell.mesh.geometry)) {
+                cell.mesh.geometry.dispose();
+                disposedGeoms.add(cell.mesh.geometry);
+            }
+        }
+        this.cells.clear();
+        this.previousCells.clear();
+
+        // 5. Instanced foliage, rails, rocks, furniture
+        for (const inst of this.instanced) {
+            disposedGeoms.add(inst.mesh.geometry);
+            inst.dispose();
+        }
+        this.instanced.length = 0;
+
+        // 6. Palms (geometries, depth materials, impostor render target, WebGL context listeners)
+        this.palms.dispose();
+
+        // 7. Hero monuments, billboards, ground decals, boost pads, and discovery beacons
+        this.heroPropsLayer.dispose();
+        this.discoveryRenderer.dispose();
+
+        // 8. Remaining owned meshes & materials (sunshades, volleyball nets, fences, railings, fountain, rail terminals)
+        disposeOwned(this.kitGroup, false);
+        disposeOwned(this.plantsGroup, true);
+        disposeOwned(this.propsGroup, true);
+
+        this.partyOnly.length = 0;
+        this.group.clear();
+        this.group.removeFromParent();
     }
 
     /** The Party draws the fence round its zone. */
