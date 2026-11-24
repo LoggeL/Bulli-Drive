@@ -1,0 +1,486 @@
+{
+  "version": 1,
+  "billboardUvConvention": "three-plane-flipY-true",
+  "props": {
+    "lmf_alpine_chalet": {
+      "file": "lmf_alpine_chalet.glb",
+      "kind": "monument",
+      "hash": "6a8337e15525",
+      "bytes": 53076,
+      "triangles": 4774,
+      "bounds": {
+        "min": [
+          -7.414,
+          0,
+          -5.9
+        ],
+        "max": [
+          7.414,
+          9.932,
+          6.6
+        ]
+      }
+    },
+    "lmf_arcanum_tower": {
+      "file": "lmf_arcanum_tower.glb",
+      "kind": "monument",
+      "hash": "3468c7231d31",
+      "bytes": 29464,
+      "triangles": 2852,
+      "bounds": {
+        "min": [
+          -4.574,
+          0,
+          -4.558
+        ],
+        "max": [
+          4.574,
+          22.35,
+          4.809
+        ]
+      },
+      "animNodes": [
+        "arcanum_key"
+      ]
+    },
+    "lmf_codex_monolith": {
+      "file": "lmf_codex_monolith.glb",
+      "kind": "monument",
+      "hash": "ce34375eee13",
+      "bytes": 21528,
+      "triangles": 1392,
+      "bounds": {
+        "min": [
+          -3.3,
+          0,
+          -1.9
+        ],
+        "max": [
+          7.325,
+          14.475,
+          1.907
+        ]
+      }
+    },
+    "lmf_festival_stage": {
+      "file": "lmf_festival_stage.glb",
+      "kind": "monument",
+      "hash": "5c34c74ddf00",
+      "bytes": 83840,
+      "triangles": 6482,
+      "bounds": {
+        "min": [
+          -10.375,
+          0,
+          -5.1
+        ],
+        "max": [
+          10.375,
+          13.034,
+          6.14
+        ]
+      }
+    },
+    "lmf_forge_arch": {
+      "file": "lmf_forge_arch.glb",
+      "kind": "monument",
+      "hash": "765cfb29b1b0",
+      "bytes": 37552,
+      "triangles": 3832,
+      "bounds": {
+        "min": [
+          -10.913,
+          0,
+          -2.2
+        ],
+        "max": [
+          10.913,
+          12.592,
+          2.2
+        ]
+      }
+    },
+    "lmf_jet_loop_reactor": {
+      "file": "lmf_jet_loop_reactor.glb",
+      "kind": "monument",
+      "hash": "eb267286a7a3",
+      "bytes": 40880,
+      "triangles": 4712,
+      "bounds": {
+        "min": [
+          -4.1,
+          0,
+          -4.1
+        ],
+        "max": [
+          4.1,
+          26.16,
+          4.1
+        ]
+      },
+      "animNodes": [
+        "reactor_bubbles"
+      ]
+    },
+    "lmf_melodai_arch": {
+      "file": "lmf_melodai_arch.glb",
+      "kind": "monument",
+      "hash": "c3a9f3c7a052",
+      "bytes": 42788,
+      "triangles": 3344,
+      "bounds": {
+        "min": [
+          -8.25,
+          0,
+          -2.405
+        ],
+        "max": [
+          8.25,
+          12.6,
+          2.405
+        ]
+      },
+      "animNodes": [
+        "fader_gesang"
+      ]
+    },
+    "lmf_red_knopf": {
+      "file": "lmf_red_knopf.glb",
+      "kind": "monument",
+      "hash": "f8327f004897",
+      "bytes": 22092,
+      "triangles": 1840,
+      "bounds": {
+        "min": [
+          -3.479,
+          0,
+          -3.3
+        ],
+        "max": [
+          3.479,
+          4.04,
+          3.3
+        ]
+      },
+      "animNodes": [
+        "knopf_cap"
+      ]
+    },
+    "lmf_sailboat_ijsselmeer": {
+      "file": "lmf_sailboat_ijsselmeer.glb",
+      "kind": "monument",
+      "hash": "d56576c67a04",
+      "bytes": 18432,
+      "triangles": 1106,
+      "bounds": {
+        "min": [
+          -1.88,
+          0,
+          -6.65
+        ],
+        "max": [
+          1.88,
+          16,
+          6.75
+        ]
+      }
+    },
+    "lmf_selantis_arch": {
+      "file": "lmf_selantis_arch.glb",
+      "kind": "monument",
+      "hash": "37dcaa9562c7",
+      "bytes": 32780,
+      "triangles": 2596,
+      "bounds": {
+        "min": [
+          -8.9,
+          0,
+          -2.3
+        ],
+        "max": [
+          8.9,
+          14.65,
+          2.764
+        ]
+      }
+    },
+    "lmf_ski_gondola_pylon": {
+      "file": "lmf_ski_gondola_pylon.glb",
+      "kind": "monument",
+      "hash": "d32e73211791",
+      "bytes": 30460,
+      "triangles": 2284,
+      "bounds": {
+        "min": [
+          -4.975,
+          0,
+          -5.818
+        ],
+        "max": [
+          4.3,
+          17.388,
+          5.818
+        ]
+      },
+      "animNodes": [
+        "gondola_cabin"
+      ]
+    },
+    "lmf_theater_facade": {
+      "file": "lmf_theater_facade.glb",
+      "kind": "monument",
+      "hash": "fa28b41ebb8f",
+      "bytes": 36080,
+      "triangles": 3872,
+      "bounds": {
+        "min": [
+          -10.263,
+          0,
+          -2.4
+        ],
+        "max": [
+          10.263,
+          12.626,
+          4.204
+        ]
+      }
+    },
+    "prop_billboard_gantry": {
+      "file": "prop_billboard_gantry.glb",
+      "kind": "prop",
+      "hash": "fde05fac63c1",
+      "bytes": 29204,
+      "triangles": 2138,
+      "bounds": {
+        "min": [
+          -8,
+          0,
+          -1
+        ],
+        "max": [
+          8,
+          10.595,
+          2.081
+        ]
+      },
+      "billboardNode": "billboard_face"
+    },
+    "prop_embedding_cube": {
+      "file": "prop_embedding_cube.glb",
+      "kind": "prop",
+      "hash": "f99dd297e5e5",
+      "bytes": 17196,
+      "triangles": 1540,
+      "bounds": {
+        "min": [
+          -3.485,
+          0,
+          -3.188
+        ],
+        "max": [
+          3.485,
+          8.073,
+          3.188
+        ]
+      },
+      "animNodes": [
+        "embedding_core"
+      ]
+    },
+    "prop_fi_toaster_shrine": {
+      "file": "prop_fi_toaster_shrine.glb",
+      "kind": "prop",
+      "hash": "43b24f7483e6",
+      "bytes": 22904,
+      "triangles": 980,
+      "bounds": {
+        "min": [
+          -1.7,
+          0,
+          -1.1
+        ],
+        "max": [
+          1.969,
+          3.397,
+          1.1
+        ]
+      }
+    },
+    "prop_jp_whirlpool_tent": {
+      "file": "prop_jp_whirlpool_tent.glb",
+      "kind": "prop",
+      "hash": "7215af1d58f6",
+      "bytes": 16652,
+      "triangles": 1252,
+      "bounds": {
+        "min": [
+          -4.85,
+          0,
+          -3.85
+        ],
+        "max": [
+          4.85,
+          5.54,
+          3.85
+        ]
+      }
+    },
+    "prop_kniffel_die": {
+      "file": "prop_kniffel_die.glb",
+      "kind": "prop",
+      "hash": "e10b64bee861",
+      "bytes": 12928,
+      "triangles": 1320,
+      "bounds": {
+        "min": [
+          -2.545,
+          0,
+          -2.545
+        ],
+        "max": [
+          2.545,
+          5.045,
+          2.545
+        ]
+      }
+    },
+    "prop_nether_portal": {
+      "file": "prop_nether_portal.glb",
+      "kind": "prop",
+      "hash": "24a96542e6ad",
+      "bytes": 13832,
+      "triangles": 1152,
+      "bounds": {
+        "min": [
+          -4.97,
+          0,
+          -0.925
+        ],
+        "max": [
+          4.97,
+          8.42,
+          0.925
+        ]
+      },
+      "animNodes": [
+        "portal_plane"
+      ]
+    },
+    "prop_oilbert_icons": {
+      "file": "prop_oilbert_icons.glb",
+      "kind": "prop",
+      "hash": "ce970d63c497",
+      "bytes": 25892,
+      "triangles": 1904,
+      "bounds": {
+        "min": [
+          -3.9,
+          0,
+          -1.6
+        ],
+        "max": [
+          3.9,
+          5.151,
+          1.6
+        ]
+      }
+    },
+    "prop_roadside_billboard": {
+      "file": "prop_roadside_billboard.glb",
+      "kind": "prop",
+      "hash": "4b29472c804d",
+      "bytes": 12244,
+      "triangles": 748,
+      "bounds": {
+        "min": [
+          -4.45,
+          0,
+          -1.433
+        ],
+        "max": [
+          4.45,
+          7.762,
+          1.567
+        ]
+      },
+      "billboardNode": "billboard_face"
+    },
+    "prop_stadtpin_marker": {
+      "file": "prop_stadtpin_marker.glb",
+      "kind": "prop",
+      "hash": "06c09e7516a8",
+      "bytes": 18368,
+      "triangles": 2076,
+      "bounds": {
+        "min": [
+          -3.27,
+          0,
+          -3.25
+        ],
+        "max": [
+          3.27,
+          13.596,
+          3.25
+        ]
+      }
+    },
+    "prop_sudsblaster": {
+      "file": "prop_sudsblaster.glb",
+      "kind": "prop",
+      "hash": "e8765e081834",
+      "bytes": 19572,
+      "triangles": 1756,
+      "bounds": {
+        "min": [
+          -1.8,
+          0,
+          -1.8
+        ],
+        "max": [
+          1.8,
+          5.73,
+          4.416
+        ]
+      }
+    },
+    "prop_vertical_frame_916": {
+      "file": "prop_vertical_frame_916.glb",
+      "kind": "prop",
+      "hash": "6906db8e7fe0",
+      "bytes": 16272,
+      "triangles": 1144,
+      "bounds": {
+        "min": [
+          -3.775,
+          0,
+          -1.924
+        ],
+        "max": [
+          3.775,
+          11.535,
+          1.2
+        ]
+      }
+    },
+    "prop_win98_frame": {
+      "file": "prop_win98_frame.glb",
+      "kind": "prop",
+      "hash": "4259fdb22c31",
+      "bytes": 17648,
+      "triangles": 650,
+      "bounds": {
+        "min": [
+          -9.01,
+          0,
+          -1.7
+        ],
+        "max": [
+          9.01,
+          11.51,
+          1.7
+        ]
+      },
+      "billboardNode": "billboard_face"
+    }
+  }
+}

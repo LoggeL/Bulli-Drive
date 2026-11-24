@@ -220,13 +220,26 @@ def details(S, q):
     mb.f(vs[::-1], "glass")
     for sx in (1, -1):                                             # hinges / posts down to the cowl
         tube(mb, [Vector((sx * hw, Y(1.00), 0.97)), corners[0 if sx < 0 else 1]], 0.02, 5, "paint_primary")
+        if q["seams"]:
+            # fold-down windshield corner toggle latches & cowl tie-down clasps
+            box(mb, (sx * (hw + 0.016), Y(1.04), 1.04), (0.024, 0.042, 0.058), "steel_dark")
+            box(mb, (sx * (hw + 0.024), Y(1.04), 1.06), (0.018, 0.026, 0.024), "chrome")
+            # rubber hood bumper pads where the windshield rests when folded down
+            loc_h, nh = S.ray((sx * 0.44, Y(0.55), 3.0), (0, 0, -1))
+            box(mb, loc_h + nh * 0.012, (0.036, 0.055, 0.024), "rubber")
+            # front hood exterior toggle latches
+            loc_l, nl = S.ray((sx * 0.43, Y(0.18), 3.0), (0, 0, -1))
+            box(mb, loc_l + nl * 0.008, (0.024, 0.052, 0.018), "steel_dark")
     mb.part("windshield")
     if q["wipers"]:
         for sx in (1, -1):
             a = b0 + Vector((sx * 0.05 + 0.1, 0, 0)) + wn * 0.03 + up * 0.03
+            mid = a + Vector((-0.18, 0, 0)) + up * 0.035
             b = a + Vector((-0.40, 0, 0)) + up * 0.05
-            tube(mb, [a, b], 0.0035, 4, "trim_dark")
-    # ---------------- panel work: bonnet, doors, ribs ----------------
+            tube(mb, [a, mid], 0.0035, 4, "chrome")
+            tube(mb, [mid + Vector((0.06, 0, -0.006)), b], 0.0044, 4, "trim_dark")
+            box(mb, a - wn * 0.006, (0.016, 0.016, 0.016), "steel_dark")
+    # ---------------- panel work: bonnet, doors, corrugated ribs ----------------
     if q["seams"]:
         # bonnet lid (trapezoid) and the front panel ribs
         lid = [(0.40, 0.16), (0.60, 0.95), (-0.60, 0.95), (-0.40, 0.16), (0.40, 0.16)]
@@ -239,11 +252,16 @@ def details(S, q):
                 for zh in (0.62, 0.94):                              # hinges
                     loc, n = S.side(sx, Y(d[0][0] + 0.03), zh)
                     box(mb, loc + n * 0.008, (0.03, 0.05, 0.07), "paint_primary")
+            # exposed bolted fender-edge rivet studs
+            for s_b in (0.20, 0.42, 0.64, 2.90, 3.12, 3.32):
+                box(mb, (sx * (XF + 0.004), Y(s_b), 0.775), (0.010, 0.016, 0.016), "steel_dark")
         mb.part("seams")
     if q["ribs"]:
         for sx in (1, -1):
-            for (s0, s1, z) in ((1.25, 1.88, 0.90), (1.25, 1.88, 0.67), (2.06, 2.64, 0.90), (2.06, 2.64, 0.67),
-                                (1.0, 2.55, 0.43), (3.33, 3.53, 0.92), (0.92, 1.10, 0.90)):
+            # signature Typ 181 stamped corrugated ribs on all four doors & rockers
+            for (s0, s1, z) in ((1.24, 1.89, 0.93), (1.24, 1.89, 0.79), (1.24, 1.89, 0.65),
+                                (2.05, 2.65, 0.93), (2.05, 2.65, 0.79), (2.05, 2.65, 0.65),
+                                (1.02, 2.55, 0.43), (3.33, 3.53, 0.92), (0.92, 1.10, 0.90)):
                 a, na = S.side(sx, Y(s0), z)
                 b, nb = S.side(sx, Y(s1), z)
                 strip(mb, [a, b], [na, nb], [(-0.022, 0.0), (-0.012, 0.008), (0.012, 0.008), (0.022, 0.0)], "paint_primary")
@@ -283,8 +301,9 @@ def details(S, q):
     O, N = S.front(0, 0.66)
     build_logo(mb, O + N * 0.003, N, 0.05, q)
     if q["plate"]:
-        O, N = S.rear(0, 0.71)
-        plate(mb, O, N, q, lamp=False)
+        # offset slightly left of rear-mounted spare tire so both remain unobstructed
+        O, N = S.rear(0.28, 0.69)
+        plate(mb, O, N, q, lamp=True)
     if q["louvers"]:
         for gx in (-0.29, 0.0, 0.29):                                 # rear lid louvers (3 groups)
             for k in range(6):
@@ -301,7 +320,7 @@ def details(S, q):
         lid = [(-0.46, 1.05), (0.46, 1.05), (0.46, 0.66), (-0.46, 0.66), (-0.46, 1.05)]
         seam(mb, S, [(x, 4.0, z) for (x, z) in lid], Vector((0, 1, 0)), width=0.005, seg=0.3)
         mb.part("louvers")
-    # ---------------- bumpers (black steel beams) ----------------
+    # ---------------- bumpers, front brush bar + rally lights, rear spare tire & rollbar ----------------
     for front in (True, False):
         sg = -1 if front else 1
         s0, s1 = (0.0, 0.13) if front else (3.60, 3.78)
@@ -309,22 +328,66 @@ def details(S, q):
         box(mb, (0, Y((s0 + s1) / 2) + (0.0 if front else 0.0), (z0 + z1) / 2), (1.58, s1 - s0, z1 - z0), "paint_black")
         for sx in (1, -1):
             box(mb, (sx * 0.81, Y((s0 + s1) / 2), (z0 + z1) / 2), (0.06, s1 - s0 + 0.01, z1 - z0 + 0.01), "rubber")
+    # front off-road tubular brush bar + twin round rally auxiliary lights
+    bar_sides = max(5, q["tube"] - 2)
+    tube(mb, [(0.42, Y(0.06), 0.48), (0.40, Y(0.05), 0.72), (-0.40, Y(0.05), 0.72), (-0.42, Y(0.06), 0.48)],
+         0.019, bar_sides, "steel_dark")
+    if q["lamp"] > 8:
+        for sx in (1, -1):
+            box(mb, (sx * 0.24, Y(0.05), 0.51), (0.025, 0.03, 0.05), "steel_dark")
+            round_lamp(mb, Vector((sx * 0.24, Y(0.03), 0.58)), Vector((0, -1, 0)), 0.072, q,
+                       lens="lamp_head", ring="chrome", depth=0.036)
+    # tubular steel rollbar (main hoop behind front seats + rear diagonal brace struts)
+    rb_sides = max(5, q["tube"] - 1)
+    tube(mb, [(0.74, Y(2.26), 1.03), (0.71, Y(2.26), 1.44), (0.60, Y(2.26), 1.54),
+              (-0.60, Y(2.26), 1.54), (-0.71, Y(2.26), 1.44), (-0.74, Y(2.26), 1.03)],
+         0.026, rb_sides, "steel_dark")
+    for sx in (1, -1):
+        tube(mb, [(sx * 0.65, Y(2.28), 1.49), (sx * 0.69, Y(2.90), 1.04)], 0.021, max(4, rb_sides - 1), "steel_dark")
+        if q["seams"]:
+            box(mb, (sx * 0.74, Y(2.26), 1.04), (0.075, 0.085, 0.018), "steel_dark")
+    # rear-mounted full-size spare tire on bolted swing-away steel carrier
+    sp_c = Vector((-0.20, Y(3.715), 0.84))
+    tube(mb, [(-0.20, Y(3.59), 0.48), (-0.20, Y(3.67), 0.48), (-0.20, Y(3.67), 0.84)], 0.020, 5, "steel_dark")
+    tube(mb, [(-0.52, Y(3.59), 0.50), (-0.20, Y(3.67), 0.68)], 0.016, 4, "steel_dark")
+    M_sp = frame_from_axis(Vector((0, 1, 0)))
+    r_sp, hw_sp = 0.275, 0.068
+    sp_segs = max(10, q["wheel_segs"] * 2 // 3)
+    if q["tire"] == "hi":
+        sp_prof = [(0.0, -hw_sp), (r_sp - 0.025, -hw_sp), (r_sp, -hw_sp * 0.72), (r_sp, hw_sp * 0.72),
+                   (r_sp - 0.025, hw_sp), (0.165, hw_sp + 0.005), (0.155, hw_sp - 0.012),
+                   (0.060, hw_sp - 0.018), (0.055, hw_sp + 0.012), (0.0, hw_sp + 0.016)]
+        sp_mats = ["trim_dark", "rubber", "rubber", "rubber", "rubber", "paint_black", "paint_black", "chrome", "chrome"]
+    else:
+        sp_prof = [(0.0, -hw_sp), (r_sp, -hw_sp * 0.8), (r_sp, hw_sp * 0.8), (0.16, hw_sp), (0.0, hw_sp + 0.01)]
+        sp_mats = ["rubber", "rubber", "rubber", "paint_black"]
+    lathe(mb, sp_prof, sp_segs, M_sp, sp_c, sp_mats)
+    if q["tire"] == "hi":
+        for i in range(5):
+            a = 2 * math.pi * i / 5
+            box(mb, sp_c + Vector((math.cos(a) * 0.095, hw_sp - 0.008, math.sin(a) * 0.095)),
+                (0.014, 0.012, 0.014), "chrome")
     mb.part("bumpers")
     # ---------------- mirrors ----------------
     if q["mirrors"]:
         for sx in (1, -1):
             base = Vector((sx * 0.80, Y(1.05), 1.0))
-            head = Vector((sx * 0.90, Y(1.02), 1.07))
-            tube(mb, [base, head], 0.008, 4, "trim_dark")
-            box(mb, head + Vector((0, 0, 0.0)), (0.13, 0.03, 0.13), "trim_dark")
+            head = Vector((sx * 0.90, Y(1.02), 1.08))
+            tube(mb, [base, head], 0.008, 4, "steel_dark")
+            box(mb, head, (0.13, 0.026, 0.13), "trim_dark")
+            box(mb, head + Vector((0, 0.014, 0)), (0.114, 0.004, 0.114), "glass")
         mb.part("mirrors")
     # ---------------- cabin (open: floor, dash, seats, wheel) ----------------
     if q["interior"]:
         box(mb, (0, Y(1.16), 0.93), (1.50, 0.10, 0.12), "paint_primary")      # dash top in body colour
         box(mb, (0, Y(1.15), 0.80), (1.46, 0.08, 0.16), "interior")
-        loc = Vector((0.38, Y(1.215), 0.86))
-        lathe(mb, [(0.0, 0.0), (0.07, 0.0), (0.07, 0.012), (0.0, 0.012)], q["int_seg"],
-              frame_from_axis(Vector((0, 1, 0.25))), loc, ["trim_dark", "chrome", "trim_dark"])
+        for gx, gr in ((0.38, 0.07), (0.20, 0.045)):
+            loc = Vector((gx, Y(1.215), 0.86))
+            lathe(mb, [(0.0, 0.0), (gr, 0.0), (gr, 0.012), (0.0, 0.012)], q["int_seg"],
+                  frame_from_axis(Vector((0, 1, 0.25))), loc, ["trim_dark", "chrome", "trim_dark"])
+        # passenger off-road grab bar on right dashboard
+        tube(mb, [(-0.18, Y(1.20), 0.88), (-0.18, Y(1.27), 0.88), (-0.60, Y(1.27), 0.88), (-0.60, Y(1.20), 0.88)],
+             0.011, 5, "steel_dark")
         c = Vector((0.38, Y(1.50), 0.92))
         ax = Vector((0, 0.55, 1.0)).normalized()
         Mw = frame_from_axis(ax)
@@ -335,6 +398,13 @@ def details(S, q):
             tube(mb, [c, c + Mw @ Vector((0.18 * math.cos(a), 0.18 * math.sin(a), 0))], 0.01, 4, "trim_dark",
                  cap_start=False, cap_end=False)
         tube(mb, [c - ax * 0.02, c - ax * 0.45], 0.02, 5, "trim_dark", cap_start=False)
+        if q["int_seg"] > 8:
+            # horn boss + windshield-top rear-view mirror + handbrake lever
+            lathe(mb, [(0.0, 0.0), (0.036, 0.0), (0.032, 0.016), (0.0, 0.019)], 8, Mw, c,
+                  ["trim_dark", "chrome", "trim_dark"])
+            tube(mb, [(0.0, Y(1.36), 1.49), (0.0, Y(1.38), 1.41)], 0.005, 4, "steel_dark")
+            box(mb, (0.0, Y(1.38), 1.39), (0.16, 0.024, 0.048), "trim_dark")
+            tube(mb, [(0.0, Y(1.68), 0.44), (0.0, Y(1.82), 0.58)], 0.010, 4, "trim_dark")
         for sx in (1, -1):                                                     # front seats with headrests
             box(mb, (sx * 0.36, Y(1.78), 0.55), (0.46, 0.48, 0.12), "seat")
             box(mb, (sx * 0.36, Y(2.05), 0.88), (0.44, 0.10, 0.62), "seat", M=Matrix.Rotation(-0.12, 3, "X"))
@@ -342,6 +412,7 @@ def details(S, q):
         box(mb, (0, Y(2.55), 0.55), (1.30, 0.46, 0.12), "seat")                 # rear bench
         box(mb, (0, Y(2.85), 0.84), (1.30, 0.10, 0.56), "seat", M=Matrix.Rotation(-0.1, 3, "X"))
         tube(mb, [(0.0, Y(1.25), 0.45), (0.0, Y(1.35), 0.62)], 0.012, 4, "trim_dark")   # gear lever
+        box(mb, (0.0, Y(1.355), 0.635), (0.032, 0.032, 0.032), "ivory")
         mb.part("interior")
     # ---------------- folded soft top on the rear deck ----------------
     n_c = max(6, q["tube"] + 2)
@@ -408,7 +479,7 @@ Q = {
 }
 
 WHEEL = dict(R=WR, w=0.15, bead=0.19, ww=None, rim="paint_black", hub_r=0.058, hub_h=0.03, holes=0.125, n_holes=8,
-             hole_size=(0.017, 0.017), round_holes=True)
+             hole_size=(0.017, 0.017), round_holes=True, lugs=True, lug_mat="steel_dark", brakes=True)
 
 
 def build_lod(lod):

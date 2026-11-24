@@ -14,24 +14,24 @@
         {
           "lod": 0,
           "file": "beetle_lod0.glb",
-          "hash": "0b7a0e3dbe9a",
-          "bytes": 168964,
-          "triangles": 18763,
+          "hash": "8b55fda941e0",
+          "bytes": 182980,
+          "triangles": 19020,
           "primitives": 8
         },
         {
           "lod": 1,
           "file": "beetle_lod1.glb",
-          "hash": "2bc12d41150c",
-          "bytes": 105012,
-          "triangles": 6976,
+          "hash": "a3ecfd8616be",
+          "bytes": 112684,
+          "triangles": 6804,
           "primitives": 8
         },
         {
           "lod": 2,
           "file": "beetle_lod2.glb",
-          "hash": "8a1f31ffc836",
-          "bytes": 23408,
+          "hash": "d30739aa1aab",
+          "bytes": 23488,
           "triangles": 1838,
           "primitives": 3
         }
@@ -50,24 +50,24 @@
         {
           "lod": 0,
           "file": "bulli_lod0.glb",
-          "hash": "501ac1484c53",
-          "bytes": 206400,
-          "triangles": 24719,
+          "hash": "d7b1513aa7cf",
+          "bytes": 219844,
+          "triangles": 23979,
           "primitives": 9
         },
         {
           "lod": 1,
           "file": "bulli_lod1.glb",
-          "hash": "8a5da0334a0c",
-          "bytes": 111236,
-          "triangles": 7965,
+          "hash": "20b3a566753a",
+          "bytes": 118704,
+          "triangles": 7581,
           "primitives": 9
         },
         {
           "lod": 2,
           "file": "bulli_lod2.glb",
-          "hash": "f9da2390ee74",
-          "bytes": 23504,
+          "hash": "998e1cbe0c72",
+          "bytes": 23604,
           "triangles": 1960,
           "primitives": 4
         }
@@ -86,25 +86,25 @@
         {
           "lod": 0,
           "file": "jeep_lod0.glb",
-          "hash": "ef8e6b5b8f41",
-          "bytes": 103108,
-          "triangles": 8151,
+          "hash": "dac5234a3a07",
+          "bytes": 134656,
+          "triangles": 10773,
           "primitives": 8
         },
         {
           "lod": 1,
           "file": "jeep_lod1.glb",
-          "hash": "8086f98771fc",
-          "bytes": 84688,
-          "triangles": 3457,
+          "hash": "80fac5c571ec",
+          "bytes": 99620,
+          "triangles": 3909,
           "primitives": 8
         },
         {
           "lod": 2,
           "file": "jeep_lod2.glb",
-          "hash": "7e8a5cf9beb3",
-          "bytes": 27520,
-          "triangles": 1593,
+          "hash": "40b1108cf234",
+          "bytes": 30508,
+          "triangles": 1831,
           "primitives": 4
         }
       ]
@@ -122,24 +122,24 @@
         {
           "lod": 0,
           "file": "pickup_lod0.glb",
-          "hash": "7afe13542ba3",
-          "bytes": 157516,
-          "triangles": 16261,
+          "hash": "80fdcde3ad4c",
+          "bytes": 174984,
+          "triangles": 17397,
           "primitives": 9
         },
         {
           "lod": 1,
           "file": "pickup_lod1.glb",
-          "hash": "28664652df82",
-          "bytes": 102996,
-          "triangles": 5991,
+          "hash": "a9f293eaf2e2",
+          "bytes": 110936,
+          "triangles": 5895,
           "primitives": 9
         },
         {
           "lod": 2,
           "file": "pickup_lod2.glb",
-          "hash": "350d2686ca5b",
-          "bytes": 23652,
+          "hash": "e05ad99ae549",
+          "bytes": 23740,
           "triangles": 1764,
           "primitives": 4
         }
@@ -158,25 +158,25 @@
         {
           "lod": 0,
           "file": "sport_lod0.glb",
-          "hash": "d369e06d5262",
-          "bytes": 140436,
-          "triangles": 14944,
+          "hash": "211081f850fb",
+          "bytes": 160948,
+          "triangles": 15915,
           "primitives": 8
         },
         {
           "lod": 1,
           "file": "sport_lod1.glb",
-          "hash": "5b443ebe3b47",
-          "bytes": 91736,
+          "hash": "c9b41ea3f6cb",
+          "bytes": 100124,
           "triangles": 5151,
           "primitives": 8
         },
         {
           "lod": 2,
           "file": "sport_lod2.glb",
-          "hash": "6b0341130e52",
-          "bytes": 20828,
-          "triangles": 1509,
+          "hash": "61296f313477",
+          "bytes": 21076,
+          "triangles": 1529,
           "primitives": 3
         }
       ]

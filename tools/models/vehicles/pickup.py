@@ -170,9 +170,14 @@ def bed(mb, q):
     zt = Z_BED + BOARD_H
     box(mb, (0, ym, Z_BED + 0.012), (BED_X * 2 - 0.02, L, 0.024), "wood")
     if q["planks"]:
-        for k in range(1, 10):                                     # plank gaps
+        for k in range(1, 10):                                     # plank gaps + steel rub strips
             x = -0.78 + k * 0.156
-            box(mb, (x, ym, Z_BED + 0.0245), (0.006, L - 0.01, 0.002), "trim_dark")
+            box(mb, (x, ym, Z_BED + 0.0255), (0.016, L - 0.03, 0.008), "steel_dark")
+        # protective steel headache rack behind cab rear window
+        for sx in (-0.42, 0.42):
+            tube(mb, [(sx, y0 + 0.04, zt + 0.01), (sx, y0 + 0.04, 1.72)], 0.014, 5, "steel_dark", cap_start=False)
+        for zh in (1.44, 1.56, 1.68):
+            tube(mb, [(-0.42, y0 + 0.04, zh), (0.42, y0 + 0.04, zh)], 0.011, 5, "steel_dark")
     t = 0.03
     sides = [((BED_X - t / 2, ym), (t, L)), ((-BED_X + t / 2, ym), (t, L)), ((0, y1 - t / 2), (BED_X * 2, t)),
              ((0, y0 + t / 2), (BED_X * 2, t))]
@@ -185,13 +190,17 @@ def bed(mb, q):
                 box(mb, (cx + ox, cy + oy, zz), (sx_ + 0.004 if sx_ < 0.1 else sx_ - 0.02, sy_ + 0.004 if sy_ < 0.1 else sy_ - 0.02, 0.005), "trim_dark")
         # painted top rail
         box(mb, (cx, cy, zt + 0.012), (sx_ + 0.01, sy_ + 0.01, 0.024), "paint_primary")
-    # stakes (vertical, painted) and hinges on the lower edge
+    # stakes (vertical, painted), lower drop-side hinges & chrome toggle latches
     ys = [y0 + 0.03, y0 + L * 0.34, y0 + L * 0.67, y1 - 0.03]
     for sgn in (1, -1):
         for y in ys:
             box(mb, (sgn * (BED_X + 0.012), y, (Z_BED + zt) / 2 + 0.01), (0.022, 0.05, BOARD_H + 0.04), "paint_primary")
             if q["planks"]:
-                box(mb, (sgn * (BED_X + 0.014), y, Z_BED - 0.01), (0.03, 0.08, 0.035), "trim_dark")
+                box(mb, (sgn * (BED_X + 0.016), y, Z_BED - 0.01), (0.032, 0.08, 0.036), "steel_dark")
+                box(mb, (sgn * (BED_X + 0.024), y, zt - 0.045), (0.016, 0.022, 0.095), "chrome")   # toggle latch
+        if q["planks"]:
+            # rear tailgate corner latches
+            box(mb, (sgn * (BED_X - 0.02), y1 + 0.020, zt - 0.045), (0.022, 0.018, 0.095), "chrome")
     for x in (-0.55, 0.0, 0.55):
         box(mb, (x, y1 + 0.012, (Z_BED + zt) / 2 + 0.01), (0.05, 0.022, BOARD_H + 0.04), "paint_primary")
     # bed frame under the floor: painted carrier rails along the sides
@@ -331,7 +340,8 @@ def details(S, q):
             a, na = S.front(s * 0.42, 1.30)
             b, nb = S.front(s * 0.60, 1.58)
             a, b = a + na * 0.010, b + nb * 0.012
-            tube(mb, [a, a.lerp(b, 0.5) + na * 0.003, b], 0.0032, 4, "trim_dark")
+            tube(mb, [a, a.lerp(b, 0.5) + na * 0.003, b], 0.0032, 4, "chrome")
+            tube(mb, [a.lerp(b, 0.25) + na * 0.004, b + nb * 0.001], 0.0038, 4, "rubber")
             box(mb, a - na * 0.004, (0.016, 0.016, 0.016), "chrome")
     mb.part("mirrors_wipers")
     # ---------------- underbody, exhaust ----------------
@@ -342,6 +352,8 @@ def details(S, q):
         for s in (1, -1):
             tube(mb, [(0.0, t1.AXLE_R, 0.34), (s * 0.55, t1.AXLE_R, WR)], 0.04, 6, "trim_dark")
     tube(mb, [(0.18, 1.96, 0.26), (0.18, 2.13, 0.25)], 0.021, 8 if q["tube"] > 6 else 5, "chrome")
+    if q["tube"] > 6:
+        tube(mb, [(0.18, 2.115, 0.251), (0.18, 2.134, 0.25)], 0.015, 6, "trim_dark", cap_start=False)
     sockets["socket_exhaust"] = Vector((0.18, 2.14, 0.25))
     mb.part("underbody")
     # ---------------- cab interior ----------------
@@ -349,6 +361,11 @@ def details(S, q):
         yd = -1.70
         box(mb, (0, yd + 0.10, 1.215), (1.40, 0.20, 0.07), "paint_secondary")
         box(mb, (0, yd + 0.13, 1.08), (1.36, 0.10, 0.20), "interior")
+        if q["int_seg"] > 8:
+            for s in (1, -1):
+                lathe(mb, [(0.0, 0.0), (0.062, 0.0), (0.062, 0.012), (0.0, 0.012)], 10,
+                      frame_from_axis(Vector((0, 1, 0.3))), Vector((s * 0.40, yd + 0.20, 1.12)),
+                      ["trim_dark", "chrome", "trim_dark"])
         c = Vector((0.40, -1.36, 1.22))
         ax = Vector((0, 0.45, 1.0)).normalized()
         Mw = frame_from_axis(ax)
@@ -356,6 +373,9 @@ def details(S, q):
         rim = [c + Mw @ Vector((0.20 * math.cos(2 * pi * k / segs), 0.20 * math.sin(2 * pi * k / segs), 0)) for k in range(segs)]
         tube(mb, rim, 0.012, 5 if q["int_seg"] > 8 else 4, "ivory", closed=True)
         tube(mb, [c - ax * 0.02, c - ax * 0.55], 0.02, 5, "trim_dark", cap_start=False)
+        cabin_polish(mb, q, mirror_pos=(0.0, -1.72, 1.62), mirror_stalk_top=(0.0, -1.78, 1.72),
+                     shift_base=(0.06, -1.24, 0.52), shift_top=(0.08, -1.32, 1.06),
+                     steer_c=c, steer_ax=ax, steer_r=0.20, visor_y=-1.73, visor_z=1.67, visor_x=0.36)
         box(mb, (0, -1.09, 0.75), (1.48, 0.42, 0.12), "seat")                 # bench
         box(mb, (0, -0.86, 1.02), (1.48, 0.10, 0.50), "seat", M=Matrix.Rotation(-0.12, 3, "X"))
         mb.part("interior")
@@ -409,7 +429,8 @@ def make_q(lod):
     return q
 
 
-WHEEL = dict(R=WR, w=0.104, bead=0.178, ww=None, rim="rim_paint", hub_r=0.125, hub_h=0.022)
+WHEEL = dict(R=WR, w=0.104, bead=0.178, ww=None, rim="rim_paint", hub_r=0.125, hub_h=0.022,
+             lugs=True, brakes=True)
 
 
 def build_lod(lod):
