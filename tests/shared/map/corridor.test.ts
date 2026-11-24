@@ -549,6 +549,24 @@ describe('TerrainShaper: walls, areas and surfaces', () => {
         expect(conflicts.count).toBe(0);
     });
 
+    it('stamps area.surface on exact polygon boundary cells (including half-open max-Z edge) without spilling into unwalled margins', () => {
+        // Walled wooden pier whose far tip lies exactly on the even grid row z = 60
+        // (where half-open pointInPolygon returns false while polygonEdgeDistance === 0).
+        const shaper = new TerrainShaper(GRID, plane(() => -8));
+        shaper.addArea({
+            polygon: [[-6, 0], [-6, 60], [6, 60], [6, 0]],
+            y: 4, margin: 0, walls: true, surface: SURFACE.wood
+        });
+        const idx = (x: number, z: number) => ((z - GRID.originZ) / GRID.cellSize) * GRID.cols + (x - GRID.originX) / GRID.cellSize;
+        // Boundary cells on z = 60 and x = ±6 must get stamped wood so deck-ground drops them cleanly
+        expect(shaper.surface[idx(0, 60)]).toBe(SURFACE.wood);
+        expect(shaper.surface[idx(-6, 60)]).toBe(SURFACE.wood);
+        expect(shaper.surface[idx(6, 60)]).toBe(SURFACE.wood);
+        // 2 m past the tip must remain unstamped (-1)
+        expect(shaper.surface[idx(0, 62)]).toBe(-1);
+        expect(shaper.surface[idx(8, 60)]).toBe(-1);
+    });
+
     it('stamps road surfaces by priority: wood over asphalt over dirt', () => {
         const shaper = new TerrainShaper(GRID, plane(() => 0));
         const road = straight(-100, 0, 100, 0, () => 0);

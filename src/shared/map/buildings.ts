@@ -79,18 +79,21 @@ export const LOT_CORRIDOR_MARGIN = 0.25;
 // allowable downhill drop below foundation skirt (margin 0.15 m), maximum
 // uphill burial above origin (0.50 m so doors/windows never sink), and
 // lowest ground above the water level
-export const LOT_MAX_RELIEF = 1.4;
+export const LOT_MAX_RELIEF = 2.2;
 export const LOT_FOUNDATION_MARGIN = 0.15;
 export const LOT_MAX_BURIAL = 0.5;
 export const LOT_MIN_ABOVE_WATER = 0.5;
 
 /** Below-ground foundation skirt depth (m) of a kit building or landmark piece. */
 export function pieceFoundation(piece: KitPieceId): number {
-    if (piece.startsWith('beach_')) return 0.9;
-    if (piece.startsWith('downtown_') || piece.startsWith('revival_')) return 1.2;
-    if (piece.startsWith('spanish_') || piece.startsWith('industrial_')) return 1.0;
-    if (piece === 'landmark_lighthouse' || piece === 'landmark_diner') return 0.6;
-    if (piece === 'landmark_water_tower' || piece === 'landmark_gas_station') return 0.4;
+    if (piece === 'beach_w8_f1') return 0.3;
+    if (piece.startsWith('beach_')) return 2.0;
+    if (piece.startsWith('downtown_') || piece.startsWith('revival_')) return 2.0;
+    if (piece.startsWith('spanish_') || piece.startsWith('industrial_')) return 2.0;
+    if (piece === 'landmark_lighthouse') return 2.5;
+    if (piece === 'landmark_water_tower') return 1.5;
+    if (piece === 'landmark_diner') return 0.6;
+    if (piece === 'landmark_gas_station') return 0.4;
     if (piece === 'landmark_quay_crane') return 3.0;
     return 0.4;
 }

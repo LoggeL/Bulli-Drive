@@ -616,10 +616,11 @@ export class TerrainShaper {
             for (let i = i0; i <= i1; i++) {
                 const px = g.originX + i * g.cellSize;
                 const inside = pointInPolygon(area.polygon, px, pz);
-                const d = inside ? -1 : polygonEdgeDistance(area.polygon, px, pz) - margin;
+                const edgeDist = inside ? 0 : polygonEdgeDistance(area.polygon, px, pz);
+                const d = inside ? -1 : edgeDist - margin;
                 const cell = j * g.cols + i;
                 if (d <= 0 || !area.walls) this.bound(cell, area.y, d);
-                if (inside && area.surface !== undefined) this.stamp(cell, area.surface);
+                if ((inside || edgeDist <= 1e-6) && area.surface !== undefined) this.stamp(cell, area.surface);
             }
         }
     }

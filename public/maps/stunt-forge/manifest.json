@@ -17,13 +17,13 @@
   "files": {
     "terrain": {
       "path": "terrain.bhf",
-      "hash": "1c777d5a07e45fb1",
+      "hash": "db39769b8751d52f",
       "bytes": 1106167,
-      "gzipBytes": 91409,
-      "brotliBytes": 76054,
+      "gzipBytes": 91414,
+      "brotliBytes": 75201,
       "layers": {
         "heights": 74470,
-        "surface": 1489,
+        "surface": 1485,
         "zones": 64
       }
     }

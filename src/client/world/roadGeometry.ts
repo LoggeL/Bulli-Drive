@@ -39,8 +39,10 @@ export const ROAD_LIFT = 0.035;
 export const AREA_LIFT = 0.015;
 // Sidewalk / curb outer skirt burial depth (m) so sloped shoulders never expose gaps
 export const SIDEWALK_SKIRT_DEPTH = 0.6;
-// Retaining walls for edge.def.walls (m)
-export const RETAINING_WALL_THICKNESS = 0.35;
+// Retaining walls for edge.def.walls (m): 1.5 m coping spans from outer sidewalk
+// past the 2 m heightfield step (+0.8 m beyond sidewalk) so the vertical poured
+// concrete face drops cleanly into natural ground with zero dirt protrusion.
+export const RETAINING_WALL_THICKNESS = 1.5;
 export const RETAINING_WALL_MIN_DEPTH = 3.5;
 // A curb without a sidewalk (a kerb stone along the road edge)
 export const KERB_WIDTH = 0.3;
@@ -211,18 +213,36 @@ function edgeAttributes(net: RoadNetwork, edge: RoadEdgeData, start: number, end
     };
 }
 
+function hasWallAt(edge: RoadEdgeData, side: 1 | -1, s: number): boolean {
+    const walls = edge.def.walls;
+    if (!walls || !walls.length) return false;
+    const name = side > 0 ? 'left' : 'right';
+    for (const wall of walls) {
+        if (wall.side !== name) continue;
+        const to = wall.to < 0 ? edge.length : wall.to;
+        if (s >= wall.from - 4 && s <= to + 4) return true;
+    }
+    return false;
+}
+
 function addRibbon(out: MeshArrays, edge: RoadEdgeData, stations: readonly number[], height: HeightFn,
     inner: number, outer: number, lift: (across: number) => number, a: readonly number[], b: readonly number[],
-    centerline = false): void {
+    centerline = false, clampSide?: 1 | -1): void {
     const cols = centerline ? [outer, (outer + inner) * 0.5, inner] : [outer, inner];
     let prev: number[] | null = null;
     for (const s of stations) {
         const p = pointAt(edge.samples, s);
         const [nx, nz] = leftNormal(p.tx, p.tz);
+        const clamp = clampSide !== undefined && hasWallAt(edge, clampSide, s);
+        const centerY = clamp ? height(p.x, p.z) : -Infinity;
         const row: number[] = [];
         for (const across of cols) {
             const x = p.x + nx * across, z = p.z + nz * across;
-            row.push(out.vertex(x, height(x, z) + lift(across), z, groundNormal(height, x, z), across, s, a, b));
+            const rawY = height(x, z);
+            const clamped = clamp && rawY < centerY;
+            const y = clamped ? centerY : rawY;
+            const n = clamped ? groundNormal(height, p.x, p.z) : groundNormal(height, x, z);
+            row.push(out.vertex(x, y + lift(across), z, n, across, s, a, b));
         }
         if (prev) {
             for (let k = 0; k < row.length - 1; k++) out.quad(prev[k], prev[k + 1], row[k + 1], row[k]);
@@ -234,13 +254,14 @@ function addRibbon(out: MeshArrays, edge: RoadEdgeData, stations: readonly numbe
 // A vertical face along the stations at `across`, from the road (or the
 // ground) up to the top, facing `facing` (+1 left, -1 right of the edge)
 function addFace(out: MeshArrays, edge: RoadEdgeData, stations: readonly number[], height: HeightFn,
-    across: number, bottom: number, top: number, facing: number): void {
+    across: number, bottom: number, top: number, facing: number, clampSide?: 1 | -1): void {
     let prev: [number, number] | null = null;
     for (const s of stations) {
         const p = pointAt(edge.samples, s);
         const [nx, nz] = leftNormal(p.tx, p.tz);
         const x = p.x + nx * across, z = p.z + nz * across;
-        const y = height(x, z);
+        const rawY = height(x, z);
+        const y = clampSide !== undefined && hasWallAt(edge, clampSide, s) ? Math.max(rawY, height(p.x, p.z)) : rawY;
         const n = [nx * facing, 0, nz * facing];
         const lo = out.vertex(x, y + bottom, z, n, 0, s, NONE, NONE);
         const hi = out.vertex(x, y + top, z, n, top - bottom, s, NONE, NONE);
@@ -260,11 +281,11 @@ function addSidewalk(out: MeshArrays, edge: RoadEdgeData, stations: readonly num
     const top = curb ? p.curb.height : 0.04;
     const hw = edge.halfWidth;
     const first = out.vertexCount;
-    addRibbon(out, edge, stations, height, side * hw, side * (hw + w), () => top, [side * hw, 0, 0, 0], [w, 0, 0, 0]);
+    addRibbon(out, edge, stations, height, side * hw, side * (hw + w), () => top, [side * hw, 0, 0, 0], [w, 0, 0, 0], false, side);
     // The sidewalk's own coordinates: across from the curb
     for (let v = first; v < out.vertexCount; v++) out.uvs[v * 2] = Math.abs(out.uvs[v * 2]) - hw;
-    if (curb) addFace(out, edge, stations, height, side * hw, ROAD_LIFT, top, -side);
-    addFace(out, edge, stations, height, side * (hw + w), -SIDEWALK_SKIRT_DEPTH, top, side);
+    if (curb) addFace(out, edge, stations, height, side * hw, ROAD_LIFT, top, -side, side);
+    addFace(out, edge, stations, height, side * (hw + w), -SIDEWALK_SKIRT_DEPTH, top, side, side);
 }
 
 // Concrete retaining walls for edge.def.walls (e.g. laurel-court, cypress-court):

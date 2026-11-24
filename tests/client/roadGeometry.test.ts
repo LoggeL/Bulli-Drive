@@ -6,7 +6,7 @@ import type { RoadArea } from '../../src/shared/map/roadSchema.js';
 import {
     AREA_LIFT, AREA_MAX_EDGE, AREA_WALL_DEPTH, areaFrame, buildRoadGeometry, CENTRE_CODE, cornerCurve,
     CREST_STATION_STEP, edgeRuns, edgeStations, END_CODE, groundNormal, MAX_STATION_STEP, MeshArrays,
-    RETAINING_WALL_MIN_DEPTH, ROAD_FLAG, ROAD_LIFT, SIDEWALK_SKIRT_DEPTH, splitByChunk, subdivideAreaMesh,
+    RETAINING_WALL_MIN_DEPTH, RETAINING_WALL_THICKNESS, ROAD_FLAG, ROAD_LIFT, SIDEWALK_SKIRT_DEPTH, splitByChunk, subdivideAreaMesh,
     triangulatePolygon
 } from '../../src/client/world/roadGeometry.js';
 import { roadBlock } from '../../src/client/world/roads.js';
@@ -139,19 +139,30 @@ describe('a straight road', () => {
         expect(Math.min(...outerFace.map(v => v.y))).toBeCloseTo(-SIDEWALK_SKIRT_DEPTH, 9);
     });
 
-    it('generates poured concrete retaining walls for edge.def.walls (laurel-court / cypress-court)', () => {
+    it('generates poured concrete retaining walls for edge.def.walls (laurel-court / cypress-court) and keeps walled sidewalks level', () => {
         const walled = buildRoadNetwork(network([node('a', 0, 0), node('b', 40, 0)], [
             { ...edge('ab', 'a', 'b'), walls: [{ side: 'left', from: 10, to: 30 }] }
         ], {
             profiles: { road: { ...PROFILE, sidewalk: { left: 1.5, right: 0 }, curb: { left: true, right: false, height: 0.15 } } }
         }));
-        // Ground drops 2.2 m right outside the left sidewalk (z < -6.5)
-        const dropGround = (_x: number, z: number) => (z < -6.5 ? -2.2 : 0);
+        // Ground drops -2.2 m starting at z < -5.5 (straddling the left sidewalk's outer edge at z = -6.5,
+        // matching the 2 m heightfield step on bulli-bay walled courts)
+        const dropGround = (_x: number, z: number) => (z < -5.5 ? -2.2 : 0);
         const layers = buildRoadGeometry(walled, dropGround);
         const wallVerts = vertices(layers.concrete);
         expect(wallVerts.length).toBeGreaterThan(0);
         expect(Math.max(...wallVerts.map(v => v.y))).toBeCloseTo(0.15, 6);
         expect(Math.min(...wallVerts.map(v => v.y))).toBeLessThanOrEqual(-RETAINING_WALL_MIN_DEPTH);
+        // Outer face of retaining wall sits at innerAcross (6.5 m) + RETAINING_WALL_THICKNESS (1.5 m) = 8.0 m
+        expect(Math.min(...wallVerts.map(v => v.z))).toBeCloseTo(-(5 + 1.5 + RETAINING_WALL_THICKNESS), 6);
+
+        // Walled sidewalk outer edge (z = -6.5, x in [10..30]) stays level with road centerline + curb (0.15 m),
+        // rather than collapsing to dropGround (-2.2 + 0.15 = -2.05 m) behind the retaining wall coping.
+        const walkTopOnWall = vertices(layers.walk).filter((v, idx) =>
+            v.x >= 10 && v.x <= 30 && Math.abs(v.z + 6.5) < 1e-6 && layers.walk.normals[idx * 3 + 1] > 0.5
+        );
+        expect(walkTopOnWall.length).toBeGreaterThan(0);
+        for (const v of walkTopOnWall) expect(v.y).toBeCloseTo(0.15, 6);
 
         // Verify Bulli Bay laurel-court and cypress-court produce concrete retaining wall geometry
         const bay = mapFor('bulli-bay');
