@@ -1,14 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { mapFor } from '../../src/server/maps.js';
 import { DECOR_RULES, FENCE_OFFSET, mailboxSpots, ranchFences, scatterDecor } from '../../src/client/world/scatter.js';
-import type { MapData } from '../../src/shared/map/mapData.js';
+import { billboardReservedBox, boostPadReservedBox, heroPropReservedBoxes } from '../../src/shared/map/discoverySchema.js';
+import { jumpZone, type MapData } from '../../src/shared/map/mapData.js';
 import { buildRoadNetwork } from '../../src/shared/map/roadNetwork.js';
 import { ZONE } from '../../src/shared/map/types.js';
 import { edge, makeHeightfield, network, node, PROFILE } from '../shared/map/fixtures.js';
 import { pointInPolygon } from '../../src/shared/map/geometry.js';
 import { heightAt, surfaceAt, zoneAt } from '../../src/shared/map/heightfield.js';
 import { insideCorridor } from '../../src/shared/map/roadNetwork.js';
-import { BoxIndex, placementBox } from '../../src/shared/map/structures.js';
+import { BoxIndex, boxContains, placementBox } from '../../src/shared/map/structures.js';
 import { SURFACE } from '../../src/shared/map/types.js';
 
 // The client's plants and props without a collider on Bulli Bay
@@ -78,6 +79,30 @@ describe('the scatter on Bulli Bay', () => {
         // Bulli Bay keeps its coastal flowers and dune grass intact
         expect(all.filter(s => s.kind === 'flowers').length).toBeGreaterThan(500);
         expect(all.filter(s => s.kind === 'duneGrass').length).toBeGreaterThan(200);
+    });
+
+    it('excludes heroProps, billboards/decals, boostPads, and jumpZones on logge-forge', () => {
+        const forge = mapFor('logge-forge');
+        const spots = scatterDecor(forge);
+        expect(spots.length).toBeGreaterThan(100);
+        const reserved = [
+            ...forge.heroProps.flatMap(heroPropReservedBoxes),
+            ...forge.billboards.map(billboardReservedBox),
+            ...forge.boostPads.map(boostPadReservedBox),
+            ...forge.ramps.map(jumpZone)
+        ];
+        for (const spot of spots) {
+            for (const box of reserved) {
+                expect(boxContains(box, spot.x, spot.z, 0.5), `${spot.kind} at (${spot.x}, ${spot.z}) clipped reserved box`).toBe(false);
+            }
+        }
+    });
+
+    it('gates chaparral/shrubs/flowers and ranchFences out of quarry maps (stunt-forge)', () => {
+        const stunt = mapFor('stunt-forge');
+        const spots = scatterDecor(stunt);
+        expect(spots.filter(s => s.kind === 'chaparral' || s.kind === 'shrub' || s.kind === 'flowers')).toEqual([]);
+        expect(ranchFences(stunt)).toEqual([]);
     });
 });
 

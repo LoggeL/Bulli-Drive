@@ -62,13 +62,43 @@ export function buildTerrainSplat(hf: Heightfield): TerrainSplat {
             splatTexel(hf.surface[p], hf.zones[zj * zc + zi], a, b, p * 4);
         }
     }
-    blurChannel(b, cols, rows, 1, LAWN_BLUR);
+    // Smoothly feather all terrain splat channels so 2 m heightfield cells never
+    // show binary staircase edges on beaches, wet sand, snow/ice, rock or road verges
+    blurChannel(a, cols, rows, 0, SPLAT_BLUR); // sand
+    blurChannel(a, cols, rows, 1, SPLAT_BLUR); // wetSand / ice flag
+    blurChannel(a, cols, rows, 2, VERGE_BLUR); // dirt
+    blurChannel(a, cols, rows, 3, VERGE_BLUR); // gravel
+    blurChannel(b, cols, rows, 0, SPLAT_BLUR); // rock
+    blurChannel(b, cols, rows, 1, LAWN_BLUR);  // lush grass / lawn
+    blurChannel(b, cols, rows, 2, VERGE_BLUR); // paved earth under roads/lots
+    blurChannel(b, cols, rows, 3, SPLAT_BLUR); // snow / ice
+
+    // Preserve total exclusive surface weight <= 255 where different blur radii overlap
+    const count = cols * rows;
+    for (let p = 0; p < count; p++) {
+        const k = p * 4;
+        const total = a[k] + a[k + 2] + a[k + 3] + b[k] + b[k + 1] + b[k + 2] + b[k + 3];
+        if (total > 255) {
+            const s = 255 / total;
+            a[k] = Math.floor(a[k] * s);
+            a[k + 2] = Math.floor(a[k + 2] * s);
+            a[k + 3] = Math.floor(a[k + 3] * s);
+            b[k] = Math.floor(b[k] * s);
+            b[k + 1] = Math.floor(b[k + 1] * s);
+            b[k + 2] = Math.floor(b[k + 2] * s);
+            b[k + 3] = Math.floor(b[k + 3] * s);
+        }
+    }
     return { width: cols, height: rows, a, b };
 }
 
 // Lawns fade out over this many grid points (the zones' edges are the 8 m
 // steps of the zone layer, which would show as straight lines)
 const LAWN_BLUR = 5;
+// Natural biome layers (sand, wet sand, rock, snow/ice) feather over 2 texels (4 m);
+// narrower road-verge layers (dirt, gravel, paved earth) feather over 1 texel (2 m)
+export const SPLAT_BLUR = 2;
+export const VERGE_BLUR = 1;
 
 /** Box blur (radius r texels, two passes) of one channel of an RGBA array, in place. */
 export function blurChannel(data: Uint8Array, width: number, height: number, channel: number, r: number): void {

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { heightAt, surfaceAt, type Heightfield } from '../../shared/map/heightfield.js';
+import { heightAt, type Heightfield } from '../../shared/map/heightfield.js';
 import type { MapAtmosphereSpec } from '../../shared/map/registry.js';
 import { SURFACE } from '../../shared/map/types.js';
 import type { RenderTier } from '../effects/renderQuality.js';
@@ -54,6 +54,8 @@ uniform sampler2D tSplatA;
 uniform sampler2D tSplatB;
 uniform vec4 uSplatFrame;
 uniform float uHasSea;
+uniform vec2 uSnowLine;
+uniform float uUseElevSnow;
 float terrainWet = 0.0;
 float terrainIce = 0.0;
 vec2 terrainSplatUv( vec3 wp ) {
@@ -63,14 +65,25 @@ vec2 terrainSplatUv( vec3 wp ) {
 // The full shading (desktop and phones): textures per layer, plus optional snow & ice
 const TERRAIN_COLOR = /* glsl */`
 	{
-		vec2 suv = terrainSplatUv( vWPos );
+		vec3 nw = normalize( vWNormal );
+		float slope = 1.0 - abs( nw.y );
+		// Organic noise perturbation breaks up 2 m splat grid staircases
+		vec2 splatJitter = ( texture2D( uNoise, vWPos.xz / 29.0 ).rg - 0.5 ) * 2.6
+		                 + ( texture2D( uNoise, vWPos.xz / 7.5 ).ba - 0.5 ) * 0.7;
+		vec2 suv = terrainSplatUv( vWPos + vec3( splatJitter.x, 0.0, splatJitter.y ) );
 		vec4 sa = texture2D( tSplatA, suv );
 		vec4 sb = texture2D( tSplatB, suv );
-		float snowIce = sb.a;
+		// Elevation + noise + north-aspect snowline on alpine/Mount Aftermovie maps
+		// replaces razor-straight axis-aligned snow rectangles while preserving lake ice
+		float iceMask = min( sb.a, sa.g );
+		float snowNoise = ( texture2D( uNoise, vWPos.xz / 170.0 ).r - 0.5 ) * 12.0
+		                + ( texture2D( uNoise, vWPos.xz / 43.0 ).g - 0.5 ) * 4.5;
+		float elevSnow = smoothstep( uSnowLine.x, uSnowLine.y, vWPos.y + snowNoise - nw.z * 5.0 );
+		float snowOnly = uUseElevSnow > 0.5 ? elevSnow : sb.a * ( 1.0 - sa.g );
+		float snowIce = clamp( max( snowOnly, iceMask ), 0.0, 1.0 );
+		float iceFrac = snowIce > 0.004 ? clamp( iceMask / snowIce, 0.0, 1.0 ) : 0.0;
 		float covered = clamp( sa.r + sa.b + sa.a + sb.r + sb.b + sb.g + snowIce, 0.0, 1.0 );
 		float grass = 1.0 - covered;
-		vec3 nw = normalize( cross( dFdx( vWPos ), dFdy( vWPos ) ) );
-		float slope = 1.0 - abs( nw.y );
 		// Golden grass with olive chaparral: denser on the shaded north
 		// slopes (north = -z) and in patches, thinning on the sunny south
 		// slopes and the crests; soft, grainy edges instead of hard blobs
@@ -104,12 +117,12 @@ const TERRAIN_COLOR = /* glsl */`
 		diffuseColor.rgb *= mix( vec3( 1.0 ), vec3( 0.6, 0.62, 0.64 ), terrainWet );
 		float under = smoothstep( 0.0, -7.0, vWPos.y ) * uHasSea;
 		diffuseColor.rgb = mix( diffuseColor.rgb, diffuseColor.rgb * vec3( 0.42, 0.56, 0.55 ), under );
-		// Snow and frozen lake ice (active when sb.a > 0)
+		// Snow and frozen lake ice (active when snowIce > 0)
 		if ( snowIce > 0.004 ) {
-			terrainIce = snowIce * sa.g;
+			terrainIce = iceMask;
 			vec3 snowCol = texture2D( tSnow, vWPos.xz / 4.0 ).rgb * mix( 0.94, 1.06, texture2D( uNoise, vWPos.xz / 19.0 ).r );
 			vec3 iceCol = texture2D( tIce, vWPos.xz / 4.0 ).rgb * vec3( 0.9, 0.97, 1.06 );
-			diffuseColor.rgb = mix( diffuseColor.rgb, mix( snowCol, iceCol, sa.g ), snowIce );
+			diffuseColor.rgb = mix( diffuseColor.rgb, mix( snowCol, iceCol, iceFrac ), snowIce );
 		}
 		// Rock on steep slopes and on the rock layer (triplanar, a coarse and a
 		// fine scale): grey sandstone in strata
@@ -137,14 +150,18 @@ function softwareColor(): string {
 		vec2 suv = terrainSplatUv( vWPos );
 		vec4 sa = texture2D( tSplatA, suv );
 		vec4 sb = texture2D( tSplatB, suv );
+		float iceMask = min( sb.a, sa.g );
+		float snowOnly = uUseElevSnow > 0.5 ? smoothstep( uSnowLine.x, uSnowLine.y, vWPos.y ) : sb.a * ( 1.0 - sa.g );
+		float snowIce = clamp( max( snowOnly, iceMask ), 0.0, 1.0 );
+		float iceFrac = snowIce > 0.004 ? clamp( iceMask / snowIce, 0.0, 1.0 ) : 0.0;
 		vec3 c = vec3( ${lin(0x9c8c62)} );
 		c = mix( c, vec3( ${lin(0x6f7a44)} ), sb.g );
 		c = mix( c, vec3( ${lin(0x86684b)} ), clamp( sa.b + sb.b * 0.85, 0.0, 1.0 ) );
 		c = mix( c, vec3( ${lin(0x8f887d)} ), sa.a );
 		c = mix( c, vec3( ${lin(0xe4dcc4)} ), sa.r );
-		c = mix( c, c * 0.62, sa.g * ( 1.0 - sb.a ) * uHasSea );
+		c = mix( c, c * 0.62, sa.g * ( 1.0 - snowIce ) * uHasSea );
 		c = mix( c, c * vec3( 0.42, 0.56, 0.55 ), smoothstep( 0.0, -7.0, vWPos.y ) * uHasSea );
-		c = mix( c, mix( vec3( ${lin(0xdce6f0)} ), vec3( ${lin(0xa2cde4)} ), sa.g ), sb.a );
+		c = mix( c, mix( vec3( ${lin(0xdce6f0)} ), vec3( ${lin(0xa2cde4)} ), iceFrac ), snowIce );
 		c = mix( c, vec3( ${lin(0x8d8478)} ), sb.r * 0.9 );
 		diffuseColor.rgb = c;
 	}`;
@@ -182,11 +199,19 @@ export function createTerrainMaterial(
     const spec = hf.spec;
     const biome = atmosphere?.biome ?? 'coastal';
     const hasSea = atmosphere?.hasSea ?? true;
+    const snowLine = biome === 'alpine'
+        ? new THREE.Vector2(26, 44)
+        : biome === 'forge'
+            ? new THREE.Vector2(65, 83)
+            : new THREE.Vector2(9999, 10000);
+    const useElevSnow = biome === 'alpine' || biome === 'forge' ? 1 : 0;
     const uniforms: Record<string, THREE.IUniform> = {
         tSplatA: { value: textures.splatA },
         tSplatB: { value: textures.splatB },
         uSplatFrame: { value: new THREE.Vector4(spec.originX, spec.originZ, 1 / spec.cellSize, spec.cols) },
-        uHasSea: { value: hasSea ? 1 : 0 }
+        uHasSea: { value: hasSea ? 1 : 0 },
+        uSnowLine: { value: snowLine },
+        uUseElevSnow: { value: useElevSnow }
     };
     if (tier === 'software') {
         const material = new THREE.MeshLambertMaterial({ color: 0xffffff });
@@ -230,7 +255,9 @@ export function createTerrainMaterial(
         macro: 0.16,
         macroScale: 80,
         uniforms,
-        decl: SPLAT_DECL + '\nuniform sampler2D tSand;\nuniform sampler2D tGrass;\nuniform sampler2D tGravel;\nuniform sampler2D tRock;\nuniform sampler2D tSnow;\nuniform sampler2D tIce;',
+        vertexDecl: 'varying vec3 vWNormal;',
+        vertex: 'vWNormal = normalize( mat3( modelMatrix ) * objectNormal );',
+        decl: SPLAT_DECL + '\nvarying vec3 vWNormal;\nuniform sampler2D tSand;\nuniform sampler2D tGrass;\nuniform sampler2D tGravel;\nuniform sampler2D tRock;\nuniform sampler2D tSnow;\nuniform sampler2D tIce;',
         color: TERRAIN_COLOR,
         // Wet sand is glossy; frozen lake ice is mirror-slick
         rough: 'roughnessFactor = mix( mix( roughnessFactor, 0.32, terrainWet ), 0.16, terrainIce );'
@@ -252,32 +279,47 @@ interface Level {
 }
 
 /**
- * The heightfield under the decks for the terrain mesh: the pier's grid
- * points (surface wood, baked at the deck's height) take the lowest height
- * of the ground points round them (3 × 3, else 5 × 5), so the mesh next to
- * the pier stays at the beach instead of rising to the deck along the
- * bilinear cell beside it. Only the looks: the sim keeps the baked ground.
+ * The heightfield under the decks for the terrain mesh and ocean shader: every
+ * pier grid point (surface wood, baked at the deck's height) takes the lowest
+ * height and surface of the non-wood ground around it (searching radius 1..5
+ * cells, covering the center of 10–14 m wide piers), so both the beach and the
+ * seabed/ocean render seamlessly underneath every pier. Only the looks: the sim
+ * keeps the baked deck heightfield.
  */
 export function groundUnderDecks(hf: Heightfield): Heightfield {
+    let hasWood = false;
+    for (let k = 0; k < hf.surface.length; k++) {
+        if (hf.surface[k] === SURFACE.wood) { hasWood = true; break; }
+    }
+    if (!hasWood) return hf;
     const { cols, rows } = hf.spec;
     const q = hf.q.slice();
+    const surface = hf.surface.slice();
     for (let k = 0; k < hf.surface.length; k++) {
         if (hf.surface[k] !== SURFACE.wood) continue;
         const i = k % cols, j = (k - i) / cols;
-        for (const r of [1, 2]) {
+        for (const r of [1, 2, 3, 4, 5]) {
             let low = Infinity;
+            let lowSurface: number = SURFACE.sand;
             for (let dj = -r; dj <= r; dj++) {
                 for (let di = -r; di <= r; di++) {
                     const ii = i + di, jj = j + dj;
                     if (ii < 0 || jj < 0 || ii >= cols || jj >= rows) continue;
                     const n = jj * cols + ii;
-                    if (hf.surface[n] !== SURFACE.wood && hf.q[n] < low) low = hf.q[n];
+                    if (hf.surface[n] !== SURFACE.wood && hf.q[n] < low) {
+                        low = hf.q[n];
+                        lowSurface = hf.surface[n];
+                    }
                 }
             }
-            if (low < Infinity) { q[k] = low; break; }
+            if (low < Infinity) {
+                q[k] = low;
+                surface[k] = lowSurface;
+                break;
+            }
         }
     }
-    return { ...hf, q };
+    return { ...hf, q, surface };
 }
 
 /**
@@ -294,13 +336,12 @@ export class TerrainField {
     // Rebuilds since the start (e2e hook, tests)
     rebuilds = 0;
 
-    constructor(private readonly hf: Heightfield, readonly config: TerrainGridConfig, material: THREE.Material) {
+    constructor(hf: Heightfield, readonly config: TerrainGridConfig, material: THREE.Material, decks: Heightfield = groundUnderDecks(hf)) {
         this.group.name = 'terrain';
         const spec = hf.spec;
         const extentX = (spec.cols - 1) * spec.cellSize, extentZ = (spec.rows - 1) * spec.cellSize;
         const frame = { minX: spec.originX, maxX: spec.originX + extentX, minZ: spec.originZ, maxZ: spec.originZ + extentZ, landFrom: 1 };
         this.height = horizonHeight((x, z) => heightAt(hf, x, z), frame);
-        const decks = groundUnderDecks(hf);
         this.meshHeight = horizonHeight((x, z) => heightAt(decks, x, z), frame);
         const m = 2 * config.half + 3;
         this.scratch = new Float64Array(m * m);
@@ -327,13 +368,6 @@ export class TerrainField {
         }
     }
 
-    // Holes in the ground: the pier's deck stands on its own piles
-    private readonly skip = (x0: number, z0: number, x1: number, z1: number): boolean => {
-        const hf = this.hf;
-        return surfaceAt(hf, x0, z0) === SURFACE.wood || surfaceAt(hf, x1, z0) === SURFACE.wood
-            || surfaceAt(hf, x0, z1) === SURFACE.wood || surfaceAt(hf, x1, z1) === SURFACE.wood;
-    };
-
     /** Re-centres the levels on the camera (x, z); returns the number of levels rebuilt. */
     update(x: number, z: number): number {
         let rebuilt = 0;
@@ -356,7 +390,7 @@ export class TerrainField {
                 geometry.attributes.uv.needsUpdate = true;
             }
             const hole = inner ? levelSquare(inner.spacing, half, inner.cx!, inner.cz!) : null;
-            fillLevelIndex(level.spacing, half, cx, cz, hole, level.arrays, this.skip);
+            fillLevelIndex(level.spacing, half, cx, cz, hole, level.arrays);
             level.innerX = inner?.cx ?? null;
             level.innerZ = inner?.cz ?? null;
             geometry.index!.needsUpdate = true;

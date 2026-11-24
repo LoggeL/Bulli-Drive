@@ -3,6 +3,7 @@ import { createCourse } from '../../shared/race/progress.js';
 import { CHEVRON_POST_TOP } from '../../shared/race/raceWorld.js';
 import type { GateDef, TrackDef, TrackRamp } from '../../shared/race/types.js';
 import { rampRearBase, type RampDef } from '../../shared/world/colliders.js';
+import { heightAt } from '../../shared/map/heightfield.js';
 import type { MapData } from '../../shared/map/mapData.js';
 import { lightingTier } from '../render/lighting.js';
 import { Batch, rgb } from '../world/batch.js';
@@ -398,15 +399,37 @@ function hints(build: GateBuild, track: TrackDef): void {
 
 // ---- Ramps ----
 
-type LookedRamp = RampDef & { look?: TrackRamp['look'] };
+export type LookedRamp = RampDef & { look?: TrackRamp['look'] };
 
-function rampMesh(props: PropBatch, ramp: LookedRamp): void {
-    const base = rampRearBase(ramp, (x, z) => groundHeight(x, z));
+export const RAMP_SKIRT_DEPTH = 1.0;
+
+/**
+ * Adds a jump ramp mesh to `props`: rear entry vertices conform across the
+ * width to `ground(x, z)`, the takeoff lip lifts cleanly to
+ * `max(rearLeft, rearCenter, rearRight) + height`, the front face is wound
+ * outward (+along), and all side/rear/front skirts drop `-1.0 m` into the ground.
+ */
+export function rampMesh(props: PropBatch, ramp: LookedRamp, ground: (x: number, z: number) => number = groundAt): void {
     const sin = Math.sin(ramp.yaw), cos = Math.cos(ramp.yaw);
     // Local (across, along) to world; across along the left axis
     const world = (across: number, along: number) => ({ x: ramp.x + cos * across + sin * along, z: ramp.z - sin * across + cos * along });
-    const surface = (along: number) => base + ramp.height * (along / ramp.length + 0.5);
     const half = ramp.width / 2, halfL = ramp.length / 2;
+    const baseCenter = rampRearBase(ramp, ground);
+    const wRearL = world(half, -halfL), wRearR = world(-half, -halfL);
+    const rearL = ground(wRearL.x, wRearL.z);
+    const rearR = ground(wRearR.x, wRearR.z);
+    const lipY = Math.max(baseCenter, rearL, rearR) + ramp.height;
+    const rearY = (across: number) => {
+        if (across === half) return rearL;
+        if (across === -half) return rearR;
+        if (across === 0) return baseCenter;
+        const w = world(across, -halfL);
+        return ground(w.x, w.z);
+    };
+    const surface = (across: number, along: number) => {
+        const t = along / ramp.length + 0.5;
+        return rearY(across) * (1 - t) + lipY * t;
+    };
     const steel = ramp.look === undefined || ramp.look === 'steel';
     const deck = steel ? STEEL_DECK : EARTH;
     const steps = 8;
@@ -421,30 +444,61 @@ function rampMesh(props: PropBatch, ramp: LookedRamp): void {
     };
     const foot = (across: number, along: number) => {
         const w = world(across, along);
-        return groundAt(w.x, w.z) - 0.4;
+        return Math.min(ground(w.x, w.z), surface(across, along)) - RAMP_SKIRT_DEPTH;
     };
+    const cols = [-half, 0, half];
     for (let i = 0; i < steps; i++) {
         const a0 = -halfL + ramp.length * i / steps, a1 = -halfL + ramp.length * (i + 1) / steps;
-        // Deck (up), both sides (outwards)
-        quadAt([point(-half, a0, surface(a0)), point(-half, a1, surface(a1)), point(half, a1, surface(a1)), point(half, a0, surface(a0))]);
-        quadAt([point(half, a0, foot(half, a0)), point(half, a0, surface(a0)), point(half, a1, surface(a1)), point(half, a1, foot(half, a1))]);
-        quadAt([point(-half, a1, foot(-half, a1)), point(-half, a1, surface(a1)), point(-half, a0, surface(a0)), point(-half, a0, foot(-half, a0))]);
+        // Deck (up), conformed across [-half, 0, +half]
+        for (let c = 0; c < cols.length - 1; c++) {
+            const x0 = cols[c], x1 = cols[c + 1];
+            quadAt([
+                point(x0, a0, surface(x0, a0)),
+                point(x0, a1, surface(x0, a1)),
+                point(x1, a1, surface(x1, a1)),
+                point(x1, a0, surface(x1, a0))
+            ]);
+        }
+        // Both sides (outwards) down to -1.0 m skirt
+        quadAt([point(half, a0, foot(half, a0)), point(half, a0, surface(half, a0)), point(half, a1, surface(half, a1)), point(half, a1, foot(half, a1))]);
+        quadAt([point(-half, a1, foot(-half, a1)), point(-half, a1, surface(-half, a1)), point(-half, a0, surface(-half, a0)), point(-half, a0, foot(-half, a0))]);
     }
-    // Front face at the high end
-    quadAt([point(-half, halfL, foot(-half, halfL)), point(-half, halfL, surface(halfL)), point(half, halfL, surface(halfL)), point(half, halfL, foot(half, halfL))]);
+    // Front face at the high end: wound outward (+along) so front lips are never backface-culled
+    quadAt([
+        point(half, halfL, foot(half, halfL)),
+        point(half, halfL, surface(half, halfL)),
+        point(-half, halfL, surface(-half, halfL)),
+        point(-half, halfL, foot(-half, halfL))
+    ]);
+    // Rear skirt at the entry edge: wound outward (-along) down to -1.0 m
+    for (let c = 0; c < cols.length - 1; c++) {
+        const x0 = cols[c], x1 = cols[c + 1];
+        quadAt([
+            point(x0, -halfL, foot(x0, -halfL)),
+            point(x0, -halfL, surface(x0, -halfL)),
+            point(x1, -halfL, surface(x1, -halfL)),
+            point(x1, -halfL, foot(x1, -halfL))
+        ]);
+    }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     g.computeVertexNormals();
     props.add(g, deck);
     // The lip: a hazard bar on the steel ramp, a timber edge on the earth ones
     const lip = world(0, halfL - 0.15);
-    boxAt(props, ramp.width, 0.14, 0.32, lip.x, surface(halfL) - 0.1, lip.z, ramp.yaw, steel ? HAZARD_YELLOW : FINISH.wood);
+    boxAt(props, ramp.width, 0.14, 0.32, lip.x, lipY - 0.1, lip.z, ramp.yaw, steel ? HAZARD_YELLOW : FINISH.wood);
+    const boxTilted = (w: number, h: number, d: number, x: number, y: number, z: number, yaw: number, roll: number, finish: Finish) => {
+        const m = new THREE.Matrix4().makeRotationY(yaw).multiply(new THREE.Matrix4().makeRotationZ(roll)).setPosition(x, y + h / 2, z);
+        props.add(new THREE.BoxGeometry(w, h, d), finish, m);
+    };
     if (steel) {
         // Anti-slip ribs across the steel deck
         for (let k = 1; k <= 7; k++) {
             const along = -halfL + k * ramp.length / 8;
             const at = world(0, along);
-            boxAt(props, ramp.width - 0.3, 0.05, 0.08, at.x, surface(along) - 0.01, at.z, ramp.yaw, FINISH.galvanized);
+            const yL = surface(half, along), yR = surface(-half, along);
+            const yMid = Math.max(surface(0, along), (yL + yR) * 0.5);
+            boxTilted(ramp.width - 0.3, 0.05, 0.08, at.x, yMid - 0.01, at.z, ramp.yaw, Math.atan2(yL - yR, ramp.width), FINISH.galvanized);
         }
     }
     if (!steel) {
@@ -452,27 +506,52 @@ function rampMesh(props: PropBatch, ramp: LookedRamp): void {
         for (let k = 1; k <= 4; k++) {
             const along = halfL - 0.5 - k * 0.9;
             const at = world(0, along);
-            boxAt(props, ramp.width - 0.2, 0.06, 0.34, at.x, surface(along) - 0.02, at.z, ramp.yaw, FINISH.wood);
+            const yL = surface(half, along), yR = surface(-half, along);
+            const yMid = Math.max(surface(0, along), (yL + yR) * 0.5);
+            boxTilted(ramp.width - 0.2, 0.06, 0.34, at.x, yMid - 0.02, at.z, ramp.yaw, Math.atan2(yL - yR, ramp.width), FINISH.wood);
         }
     }
 }
 
 let mapFeatures: THREE.Group | null = null;
+let mapFeaturesKey: string | null = null;
+
+/** Disposes and detaches the cached map ramps group (used on map switch and in tests). */
+export function disposeMapFeatures(): void {
+    if (!mapFeatures) return;
+    mapFeatures.removeFromParent();
+    mapFeatures.traverse(object => {
+        const mesh = object as THREE.Mesh;
+        if (mesh.isMesh) mesh.geometry.dispose();
+    });
+    mapFeatures.clear();
+    mapFeatures = null;
+    mapFeaturesKey = null;
+}
 
 /**
- * The map's jump ramps (built once per page; every room's world has them):
- * null until a map is given.
+ * The active map's jump ramps, keyed by `mapId:worldHash`: reused across room
+ * switches on the same map, and cleanly disposed and rebuilt on map switch.
  */
 export function mapFeaturesGroup(map: MapData | null): THREE.Group | null {
-    if (mapFeatures || !map) return mapFeatures;
+    if (!map) {
+        disposeMapFeatures();
+        return null;
+    }
+    const key = `${map.mapId}:${map.worldHash}`;
+    if (mapFeatures && mapFeaturesKey === key) return mapFeatures;
+    disposeMapFeatures();
     const M = worldMaterials();
     const group = new THREE.Group();
     group.name = 'map-ramps';
+    group.userData.mapKey = key;
     const props = new PropBatch('map-ramps');
-    for (const ramp of map.ramps) rampMesh(props, ramp);
+    const ground = (x: number, z: number) => heightAt(map.hf, x, z);
+    for (const ramp of map.ramps) rampMesh(props, ramp, ground);
     const rampMeshObject = props.mesh(M.furniture, { cast: lightingTier() !== 'software' });
     if (rampMeshObject) group.add(rampMeshObject);
     mapFeatures = group;
+    mapFeaturesKey = key;
     return group;
 }
 

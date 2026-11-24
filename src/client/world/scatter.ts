@@ -1,7 +1,8 @@
 import { hashMix, hashUnit } from '../../shared/map/buildings.js';
+import { billboardReservedBox, boostPadReservedBox, heroPropReservedBoxes } from '../../shared/map/discoverySchema.js';
 import { pointInPolygon } from '../../shared/map/geometry.js';
 import { heightAt, surfaceAt, zoneAt } from '../../shared/map/heightfield.js';
-import type { MapData } from '../../shared/map/mapData.js';
+import { jumpZone, type MapData } from '../../shared/map/mapData.js';
 import { groundGrade } from '../../shared/map/plants.js';
 import { insideCorridor, junctionRadius } from '../../shared/map/roadNetwork.js';
 import { leftNormal, pointAt } from '../../shared/map/spline.js';
@@ -79,14 +80,30 @@ const SURFACE_OK: Record<DecorKind, (surface: number) => boolean> = {
     pallets: s => s === SURFACE.concrete || s === SURFACE.gravel || s === SURFACE.dirt || s === SURFACE.grass
 };
 
+function buildExclusionWalls(map: MapData): BoxIndex {
+    const walls = new BoxIndex();
+    for (const lot of map.buildings) walls.add(placementBox(lot));
+    for (const structure of map.structures) walls.add(placementBox(structure));
+    for (const prop of map.heroProps ?? []) {
+        const boxes = heroPropReservedBoxes(prop);
+        if (boxes.length) {
+            for (const box of boxes) walls.add(box);
+        } else {
+            walls.add({ x: prop.x, z: prop.z, hw: 3, hd: 3, ux: 0, uz: 1 });
+        }
+    }
+    for (const billboard of map.billboards ?? []) walls.add(billboardReservedBox(billboard));
+    for (const pad of map.boostPads ?? []) walls.add(boostPadReservedBox(pad));
+    for (const ramp of map.ramps ?? []) walls.add(jumpZone(ramp));
+    return walls;
+}
+
 /** The client's scatter of the map; `density` (0..1] keeps that share of it. */
 export function scatterDecor(map: MapData, density = 1): DecorSpot[] {
     const { hf, net } = map;
     const spec = hf.spec;
     const extent = (spec.cols - 1) * spec.cellSize;
-    const walls = new BoxIndex();
-    for (const lot of map.buildings) walls.add(placementBox(lot));
-    for (const structure of map.structures) walls.add(placementBox(structure));
+    const walls = buildExclusionWalls(map);
     // Plants with a collider, in 8 m buckets
     const plantCells = new Map<number, number[]>();
     const bucket = (x: number, z: number) => Math.floor((x - spec.originX) / 8) * 1024 + Math.floor((z - spec.originZ) / 8);
@@ -119,6 +136,11 @@ export function scatterDecor(map: MapData, density = 1): DecorSpot[] {
     DECOR_RULES.forEach((rule, r) => {
         // Gate tropical bougainvillea flowers and coastal beach/dune decor out of alpine maps
         if (biome === 'alpine' && (rule.kind === 'flowers' || rule.kind === 'duneGrass' || rule.kind === 'sunshade' || rule.kind === 'volleyball')) {
+            return;
+        }
+        // Gate chaparral bushes, shrubs, flowers and beach decor out of arid gravel quarries
+        if (biome === 'quarry' && (rule.kind === 'chaparral' || rule.kind === 'shrub' || rule.kind === 'flowers'
+            || rule.kind === 'duneGrass' || rule.kind === 'sunshade' || rule.kind === 'volleyball')) {
             return;
         }
         const cells = Math.floor(extent / rule.cell);
@@ -191,10 +213,10 @@ export const FENCE_JUNCTION_GAP = 8;
  * water, and starts again behind it.
  */
 export function ranchFences(map: MapData): [number, number][][] {
+    // Gate California wooden ranch fences out of gravel quarry maps
+    if (map.atmosphere?.biome === 'quarry') return [];
     const { hf, net } = map;
-    const walls = new BoxIndex();
-    for (const lot of map.buildings) walls.add(placementBox(lot));
-    for (const structure of map.structures) walls.add(placementBox(structure));
+    const walls = buildExclusionWalls(map);
     const runs: [number, number][][] = [];
     for (const edge of net.edges) {
         const start = junctionRadius(net, net.nodes[edge.from]) + FENCE_JUNCTION_GAP;
