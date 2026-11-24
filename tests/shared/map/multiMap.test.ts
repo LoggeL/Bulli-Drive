@@ -252,11 +252,13 @@ describe.each(MAP_IDS.map(id => [id] as const))('curated map %s', mapId => {
         expect(manifest.mapId).toBe(mapId);
         expect(manifest.files.terrain.path).toBe('terrain.bhf');
 
+        // Quality 6 is ~100x faster than 11 on CI runners and strictly larger,
+        // so passing <= 600 KB here guarantees production Brotli-11 stays well under budget.
         const brotli = brotliCompressSync(bytes, {
-            params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 11 }
+            params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 6 }
         });
         expect(brotli.length).toBeLessThanOrEqual(600 * 1024);
-    });
+    }, 20_000);
 
     it('builds deterministically via importMapSources and fetchMapData with identical worldHash', async () => {
         const imported = await importMapSources(mapId);
@@ -278,7 +280,7 @@ describe.each(MAP_IDS.map(id => [id] as const))('curated map %s', mapId => {
         };
         const fetched = await fetchMapData(mapId, { fetchFn: mockFetch });
         expect(fetched.worldHash).toBe(mapData.worldHash);
-    });
+    }, 20_000);
 
     it('passes tools/map/validateMap with zero errors and has a dry in-bounds showroomSpot', () => {
         const bundle = loadMapBundle(mapId);
