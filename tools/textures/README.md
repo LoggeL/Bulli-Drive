@@ -96,3 +96,16 @@ script in `generated/prep/` (layout `assets/gen/raw`, `assets/facade`,
 and pack a new archive version.
 Licensing and the brand rules (invented shop names only) are in
 [docs/assets.md](../../docs/assets.md).
+
+## Refactor biome PBR sets, lore billboards, and map preview cards
+
+Map-specific PBR biome materials (`public/textures/biomes/`), custom lore
+billboards and ground decals (`public/textures/billboards/`), and map picker
+preview cards (`public/ui/map-*.webp`) are driven by `refactor-prompts.json`:
+
+```bash
+node tools/textures/generate-refactor.mjs --concurrency=4   # Codex imagegen -> .cache/refactor-raw/
+python3 tools/textures/prep_refactor_pbr.py                 # seamless tiling, OpenGL +Y normal, ARM, POT resize
+node tools/textures/build-refactor.mjs                      # KTX2 (flipY: true) + WebP + sub-manifests
+node tools/textures/verify-refactor.mjs                     # KTX2 headers, POT <= 1024, SHA hashes, budgets
+```
