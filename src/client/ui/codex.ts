@@ -42,9 +42,12 @@ interface ToastPayload {
 const TOAST_MS = 5200;
 
 let trackerRef: DiscoveryTracker = discoveryTracker;
+let activeMapId: MapId | null = null;
 let activeFilter: 'all' | DiscoveryAlloy = 'all';
 let initialized = false;
+let keydownHandler: ((event: KeyboardEvent) => void) | null = null;
 let toastTimer = 0;
+let toastRaf = 0;
 const toastQueue: ToastPayload[] = [];
 let toastVisible = false;
 let onProgressChanged: (() => void) | null = null;
@@ -86,6 +89,13 @@ export function toggleCodex(): void {
 
 /** Updates HUD badge, room-panel button, minimap markers, and 3D beacons. */
 export function syncDiscoveryUi(): void {
+    const currentMapId = trackerRef.getMapId();
+    if (activeMapId !== null && activeMapId !== currentMapId) {
+        clearDiscoveryToasts();
+        activeFilter = 'all';
+    }
+    activeMapId = currentMapId;
+
     const defs = trackerRef.getDefinitions();
     const found = trackerRef.getFoundIds();
     const pinned = trackerRef.getPinnedId();
@@ -112,6 +122,9 @@ export function syncDiscoveryUi(): void {
 }
 
 function renderCodex(): void {
+    const scrollHost = dialogEl()?.querySelector<HTMLElement>('.codex-body') ?? null;
+    const prevScrollTop = scrollHost?.scrollTop ?? 0;
+
     const mapId = trackerRef.getMapId();
     const desc = mapDescriptor(mapId);
     const defs = trackerRef.getDefinitions();
@@ -234,9 +247,27 @@ function renderCodex(): void {
         card.append(head, body, actions);
         return card;
     }));
+    if (scrollHost) scrollHost.scrollTop = prevScrollTop;
 }
 
 // ---- Celebratory Toast Banner ----
+
+/** Clears any visible or queued discovery toasts (called on live map switches). */
+export function clearDiscoveryToasts(): void {
+    toastQueue.length = 0;
+    window.clearTimeout(toastTimer);
+    toastTimer = 0;
+    if (toastRaf) {
+        cancelAnimationFrame(toastRaf);
+        toastRaf = 0;
+    }
+    toastVisible = false;
+    const el = document.getElementById('discovery-toast');
+    if (el) {
+        el.classList.remove('visible');
+        el.hidden = true;
+    }
+}
 
 function enqueueToast(payload: ToastPayload): void {
     toastQueue.push(payload);
@@ -273,7 +304,11 @@ function showNextToast(): void {
     else delete el.dataset.alloy;
 
     el.hidden = false;
-    requestAnimationFrame(() => el.classList.add('visible'));
+    if (toastRaf) cancelAnimationFrame(toastRaf);
+    toastRaf = requestAnimationFrame(() => {
+        toastRaf = 0;
+        el.classList.add('visible');
+    });
     window.clearTimeout(toastTimer);
     toastTimer = window.setTimeout(() => {
         el.classList.remove('visible');
@@ -294,7 +329,8 @@ export function showDiscoveryToast(def: DiscoveryDef, progress: DiscoveryProgres
 
 /** Shows a toast when another player in the same room discovers a secret. */
 export function showFriendDiscoveryToast(playerName: string, discoveryId: string, mapId: MapId): void {
-    const def = mapId === trackerRef.getMapId() ? trackerRef.getDefinition(discoveryId) : undefined;
+    if (mapId !== trackerRef.getMapId()) return;
+    const def = trackerRef.getDefinition(discoveryId);
     const mapName = isMapId(mapId) ? mapDescriptor(mapId).name : mapId;
     const label = def ? def.title : discoveryId.replace(/[-_]+/g, ' ');
     enqueueToast({
@@ -335,7 +371,7 @@ export function initCodex(tracker: DiscoveryTracker = discoveryTracker): void {
         toggleCodex();
     });
 
-    window.addEventListener('keydown', event => {
+    keydownHandler = event => {
         if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
         if (event.key.toLowerCase() !== 'c') return;
         const active = document.activeElement;
@@ -352,7 +388,8 @@ export function initCodex(tracker: DiscoveryTracker = discoveryTracker): void {
         if (trackerRef.getDefinitions().length === 0) return;
         event.preventDefault();
         openCodex();
-    });
+    };
+    window.addEventListener('keydown', keydownHandler);
 
     trackerRef.onUnlock((def, progress) => {
         showDiscoveryToast(def, progress);
@@ -362,4 +399,16 @@ export function initCodex(tracker: DiscoveryTracker = discoveryTracker): void {
 
     trackerRef.onChange(() => syncDiscoveryUi());
     syncDiscoveryUi();
+}
+
+/** Detaches window listeners and clears toast timers (used by tests & teardown). */
+export function disposeCodex(): void {
+    clearDiscoveryToasts();
+    if (keydownHandler) {
+        window.removeEventListener('keydown', keydownHandler);
+        keydownHandler = null;
+    }
+    activeMapId = null;
+    activeFilter = 'all';
+    initialized = false;
 }

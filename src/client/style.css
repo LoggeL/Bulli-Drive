@@ -3696,10 +3696,17 @@ body.room-race.race-results-open #mobile-controls {
     font-variant-numeric: tabular-nums;
 }
 
-/* Discovery Codex Modal */
+/* Discovery Codex Modal: header, progress bar, and filter tabs stay pinned while .codex-body scrolls */
 .codex-dialog {
     width: min(680px, calc(100vw - 24px));
     max-height: min(760px, calc(100dvh - 32px));
+    overflow: hidden;
+}
+
+.codex-dialog .dialog-head,
+.codex-progress-track,
+.codex-filters {
+    flex: 0 0 auto;
 }
 
 .codex-head-title {
@@ -3730,15 +3737,35 @@ body.room-race.race-results-open #mobile-controls {
     transition: transform 0.25s var(--ui-ease);
 }
 
-.codex-body {
-    gap: 14px;
-    padding-top: 14px;
-}
-
 .codex-filters {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
+    padding: 12px 24px 10px;
+    border-bottom: 1px solid var(--ui-line);
+}
+
+.codex-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    gap: 14px;
+    padding-top: 14px;
+}
+
+@media (max-width: 520px) {
+    .codex-progress-track {
+        margin: 4px 16px 0;
+    }
+
+    .codex-filters {
+        padding: 10px 16px 8px;
+    }
+
+    .codex-body {
+        padding: 12px 16px 18px;
+    }
 }
 
 .codex-filter {

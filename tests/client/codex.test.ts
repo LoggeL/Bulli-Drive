@@ -64,6 +64,7 @@ describe('Discovery Codex UI & Toast Banner', () => {
     });
 
     afterEach(() => {
+        codex?.disposeCodex();
         vi.useRealTimers();
     });
 
@@ -122,6 +123,71 @@ describe('Discovery Codex UI & Toast Banner', () => {
         codex.showFriendDiscoveryToast('Kalle', 'forge-arch', 'logge-forge');
         expect(toast.hidden).toBe(false);
         expect(document.getElementById('discovery-toast-title')!.textContent).toBe('Kalle found LMF Forge Arch');
+    });
+
+    it('pins header, progress bar, and alloy filters outside the scrolling body and preserves scroll on pin click', () => {
+        codex.openCodex();
+        const dialog = document.getElementById('codex-dialog')!;
+        const body = dialog.querySelector<HTMLElement>('.codex-body')!;
+        const head = dialog.querySelector<HTMLElement>('.dialog-head')!;
+        const progress = dialog.querySelector<HTMLElement>('.codex-progress-track')!;
+        const filters = dialog.querySelector<HTMLElement>('#codex-filters')!;
+
+        // Header, progress bar, and filter tabs must NOT live inside the scrolling .codex-body
+        expect(body.contains(head)).toBe(false);
+        expect(body.contains(progress)).toBe(false);
+        expect(body.contains(filters)).toBe(false);
+        expect([...dialog.children]).toEqual([head, progress, filters, body]);
+
+        // Clicking "Track on Radar" preserves scroll position inside .codex-body
+        body.scrollTop = 240;
+        const pinBtn = body.querySelector<HTMLButtonElement>('.codex-pin-btn')!;
+        pinBtn.click();
+        expect(tracker.getPinnedId()).toBe('forge-arch');
+        expect(body.scrollTop).toBe(240);
+    });
+
+    it('clears active and queued discovery toasts on map switch and resumes cleanly on the new map', () => {
+        const toast = document.getElementById('discovery-toast')!;
+
+        // Unlock both logge-forge discoveries: first is visible, second is queued
+        tracker.update({ x: 0, z: 0, speedMs: 5, airborne: false, dt: 0.1 });
+        tracker.onHorn(100, 100);
+        expect(toast.hidden).toBe(false);
+        expect(document.getElementById('discovery-toast-title')!.textContent).toBe('LMF Forge Arch');
+
+        // Live-switch map to alpen-pass: active toast hides immediately and queued toast is dropped
+        const alpenDef: DiscoveryDef = {
+            id: 'alpen-chalet',
+            title: 'Ramsen Chalet',
+            subtitle: 'Alpine Refuge',
+            alloy: 'alpine',
+            x: 10,
+            z: 10,
+            hint: 'Drive to the chalet.',
+            codexEntry: 'Warm cocoa at 210m.',
+            toast: 'Chalet reached!',
+            rewardEffect: 'sparks',
+            trigger: { kind: 'proximity', radius: 15 }
+        };
+        tracker.setMap('alpen-pass', [alpenDef]);
+        expect(toast.hidden).toBe(true);
+        expect(toast.classList.contains('visible')).toBe(false);
+
+        // Advancing timers must NEVER pop up the queued logge-forge toast
+        vi.advanceTimersByTime(15_000);
+        expect(toast.hidden).toBe(true);
+        expect(document.getElementById('discovery-toast-title')!.textContent).not.toBe('FI Toaster');
+
+        // Friend toast from old map is also ignored
+        codex.showFriendDiscoveryToast('Kalle', 'forge-arch', 'logge-forge');
+        expect(toast.hidden).toBe(true);
+
+        // Unlocking a discovery on the new map displays normally (toastVisible was reset)
+        tracker.update({ x: 10, z: 10, speedMs: 5, airborne: false, dt: 0.1 });
+        expect(toast.hidden).toBe(false);
+        expect(document.getElementById('discovery-toast-title')!.textContent).toBe('Ramsen Chalet');
+        expect(document.getElementById('discovery-toast-count')!.textContent).toBe('1 / 1');
     });
 
     it('ignores C shortcut while typing in an input or while the main menu is open', () => {
