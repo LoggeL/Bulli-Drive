@@ -418,7 +418,8 @@ export function createMapData(sources: MapSources, hf: Heightfield): MapData {
     for (const lot of buildings) buildingIndex.add(placementBox(lot));
     const plants = placePlants({
         net, hf, areas: net.areas, boundary: map.boundary, buildings: buildingIndex, reserved,
-        moles: (pois.moles ?? []).map(mole => mole.line)
+        moles: (pois.moles ?? []).map(mole => mole.line),
+        biome: atmosphere.biome
     });
     const fountains = pois.landmarks.filter(landmark => landmark.kind === 'fountain').map(({ x, z }): [number, number] => [x, z]);
     const furniture = placeFurniture({

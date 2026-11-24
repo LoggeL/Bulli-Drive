@@ -114,8 +114,13 @@ export function scatterDecor(map: MapData, density = 1): DecorSpot[] {
         && z >= net.areaBounds[b + 1] - margin && z <= net.areaBounds[b + 3] + margin
         && pointInPolygon(area.polygon, x, z));
 
+    const biome = map.atmosphere?.biome;
     const out: DecorSpot[] = [];
     DECOR_RULES.forEach((rule, r) => {
+        // Gate tropical bougainvillea flowers and coastal beach/dune decor out of alpine maps
+        if (biome === 'alpine' && (rule.kind === 'flowers' || rule.kind === 'duneGrass' || rule.kind === 'sunshade' || rule.kind === 'volleyball')) {
+            return;
+        }
         const cells = Math.floor(extent / rule.cell);
         for (let j = 0; j < cells; j++) {
             for (let i = 0; i < cells; i++) {
