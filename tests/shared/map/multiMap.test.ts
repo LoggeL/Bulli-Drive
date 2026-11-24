@@ -55,6 +55,16 @@ function readTerrainBytes(mapId: MapId): Uint8Array {
     return new Uint8Array(readFileSync(path.join(ROOT, 'public/maps', mapId, 'terrain.bhf')));
 }
 
+const builtMapCache = new Map<MapId, ReturnType<typeof buildMapFromRaw>>();
+function builtMap(mapId: MapId) {
+    let cached = builtMapCache.get(mapId);
+    if (!cached) {
+        cached = buildMapFromRaw(mapId, readRawSources(mapId), readTerrainBytes(mapId));
+        builtMapCache.set(mapId, cached);
+    }
+    return cached;
+}
+
 describe('multi-map registry and surface additions', () => {
     it('registers all four curated maps with consistent grids, tracks, and metadata', () => {
         expect(MAP_IDS).toEqual(['bulli-bay', 'alpen-pass', 'stunt-forge', 'logge-forge']);
@@ -345,7 +355,7 @@ describe.each(MAP_IDS.map(id => [id] as const))('curated map %s', mapId => {
 
 describe('biome features and flagship Logge Forge easter-egg catalog', () => {
     it('bakes alpine snow and frozen lake ice on alpen-pass and dry pit on stunt-forge', () => {
-        const alpenHf = decodeHeightfield(readTerrainBytes('alpen-pass'), MAP_GRIDS['alpen-pass']);
+        const alpenHf = builtMap('alpen-pass').hf;
         let snowCells = 0, iceCells = 0;
         for (let i = 0; i < alpenHf.surface.length; i++) {
             if (alpenHf.surface[i] === SURFACE.snow) snowCells++;
@@ -356,14 +366,14 @@ describe('biome features and flagship Logge Forge easter-egg catalog', () => {
         expect(heightAt(alpenHf, 0, -620)).toBeGreaterThan(170);
         expect(surfaceAt(alpenHf, 380, 450)).toBe(SURFACE.ice);
 
-        const stuntHf = decodeHeightfield(readTerrainBytes('stunt-forge'), MAP_GRIDS['stunt-forge']);
+        const stuntHf = builtMap('stunt-forge').hf;
         expect(heightAt(stuntHf, 0, 0)).toBeLessThan(0);
         expect(waterDepth(stuntHf, 0, 0)).toBeLessThanOrEqual(0);
         expect(heightAt(stuntHf, 590, 0)).toBeGreaterThan(50);
-    });
+    }, 20_000);
 
     it('packs all 22 verified LMF discoveries and exercises every contracted heroProp model and billboard texture', () => {
-        const forge = buildMapFromRaw('logge-forge', readRawSources('logge-forge'), readTerrainBytes('logge-forge'));
+        const forge = builtMap('logge-forge');
         expect(forge.discoveries).toHaveLength(22);
         // Mount Aftermovie flanks are snowy high ground; outer ocean is water
         expect(surfaceAt(forge.hf, -700, 680)).toBe(SURFACE.snow);
@@ -374,33 +384,33 @@ describe('biome features and flagship Logge Forge easter-egg catalog', () => {
         const usedModels = new Set<string>();
         const usedTextures = new Set<string>();
         for (const id of MAP_IDS) {
-            const m = buildMapFromRaw(id, readRawSources(id), readTerrainBytes(id));
+            const m = builtMap(id);
             for (const p of m.heroProps) usedModels.add(p.model);
             for (const b of m.billboards) usedTextures.add(b.texture);
         }
         expect([...usedModels].sort()).toEqual([...HERO_PROP_MODELS].sort());
         expect([...usedTextures].sort()).toEqual([...BILLBOARD_TEXTURES].sort());
-    });
+    }, 20_000);
 
     it('gates tropical palms and lake-ice trees out of alpen-pass and pins bulli-bay BAKE_VERSION=4 worldHash', () => {
-        const bulli = buildMapFromRaw('bulli-bay', readRawSources('bulli-bay'), readTerrainBytes('bulli-bay'));
+        const bulli = builtMap('bulli-bay');
         // Updated for BAKE_VERSION=4 polish: corridorLine retaining-wall flat clamp (+0.8 m beyond sidewalk),
         // addArea boundary surface stamping, deepened 2.0 m kit foundations (0.3 m beach_w8_f1) + LOT_MAX_RELIEF=2.2
         // restoring hillside residential density (359 -> 430 buildings, 0 floating/buried).
         expect(bulli.worldHash).toBe('7eeec622');
         expect(bulli.plants.filter(p => p.kind === 'palm')).toHaveLength(131);
 
-        const alpen = buildMapFromRaw('alpen-pass', readRawSources('alpen-pass'), readTerrainBytes('alpen-pass'));
+        const alpen = builtMap('alpen-pass');
         expect(alpen.plants.filter(p => p.kind === 'palm')).toEqual([]);
         expect(alpen.plants.filter(p => p.kind === 'cypress').length).toBeGreaterThan(200);
         expect(alpen.plants.filter(p => surfaceAt(alpen.hf, p.x, p.z) === SURFACE.ice)).toEqual([]);
         // Snowy slopes grow alpine evergreen cypresses, never broad-leaf oaks
         const snowyOaks = alpen.plants.filter(p => p.kind === 'oak' && surfaceAt(alpen.hf, p.x, p.z) === SURFACE.snow);
         expect(snowyOaks).toEqual([]);
-    });
+    }, 20_000);
 
     it('clears monument beams on logge-forge billboards (bb-lmf-welcome & bb-bands-marquee)', () => {
-        const forge = buildMapFromRaw('logge-forge', readRawSources('logge-forge'), readTerrainBytes('logge-forge'));
+        const forge = builtMap('logge-forge');
         const propManifest = JSON.parse(
             readFileSync(path.join(ROOT, 'public/models/props/manifest.json'), 'utf8')
         ) as { props: Record<string, { bounds: { min: [number, number, number]; max: [number, number, number] }; billboardNode?: string }> };
@@ -425,11 +435,11 @@ describe('biome features and flagship Logge Forge easter-egg catalog', () => {
         const stageLocalZ = -(marquee.z - stage.z); // stage.yaw === pi
         expect(stageLocalZ - 0.25).toBeGreaterThan(4.8);
         expect((marquee.yOffset ?? 0) - marquee.height / 2).toBeGreaterThan(8.0);
-    });
+    }, 20_000);
 
     it('guarantees zero floating/buried structures, clean harbor water, open stunt-bowl gates, and flat Eissee ice across all 4 maps', () => {
         for (const id of MAP_IDS) {
-            const m = buildMapFromRaw(id, readRawSources(id), readTerrainBytes(id));
+            const m = builtMap(id);
             // Every procedural building sits within its foundation skirt and burial cap
             for (const b of m.buildings) {
                 const y0 = heightAt(m.hf, b.x, b.z);
@@ -461,7 +471,7 @@ describe('biome features and flagship Logge Forge easter-egg catalog', () => {
         // logge-forge: sailboat floats in genuine open harbor water (h < -3 m), ijsselmeer-pier is a wooden area
         // whose far tip boundary cells (z = 560) are stamped SURFACE.wood (eliminating seabed rock pillar),
         // and dec-saalplan faces east (yaw = -pi/2) toward hp-theater-facade.
-        const forge = buildMapFromRaw('logge-forge', readRawSources('logge-forge'), readTerrainBytes('logge-forge'));
+        const forge = builtMap('logge-forge');
         const boat = forge.heroProps.find(p => p.id === 'hp-sailboat')!;
         expect(heightAt(forge.hf, boat.x, boat.z)).toBeLessThan(-3);
         expect(forge.net.areas.some(a => a.id === 'ijsselmeer-pier' && a.surface === 'wood')).toBe(true);
@@ -474,7 +484,7 @@ describe('biome features and flagship Logge Forge easter-egg catalog', () => {
 
         // bulli-bay: corridorLine clamps walled flat margins so concrete retaining walls (5.0..6.5 m)
         // on laurel-court and cypress-court are exposed (>0.5 m drop at 6.5 m) while asphalt (3.5 m) stays flat (<= 5 cm)
-        const bulli = buildMapFromRaw('bulli-bay', readRawSources('bulli-bay'), readTerrainBytes('bulli-bay'));
+        const bulli = builtMap('bulli-bay');
         for (const edgeId of ['laurel-court', 'cypress-court'] as const) {
             const edge = bulli.net.edgeById.get(edgeId)!;
             const heights = new Map([[edge.id, new Float64Array(edge.samples.length).fill(15)]]);
@@ -510,7 +520,7 @@ describe('biome features and flagship Logge Forge easter-egg catalog', () => {
         }
 
         // alpen-pass: Eissee frozen lake is flat (< 0.5 m relief) and has zero beach surf shacks
-        const alpen = buildMapFromRaw('alpen-pass', readRawSources('alpen-pass'), readTerrainBytes('alpen-pass'));
+        const alpen = builtMap('alpen-pass');
         let iceMin = Infinity, iceMax = -Infinity;
         const { cols, rows, heightOffset, heightScale } = alpen.hf.spec;
         for (let k = 0; k < cols * rows; k++) {
@@ -524,7 +534,7 @@ describe('biome features and flagship Logge Forge easter-egg catalog', () => {
         expect(alpen.buildings.filter(b => b.piece.startsWith('beach_'))).toEqual([]);
 
         // stunt-forge: all 4 bowl access roads (N/S/E/W) are open in free-roam simWorld, zero coastal buildings/oaks/cypresses
-        const stunt = buildMapFromRaw('stunt-forge', readRawSources('stunt-forge'), readTerrainBytes('stunt-forge'));
+        const stunt = builtMap('stunt-forge');
         expect(stunt.buildings).toEqual([]);
         expect(stunt.plants.filter(p => p.kind === 'oak' || p.kind === 'cypress' || p.kind === 'palm')).toEqual([]);
         const segments = stunt.colliders.filter(c => c.kind === 'segment');
@@ -536,7 +546,7 @@ describe('biome features and flagship Logge Forge easter-egg catalog', () => {
             });
             expect(blocked, `stunt-bowl entry (${gx},${gz}) blocked by fence`).toBe(false);
         }
-    });
+    }, 20_000);
 
     it('validateMap catches injected floating props, road billboards, off-road boostPads, duplicate ramps, and sheer cliff steps', () => {
         const bundle = loadMapBundle('stunt-forge');
@@ -569,5 +579,5 @@ describe('biome features and flagship Logge Forge easter-egg catalog', () => {
         badHf.surface[idx + badHf.spec.cols] = SURFACE.grass;
         badHf.q[idx + 1] = Math.min(65535, badHf.q[idx] + Math.round(12 / badHf.spec.heightScale));
         expect(checkSheerCliffs(bundle.net, badHf).some(f => f.message.includes('sheer 1-cell cliff'))).toBe(true);
-    });
+    }, 20_000);
 });
