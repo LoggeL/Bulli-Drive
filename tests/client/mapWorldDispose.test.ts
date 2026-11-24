@@ -1,13 +1,16 @@
 // @vitest-environment happy-dom
+import fs from 'node:fs';
+import path from 'node:path';
 import * as THREE from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import { loadTestMap } from './loadTestMap.js';
 import { heightAt } from '../../src/shared/map/heightfield.js';
+import { PLANT_COLLIDERS } from '../../src/shared/map/plants.js';
 import { MAP_REGISTRY } from '../../src/shared/map/registry.js';
 import { ChaseCamera, RACE_CAMERA, type ChaseTarget } from '../../src/client/camera/ChaseCamera.js';
 import { ShowroomCamera, type ShowroomEnv } from '../../src/client/camera/ShowroomCamera.js';
 import { createWorldMaterials } from '../../src/client/world/materials.js';
-import { MapWorld } from '../../src/client/world/mapWorld.js';
+import { MapWorld, rockSinkDepth } from '../../src/client/world/mapWorld.js';
 import { WORLD_QUALITY } from '../../src/client/world/worldQuality.js';
 
 vi.mock('../../src/client/world/textures.js', async () => {
@@ -174,5 +177,27 @@ describe('ShowroomCamera.setSpot & ChaseCamera dynamic feel', () => {
         expect(camBase.fov).toBeLessThanOrEqual(RACE_CAMERA.maxFov);
         // Positive slip shifts camera slightly toward -X (right vector for yaw=0 is (+1, 0, 0), desiredDrift < 0)
         expect(camBase.position.x).toBeLessThan(baselineX - 0.15);
+    });
+});
+
+describe('Alpine slope boulder grounding & Vite dynamic import cleanliness', () => {
+    it('sinks rocks/boulders proportional to local terrain slope so downhill rims never float', () => {
+        // Flat ground: baseline 0.35 * size
+        expect(rockSinkDepth(0, 'boulder', 1)).toBeCloseTo(0.35, 6);
+        expect(rockSinkDepth(0, 'rock', 1.2)).toBeCloseTo(0.35 * 1.2, 6);
+
+        // 34 deg alpine slope (tan 34 deg = 0.67451): boulder radius 2.2 m
+        // Expected by hand: 0.35 + 0.67451 * 2.2 * 0.65 = 1.31455 m
+        const slope34 = Math.tan(34 * Math.PI / 180);
+        expect(rockSinkDepth(slope34, 'boulder', 1)).toBeCloseTo(0.35 + slope34 * PLANT_COLLIDERS.boulder.r * 0.65, 5);
+        expect(rockSinkDepth(slope34, 'boulder', 1)).toBeGreaterThan(1.25);
+
+        // Extreme cliff slope caps cleanly at 72% of rock height so the top stays visible
+        expect(rockSinkDepth(4.0, 'boulder', 1)).toBeCloseTo(PLANT_COLLIDERS.boulder.top * 0.72, 6);
+    });
+
+    it('keeps look.ts free of static bulli-bay/map.json imports (avoids Vite ineffective dynamic import warning)', () => {
+        const lookSource = fs.readFileSync(path.resolve(__dirname, '../../src/client/render/look.ts'), 'utf8');
+        expect(lookSource).not.toMatch(/bulli-bay\/map\.json/);
     });
 });

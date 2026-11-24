@@ -7,6 +7,20 @@ import {
 } from '../assets/HeroAssetLoader.js';
 import type { RenderTier } from '../effects/renderQuality.js';
 import { WORLD_UNIFORMS } from '../render/look.js';
+import { patchWorldMaterial } from './materials.js';
+import { ROAD_DISTANCE_LIFT, ROAD_LIFT_FROM } from './roads.js';
+
+// Ground overlays sit strictly above roads/areas (ROAD_LIFT=0.02, ROAD_DISTANCE_LIFT=0.0025)
+// at every distance from 0 m to the horizon so roads/concrete never bury decals or boost pads.
+export const DECAL_BASE_LIFT = 0.055;
+export const DECAL_DISTANCE_LIFT = ROAD_DISTANCE_LIFT + 0.0002;
+export const BOOST_PAD_BASE_LIFT = 0.065;
+export const BOOST_PAD_DISTANCE_LIFT = ROAD_DISTANCE_LIFT + 0.0003;
+
+/** Effective height offset (m) above terrain at camera distance `dist` (matches vertex shader). */
+export function surfaceLiftAtDistance(baseLift: number, liftRate: number, dist: number, liftFrom = ROAD_LIFT_FROM): number {
+    return baseLift + Math.max(0, dist - liftFrom) * liftRate;
+}
 
 // Hero 3D monuments, easter-egg props, custom lore billboards, terrain-conforming
 // ground decals, and animated chevron boost pads.
@@ -105,7 +119,7 @@ function buildTerrainConformingDecal(b: BillboardDef, hf: Heightfield): THREE.Bu
     geom.rotateX(-Math.PI / 2);
     const pos = geom.attributes.position;
     const sinY = Math.sin(b.yaw), cosY = Math.cos(b.yaw);
-    const lift = 0.04 + (b.yOffset ?? 0);
+    const lift = DECAL_BASE_LIFT + (b.yOffset ?? 0);
     for (let i = 0; i < pos.count; i++) {
         const lx = pos.getX(i);
         const lz = pos.getZ(i);
@@ -148,7 +162,7 @@ function buildBoostPadsMesh(pads: readonly BoostPadDef[], hf: Heightfield): { me
                 const localX = (u - 0.5) * pad.width;
                 const wx = pad.x + rx * localX + fx * localZ;
                 const wz = pad.z + rz * localX + fz * localZ;
-                const wy = heightAt(hf, wx, wz) + 0.055;
+                const wy = heightAt(hf, wx, wz) + BOOST_PAD_BASE_LIFT;
                 positions[vOff * 3] = wx;
                 positions[vOff * 3 + 1] = wy;
                 positions[vOff * 3 + 2] = wz;
@@ -189,7 +203,10 @@ function buildBoostPadsMesh(pads: readonly BoostPadDef[], hf: Heightfield): { me
             varying vec2 vUv;
             void main() {
                 vUv = uv;
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                vec3 padW = ( modelMatrix * vec4( position, 1.0 ) ).xyz;
+                vec3 lifted = position;
+                lifted.y += max( 0.0, length( padW - cameraPosition ) - ${ROAD_LIFT_FROM.toFixed(1)} ) * ${BOOST_PAD_DISTANCE_LIFT};
+                gl_Position = projectionMatrix * modelViewMatrix * vec4( lifted, 1.0 );
             }
         `,
         fragmentShader: /* glsl */`
@@ -226,8 +243,8 @@ function buildBoostPadsMesh(pads: readonly BoostPadDef[], hf: Heightfield): { me
         transparent: true,
         depthWrite: false,
         polygonOffset: true,
-        polygonOffsetFactor: -3,
-        polygonOffsetUnits: -3
+        polygonOffsetFactor: -4,
+        polygonOffsetUnits: -4
     });
 
     const mesh = new THREE.Mesh(geometry, material);
@@ -461,8 +478,11 @@ export class HeroPropsLayer {
     }
 
     private createBillboardMaterial(tex: THREE.Texture, emissive: boolean, isDecal: boolean): THREE.Material {
+        const decalVertex = isDecal
+            ? `{ vec3 decalW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz; transformed.y += max( 0.0, length( decalW - cameraPosition ) - ${ROAD_LIFT_FROM.toFixed(1)} ) * ${DECAL_DISTANCE_LIFT}; }`
+            : undefined;
         if (this.tier === 'software') {
-            return new THREE.MeshLambertMaterial({
+            const mat = new THREE.MeshLambertMaterial({
                 map: tex,
                 emissive: emissive ? new THREE.Color(0xffffff) : new THREE.Color(0x000000),
                 emissiveMap: emissive ? tex : null,
@@ -471,11 +491,12 @@ export class HeroPropsLayer {
                 opacity: isDecal ? 0.92 : 1,
                 depthWrite: !isDecal,
                 polygonOffset: isDecal,
-                polygonOffsetFactor: isDecal ? -2 : 0,
-                polygonOffsetUnits: isDecal ? -2 : 0
+                polygonOffsetFactor: isDecal ? -3 : 0,
+                polygonOffsetUnits: isDecal ? -3 : 0
             });
+            return isDecal ? patchWorldMaterial(mat, { vertex: decalVertex }) : mat;
         }
-        return new THREE.MeshStandardMaterial({
+        const mat = new THREE.MeshStandardMaterial({
             color: 0xffffff,
             map: tex,
             roughness: isDecal ? 0.78 : 0.48,
@@ -488,9 +509,10 @@ export class HeroPropsLayer {
             opacity: isDecal ? 0.94 : 1,
             depthWrite: !isDecal,
             polygonOffset: isDecal,
-            polygonOffsetFactor: isDecal ? -2 : 0,
-            polygonOffsetUnits: isDecal ? -2 : 0
+            polygonOffsetFactor: isDecal ? -3 : 0,
+            polygonOffsetUnits: isDecal ? -3 : 0
         });
+        return isDecal ? patchWorldMaterial(mat, { vertex: decalVertex }) : mat;
     }
 
     private buildBoostPads(): void {

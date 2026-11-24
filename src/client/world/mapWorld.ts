@@ -46,6 +46,18 @@ const JERSEY = { piece: 'arena_jersey', length: 3.81 };
 const PIER_SEGMENT = 10;
 // Rock pieces of the plants with a rock collider
 const ROCK_PIECES = { boulder: 'rock_boulder_l', rock: 'rock_boulder_m' } as const;
+
+/**
+ * How deep (m) to sink a scattered rock/boulder into the ground so its downhill
+ * rim stays firmly embedded on steep slopes (e.g. 34° alpine faces) without
+ * hovering in mid-air.
+ */
+export function rockSinkDepth(slope: number, kind: keyof typeof ROCK_PIECES, size: number): number {
+    const spec = PLANT_COLLIDERS[kind];
+    const radius = spec.r * size;
+    const sink = 0.35 * size + Math.max(0, slope) * radius * 0.65;
+    return Math.min(sink, spec.top * size * 0.72);
+}
 // Fences: posts every 3 m, 2.4 m high chain-link panels
 const FENCE_POST_SPACING = 3;
 const FENCE_HEIGHT = 2.4;
@@ -442,8 +454,12 @@ export class MapWorld {
             const rockSpecs = rocks.map(rock => {
                 q.setFromAxisAngle(up, (rock.seed % 360) * Math.PI / 180);
                 s.setScalar(rock.size);
-                // Sunk a little into the slope
-                return { matrix: new THREE.Matrix4().compose(p.set(rock.x, heightAt(hf, rock.x, rock.z) - 0.25 * rock.size, rock.z), q, s) };
+                // Sunk proportional to local slope across the rock's footprint so downhill rims never hover
+                const step = Math.max(1.5, PLANT_COLLIDERS[kind].r * rock.size);
+                const gx = (heightAt(hf, rock.x + step, rock.z) - heightAt(hf, rock.x - step, rock.z)) / (2 * step);
+                const gz = (heightAt(hf, rock.x, rock.z + step) - heightAt(hf, rock.x, rock.z - step)) / (2 * step);
+                const sink = rockSinkDepth(Math.hypot(gx, gz), kind, rock.size);
+                return { matrix: new THREE.Matrix4().compose(p.set(rock.x, heightAt(hf, rock.x, rock.z) - sink, rock.z), q, s) };
             });
             const instances = new ChunkedInstances(geometry, kit.material, rockSpecs, this.quality.sight.rocks, `rocks-${kind}`, 0, this.grid);
             instances.mesh.castShadow = true;
