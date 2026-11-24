@@ -1,0 +1,313 @@
+{
+ "version": 1,
+ "_doc": "Written by tools/textures/build-refactor.mjs. Standalone biome PBR KTX2 sets encoded with flipY: true. kind: color = sRGB ETC1S, data = linear ARM ETC1S, normal = OpenGL +Y UASTC+Zstd.",
+ "flipY": true,
+ "textures": {
+  "alpine_ice_albedo": {
+   "file": "alpine_ice_albedo.ktx2",
+   "kind": "color",
+   "width": 512,
+   "height": 512,
+   "encoding": "etc1s",
+   "bytes": 70892,
+   "hash": "9f0c46be60099950",
+   "sourceHash": "55d58534f0674e9a"
+  },
+  "alpine_ice_arm": {
+   "file": "alpine_ice_arm.ktx2",
+   "kind": "data",
+   "width": 512,
+   "height": 512,
+   "encoding": "etc1s",
+   "bytes": 59796,
+   "hash": "5ba00e7834809806",
+   "sourceHash": "9d14319648d63a07"
+  },
+  "alpine_ice_normal": {
+   "file": "alpine_ice_normal.ktx2",
+   "kind": "normal",
+   "width": 512,
+   "height": 512,
+   "encoding": "uastc",
+   "bytes": 291692,
+   "hash": "9b18879bc1051155",
+   "sourceHash": "f0af9ababa0d19ec"
+  },
+  "alpine_rock_albedo": {
+   "file": "alpine_rock_albedo.ktx2",
+   "kind": "color",
+   "width": 512,
+   "height": 512,
+   "encoding": "etc1s",
+   "bytes": 75385,
+   "hash": "653025c4934a4fcd",
+   "sourceHash": "aa3d038892af183a"
+  },
+  "alpine_rock_arm": {
+   "file": "alpine_rock_arm.ktx2",
+   "kind": "data",
+   "width": 512,
+   "height": 512,
+   "encoding": "etc1s",
+   "bytes": 67799,
+   "hash": "dc0edb819a52663b",
+   "sourceHash": "47892b15e9ee84e6"
+  },
+  "alpine_rock_normal": {
+   "file": "alpine_rock_normal.ktx2",
+   "kind": "normal",
+   "width": 512,
+   "height": 512,
+   "encoding": "uastc",
+   "bytes": 328655,
+   "hash": "7bed03137bbe6fb2",
+   "sourceHash": "d29f0d55e9ca99cd"
+  },
+  "alpine_snow_albedo": {
+   "file": "alpine_snow_albedo.ktx2",
+   "kind": "color",
+   "width": 1024,
+   "height": 1024,
+   "encoding": "etc1s",
+   "bytes": 193324,
+   "hash": "91915ebfa99cef50",
+   "sourceHash": "f98582e9ad95be33"
+  },
+  "alpine_snow_arm": {
+   "file": "alpine_snow_arm.ktx2",
+   "kind": "data",
+   "width": 512,
+   "height": 512,
+   "encoding": "etc1s",
+   "bytes": 60216,
+   "hash": "777c0ed755643041",
+   "sourceHash": "de0c948b0156fa56"
+  },
+  "alpine_snow_normal": {
+   "file": "alpine_snow_normal.ktx2",
+   "kind": "normal",
+   "width": 512,
+   "height": 512,
+   "encoding": "uastc",
+   "bytes": 303942,
+   "hash": "4af5d0133e26b2e0",
+   "sourceHash": "27b99af6e7a8cba3"
+  },
+  "concrete_bowl_albedo": {
+   "file": "concrete_bowl_albedo.ktx2",
+   "kind": "color",
+   "width": 512,
+   "height": 512,
+   "encoding": "etc1s",
+   "bytes": 66888,
+   "hash": "a057834dd4fa15c6",
+   "sourceHash": "fd902cf94c9d7b22"
+  },
+  "concrete_bowl_arm": {
+   "file": "concrete_bowl_arm.ktx2",
+   "kind": "data",
+   "width": 512,
+   "height": 512,
+   "encoding": "etc1s",
+   "bytes": 60249,
+   "hash": "fca01ec8ee6ed98c",
+   "sourceHash": "541d26df15212c77"
+  },
+  "concrete_bowl_normal": {
+   "file": "concrete_bowl_normal.ktx2",
+   "kind": "normal",
+   "width": 512,
+   "height": 512,
+   "encoding": "uastc",
+   "bytes": 300114,
+   "hash": "0d002e0f81a732db",
+   "sourceHash": "3bb349ed2fe31c5d"
+  },
+  "forge_cobble_albedo": {
+   "file": "forge_cobble_albedo.ktx2",
+   "kind": "color",
+   "width": 1024,
+   "height": 1024,
+   "encoding": "etc1s",
+   "bytes": 225310,
+   "hash": "093ef76ffcd0577a",
+   "sourceHash": "732f4df3503bb2c7"
+  },
+  "forge_cobble_arm": {
+   "file": "forge_cobble_arm.ktx2",
+   "kind": "data",
+   "width": 512,
+   "height": 512,
+   "encoding": "etc1s",
+   "bytes": 74276,
+   "hash": "ea33b71f5ad4a820",
+   "sourceHash": "007f8c91853e6343"
+  },
+  "forge_cobble_normal": {
+   "file": "forge_cobble_normal.ktx2",
+   "kind": "normal",
+   "width": 512,
+   "height": 512,
+   "encoding": "uastc",
+   "bytes": 324036,
+   "hash": "420ded213db3940e",
+   "sourceHash": "b86249c968da6b2d"
+  },
+  "quarry_gravel_albedo": {
+   "file": "quarry_gravel_albedo.ktx2",
+   "kind": "color",
+   "width": 1024,
+   "height": 1024,
+   "encoding": "etc1s",
+   "bytes": 263223,
+   "hash": "dff9bcf8c20faf11",
+   "sourceHash": "5c9d46cd3de67cf6"
+  },
+  "quarry_gravel_arm": {
+   "file": "quarry_gravel_arm.ktx2",
+   "kind": "data",
+   "width": 512,
+   "height": 512,
+   "encoding": "etc1s",
+   "bytes": 69425,
+   "hash": "dfbf235b9d5f3e6d",
+   "sourceHash": "0c810955c609766c"
+  },
+  "quarry_gravel_normal": {
+   "file": "quarry_gravel_normal.ktx2",
+   "kind": "normal",
+   "width": 512,
+   "height": 512,
+   "encoding": "uastc",
+   "bytes": 330628,
+   "hash": "bbd1665c63e292bf",
+   "sourceHash": "125281ccda140ee4"
+  },
+  "quarry_red_rock_albedo": {
+   "file": "quarry_red_rock_albedo.ktx2",
+   "kind": "color",
+   "width": 512,
+   "height": 512,
+   "encoding": "etc1s",
+   "bytes": 75342,
+   "hash": "2e808176027e28d7",
+   "sourceHash": "1dd481199c9b55e3"
+  },
+  "quarry_red_rock_arm": {
+   "file": "quarry_red_rock_arm.ktx2",
+   "kind": "data",
+   "width": 512,
+   "height": 512,
+   "encoding": "etc1s",
+   "bytes": 65580,
+   "hash": "72e159bfbe0b1d98",
+   "sourceHash": "7f29f45fb8114404"
+  },
+  "quarry_red_rock_normal": {
+   "file": "quarry_red_rock_normal.ktx2",
+   "kind": "normal",
+   "width": 512,
+   "height": 512,
+   "encoding": "uastc",
+   "bytes": 314837,
+   "hash": "bac46753ae968e25",
+   "sourceHash": "b0aeae6e4944250e"
+  },
+  "tulip_meadow_albedo": {
+   "file": "tulip_meadow_albedo.ktx2",
+   "kind": "color",
+   "width": 512,
+   "height": 512,
+   "encoding": "etc1s",
+   "bytes": 93884,
+   "hash": "189c5a1edd7f1362",
+   "sourceHash": "1c7decab2f097b14"
+  },
+  "tulip_meadow_arm": {
+   "file": "tulip_meadow_arm.ktx2",
+   "kind": "data",
+   "width": 512,
+   "height": 512,
+   "encoding": "etc1s",
+   "bytes": 65768,
+   "hash": "2eed24cae2ce7fcf",
+   "sourceHash": "6dd6665b21e7cf18"
+  },
+  "tulip_meadow_normal": {
+   "file": "tulip_meadow_normal.ktx2",
+   "kind": "normal",
+   "width": 512,
+   "height": 512,
+   "encoding": "uastc",
+   "bytes": 315960,
+   "hash": "8884e09e69fff54d",
+   "sourceHash": "30c92655f4fdb754"
+  }
+ },
+ "materials": {
+  "alpine_ice": {
+   "tileMeters": 4,
+   "source": "codex-imagegen:gpt-image-2",
+   "license": "Project-Owned-AI",
+   "albedo": "alpine_ice_albedo",
+   "normal": "alpine_ice_normal",
+   "arm": "alpine_ice_arm"
+  },
+  "alpine_rock": {
+   "tileMeters": 4,
+   "source": "codex-imagegen:gpt-image-2",
+   "license": "Project-Owned-AI",
+   "albedo": "alpine_rock_albedo",
+   "normal": "alpine_rock_normal",
+   "arm": "alpine_rock_arm"
+  },
+  "alpine_snow": {
+   "tileMeters": 4,
+   "source": "codex-imagegen:gpt-image-2",
+   "license": "Project-Owned-AI",
+   "albedo": "alpine_snow_albedo",
+   "normal": "alpine_snow_normal",
+   "arm": "alpine_snow_arm"
+  },
+  "concrete_bowl": {
+   "tileMeters": 3.5,
+   "source": "codex-imagegen:gpt-image-2",
+   "license": "Project-Owned-AI",
+   "albedo": "concrete_bowl_albedo",
+   "normal": "concrete_bowl_normal",
+   "arm": "concrete_bowl_arm"
+  },
+  "forge_cobble": {
+   "tileMeters": 3,
+   "source": "codex-imagegen:gpt-image-2",
+   "license": "Project-Owned-AI",
+   "albedo": "forge_cobble_albedo",
+   "normal": "forge_cobble_normal",
+   "arm": "forge_cobble_arm"
+  },
+  "quarry_gravel": {
+   "tileMeters": 3,
+   "source": "codex-imagegen:gpt-image-2",
+   "license": "Project-Owned-AI",
+   "albedo": "quarry_gravel_albedo",
+   "normal": "quarry_gravel_normal",
+   "arm": "quarry_gravel_arm"
+  },
+  "quarry_red_rock": {
+   "tileMeters": 4,
+   "source": "codex-imagegen:gpt-image-2",
+   "license": "Project-Owned-AI",
+   "albedo": "quarry_red_rock_albedo",
+   "normal": "quarry_red_rock_normal",
+   "arm": "quarry_red_rock_arm"
+  },
+  "tulip_meadow": {
+   "tileMeters": 3,
+   "source": "codex-imagegen:gpt-image-2",
+   "license": "Project-Owned-AI",
+   "albedo": "tulip_meadow_albedo",
+   "normal": "tulip_meadow_normal",
+   "arm": "tulip_meadow_arm"
+  }
+ }
+}

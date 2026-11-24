@@ -1,0 +1,294 @@
+{
+  "_doc": "Codex imagegen prompt catalog for Bulli Drive refactor assets (8 biome PBR albedos, 15 lore billboards, 5 ground decals, 4 map picker preview cards). Generated via ~/.codex/skills/codex-imagegen-models/scripts/codex_images.py, processed by tools/textures/prep_refactor_pbr.py, and encoded by tools/textures/build-refactor.mjs.",
+  "model": "gpt-image-2",
+  "biomes": [
+    {
+      "id": "alpine_snow",
+      "size": "1024x1024",
+      "quality": "medium",
+      "albedoSize": 1024,
+      "mapSize": 512,
+      "tileMeters": 4.0,
+      "prompt": "Photorealistic seamless tileable top-down PBR albedo texture of groomed and wind-sculpted crisp alpine ski-slope snow, subtle fine wind ripples and compressed snow crystals, clean cool white with delicate powder grain, uniform flat overcast shadowless lighting, orthographic 90-degree top-down photogrammetry scan, no footprints, no ski tracks, no harsh directional shadows, no vignette, no borders, no text"
+    },
+    {
+      "id": "alpine_ice",
+      "size": "1024x1024",
+      "quality": "medium",
+      "albedoSize": 512,
+      "mapSize": 512,
+      "tileMeters": 4.0,
+      "prompt": "Photorealistic seamless tileable top-down PBR albedo texture of thick frozen alpine mountain lake ice, translucent pale glacial cyan-blue ice with fine natural stress micro-fractures, tiny trapped white air bubbles, and subtle frosted rime streaks, uniform flat overcast shadowless lighting, orthographic 90-degree top-down photogrammetry scan, no reflections of sky or trees, no vignette, no borders, no text"
+    },
+    {
+      "id": "alpine_rock",
+      "size": "1024x1024",
+      "quality": "medium",
+      "albedoSize": 512,
+      "mapSize": 512,
+      "tileMeters": 4.0,
+      "prompt": "Photorealistic seamless tileable top-down PBR albedo texture of weathered dark alpine granite cliff rock, angular stratified slate-grey and charcoal stone fractures with fine quartz mineral flecks and sparse pale alpine lichen specks, uniform flat overcast shadowless lighting, orthographic 90-degree top-down photogrammetry scan, no harsh directional shadows, no vignette, no borders, no text"
+    },
+    {
+      "id": "quarry_gravel",
+      "size": "1024x1024",
+      "quality": "medium",
+      "albedoSize": 1024,
+      "mapSize": 512,
+      "tileMeters": 3.0,
+      "prompt": "Photorealistic seamless tileable top-down PBR albedo texture of compacted ochre-grey rally quarry gravel surface, dense natural mix of crushed limestone pebbles, warm sandy ochre grit, and coarse grey aggregate stones, uniform flat overcast shadowless lighting, orthographic 90-degree top-down photogrammetry scan, no tire ruts, no directional shadows, no vignette, no borders, no text"
+    },
+    {
+      "id": "quarry_red_rock",
+      "size": "1024x1024",
+      "quality": "medium",
+      "albedoSize": 512,
+      "mapSize": 512,
+      "tileMeters": 4.0,
+      "prompt": "Photorealistic seamless tileable top-down PBR albedo texture of layered warm terracotta sandstone and red-ochre quarry cliff rock strata, natural horizontal sedimentary banding, fine weathered mineral grain and narrow stone fissures, uniform flat overcast shadowless lighting, orthographic 90-degree top-down photogrammetry scan, no harsh directional shadows, no vignette, no borders, no text"
+    },
+    {
+      "id": "concrete_bowl",
+      "size": "1024x1024",
+      "quality": "medium",
+      "albedoSize": 512,
+      "mapSize": 512,
+      "tileMeters": 3.5,
+      "prompt": "Photorealistic seamless tileable top-down PBR albedo texture of weathered skatepark and stunt-bowl hand-troweled concrete surface, pale warm-grey brushed cement with fine aggregate pores, subtle curved faint dark rubber tire scuff marks and light concrete patina, uniform flat overcast shadowless lighting, orthographic 90-degree top-down photogrammetry scan, no cracks grid, no vignette, no borders, no text"
+    },
+    {
+      "id": "forge_cobble",
+      "size": "1024x1024",
+      "quality": "medium",
+      "albedoSize": 1024,
+      "mapSize": 512,
+      "tileMeters": 3.0,
+      "prompt": "Photorealistic seamless tileable top-down PBR albedo texture of dark industrial volcanic basalt and tempered-steel forge cobblestone plaza pavers, hand-laid charcoal and graphite rectangular stone blocks with subtle metallic gunmetal mineral sheen and recessed dark ash mortar joints, uniform flat overcast shadowless lighting, orthographic 90-degree top-down photogrammetry scan, no harsh directional shadows, no vignette, no borders, no text"
+    },
+    {
+      "id": "tulip_meadow",
+      "size": "1024x1024",
+      "quality": "medium",
+      "albedoSize": 512,
+      "mapSize": 512,
+      "tileMeters": 3.0,
+      "prompt": "Photorealistic seamless tileable top-down PBR albedo texture of lush European spring green meadow grass densely dappled with vibrant blooming red, golden yellow, tangerine orange, and magenta tulips seen straight from above, rich green grass blades and clover beneath colorful tulip blossoms, uniform flat overcast shadowless lighting, orthographic 90-degree top-down botanical scan, no vignette, no borders, no text"
+    }
+  ],
+  "billboards": [
+    {
+      "id": "sign_lmf_welcome",
+      "kind": "sign",
+      "size": "1536x768",
+      "outWidth": 1024,
+      "outHeight": 512,
+      "quality": "medium",
+      "prompt": "Full-bleed flat 2:1 widescreen graphic billboard design (edge-to-edge flat artwork, no poles, no sky, no physical mockup frame). Industrial dark forged charcoal steel background (#0e0c0b) with subtle glowing orange ember sparks along the lower edge and four sleek vertical steel-tempering alloy accent bars (straw yellow, purple, steel blue, red-orange) along the left border. Bold brushed-steel metallic headline text: \"LOGGE MEDIA FORGE\", warm amber-gold subheadline: \"AUS NEUGIER. GEMACHT.\", and a playful glowing crimson push-button badge below reading: \"I'M JUST PRESSING BUTTONS.\" Italic forged steel \"LMF\" monogram emblem on right. High contrast, razor-sharp typography, authentic studio forge aesthetic."
+    },
+    {
+      "id": "sign_ppk_bulli",
+      "kind": "sign",
+      "size": "1536x768",
+      "outWidth": 1024,
+      "outHeight": 512,
+      "quality": "medium",
+      "prompt": "Full-bleed flat 2:1 widescreen comedy presentation slide billboard graphic (edge-to-edge flat artwork, no frame, no room background). Bold playful slide header bar reading: \"VW-BUS vs. WOHNWAGEN: IMAGE FIRST\" with clean tag badge \"POWERPOINT KARAOKE\". Split comparison slide layout: left side on sunny cream background shows a stylish retro red-and-white VW Bulli van with a soaring green upward bar chart; right side on muted grey shows a boxy beige caravan trailer with a comically plummeting jagged red arrow chart. Crisp flat vector-editorial infographic style, ultra-legible bold typography, humorous German presentation vibe."
+    },
+    {
+      "id": "sign_ppk_trio",
+      "kind": "sign",
+      "size": "1536x768",
+      "outWidth": 1024,
+      "outHeight": 512,
+      "quality": "medium",
+      "prompt": "Full-bleed flat 2:1 widescreen comedy show poster triptych collage (edge-to-edge flat artwork, no wall, no mockup frame). Three vibrant side-by-side retro poster panels with bold legible German titles: left panel deep ocean blue with cartoon whale and comical red dynamite bundle reading \"WAL TIMMY SPRENGEN\"; center panel fiery magma orange-and-red wellness spa with bathrobe towel and sunglasses rubber duck reading \"SPA IN DER HÖLLE\"; right panel dramatic courtroom wooden gavel over a green school chalkboard reading \"ELTERNABEND ALS STRAFGERICHT\". Crisp bold editorial illustration, high contrast, vivid colors."
+    },
+    {
+      "id": "sign_kolpingtheater",
+      "kind": "sign",
+      "size": "1536x768",
+      "outWidth": 1024,
+      "outHeight": 512,
+      "quality": "medium",
+      "prompt": "Full-bleed flat 2:1 widescreen theater marquee billboard poster (edge-to-edge flat artwork, no external poles or building). Rich deep burgundy stage velvet curtains parted by golden theatrical spotlights framing classic gilded drama masks and vintage marquee bulb trim. Bold luminous cream-and-gold marquee headline: \"KOLPINGTHEATER RAMSEN\", dramatic retro horror-comedy stylized title below: \"CREEPSHOW\", and a prestigious golden laurel ribbon banner across the bottom reading: \"DEUTSCHER ENGAGEMENTPREIS 2026\". Warm theatrical glow, high contrast, razor-sharp German lettering."
+    },
+    {
+      "id": "sign_oilbert_ad",
+      "kind": "sign",
+      "size": "1536x768",
+      "outWidth": 1024,
+      "outHeight": 512,
+      "quality": "medium",
+      "prompt": "Full-bleed flat 2:1 widescreen retro 1980s arcade game marquee poster (edge-to-edge flat artwork, no cabinet or frame). Joyful vibrant arcade illustration starring a cute heroic red-and-white vintage VW Bulli camper van with big cheerful cartoon eyes on its split windshield, mid-leap over lush green platforms and crumbling orange blocks while golden shiny mechanic wrenches and white feathered angel wings sparkle in the sunset sky alongside round cartoon black bombs. Bold chrome-rimmed arcade title: \"OILBERT'S ADVENTURE\" and bright yellow tagline: \"A BRAVE LITTLE CAR\". Crisp retro pixel-meets-airbrush arcade poster style."
+    },
+    {
+      "id": "sign_win98_desktop",
+      "kind": "sign",
+      "size": "1536x768",
+      "outWidth": 1024,
+      "outHeight": 512,
+      "quality": "medium",
+      "prompt": "Full-bleed flat 2:1 widescreen nostalgic Windows 98 computer desktop screenshot graphic (edge-to-edge flat artwork, no monitor bezel). Authentic solid teal (#008080) desktop background with classic crisp pixel-style icons along the left edge labeled \"My Computer\" and \"Recycle Bin\". Centered classic beveled light-grey Windows 98 application window with royal-blue titlebar reading \"ShareX Capture Wizard\", vintage camera icon, blue segmented progress bar at 100%, and classic OK/Cancel buttons. In the top-right corner a bright golden star ribbon badge reads: \"★ 1 on GitHub!\". Classic grey Windows 98 taskbar with \"Start\" button along bottom. Ultra sharp authentic retro OS graphic."
+    },
+    {
+      "id": "sign_codex_widget",
+      "kind": "sign",
+      "size": "1536x768",
+      "outWidth": 1024,
+      "outHeight": 512,
+      "quality": "medium",
+      "prompt": "Full-bleed flat 2:1 widescreen sleek dark-mode Android 4x1 widget billboard graphic (edge-to-edge flat artwork, no phone bezel or mockup). Matte obsidian-slate glass widget card (#14161a) with subtle cyan-and-steel trim. Center shows a glowing horizontal quota progress bar transitioning from emerald to amber to fierce neon crimson red that dramatically overflows way past the 100% dashed marker line, bursting out the right edge of its track with glowing red sparks. Giant crisp bold monospace readout: \"W 25 → 175%\" and sleek clean header \"CODEX QUOTA WIDGET\". Modern tech dashboard aesthetic, ultra legible high contrast."
+    },
+    {
+      "id": "sign_bands_marquee",
+      "kind": "sign",
+      "size": "1536x768",
+      "outWidth": 1024,
+      "outHeight": 512,
+      "quality": "medium",
+      "prompt": "Full-bleed flat 2:1 widescreen rock music festival billboard poster (edge-to-edge flat artwork, no mockup frame). Gritty dark concert stage backdrop washed in warm amber and crimson floodlight beams with subtle guitar amplifier grill texture. Top row shows two earlier titles boldly struck through with red brush strokes: \"SONIC NOIR\" (crossed out) → \"SETLIST\" (crossed out) → leading into huge distressed white rock headline typography: \"BANDS\". Crisp glowing neon-amber ledger bar along the bottom reading: \"437,138 PLAYS · spotifrei.db\". High-contrast rock festival poster art, super crisp readable lettering."
+    },
+    {
+      "id": "sign_reactor_safety",
+      "kind": "sign",
+      "size": "1536x768",
+      "outWidth": 1024,
+      "outHeight": 512,
+      "quality": "medium",
+      "prompt": "Full-bleed flat 2:1 widescreen German industrial chemical engineering hazard safety sign (edge-to-edge flat artwork, no poles or wall). Bold black-and-yellow diagonal chevron hazard border around a brushed safety-yellow enamel metal sign with subtle industrial wear. Left side displays a crisp black technical diagram of a jet-loop bubble reactor column with swirling arrows. Bold stark German industrial DIN typography: \"STRAHLSCHLAUFENREAKTOR\", dark blue technical sub-bar reading \"NITROBENZOL → ANILIN\", and stark red-and-black danger warning band across the bottom reading: \"ACHTUNG KAVITATION!\". Ultra legible, authentic European industrial signage."
+    },
+    {
+      "id": "sign_arcanum_note",
+      "kind": "sign",
+      "size": "1536x768",
+      "outWidth": 1024,
+      "outHeight": 512,
+      "quality": "medium",
+      "prompt": "Full-bleed flat 2:1 widescreen fantasy parchment door notice billboard (edge-to-edge flat artwork, no exterior scenery). Rich weathered medieval parchment scroll pinned onto dark rustic oak tavern door planks with forged iron nails and a crimson wax seal. Right side features glowing golden-blue arcane runes \"ᚠ ᛗ ᛏ\" beside an ornate antique brass skeleton key illustration. Crisp legible dark sepia calligraphic lettering across the parchment reading: \"Bin nur kurz Schwefel holen — der Erzmagier (vor 3 Std.)\". Rich painterly fantasy texture, super clear readable German handwriting."
+    },
+    {
+      "id": "sign_voll_o_meter",
+      "kind": "sign",
+      "size": "1536x768",
+      "outWidth": 1024,
+      "outHeight": 512,
+      "quality": "medium",
+      "prompt": "Full-bleed flat 2:1 widescreen quirky crooked German tavern neon signboard (edge-to-edge flat artwork, no outdoor scene). Dark weathered brick-and-timber roadhouse wall illuminated by glowing slightly tilted glass neon tube lettering and a glowing cocktail/gauge dial. Bold warm orange-pink neon headline: \"VOLL-O-METER\", playful tilted electric-yellow neon badge: \"PARTY-CHAOS\", and a bright glowing emerald-green neon safety emblem at bottom with steering wheel icon reading: \"0.00‰ DESIGNATED DRIVER\". Vibrant glowing neon reflections on dark backdrop, crisp legible lettering."
+    },
+    {
+      "id": "sign_selantis_poster",
+      "kind": "sign",
+      "size": "1536x768",
+      "outWidth": 1024,
+      "outHeight": 512,
+      "quality": "medium",
+      "prompt": "Full-bleed flat 2:1 widescreen epic cinematic fantasy movie billboard poster (edge-to-edge flat artwork, no mockup frame). Dramatic golden-violet twilight coastal cliff landscape with ancient medieval castle towers, a lone cloaked hero standing on a stone drawbridge, and swirling magical ember mist. Bold embossed burnished-gold epic cinema title: \"DIE CHRONIKEN VON SELANTIS\", crisp white studio billing above: \"PALATINA FILMS\", and a cheeky bright construction-yellow diagonally taped sticker strip across the bottom-right corner reading: \"Redesign Anfangs 2019\". Epic movie poster painting, sharp legible text."
+    },
+    {
+      "id": "sign_jp_poolparty",
+      "kind": "sign",
+      "size": "1536x768",
+      "outWidth": 1024,
+      "outHeight": 512,
+      "quality": "medium",
+      "prompt": "Full-bleed flat 2:1 widescreen vibrant summer pool-party festival flyer billboard (edge-to-edge flat artwork, no mockup frame). Electric hot-pink (#ff2d87) and bright tropical turquoise summer night gradient bursting with sparkling pool water ripples, crisp neon-green laser beams, silhouetted palm fronds, inflatable pool rings, and two stylized retro party buses. Bold crisp white-and-yellow summer typography: \"JP POOLPARTY\", bright glowing subtitle: \"WHIRLPOOL & BUSSE\", and sleek corner tech badge reading: \"jpCore\". High energy, crisp ultra-legible party graphic."
+    },
+    {
+      "id": "sign_abseits_contact",
+      "kind": "sign",
+      "size": "1536x768",
+      "outWidth": 1024,
+      "outHeight": 512,
+      "quality": "medium",
+      "prompt": "Full-bleed flat 2:1 widescreen moody 35mm analog darkroom photography contact sheet graphic (edge-to-edge flat artwork, no desk or mockup). Matte jet-black photographic contact paper displaying three crisp horizontal strips of 35mm film negatives with realistic sprocket holes and moody amber-and-blue nocturnal street photography frames (wet midnight roads, glowing sodium streetlights, misty alleys), crisp orange film-edge frame numbers \"01A\", \"24A\", \"52A\", \"77A\", and authentic red grease-pencil crop marks circling one standout frame. Minimalist crisp white gallery typography at lower edge: \"ABSEITS DER TABS\". Authentic fine-art darkroom aesthetic."
+    },
+    {
+      "id": "sign_werkzeugwand",
+      "kind": "sign",
+      "size": "1536x768",
+      "outWidth": 1024,
+      "outHeight": 512,
+      "quality": "medium",
+      "prompt": "Full-bleed flat 2:1 widescreen dark forged-steel workshop pegboard wall billboard (edge-to-edge flat artwork, no room mockup). Brushed gunmetal perforated steel pegboard neatly hung with gleaming steel wrenches, blacksmith hammer, tongs, calipers, and glowing warm orange forge embers rising softly along the bottom edge. Bold stenciled industrial brushed-steel and glowing amber typography centered on a dark steel nameplate: \"LMF WERKZEUGWAND\", clean glowing subtitle: \"140 REPOS · DAS FEUER IST NOCH AN\". Photorealistic dark forge craftsmanship, razor-sharp readable text."
+    },
+    {
+      "id": "decal_saalplan_ag",
+      "kind": "decal",
+      "size": "1024x1024",
+      "outWidth": 512,
+      "outHeight": 512,
+      "quality": "medium",
+      "prompt": "Flat 90-degree top-down orthographic architectural theater seating chart floor decal (edge-to-edge square graphic, zero perspective tilt). Dark charcoal slate ground with crisp gold stage apron bar at top labeled \"BÜHNE\", followed by seven neat symmetrical rows of rich crimson-red theater seat icons split by a clean center aisle, clearly labeled down the aisle sides with bold cream letters \"A\", \"B\", \"C\", \"D\", \"E\", \"F\", \"G\", with one highlighted golden VIP seat in Row D next to the center aisle. Clean crisp vector-painted plaza graphic."
+    },
+    {
+      "id": "decal_bomberman_grid",
+      "kind": "decal",
+      "size": "1024x1024",
+      "outWidth": 512,
+      "outHeight": 512,
+      "quality": "medium",
+      "prompt": "Flat 90-degree top-down orthographic glowing neon arcade arena floor grid graphic (edge-to-edge square design, zero perspective tilt). Deep dark obsidian industrial metal tiles overlaid with crisp electric cyan and magenta neon grid lines forming a classic 15x13 Bomberman arena layout, with beveled metallic pillar blocks in a regular alternating checkerboard pattern and a glowing golden-orange cross-shaped blast target symbol at the exact center tile. Crisp clean futuristic arcade arena floor texture."
+    },
+    {
+      "id": "decal_sudoku_grid",
+      "kind": "decal",
+      "size": "1024x1024",
+      "outWidth": 512,
+      "outHeight": 512,
+      "quality": "medium",
+      "prompt": "Flat 90-degree top-down orthographic 9x9 Sudoku puzzle plaza floor decal (edge-to-edge square design, zero perspective tilt). Clean light warm-grey concrete plaza tiles painted with sharp thick dark-charcoal 3x3 Sudoku block borders and crisp thin inner cell lines. Select squares contain bold clean sans-serif dark numbers (5, 3, 7, 4, 8, 1, 6, 2) with the exact center tile highlighted in glowing golden-cyan bearing a bold \"9\", plus two playful glowing teal and magenta multiplayer selection cursor outlines on nearby cells. Ultra crisp geometric floor graphic."
+    },
+    {
+      "id": "decal_geogames_map",
+      "kind": "decal",
+      "size": "1024x1024",
+      "outWidth": 512,
+      "outHeight": 512,
+      "quality": "medium",
+      "prompt": "Flat 90-degree top-down orthographic stylized cartographic world map and brass compass plaza medallion (edge-to-edge square design, zero perspective tilt). Dark slate-blue ocean inlay ringed by warm antique brass latitude and longitude circles and crisp cardinal letters \"N\", \"E\", \"S\", \"W\". Stylized clean warm-sand and olive world continents across the center crowned by an ornate brass compass rose and a bright crimson map-pin emblem at the bullseye. Clean architectural inlaid stone floor graphic."
+    },
+    {
+      "id": "decal_kniffel_pips",
+      "kind": "decal",
+      "size": "1024x1024",
+      "outWidth": 512,
+      "outHeight": 512,
+      "quality": "medium",
+      "prompt": "Flat 90-degree top-down orthographic wooden kitchen tabletop Kniffel dice game medallion (edge-to-edge square design, zero perspective tilt). Warm natural honey-oak wood planks inlaid with a crisp circular cream-and-gold tabletop ring displaying six stylized white-and-black dice pip faces (1 through 6 pips) arranged evenly around the perimeter, surrounding a neat vintage cream paper Kniffel scorecard square at center reading \"KNIFFEL · 63+ BONUS\" with neat red ink checkmarks. Tactile warm flat top-down graphic."
+    }
+  ],
+  "ui": [
+    {
+      "id": "map-bulli-bay",
+      "size": "1536x864",
+      "outWidth": 800,
+      "outHeight": 450,
+      "quality": "medium",
+      "prompt": "Photorealistic cinematic wide-angle 16:9 driving game vista of a sunlit California coastal town bay at golden hour sunset. A classic red-and-white vintage VW T1 Samba camper bus driving down a sweeping palm-lined ocean boulevard overlooking sparkling turquoise ocean waves, golden beach, wooden pier, white cliffside lighthouse, and warm stucco coastal town buildings. Warm golden sunset light, crisp natural depth, no text, no HUD, no logos, no watermark"
+    },
+    {
+      "id": "map-alpen-pass",
+      "size": "1536x864",
+      "outWidth": 800,
+      "outHeight": 450,
+      "quality": "medium",
+      "prompt": "Photorealistic cinematic wide-angle 16:9 driving game vista of a breathtaking European alpine mountain pass at crisp alpenglow sunset. Winding cleared dark asphalt hairpin switchback road climbing snowy mountain slopes past a cozy timber alpine chalet, ski gondola pylons, snow-frosted evergreen pines, and a gleaming frozen blue alpine lake below dramatic jagged pink-lit snow summits. Crisp clear mountain air, cinematic golden-pink sunset lighting, no text, no HUD, no watermark"
+    },
+    {
+      "id": "map-stunt-forge",
+      "size": "1536x864",
+      "outWidth": 800,
+      "outHeight": 450,
+      "quality": "medium",
+      "prompt": "Photorealistic cinematic wide-angle 16:9 driving game vista of a sunlit ochre sandstone quarry and rallycross stunt park in warm late-afternoon amber light. Dramatic terraced red-ochre quarry cliffs enclosing a sweeping brushed-concrete stunt bowl, dramatic wooden and steel mega jump ramps, curving dusty gravel rally tracks with warm backlit dust trails, and red-and-white racing barriers. Crisp motorsport atmosphere, rich dynamic shadows, no text, no HUD, no watermark"
+    },
+    {
+      "id": "map-logge-forge",
+      "size": "1536x864",
+      "outWidth": 800,
+      "outHeight": 450,
+      "quality": "medium",
+      "prompt": "Photorealistic cinematic wide-angle 16:9 driving game vista of an atmospheric twilight coastal discovery island (Forge Island) lit by glowing molten-ember sunset on the horizon and deep indigo twilight sky above. A monumental dark-steel glowing ember anvil archway rises over a central dark cobblestone plaza, flanked on the right peninsula by glowing purple-and-cyan arcade beacons and a tall illuminated glass bubble reactor tower, and on the left by a warm glowing harbor pier and snow-capped alpine summit ridge. Breathtaking high-craft stylized-photoreal game landmark vista, no text, no HUD, no watermark"
+    }
+  ]
+}
