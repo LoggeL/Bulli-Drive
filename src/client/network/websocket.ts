@@ -30,7 +30,7 @@ import { playCollisionSound, playHitSound } from '../effects/sounds.js';
 import { spawnExplosion, spawnParticles } from '../effects/particles.js';
 import { addKillfeedEntry, showHitmarker, updateScoreUI } from '../ui/hud.js';
 import { setMinimapMap } from '../ui/minimap.js';
-import { showFriendDiscoveryToast } from '../ui/codex.js';
+import { clearDiscoveryToasts, showFriendDiscoveryToast } from '../ui/codex.js';
 import { discoveryTracker } from '../ui/discoveryTracker.js';
 import { releaseKeyboardInputs } from '../controls/keyboard.js';
 import { resetMobileControls } from '../controls/mobile.js';
@@ -423,6 +423,7 @@ function mountActiveMap(nextMap: MapData): void {
     applyShowroomSpotForMap(nextMap);
     setMinimapMap(nextMap);
     syncRaceLobbyTracks(nextMap);
+    clearDiscoveryToasts();
     discoveryTracker.setMap(mapId, nextMap.discoveries);
 
     if (!firstWorldBuilt) {
