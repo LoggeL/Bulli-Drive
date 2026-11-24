@@ -356,7 +356,7 @@ export function initCodex(tracker: DiscoveryTracker = discoveryTracker): void {
 
     trackerRef.onUnlock((def, progress) => {
         showDiscoveryToast(def, progress);
-        triggerWorldDiscoveryFx(def.id, def.rewardEffect);
+        triggerWorldDiscoveryFx(def.id, def.alloy);
         sendToServer({ type: 'discovery', discoveryId: def.id });
     });
 

@@ -24,6 +24,7 @@ interface ExtendedMapWorld extends MapWorld {
 interface ExtendedMapSceneModule {
     createMapScene: typeof mapSceneMod.createMapScene;
     mapScene: typeof mapSceneMod.mapScene;
+    buildMapWorld?: (map: MapData) => MapWorld;
     disposeMapScene?: () => void;
     replaceMapScene?: (map: MapData) => MapWorld;
 }
@@ -68,6 +69,10 @@ export function activeMapWorld(): ExtendedMapWorld | null {
  */
 export function mountMapWorld(map: MapData): MapWorld {
     const mod = mapSceneMod as unknown as ExtendedMapSceneModule;
+    if (typeof mod.buildMapWorld === 'function') {
+        fallbackWorld = null;
+        return mod.buildMapWorld(map);
+    }
     if (typeof mod.replaceMapScene === 'function') {
         fallbackWorld = null;
         return mod.replaceMapScene(map);
@@ -124,9 +129,11 @@ export function applyShowroomSpotForMap(map: MapData): void {
     activeShowroom.invalidate();
 }
 
+const ORIGIN_FOCUS = new THREE.Vector3();
+
 /** Per-frame dynamic world animations (beacons, boost pads, wind, snow, props). */
 export function updateWorldDynamic(dt: number, elapsedSec: number, focusPos?: THREE.Vector3): void {
-    activeMapWorld()?.updateDynamic?.(dt, elapsedSec, focusPos);
+    activeMapWorld()?.updateDynamic?.(dt, elapsedSec, focusPos ?? ORIGIN_FOCUS);
 }
 
 /** Updates 3D discovery beacon & highlight states in MapWorld. */
