@@ -13,7 +13,7 @@ from mathutils import Vector
 
 STOREY = 3.0
 PLINTH = 0.35          # floor level above the ground
-FOUNDATION = 1.0
+FOUNDATION = 2.0
 WING = 3.5             # projection of the L wing
 PITCH = 21.0
 TINTS = ["#F4EEE2", "#F1E4CC", "#EFD8BC", "#F2DCC8", "#E7CFAE", "#EFD2C2", "#E3D9C2", "#F3E6C4"]
@@ -135,8 +135,8 @@ def build(spec, lod):
         box(k, (lx - 0.1, yb - 0.3, PLINTH + 1.6), (lx + 0.1, yb - 0.1, PLINTH + 1.95), pal("iron"), "yxXYzZ")
         box(k, (lx - 0.08, yb - 0.31, PLINTH + 1.64), (lx + 0.08, yb - 0.29, PLINTH + 1.9), pal("lamp_warm"), "y")
     if porch:
-        # steps in front of the porch
-        box(k, (fx + porch[0] - 0.1, yb - 0.35, -0.2), (fx + porch[1] + 0.1, yb, PLINTH * 0.5), pal("terracotta"), "yxXZ")
+        # steps in front of the porch (extended down to -FOUNDATION for sloped lots)
+        box(k, (fx + porch[0] - 0.1, yb - 0.35, -FOUNDATION), (fx + porch[1] + 0.1, yb, PLINTH * 0.5), pal("terracotta"), "yxXZ")
 
     # --- the L wing: gable front with the picture window
     if L:
@@ -273,7 +273,7 @@ def _plinth(k, o, ax, length, proud, mat, gaps):
         if s1 - s0 < 0.05:
             continue
         p0 = o + ax * s0 + n * proud
-        wall(k, p0, ax, s1 - s0, top, mat, v_base=-0.2)
+        wall(k, p0, ax, s1 - s0, top, mat, v_base=-FOUNDATION)
         # top ledge
         a, b = p0 + UP * top, p0 + ax * (s1 - s0) + UP * top
         quad3(k, a, b, b - n * proud, a - n * proud, mat)
@@ -335,7 +335,7 @@ def gable_vents(k, x, y, z, along):
 def chimney(k, x, y, z_top, mat, lod):
     """stucco chimney against the side wall with a small tiled cap"""
     w, d = 0.9, 0.7
-    box(k, (x, y, -0.3), (x + w, y + d, z_top), mat, "xXyYZ")
+    box(k, (x, y, -FOUNDATION), (x + w, y + d, z_top), mat, "xXyYZ")
     if lod < 2:
         box(k, (x - 0.05, y - 0.05, z_top), (x + w + 0.05, y + d + 0.05, z_top + 0.08), mat, "xXyYzZ")
         from bd_kit import hip_roof as _hip

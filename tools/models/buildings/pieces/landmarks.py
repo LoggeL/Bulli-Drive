@@ -49,8 +49,8 @@ def lighthouse(spec, lod):
     segs = [16, 12, 8][lod]
     white = tile("stucco", lin("#F5F2EA"))
     base_r, top_r, top_z = 2.6, 1.8, 18.0
-    # plinth and tapered tower
-    box(k, (-3.4, -3.4, -0.6), (3.4, 3.4, 0.5), tile("concrete", lin("#C9C2B5")), "xXyYZ")
+    # plinth (skirt extended to -2.5m for sloped headlands) and tapered tower
+    box(k, (-3.4, -3.4, -2.5), (3.4, 3.4, 0.5), tile("concrete", lin("#C9C2B5")), "xXyYZ")
     cylinder(k, (0, 0, 0.5), (0, 0, top_z), base_r, segs, white, cap_top=False, r_top=top_r)
     radius_at = lambda z: base_r + (top_r - base_r) * (z - 0.5) / (top_z - 0.5)
     # entrance vestibule with the door on the street side
@@ -76,7 +76,7 @@ def lighthouse(spec, lod):
             beam(k, p + UP * (lz0 + 0.5), p + UP * lz1, 0.06, 0.06, pal("iron"))
         cylinder(k, (0, 0, lz1 + 1.25), (0, 0, lz1 + 1.6), 0.22, 8, pal("iron"), cap_top=True)
         beam(k, (0, 0, lz1 + 1.6), (0, 0, lz1 + 2.5), 0.03, 0.03, pal("iron"))
-    return k, {"footprint": [-3.4, 3.4, -3.4, 3.4], "overhang": 0.0, "foundation": 0.6, "ao_dist": 3.0}
+    return k, {"footprint": [-3.4, 3.4, -3.4, 3.4], "overhang": 0.0, "foundation": 2.5, "ao_dist": 3.0}
 
 
 # --------------------------------------------------------------------------
@@ -91,16 +91,17 @@ def water_tower(spec, lod):
     cylinder(k, (0, 0, z0), (0, 0, z0 + h), R, segs, paint, cap_top=False)
     cylinder(k, (0, 0, z0 + h), (0, 0, z0 + h + 1.7), R + 0.2, segs, paint, cap_top=True, cap_bottom=True, r_top=0.3)
     cylinder(k, (0, 0, z0 - 1.5), (0, 0, z0), 1.0, segs, paint, cap_top=False, cap_bottom=True, r_top=R)
-    # riser pipe and legs
-    cylinder(k, (0, 0, 0.0), (0, 0, z0 - 1.5), 0.45, [10, 8, 6][lod], pal("galvanized"), cap_top=False)
+    # riser pipe and legs (extended to -1.5m for sloped lots)
+    cylinder(k, (0, 0, -1.5), (0, 0, z0 - 1.5), 0.45, [10, 8, 6][lod], pal("galvanized"), cap_top=False)
     legs = []
     for i in range(4):
         a = math.pi / 4 + i * math.pi / 2
         foot = Vector((5.0 * math.cos(a), 5.0 * math.sin(a), -0.3))
         top = Vector((3.95 * math.cos(a), 3.95 * math.sin(a), z0 + 1.0))
         legs.append((foot, top))
-        beam(k, foot, top, 0.36, 0.36, steel)
-        box(k, (foot.x - 0.45, foot.y - 0.45, -0.4), (foot.x + 0.45, foot.y + 0.45, 0.3), tile("concrete"), "xXyYZ")
+        foot_deep = foot + (foot - top) * (1.1 / (top.z - foot.z))
+        beam(k, foot_deep, top, 0.36, 0.36, steel)
+        box(k, (foot.x - 0.45, foot.y - 0.45, -1.5), (foot.x + 0.45, foot.y + 0.45, 0.3), tile("concrete"), "xXyYZ")
     at = lambda leg, z: leg[0].lerp(leg[1], (z - leg[0].z) / (leg[1].z - leg[0].z))
     if lod < 2:
         for z in (5.0, 10.0):
@@ -115,7 +116,7 @@ def water_tower(spec, lod):
                 beam(k, at(a, za), at(b, zb), 0.07, 0.07, steel)
                 beam(k, at(b, za), at(a, zb), 0.07, 0.07, steel)
         railing_ring(k, 0, 0, z0, R + 0.7, 24, pal("iron"))
-    return k, {"footprint": [-4.6, 4.6, -4.6, 4.6], "overhang": 0.25, "foundation": 0.4, "ao_dist": 3.0,
+    return k, {"footprint": [-4.6, 4.6, -4.6, 4.6], "overhang": 0.25, "foundation": 1.5, "ao_dist": 3.0,
                "params": {"paint": paint_name}}
 
 

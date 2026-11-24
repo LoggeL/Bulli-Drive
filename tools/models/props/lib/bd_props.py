@@ -3,7 +3,7 @@
 # Conventions:
 #   - 1 Blender unit = 1 meter, Blender Z-up -> glTF Y-up: (x, y, z)_bl -> (x, z, -y)_three
 #   - Front faces Three.js +Z (build front facing Blender -Y)
-#   - Origin at ground center (0, 0, 0), bottom resting on z = 0
+#   - Origin at ground center (0, 0, 0), design ground plane at z = 0 (underground foundation skirts extend to z < 0)
 #   - billboard_face UVs follow Three.js PlaneGeometry / flipY=true KTX2 convention:
 #       bottom-left (-X, z0) -> glTF (0, 0) [Blender (0, 1)]
 #       top-right   (+X, z1) -> glTF (1, 1) [Blender (1, 0)]
@@ -198,6 +198,36 @@ def bevel_box(mb, center, size, mat, bev=0.06, M=None):
     # Bottom and top caps
     mb.f(rings[0][::-1], mat)
     mb.f(rings[-1], mat)
+    mb.recalc(n0, soft=False)
+
+
+def foundation_skirt_box(mb, cx, cy, wx, wy, depth, mat="stone_dark", bev=0.0):
+    """Underground masonry/concrete plinth skirt extending from z = +top_lap down to z = -depth.
+    Matches the bottom footprint of bevel_box((cx, cy, ...), (wx, wy, ...), bev=bev) at z = 0
+    so it stays hidden on flat ground (zero lip, zero X/Y bounds growth) and solid on slopes."""
+    if depth <= 0.0:
+        return
+    n0 = mb.nfaces()
+    hx, hy = wx / 2.0, wy / 2.0
+    b = min(bev, hx * 0.35, hy * 0.35) if bev > 0.0 else 0.0
+    if b > 1e-4:
+        rx, ry = hx - b, hy - b
+        bx, by = max(0.0, rx - b), max(0.0, ry - b)
+        pts = [
+            (-bx, -ry), ( bx, -ry),
+            ( rx, -by), ( rx,  by),
+            ( bx,  ry), (-bx,  ry),
+            (-rx,  by), (-rx, -by),
+        ]
+        z_top = min(0.04, b * 0.5)
+    else:
+        pts = [(-hx, -hy), (hx, -hy), (hx, hy), (-hx, hy)]
+        z_top = 0.02
+    r_bot = [mb.v((cx + px, cy + py, -depth)) for (px, py) in pts]
+    r_top = [mb.v((cx + px, cy + py, z_top)) for (px, py) in pts]
+    mb.grid([r_bot, r_top], lambda i, j: mat, closed=True)
+    mb.f(r_bot[::-1], mat)
+    mb.f(r_top, mat)
     mb.recalc(n0, soft=False)
 
 
@@ -421,8 +451,8 @@ def compute_threejs_bounds(root):
 def render_preview(root, out_png, size=480):
     """Quick 3/4 Eevee preview render of a single prop for visual QA."""
     bounds = compute_threejs_bounds(root)
-    # Convert Three.js bounds back to Blender coords: bl = (tx, -tz, ty)
-    bmin = Vector((bounds["min"][0], -bounds["max"][2], bounds["min"][1]))
+    # Convert Three.js bounds back to Blender coords: bl = (tx, -tz, ty); frame above-ground portion
+    bmin = Vector((bounds["min"][0], -bounds["max"][2], max(0.0, bounds["min"][1])))
     bmax = Vector((bounds["max"][0], -bounds["min"][2], bounds["max"][1]))
     ctr = (bmin + bmax) * 0.5
     ext = (bmax - bmin)
@@ -502,6 +532,8 @@ def build_and_export_prop(prop_id, kind, builder_fn, out_dir, preview_dir=None, 
 
     total_tris = sum(tri_count(m) for m in meshes)
     bounds = compute_threejs_bounds(root)
+    foundation = round(max(0.0, -bounds["min"][1]), 3)
+    root["foundation"] = foundation
 
     os.makedirs(out_dir, exist_ok=True)
     raw_path = os.path.join(out_dir, f"{prop_id}_raw.glb")
@@ -516,11 +548,12 @@ def build_and_export_prop(prop_id, kind, builder_fn, out_dir, preview_dir=None, 
         "kind": kind,
         "raw": raw_path,
         "triangles": total_tris,
+        "foundation": foundation,
         "bounds": bounds,
         "animNodes": anim_nodes,
         "hasBillboard": has_billboard,
         "s": round(time.time() - t0, 2),
     }
-    print(f"[prop] {prop_id}: {total_tris} tris, bounds={bounds['min']}..{bounds['max']}, "
+    print(f"[prop] {prop_id}: {total_tris} tris, foundation={foundation}m, bounds={bounds['min']}..{bounds['max']}, "
           f"anim={anim_nodes}, {info['s']}s", flush=True)
     return info

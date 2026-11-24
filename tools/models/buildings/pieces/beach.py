@@ -10,7 +10,7 @@ from bd_kit import (K, Opening, tile, pal, decal, wall, box, rect, lin, mul, Rng
 from mathutils import Vector
 
 STOREY = 2.8
-FOUNDATION = 0.9
+FOUNDATION = 2.0
 PORCH = 2.4
 PITCH = 26.0
 SIDING = ["#CFE3D8", "#F0E3AE", "#C6DAE6", "#F1ECE1", "#EDC3B0", "#D9E6C9", "#B9D2D3"]
@@ -158,10 +158,10 @@ def porch(k, x0, x1, yb, floor, ze, p, lod, shop, deckm, trim, roof_m):
     # deck boards on a rim joist
     rect(k, (x0, y0, floor), (1, 0, 0), (0, 1, 0), x1 - x0, yb - y0, deckm, x0, y0)
     box(k, (x0, y0, floor - 0.25), (x1, yb, floor), pal("wood_grey"), "yxXz")
-    # piers under the deck
+    # piers under the deck (extended to -FOUNDATION for sloped lots)
     if lod < 2:
         for x in (x0 + 0.2, (x0 + x1) / 2, x1 - 0.2):
-            box(k, (x - 0.12, y0 + 0.1, -0.6), (x + 0.12, y0 + 0.34, floor - 0.25), pal("wood_grey"), "yxXY")
+            box(k, (x - 0.12, y0 + 0.1, -FOUNDATION), (x + 0.12, y0 + 0.34, floor - 0.25), pal("wood_grey"), "yxXY")
     # shed roof on posts
     zr_wall = min(ze - 0.25, floor + 2.9)
     zr_edge = zr_wall - 0.45
@@ -200,7 +200,7 @@ def porch(k, x0, x1, yb, floor, ze, p, lod, shop, deckm, trim, roof_m):
     nsteps = max(1, int(round(floor / 0.19)))
     for i in range(nsteps):
         z = floor - (i + 1) * floor / nsteps
-        box(k, (sx, y0 - (i + 1) * 0.3, -0.2), (sx + sw_, y0 - i * 0.3, z + floor / nsteps), deckm, "yxXZ")
+        box(k, (sx, y0 - (i + 1) * 0.3, -FOUNDATION), (sx + sw_, y0 - i * 0.3, z + floor / nsteps), deckm, "yxXZ")
     if lod == 2:
         return
     h = 0.95
