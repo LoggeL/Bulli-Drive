@@ -1,29 +1,31 @@
+import { DEFAULT_MAP_ID, isMapId, mapDescriptor, type MapId } from '../../../shared/map/registry.js';
 import { PAINTS, paintById, type PaintId } from '../../../shared/paints.js';
 import type { CarClassId } from '../../../shared/sim/types.js';
 import { carAnnouncement, carStats, CAR_NAMES } from './carStats.js';
 import {
-    IDLE_PAD, loadMenuChoice, MENU_CARS, navigate, padMenuActions, readPadMenu, saveMenuChoice, stepCar,
+    IDLE_PAD, loadMenuChoice, MENU_CARS, MENU_MAPS, navigate, padMenuActions, readPadMenu, saveMenuChoice, stepCar,
     type MenuAction, type MenuChoice, type MenuMode, type MenuRow, type MenuStorage, type PadMenuState
 } from './menuState.js';
 import { listenOwnPaint } from './paintSync.js';
 import { closeOpenDialog, dialogOpen, initDialogs, moveDialogFocus, openAbout, openSettings, syncSoundControls } from './settingsDialog.js';
 import { gameAssetsPercent, gameAssetsReady } from '../assetGate.js';
+import { discoveryTracker } from '../discoveryTracker.js';
 import { setSoundEnabled, soundEnabled } from '../../effects/sounds.js';
 
 // The main menu (docs/ui.md 4): driver name, car carousel with its numbers,
-// paint chips, mode cards, DRIVE with the loading progress, settings,
-// sound and About; keyboard, touch and gamepad. The choice lives in
+// paint chips, 4-map world picker, mode cards, DRIVE with the loading progress,
+// settings, sound and About; keyboard, touch and gamepad. The choice lives in
 // menuState.ts (pure); this wires it to index.html's #splash-screen, keeps
 // the showroom told (car, paint, where the car sits in the frame) and runs
-// the start. The ids and classes the join flow and the tests use stay:
-// #splash-screen (class hidden after the start), #splash-name-input,
-// .mode-option[data-room], #start-btn.
+// the start.
 
 export interface MenuHooks {
     /** Another car in the carousel (the showroom swaps the car, the server hears of it) */
     onCar(car: CarClassId): void;
     /** Another paint */
     onPaint(paint: PaintId): void;
+    /** Another map picked in the world selector (optional background preload) */
+    onMap?(map: MapId): void;
     /** DRIVE: joins the game with the choice; the menu closes once it resolves */
     onStart(choice: MenuChoice): Promise<void>;
 }
@@ -36,6 +38,13 @@ export interface MenuOptions {
 
 type InputKind = 'keyboard' | 'touch' | 'gamepad';
 
+const MAP_BADGES: Readonly<Record<MapId, string>> = {
+    'bulli-bay': 'CLASSIC',
+    'alpen-pass': 'ALPINE',
+    'stunt-forge': 'STUNTS',
+    'logge-forge': '22 SECRETS'
+};
+
 const PAD_POLL_MS = 50;
 const SWIPE_MIN_PX = 40;
 // The loader fades out over the menu this long (ui/loadingScreen.ts): DRIVE
@@ -46,7 +55,7 @@ const SHOW_SETTLE_MS = 500;
 let root: HTMLElement | null = null;
 let hooks: MenuHooks | null = null;
 let storage: MenuStorage = null;
-let choice: MenuChoice = { car: 'bulli', paint: 'sea', mode: 'party', name: '' };
+let choice: MenuChoice = { car: 'bulli', paint: 'sea', map: DEFAULT_MAP_ID, mode: 'party', name: '' };
 let row: MenuRow = 'name';
 let open = false;
 let starting = false;
@@ -150,6 +159,30 @@ function renderPaint(): void {
     if (name) name.textContent = paintById(choice.paint).name;
 }
 
+function renderMap(): void {
+    root?.setAttribute('data-map', choice.map);
+    for (const card of $$('.map-card')) {
+        const id = card.dataset.map;
+        const checked = id === choice.map;
+        card.setAttribute('aria-checked', String(checked));
+        card.tabIndex = checked ? 0 : -1;
+        if (id && isMapId(id)) {
+            const count = card.querySelector('.map-card-progress');
+            if (count) {
+                const progress = discoveryTracker.getProgress(id);
+                count.textContent = `${progress.found}/${progress.total}`;
+            }
+        }
+    }
+    const activeName = $('.map-selected-name');
+    if (activeName) activeName.textContent = mapDescriptor(choice.map).name;
+}
+
+/** Updates discovery counters shown on the 4-map selector cards. */
+export function refreshMenuMapProgress(): void {
+    if (root) renderMap();
+}
+
 function renderMode(): void {
     root?.setAttribute('data-mode', choice.mode);
     for (const option of $$('.mode-option')) {
@@ -185,6 +218,16 @@ function setPaint(paint: PaintId, options: { fromServer?: boolean } = {}): void 
     saveMenuChoice(storage, menuChoice());
     hooks?.onPaint(paint);
     announce(paintById(paint).name);
+}
+
+function setMap(map: MapId): void {
+    if (map === choice.map || starting) return;
+    choice = { ...choice, map };
+    renderMap();
+    saveMenuChoice(storage, menuChoice());
+    hooks?.onMap?.(map);
+    const desc = mapDescriptor(map);
+    announce(`${desc.name} – ${desc.subtitle}`);
 }
 
 function setMode(mode: MenuMode): void {
@@ -242,6 +285,58 @@ function buildPaints(): void {
     }));
 }
 
+function buildMaps(): void {
+    const picker = $('.map-picker');
+    if (!picker) return;
+    picker.replaceChildren(...MENU_MAPS.map(id => {
+        const desc = mapDescriptor(id);
+        const progress = discoveryTracker.getProgress(id);
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = `map-card${desc.featured ? ' featured' : ''}`;
+        card.setAttribute('role', 'radio');
+        card.dataset.map = id;
+        card.setAttribute('aria-label', `${desc.name}: ${desc.subtitle}`);
+
+        const thumb = document.createElement('img');
+        thumb.className = 'map-card-thumb';
+        thumb.dataset.src = desc.previewImage;
+        thumb.alt = '';
+        thumb.width = 320;
+        thumb.height = 180;
+        thumb.decoding = 'async';
+        thumb.draggable = false;
+
+        const scrim = document.createElement('span');
+        scrim.className = 'map-card-scrim';
+        scrim.setAttribute('aria-hidden', 'true');
+
+        const top = document.createElement('span');
+        top.className = 'map-card-top';
+        const badge = document.createElement('span');
+        badge.className = 'map-card-badge';
+        badge.textContent = MAP_BADGES[id];
+        const count = document.createElement('span');
+        count.className = 'map-card-progress';
+        count.textContent = `${progress.found}/${progress.total}`;
+        top.append(badge, count);
+
+        const meta = document.createElement('span');
+        meta.className = 'map-card-meta';
+        const name = document.createElement('span');
+        name.className = 'map-card-name';
+        name.textContent = desc.name;
+        const tagline = document.createElement('span');
+        tagline.className = 'map-card-sub';
+        tagline.textContent = desc.subtitle;
+        meta.append(name, tagline);
+
+        card.append(thumb, scrim, top, meta);
+        card.addEventListener('click', () => setMap(id));
+        return card;
+    }));
+}
+
 // ---- Keyboard ----
 
 function arrowStep(event: KeyboardEvent, vertical: boolean): number {
@@ -250,13 +345,14 @@ function arrowStep(event: KeyboardEvent, vertical: boolean): number {
     return 0;
 }
 
-// Radio groups (paint, mode): the arrows move the choice and the focus
+// Radio groups (paint, map, mode): the arrows move the choice and the focus
 function radioKeys(selector: string, pick: (element: HTMLElement) => void): void {
     root?.querySelector(selector)?.addEventListener('keydown', event => {
         const keyEvent = event as KeyboardEvent;
         const step = arrowStep(keyEvent, true);
         if (!step) return;
         const items = $$(`${selector} [role="radio"]`);
+        if (!items.length) return;
         const index = items.findIndex(item => item.getAttribute('aria-checked') === 'true');
         const next = items[(index + step + items.length) % items.length];
         keyEvent.preventDefault();
@@ -280,6 +376,7 @@ function rowElement(target: MenuRow): HTMLElement | null {
             return card && card.offsetParent !== null ? card : $('.car-next');
         }
         case 'paint': return $('.paint-chip[aria-checked="true"]');
+        case 'map': return $('.map-card[aria-checked="true"]');
         case 'mode': return $('.mode-option[aria-checked="true"]');
         case 'drive': return $('#start-btn');
     }
@@ -290,6 +387,7 @@ function rowOf(element: Element | null): MenuRow | null {
     if (element.id === 'splash-name-input') return 'name';
     if (element.closest('.car-carousel')) return 'car';
     if (element.closest('.paint-chips')) return 'paint';
+    if (element.closest('.map-picker')) return 'map';
     if (element.closest('.mode-selector-row')) return 'mode';
     if (element.id === 'start-btn') return 'drive';
     return null;
@@ -329,6 +427,7 @@ function padAction(action: MenuAction): void {
     const next = navigate({ choice: menuChoice(), row: current }, action, { skipName: true });
     if (next.choice.car !== choice.car) setCar(next.choice.car);
     if (next.choice.paint !== choice.paint) setPaint(next.choice.paint);
+    if (next.choice.map !== choice.map) setMap(next.choice.map);
     if (next.choice.mode !== choice.mode) setMode(next.choice.mode);
     focusRow(next.row);
 }
@@ -432,12 +531,13 @@ export function closeMenu(): void {
 function onShow(pollMs: number): void {
     if (open || starting) return;
     open = true;
-    for (const img of $$<HTMLImageElement>('.car-card img[data-src]')) {
+    for (const img of $$<HTMLImageElement>('.car-card img[data-src], .map-card img[data-src]')) {
         // Fades in once it is there (ui/menu.css)
         img.addEventListener('load', () => img.classList.add('loaded'), { once: true });
         img.src = img.dataset.src!;
         img.removeAttribute('data-src');
     }
+    renderMap();
     settling = true;
     window.setTimeout(() => {
         settling = false;
@@ -477,6 +577,7 @@ export function initMenu(menuHooks: MenuHooks, options: MenuOptions = {}): MenuC
 
     buildCars();
     buildPaints();
+    buildMaps();
     const input = nameInput();
     if (input) {
         input.value = choice.name;
@@ -492,6 +593,9 @@ export function initMenu(menuHooks: MenuHooks, options: MenuOptions = {}): MenuC
         option.addEventListener('click', () => setMode(option.dataset.room as MenuMode));
     }
     radioKeys('.paint-chips', chip => setPaint(chip.dataset.paint as PaintId));
+    radioKeys('.map-picker', card => {
+        if (isMapId(card.dataset.map)) setMap(card.dataset.map);
+    });
     radioKeys('.mode-selector-row', option => setMode(option.dataset.room as MenuMode));
     // The carousel: arrows, cards, the arrow keys, swipes on the showroom
     $('.car-prev')?.addEventListener('click', () => setCar(stepCar(choice.car, -1)));
@@ -537,6 +641,7 @@ export function initMenu(menuHooks: MenuHooks, options: MenuOptions = {}): MenuC
 
     renderCar();
     renderPaint();
+    renderMap();
     renderMode();
     return choice;
 }

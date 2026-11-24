@@ -20,7 +20,7 @@ function dialog(id: string): HTMLDialogElement | null {
     return document.getElementById(id) as HTMLDialogElement | null;
 }
 
-const DIALOG_IDS = ['settings-dialog', 'about-dialog'];
+const DIALOG_IDS = ['settings-dialog', 'about-dialog', 'codex-dialog'];
 
 /** Whether a menu dialog is open. */
 export function dialogOpen(): boolean {

@@ -130,12 +130,14 @@ body.in-menu #killfeed {
     bottom: 0;
     margin: auto 0;
     height: max-content;
-    max-height: calc(100% - 48px);
+    max-height: calc(100% - 36px);
     width: var(--menu-panel-width);
-    padding: 30px 28px 28px;
+    padding: 24px 24px 22px;
     display: flex;
     flex-direction: column;
-    gap: 22px;
+    gap: 16px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     border-radius: 12px;
     isolation: isolate;
 }
@@ -244,6 +246,171 @@ body.in-menu #killfeed {
 
 .paint-chip[aria-checked="true"]::after {
     border-color: var(--ui-amber);
+}
+
+/* ---- World / Map Picker ---- */
+
+.map-selected-name {
+    color: var(--ui-paper);
+    letter-spacing: 0.08em;
+}
+
+.map-picker {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+}
+
+.map-card {
+    position: relative;
+    min-height: 76px;
+    padding: 7px 8px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: stretch;
+    text-align: left;
+    overflow: hidden;
+    color: var(--ui-paper);
+    background: rgba(24, 28, 32, 0.85);
+    border: 1px solid var(--ui-line);
+    border-radius: 10px;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: border-color 0.18s var(--ui-ease), transform 0.14s var(--ui-ease), box-shadow 0.18s var(--ui-ease);
+}
+
+.map-card-thumb {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    pointer-events: none;
+    opacity: 0;
+    transform: scale(1.02);
+    transition: opacity 0.25s var(--ui-ease), transform 0.28s var(--ui-ease);
+}
+
+.map-card-thumb.loaded {
+    opacity: 0.62;
+}
+
+.map-card:hover .map-card-thumb.loaded,
+.map-card[aria-checked="true"] .map-card-thumb.loaded {
+    opacity: 0.84;
+    transform: scale(1.06);
+}
+
+.map-card-scrim {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(14, 16, 19, 0.56) 0%, rgba(14, 16, 19, 0.35) 42%, rgba(14, 16, 19, 0.9) 100%);
+}
+
+.map-card-top,
+.map-card-meta {
+    position: relative;
+    z-index: 1;
+}
+
+.map-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+}
+
+.map-card-badge {
+    padding: 2px 5px;
+    border-radius: 4px;
+    background: rgba(18, 20, 22, 0.72);
+    border: 1px solid rgba(243, 235, 221, 0.22);
+    color: var(--ui-paper);
+    font: 600 9px/1.1 var(--ui-font-display);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.map-card.featured .map-card-badge {
+    background: rgba(224, 168, 74, 0.22);
+    border-color: rgba(224, 168, 74, 0.78);
+    color: var(--ui-amber);
+}
+
+.map-card-progress {
+    font: 600 10px/1 var(--ui-font-display);
+    letter-spacing: 0.06em;
+    color: rgba(243, 235, 221, 0.84);
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+
+.map-card-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.map-card-name {
+    font: 600 12px/1.15 var(--ui-font-display);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-shadow: 0 1px 6px rgba(0, 0, 0, 0.85);
+}
+
+.map-card-sub {
+    color: var(--ui-paper-2);
+    font-size: 10px;
+    line-height: 1.15;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.map-card:hover {
+    border-color: rgba(243, 235, 221, 0.42);
+}
+
+.map-card[aria-checked="true"] {
+    border-color: var(--ui-amber);
+    box-shadow: 0 0 0 1px var(--ui-amber), 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+
+.map-card[aria-checked="true"] .map-card-name {
+    color: var(--ui-amber);
+}
+
+/* Compact phone map cards so the sheet stays short and mode buttons keep >= 44px */
+@media (orientation: portrait), (orientation: landscape) and (max-height: 520px) {
+    .map-picker {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 4px;
+    }
+
+    .map-card {
+        min-height: 46px;
+        padding: 4px 5px;
+    }
+
+    .map-card-sub,
+    .map-card-progress {
+        display: none;
+    }
+
+    .map-card-badge {
+        font-size: 8px;
+        padding: 1px 4px;
+    }
+
+    .map-card-name {
+        font-size: 10px;
+        letter-spacing: 0.04em;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
 }
 
 /* ---- Modes ---- */

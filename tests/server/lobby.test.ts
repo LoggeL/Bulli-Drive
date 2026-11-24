@@ -176,7 +176,7 @@ describe('joining', () => {
         lobby.join(alice, 'party');
         const [state] = alice.transport.of('roomState');
         const map = mapFor();
-        expect(state.room).toEqual({ id: 'party-1', kind: 'party', index: 1 });
+        expect(state.room).toEqual({ id: 'party-1', kind: 'party', index: 1, mapId: 'bulli-bay' });
         expect(state.world).toEqual({ mapId: 'bulli-bay', mapVersion: map.mapVersion, worldHash: map.worldHash });
         expect(state.members).toEqual([expect.objectContaining({ id: alice.id, slot: 0, name: 'Alice', ready: false })]);
         expect(state.items!.coins).toHaveLength(30 + 21);
@@ -284,7 +284,7 @@ describe('switching rooms', () => {
         expect(alice.member?.ready).toBe(true);
         expect([alice.name, alice.carType, alice.profile]).toEqual(['Alice', 'jeep', 'touch']);
         const [state] = alice.transport.of('roomState');
-        expect(state.room).toEqual({ id: 'freeroam-1', kind: 'freeroam', index: 1 });
+        expect(state.room).toEqual({ id: 'freeroam-1', kind: 'freeroam', index: 1, mapId: 'bulli-bay' });
         expect(state.members.map(m => m.id).sort()).toEqual([alice.id, carol.id].sort());
         expect([state.items, state.scoreboard]).toEqual([null, []]);
 

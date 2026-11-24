@@ -21,10 +21,10 @@ const REAL_CLIENT_MESSAGES: Record<string, ClientMessage> = {
         type: 'hello', protocolVersion: PROTOCOL_VERSION, build: '0123456789abcdef', connId: 'k2x9q1',
         name: 'SurfKing42', carType: 'bulli', profile: 'standard', room: 'party'
     },
-    // A player who picked a paint in the menu (docs/ui.md 5)
+    // A player who picked a paint and world map in the menu
     helloPaint: {
         type: 'hello', protocolVersion: PROTOCOL_VERSION, build: '0123456789abcdef', connId: 'k2x9q1',
-        name: 'SurfKing42', carType: 'beetle', profile: 'standard', room: 'race', paint: 'ochre'
+        name: 'SurfKing42', carType: 'beetle', profile: 'standard', room: 'race', mapId: 'logge-forge', paint: 'ochre'
     },
     // Vite dev server: no build stamp; a phone that played Free Roam last
     helloDev: {
@@ -46,28 +46,30 @@ const REAL_CLIENT_MESSAGES: Record<string, ClientMessage> = {
     setPaint: { type: 'setPaint', paint: 'anthracite' },
     // world/projectiles.ts hits
     shoot: { type: 'shoot', targetId: '4f1c2c7e-3a5b-4a0e-9d8e-1b2c3d4e5f60' },
-    // ui/roomMenu.ts (splash start and the in-game mode switch)
+    // ui/codex.ts discovery unlock relay
+    discovery: { type: 'discovery', discoveryId: 'lmf-forge-arch' },
+    // ui/roomMenu.ts (splash start and the in-game mode/map switch)
     joinRoom: { type: 'joinRoom', kind: 'freeroam' },
+    joinMapRoom: { type: 'joinRoom', kind: 'freeroam', mapId: 'alpen-pass' },
     joinParty: { type: 'joinRoom', kind: 'party' },
     // network/websocket.ts visibilitychange
     visibility: { type: 'visibility', hidden: true },
     // e2eHook.ts placeLocalCar (E2E server only)
     debugPlace: { type: 'debugPlace', x: 6, z: -98, yaw: 0 },
-    // Race and time trial (docs/phase-2-design.md, 16.2): tools/bots/bot.ts
-    // modes race and timetrial now, the race UI of the browser next
+    // Race and time trial across all curated maps
     joinRace: { type: 'joinRoom', kind: 'race' },
-    joinOwnRace: { type: 'joinRoom', kind: 'race', fresh: true, track: 'hill-sprint' },
+    joinOwnRace: { type: 'joinRoom', kind: 'race', mapId: 'alpen-pass', fresh: true, track: 'alpen-touge-descent' },
     joinTimeTrial: { type: 'joinRoom', kind: 'timetrial', track: 'downtown-loop' },
     raceReady: { type: 'raceReady', ready: true },
-    raceConfig: { type: 'raceConfig', track: 'hill-sprint', botLevel: 'hard' },
+    raceConfig: { type: 'raceConfig', track: 'forge-grand-circuit', botLevel: 'hard' },
     raceConfigLevel: { type: 'raceConfig', botLevel: 'easy' },
     raceVote: { type: 'raceVote', choice: 'rematch' },
     timeTrialRestart: { type: 'timeTrialRestart' }
 };
 
 describe('PROTOCOL_VERSION', () => {
-    it('is 6 since the menu sends the car paint (hello.paint, setPaint), which an older server drops', () => {
-        expect(PROTOCOL_VERSION).toBe(6);
+    it('is 7 since multi-map rooms, ALL_TRACK_IDS, and discovery events were added', () => {
+        expect(PROTOCOL_VERSION).toBe(7);
     });
 });
 
@@ -94,7 +96,7 @@ describe('parseClientMessage accepts every real client message', () => {
     it('covers every client message type', () => {
         const types = new Set(Object.values(REAL_CLIENT_MESSAGES).map(m => m.type));
         expect([...types].sort()).toEqual([
-            'debugPlace', 'hello', 'honk', 'joinRoom', 'ping', 'raceConfig', 'raceReady', 'raceVote', 'ready', 'rename',
+            'debugPlace', 'discovery', 'hello', 'honk', 'joinRoom', 'ping', 'raceConfig', 'raceReady', 'raceVote', 'ready', 'rename',
             'setCar', 'setPaint', 'shoot', 'timeTrialRestart', 'visibility'
         ]);
     });
@@ -138,6 +140,7 @@ describe('parseClientMessage rejects invalid messages', () => {
         ['hello with fractional version', { ...hello, protocolVersion: 2.5 }],
         ['hello with unknown profile', { ...hello, profile: 'pro' }],
         ['hello with unknown room', { ...hello, room: 'rally' }],
+        ['hello with unknown mapId', { ...hello, mapId: 'moon-base' }],
         ['hello with a huge name', { ...hello, name: 'x'.repeat(201) }],
         ['ping with NaN (null on the wire)', overTheWire({ ...ping, t: NaN })],
         ['ping with Infinity', { ...ping, t: Infinity }],
@@ -154,6 +157,9 @@ describe('parseClientMessage rejects invalid messages', () => {
         ['visibility with a string', { type: 'visibility', hidden: 'yes' }],
         ['joinRoom without kind', { type: 'joinRoom' }],
         ['joinRoom to an unknown kind', { type: 'joinRoom', kind: 'rally' }],
+        ['joinRoom to an unknown mapId', { type: 'joinRoom', kind: 'freeroam', mapId: 'atlantis' }],
+        ['discovery without discoveryId', { type: 'discovery' }],
+        ['discovery with overly long id', { type: 'discovery', discoveryId: 'x'.repeat(65) }],
         ['joinRoom to an unknown track', { type: 'joinRoom', kind: 'race', track: 'nordschleife' }],
         ['joinRoom with fresh as a string', { type: 'joinRoom', kind: 'race', fresh: 'yes' }],
         ['raceReady without ready', { type: 'raceReady' }],

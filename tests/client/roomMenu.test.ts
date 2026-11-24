@@ -16,7 +16,7 @@ import {
 // tests/server/lobby.test.ts and the bot test 'room switch'.
 
 const INDEX = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../index.html');
-const sent: Array<{ type: string; kind?: string; fresh?: boolean }> = [];
+const sent: Array<{ type: string; kind?: string; mapId?: string; fresh?: boolean }> = [];
 
 const option = (selector: string) => document.querySelector<HTMLButtonElement>(selector)!;
 const text = (id: string) => document.getElementById(id)!.textContent;
@@ -52,77 +52,96 @@ describe('the game mode', () => {
     it('moves to the mode chosen in the menu before the car spawns', () => {
         // The server put the connection into the Party; DRIVE moves it
         // (main.ts sends 'ready' right after this)
-        setCurrentRoom({ id: 'party-1', kind: 'party', index: 1 });
+        setCurrentRoom({ id: 'party-1', kind: 'party', index: 1, mapId: 'bulli-bay' });
         vi.advanceTimersByTime(2000);
         applyMenuMode('freeroam');
         expect(sent).toEqual([{ type: 'joinRoom', kind: 'freeroam' }]);
         expect(preferredRoomKind()).toBe('freeroam');
         // Already in the chosen mode: nothing to send
-        setCurrentRoom({ id: 'freeroam-1', kind: 'freeroam', index: 1 });
+        setCurrentRoom({ id: 'freeroam-1', kind: 'freeroam', index: 1, mapId: 'bulli-bay' });
         sent.length = 0;
         vi.advanceTimersByTime(2000);
         applyMenuMode('freeroam');
         expect(sent).toEqual([]);
     });
 
+    it('switches map and mode together from the menu and in-game map panel', () => {
+        setCurrentRoom({ id: 'party-1', kind: 'party', index: 1, mapId: 'bulli-bay' });
+        vi.advanceTimersByTime(2000);
+        applyMenuMode('freeroam', 'logge-forge');
+        expect(sent).toEqual([{ type: 'joinRoom', kind: 'freeroam', mapId: 'logge-forge' }]);
+        setCurrentRoom({ id: 'logge-forge:freeroam-1', kind: 'freeroam', index: 1, mapId: 'logge-forge' });
+        expect(text('room-chip-index')).toBe('FORGE · R1');
+        sent.length = 0;
+        vi.advanceTimersByTime(2000);
+        option('#room-chip').click();
+        expect(option('.room-map-option[data-map="logge-forge"]').disabled).toBe(true);
+        expect(option('.room-map-option[data-map="alpen-pass"]').disabled).toBe(false);
+        option('.room-map-option[data-map="alpen-pass"]').click();
+        expect(sent).toEqual([{ type: 'joinRoom', kind: 'freeroam', mapId: 'alpen-pass' }]);
+        setCurrentRoom({ id: 'alpen-pass:freeroam-1', kind: 'freeroam', index: 1, mapId: 'alpen-pass' });
+        expect(text('room-chip-index')).toBe('ALPEN · R1');
+        vi.advanceTimersByTime(2000);
+    });
+
     it('shows the room on the chip and hides the Party HUD in Free Roam', () => {
-        setCurrentRoom({ id: 'freeroam-2', kind: 'freeroam', index: 2 });
+        setCurrentRoom({ id: 'freeroam-2', kind: 'freeroam', index: 2, mapId: 'bulli-bay' });
         expect(document.body.classList.contains('room-freeroam')).toBe(true);
         expect(document.body.classList.contains('room-party')).toBe(false);
         expect(text('room-chip-mode')).toBe('FREE ROAM');
         expect(text('room-chip-index')).toBe('ROOM 2');
-        setCurrentRoom({ id: 'party-1', kind: 'party', index: 1 });
+        setCurrentRoom({ id: 'party-1', kind: 'party', index: 1, mapId: 'bulli-bay' });
         expect(document.body.classList.contains('room-party')).toBe(true);
         expect(text('room-chip-mode')).toBe('PARTY');
     });
 
     it('keeps a time trial played last while Race stays picked in the menu', () => {
         localStorage.setItem('bulli-room-kind', 'timetrial');
-        setCurrentRoom({ id: 'timetrial-3', kind: 'timetrial', index: 3 });
+        setCurrentRoom({ id: 'timetrial-3', kind: 'timetrial', index: 3, mapId: 'bulli-bay' });
         vi.advanceTimersByTime(2000);
         applyMenuMode('race');
         expect(sent).toEqual([]);
         expect(preferredRoomKind()).toBe('timetrial');
         // From the Party, Race goes to a race
-        setCurrentRoom({ id: 'party-1', kind: 'party', index: 1 });
+        setCurrentRoom({ id: 'party-1', kind: 'party', index: 1, mapId: 'bulli-bay' });
         vi.advanceTimersByTime(2000);
         applyMenuMode('race');
         expect(sent).toEqual([{ type: 'joinRoom', kind: 'race' }]);
-        setCurrentRoom({ id: 'race-1', kind: 'race', index: 1 });
+        setCurrentRoom({ id: 'race-1', kind: 'race', index: 1, mapId: 'bulli-bay' });
         vi.advanceTimersByTime(2000);
     });
 
     it('shows the race HUD classes in races and time trials, without the Party rules', () => {
-        setCurrentRoom({ id: 'race-2', kind: 'race', index: 2 });
+        setCurrentRoom({ id: 'race-2', kind: 'race', index: 2, mapId: 'bulli-bay' });
         expect(document.body.classList.contains('room-race')).toBe(true);
         expect(document.body.classList.contains('room-timetrial')).toBe(false);
         expect(document.body.classList.contains('room-party')).toBe(false);
         expect(text('room-chip-mode')).toBe('RACE');
         expect(partyRulesActive()).toBe(false);
-        setCurrentRoom({ id: 'timetrial-4', kind: 'timetrial', index: 4 });
+        setCurrentRoom({ id: 'timetrial-4', kind: 'timetrial', index: 4, mapId: 'bulli-bay' });
         expect(document.body.classList.contains('room-race')).toBe(true);
         expect(document.body.classList.contains('room-timetrial')).toBe(true);
         expect(text('room-chip-mode')).toBe('TIME TRIAL');
-        setCurrentRoom({ id: 'party-1', kind: 'party', index: 1 });
+        setCurrentRoom({ id: 'party-1', kind: 'party', index: 1, mapId: 'bulli-bay' });
         expect(document.body.classList.contains('room-race')).toBe(false);
         expect(partyRulesActive()).toBe(true);
-        setCurrentRoom({ id: 'freeroam-1', kind: 'freeroam', index: 1 });
+        setCurrentRoom({ id: 'freeroam-1', kind: 'freeroam', index: 1, mapId: 'bulli-bay' });
         expect(partyRulesActive()).toBe(false);
     });
 
     it('asks for a new race instance from a race room only with fresh (START OWN RACE)', () => {
-        setCurrentRoom({ id: 'race-1', kind: 'race', index: 1 });
+        setCurrentRoom({ id: 'race-1', kind: 'race', index: 1, mapId: 'bulli-bay' });
         vi.advanceTimersByTime(2000);
         requestRoom('race');
         expect(sent).toEqual([]);
         requestRoom('race', { fresh: true });
         expect(sent).toEqual([{ type: 'joinRoom', kind: 'race', fresh: true }]);
-        setCurrentRoom({ id: 'race-2', kind: 'race', index: 2 });
+        setCurrentRoom({ id: 'race-2', kind: 'race', index: 2, mapId: 'bulli-bay' });
         vi.advanceTimersByTime(2000);
     });
 
     it('switches from the chip menu, locked while it waits and for the 2 s cooldown', () => {
-        setCurrentRoom({ id: 'freeroam-1', kind: 'freeroam', index: 1 });
+        setCurrentRoom({ id: 'freeroam-1', kind: 'freeroam', index: 1, mapId: 'bulli-bay' });
         // Past the lock of the earlier switch
         vi.advanceTimersByTime(2000);
         option('#room-chip').click();
@@ -138,7 +157,7 @@ describe('the game mode', () => {
         requestRoom('party');
         expect(sent).toHaveLength(1);
 
-        setCurrentRoom({ id: 'party-1', kind: 'party', index: 1 });
+        setCurrentRoom({ id: 'party-1', kind: 'party', index: 1, mapId: 'bulli-bay' });
         expect(document.getElementById('room-panel')!.hidden).toBe(true);
         // The server takes one switch per 2 s
         requestRoom('freeroam');
@@ -146,6 +165,6 @@ describe('the game mode', () => {
         vi.advanceTimersByTime(2000);
         requestRoom('freeroam');
         expect(sent).toEqual([{ type: 'joinRoom', kind: 'party' }, { type: 'joinRoom', kind: 'freeroam' }]);
-        setCurrentRoom({ id: 'freeroam-1', kind: 'freeroam', index: 1 });
+        setCurrentRoom({ id: 'freeroam-1', kind: 'freeroam', index: 1, mapId: 'bulli-bay' });
     });
 });

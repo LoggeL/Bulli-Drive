@@ -207,6 +207,10 @@
                 <circle class="icon-fill" cx="9.5" cy="10" r="1"/>
                 <circle class="icon-fill" cx="14.5" cy="10" r="1"/>
             </symbol>
+            <symbol id="icon-compass" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="9"/>
+                <polygon class="icon-fill" points="16.2,7.8 13.8,13.8 7.8,16.2 10.2,10.2"/>
+            </symbol>
         </defs>
     </svg>
     <div id="loading-screen" aria-busy="true">
@@ -284,6 +288,11 @@
                 <span class="menu-label" id="paint-label">Paint <span class="paint-name" aria-hidden="true"></span></span>
                 <!-- Eight chips from shared/paints.ts (ui/menu/menu.ts) -->
                 <div class="paint-chips" role="radiogroup" aria-labelledby="paint-label"></div>
+            </div>
+            <div class="menu-field menu-maps">
+                <span class="menu-label" id="map-selector-label">World <span class="map-selected-name" aria-hidden="true">Bulli Bay</span></span>
+                <!-- Four curated worlds populated from shared/map/registry.ts (ui/menu/menu.ts) -->
+                <div class="map-picker" role="radiogroup" aria-labelledby="map-selector-label"></div>
             </div>
             <div class="menu-field menu-modes">
                 <span class="menu-label" id="mode-selector-label">Mode</span>
@@ -425,6 +434,25 @@
             </ul>
             <p class="about-credits">Cars modelled with our own Blender scripts. Textures and sky: Poly Haven (CC0) and others, see the licences in the repository. Type: Barlow (SIL OFL).</p>
             <p class="about-version">Build <span id="about-build">dev</span></p>
+        </div>
+    </dialog>
+
+    <dialog id="codex-dialog" class="menu-dialog codex-dialog" aria-labelledby="codex-title">
+        <div class="dialog-head">
+            <div class="codex-head-title">
+                <h2 id="codex-title">Discovery Codex</h2>
+                <p id="codex-map-subtitle" class="codex-subtitle">Bulli Bay · 0 / 4 discovered</p>
+            </div>
+            <button type="button" class="dialog-close" aria-label="Close codex">
+                <svg class="ui-icon" aria-hidden="true"><use href="#icon-close"></use></svg>
+            </button>
+        </div>
+        <div class="codex-progress-track" aria-hidden="true">
+            <div id="codex-progress-fill" class="codex-progress-fill"></div>
+        </div>
+        <div class="dialog-body codex-body">
+            <div id="codex-filters" class="codex-filters" role="group" aria-label="Filter discoveries"></div>
+            <div id="codex-list" class="codex-list"></div>
         </div>
     </dialog>
 
@@ -611,6 +639,18 @@
             POWERUP COLLECTED!
         </div>
 
+        <div id="discovery-toast" role="status" aria-live="polite" hidden>
+            <div class="discovery-toast-icon" aria-hidden="true">
+                <svg class="ui-icon"><use href="#icon-compass"></use></svg>
+            </div>
+            <div class="discovery-toast-text">
+                <span id="discovery-toast-eyebrow" class="discovery-toast-eyebrow">Discovery</span>
+                <strong id="discovery-toast-title" class="discovery-toast-title"></strong>
+                <span id="discovery-toast-body" class="discovery-toast-body"></span>
+            </div>
+            <span id="discovery-toast-count" class="discovery-toast-count"></span>
+        </div>
+
         <div id="drive-meter" role="meter" aria-label="Boost" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
             <span id="drift-indicator" aria-hidden="true">DRIFT</span>
             <div id="boost-meter" aria-hidden="true">
@@ -632,6 +672,11 @@
         </div>
 
         <div id="player-list">
+            <button id="codex-chip" type="button" aria-haspopup="dialog" aria-label="Discoveries. Open codex (C)" hidden>
+                <svg class="ui-icon codex-chip-icon" aria-hidden="true"><use href="#icon-compass"></use></svg>
+                <span id="codex-chip-count" aria-hidden="true">0/4</span>
+                <kbd class="codex-chip-key" aria-hidden="true">C</kbd>
+            </button>
             <button id="room-chip" type="button" aria-expanded="false" aria-controls="room-panel" aria-label="Game mode: Party, room 1. Change mode">
                 <span id="room-chip-mode" aria-hidden="true">PARTY</span>
                 <span id="room-chip-index" aria-hidden="true">ROOM 1</span>
@@ -640,7 +685,26 @@
                 <svg class="ui-icon rank-chip-icon" aria-hidden="true"><use href="#icon-rank"></use></svg>
                 <span id="player-rank" aria-hidden="true">#1</span>
             </button>
-            <div id="room-panel" role="group" aria-label="Change game mode" hidden>
+            <div id="room-panel" role="group" aria-label="Change game mode or map" hidden>
+                <h3>World</h3>
+                <div class="room-maps" role="group" aria-label="Switch map">
+                    <button type="button" class="room-map-option" data-map="bulli-bay">
+                        <span class="room-map-name">Bulli Bay</span>
+                        <span class="room-map-tag">Classic</span>
+                    </button>
+                    <button type="button" class="room-map-option" data-map="alpen-pass">
+                        <span class="room-map-name">Portes du Bulli</span>
+                        <span class="room-map-tag">Alpine</span>
+                    </button>
+                    <button type="button" class="room-map-option" data-map="stunt-forge">
+                        <span class="room-map-name">Kiesgrube</span>
+                        <span class="room-map-tag">Stunts</span>
+                    </button>
+                    <button type="button" class="room-map-option featured" data-map="logge-forge">
+                        <span class="room-map-name">Logge's World</span>
+                        <span class="room-map-tag">22 Secrets</span>
+                    </button>
+                </div>
                 <h3>Game mode</h3>
                 <button type="button" class="room-option" data-room="party">
                     <span class="mode-name">PARTY</span>
@@ -648,15 +712,20 @@
                 </button>
                 <button type="button" class="room-option" data-room="freeroam">
                     <span class="mode-name">FREE ROAM</span>
-                    <span class="mode-desc">Cruise the bay, bumping allowed</span>
+                    <span class="mode-desc">Cruise the world, bumping allowed</span>
                 </button>
                 <button type="button" class="room-option" data-room="race">
                     <span class="mode-name">RACE</span>
-                    <span class="mode-desc">Six tracks, a lobby with bots</span>
+                    <span class="mode-desc">Curated tracks, a lobby with bots</span>
                 </button>
                 <button type="button" class="room-option" data-room="timetrial">
                     <span class="mode-name">TIME TRIAL</span>
                     <span class="mode-desc">Alone against your ghost</span>
+                </button>
+                <button type="button" class="room-settings" id="room-codex" hidden>
+                    <svg class="ui-icon" aria-hidden="true"><use href="#icon-compass"></use></svg>
+                    <span>Discoveries</span>
+                    <span id="room-codex-count" class="room-codex-count"></span>
                 </button>
                 <button type="button" class="room-settings" id="room-settings">
                     <svg class="ui-icon" aria-hidden="true"><use href="#icon-gear"></use></svg>

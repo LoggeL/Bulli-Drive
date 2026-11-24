@@ -34,6 +34,7 @@ export function ticketFor(session: Session, tickets: TicketSigner): string {
         carType: session.carType,
         profile: session.profile,
         roomKind: room?.kind ?? 'party',
+        mapId: room?.mapId,
         score: room && member ? room.scoreOf(member) : 0
     });
 }

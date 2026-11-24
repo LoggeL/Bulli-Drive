@@ -5,6 +5,7 @@ import { GHOST_POSE_HZ, TIMETRIAL_PREP_TICKS } from '../../shared/race/rules.js'
 import type { VehicleInput } from '../../shared/sim/types.js';
 import { isCarClassId } from '../../shared/sim/vehicleClasses.js';
 import type { MapData } from '../../shared/map/mapData.js';
+import type { MapId } from '../../shared/map/registry.js';
 import { ghostKeyString, ReplayBudget, simHash, type GhostKey, type GhostRun, type GhostStore } from '../race/ghostStore.js';
 import { RaceRoom, trackRuntime, type Racer, type RaceRoomOptions } from './RaceRoom.js';
 import type { RoomMember } from './Room.js';
@@ -30,7 +31,7 @@ const SIM_HASH = simHash();
 
 export function ghostKeyFor(map: MapData, trackId: RaceRoom['trackId']): GhostKey {
     const track = trackRuntime(map, trackId).track;
-    return { trackId, trackVersion: track.trackVersion, mapVersion: track.mapVersion, simHash: SIM_HASH };
+    return { mapId: map.mapId as MapId, trackId, trackVersion: track.trackVersion, mapVersion: track.mapVersion, simHash: SIM_HASH };
 }
 
 // The same run (a store on a database hands out new objects)

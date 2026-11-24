@@ -1,4 +1,5 @@
 import type { TrackId } from '../../shared/race/types.js';
+import { DEFAULT_MAP_ID, type MapId } from '../../shared/map/registry.js';
 import {
     BOGGED_ACCEL, BOGGED_TICKS, DRAFT_ACCEL, DRAFT_FALL, DRAFT_FILL, DRAFT_RISE, DRAFT_TOP_ADD,
     GHOST_PERSONAL_MAX, LAUNCH_ACCEL, LAUNCH_THROTTLE, LAUNCH_TICKS, LAUNCH_WINDOW_TICKS, RESET_BEFORE_GATE, RESET_BEHIND_MAX
@@ -24,8 +25,9 @@ import { canonicalStringify, fnv1a } from '../../shared/world/mapData.js';
 //   CREATE INDEX ghosts_best ON ghosts (track_id, track_version, map_version, sim_hash, finish_ticks);
 //   CREATE INDEX ghosts_player ON ghosts (player_key, track_id, track_version, map_version, sim_hash, finish_ticks);
 
-// A ghost only fits the track, the map and the sim it was driven on
+// A ghost only fits the map, the track, and the sim it was driven on
 export interface GhostKey {
+    mapId?: MapId;
     trackId: TrackId;
     trackVersion: number;
     mapVersion: number;
@@ -90,7 +92,8 @@ export function simHash(): string {
 }
 
 export function ghostKeyString(key: GhostKey): string {
-    return `${key.trackId}|${key.trackVersion}|${key.mapVersion}|${key.simHash}`;
+    const prefix = key.mapId && key.mapId !== DEFAULT_MAP_ID ? `${key.mapId}:` : '';
+    return `${prefix}${key.trackId}|${key.trackVersion}|${key.mapVersion}|${key.simHash}`;
 }
 
 // Pose tracks kept (least recently used out): about 23 kB each for 90 s

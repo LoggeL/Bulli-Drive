@@ -1,27 +1,17 @@
-import { BULLI_BAY_GRID, decodeHeightfield, HeightfieldFormatError, type Heightfield } from '../../shared/map/heightfield.js';
+import { decodeHeightfield, HeightfieldFormatError, type Heightfield } from '../../shared/map/heightfield.js';
+import { importMapSources, type MapManifestJson } from '../../shared/map/loadMap.js';
 import { createMapData, type MapData } from '../../shared/map/mapData.js';
-import { parseMapSources } from '../../shared/map/mapSources.js';
+import { DEFAULT_MAP_ID, isMapId, MAP_GRIDS, type MapId } from '../../shared/map/registry.js';
 import { trackDef } from '../../shared/race/tracks/index.js';
 import type { TrackDef, TrackId } from '../../shared/race/types.js';
-import mapFile from '../../shared/maps/bulli-bay/map.json';
-import pois from '../../shared/maps/bulli-bay/pois.json';
-import roads from '../../shared/maps/bulli-bay/roads.json';
-import tracks from '../../shared/maps/bulli-bay/tracks.json';
-import zones from '../../shared/maps/bulli-bay/zones.json';
 import { reloadOnce } from '../network/reloadOnce.js';
 
-// The map the game is played on (docs/phase-3-design.md, 14 M3): the JSON
-// sources come with the bundle, the baked terrain.bhf is downloaded (by its
-// content hash from the map's manifest, so the browser and the CDN may keep
-// it). The client builds the same MapData as the server from the same bytes
-// and compares the world hash in 'roomState' (network/websocket.ts).
+// Multi-map client loader & cache: JSON sources are code-split per map via
+// importMapSources (shared/map/loadMap.ts) and the baked terrain.bhf is fetched
+// by its content hash from /maps/<mapId>/manifest.json. The client builds the
+// exact same MapData & worldHash as the server and compares them in roomState.
 
-export const GAME_MAP_ID = 'bulli-bay';
-
-interface MapManifest {
-    mapVersion?: number;
-    files: { terrain: { path: string; hash: string } };
-}
+export const GAME_MAP_ID: MapId = DEFAULT_MAP_ID;
 
 /**
  * The server serves another version of the map than the one this page
@@ -29,8 +19,8 @@ interface MapManifest {
  * before it): every retry would fail the same, only a reload helps.
  */
 export class MapVersionError extends Error {
-    constructor(readonly served: string) {
-        super(`the server's map is version ${served}, this page has ${mapFile.mapVersion}`);
+    constructor(readonly served: string, readonly expected?: number) {
+        super(`the server's map is version ${served}, this page has ${expected ?? 'another version'}`);
         this.name = 'MapVersionError';
     }
 }
@@ -42,8 +32,9 @@ export function reloadForMap(error: unknown): boolean {
     return error instanceof MapVersionError && reloadOnce(MAP_RELOAD_KEY, error.served);
 }
 
+const loadedMaps = new Map<MapId, MapData>();
+const loadingMaps = new Map<MapId, Promise<MapData>>();
 let current: MapData | null = null;
-let loading: Promise<MapData> | null = null;
 
 async function fetchOk(url: string, init?: RequestInit): Promise<Response> {
     const response = await fetch(url, init);
@@ -51,48 +42,79 @@ async function fetchOk(url: string, init?: RequestInit): Promise<Response> {
     return response;
 }
 
-async function load(): Promise<MapData> {
-    const base = `/maps/${GAME_MAP_ID}`;
-    const manifest = await (await fetchOk(`${base}/manifest.json`, { cache: 'no-cache' })).json() as MapManifest;
-    if (manifest.mapVersion !== undefined && manifest.mapVersion !== mapFile.mapVersion) throw new MapVersionError(String(manifest.mapVersion));
+async function load(mapId: MapId): Promise<MapData> {
+    const base = `/maps/${mapId}`;
+    const [sources, manifestRes] = await Promise.all([
+        importMapSources(mapId),
+        fetchOk(`${base}/manifest.json`, { cache: 'no-cache' })
+    ]);
+    const manifest = await manifestRes.json() as MapManifestJson;
+    const expectedVersion = sources.map.mapVersion;
+    if (manifest.mapVersion !== undefined && manifest.mapVersion !== expectedVersion) {
+        throw new MapVersionError(String(manifest.mapVersion), expectedVersion);
+    }
     const terrain = manifest.files.terrain;
     const bytes = new Uint8Array(await (await fetchOk(`${base}/${terrain.path}?v=${terrain.hash}`)).arrayBuffer());
     let hf: Heightfield;
     try {
-        hf = decodeHeightfield(bytes, BULLI_BAY_GRID);
+        hf = decodeHeightfield(bytes, MAP_GRIDS[mapId]);
     } catch (error) {
         // A terrain in a format or on a grid this page does not know
-        if (error instanceof HeightfieldFormatError) throw new MapVersionError(`terrain ${terrain.hash}`);
+        if (error instanceof HeightfieldFormatError) throw new MapVersionError(`terrain ${terrain.hash}`, expectedVersion);
         throw error;
     }
-    if (hf.mapVersion !== mapFile.mapVersion) throw new MapVersionError(String(hf.mapVersion));
-    const sources = parseMapSources({ roads, map: mapFile, zones, pois, tracks });
-    current = createMapData(sources, hf);
-    return current;
+    if (hf.mapVersion !== expectedVersion) throw new MapVersionError(String(hf.mapVersion), expectedVersion);
+    const built = createMapData(sources, hf);
+    loadedMaps.set(mapId, built);
+    if (!current || current.mapId === mapId) current = built;
+    return built;
 }
 
-/** Loads the map once (later calls share the first load); a failed load may be retried. */
-export function loadGameMap(): Promise<MapData> {
-    if (!loading) {
-        loading = load().catch(error => {
-            loading = null;
+/**
+ * Loads and caches a registered map (later calls share the in-flight or cached
+ * result); a failed load may be retried. Defaults to Bulli Bay.
+ */
+export function loadGameMap(mapId: MapId = DEFAULT_MAP_ID): Promise<MapData> {
+    const target: MapId = isMapId(mapId) ? mapId : DEFAULT_MAP_ID;
+    const cached = loadedMaps.get(target);
+    if (cached) return Promise.resolve(cached);
+    let inflight = loadingMaps.get(target);
+    if (!inflight) {
+        inflight = load(target).catch(error => {
+            loadingMaps.delete(target);
             throw error;
         });
+        loadingMaps.set(target, inflight);
     }
-    return loading;
+    return inflight;
 }
 
-/** The map once it is loaded, else null. */
+/** Returns the cached MapData for a map ID if already loaded, else null. */
+export function cachedGameMap(mapId: MapId): MapData | null {
+    return loadedMaps.get(mapId) ?? null;
+}
+
+/** The active map once loaded, else null. */
 export function gameMap(): MapData | null {
     return current;
 }
 
-/** Uses a map built elsewhere (the unit tests build it from the files). */
+/** Sets the active map (used on live map swaps and in unit tests). */
 export function setGameMap(map: MapData | null): void {
     current = map;
+    if (map && isMapId(map.mapId)) {
+        loadedMaps.set(map.mapId, map);
+    }
 }
 
-/** A track of the loaded map (race UI, model and client). */
+/** Clears cached maps (test helper). */
+export function clearGameMapCache(): void {
+    loadedMaps.clear();
+    loadingMaps.clear();
+    current = null;
+}
+
+/** A track of the active map (race UI, model and client). */
 export function gameTrack(id: TrackId): TrackDef {
     if (!current) throw new Error(`track ${id} asked for before the map was loaded`);
     return trackDef(current, id);

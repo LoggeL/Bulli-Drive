@@ -14,12 +14,13 @@ import {
     MAX_RACERS, RACE_FIELD_TARGET, RACE_SNAPSHOT_EVERY, RACE_STATUS_EVERY, RESULTS_TICKS
 } from '../../shared/race/rules.js';
 import { computeStandings, gapAhead } from '../../shared/race/standings.js';
-import { nextTrack, trackDef } from '../../shared/race/tracks/index.js';
+import { nextTrack, trackDef, trackIdsForMap } from '../../shared/race/tracks/index.js';
 import type { BotLevel, RacePhase, RaceVote, TrackDef, TrackId } from '../../shared/race/types.js';
 import { stopInput } from '../../shared/sim/inputs.js';
 import type { SimCar, VehicleInput, VehicleState } from '../../shared/sim/types.js';
 import type { SimWorld } from '../../shared/world/colliders.js';
 import type { MapData } from '../../shared/map/mapData.js';
+import { isMapId, mapDescriptor } from '../../shared/map/registry.js';
 import { BotSession, drawBots } from '../race/botRoster.js';
 import { Room, type BotController, type LeaveReason, type RoomMember, type RoomMessage } from './Room.js';
 import type { SpawnPose } from './spawn.js';
@@ -96,6 +97,13 @@ type Msg<T extends RoomMessage['type']> = Extract<RoomMessage, { type: T }>;
 // raceConfig at most once per second per player
 const CONFIG_INTERVAL_TICKS = 60;
 
+function resolveTrackForMap(map: MapData, requested?: TrackId): TrackId {
+    const valid = trackIdsForMap(map);
+    if (requested && valid.includes(requested)) return requested;
+    if (isMapId(map.mapId)) return mapDescriptor(map.mapId).defaultTrackId;
+    return valid[0];
+}
+
 export class RaceRoom extends Room {
     phase: RacePhase = 'lobby';
     trackId: TrackId;
@@ -132,7 +140,7 @@ export class RaceRoom extends Room {
 
     constructor(index: number, map: MapData, now: () => number = Date.now, options: RaceRoomOptions = {}, kind: 'race' | 'timetrial' = 'race') {
         super(kind, index, map, now);
-        this.trackId = options.track ?? 'downtown-loop';
+        this.trackId = resolveTrackForMap(map, options.track);
         this.seed = options.seed ?? (index * 7919 + 17);
         this.snapshotEvery = RACE_SNAPSHOT_EVERY;
     }
@@ -308,7 +316,7 @@ export class RaceRoom extends Room {
             this.botLevel = msg.botLevel;
             this.markDirty();
         }
-        if (msg.track && msg.track !== this.trackId) {
+        if (msg.track && msg.track !== this.trackId && trackIdsForMap(this.map).includes(msg.track)) {
             this.setTrack(msg.track);
             this.markDirty();
             // The lobby cars go onto the new track's grid
@@ -604,7 +612,7 @@ export class RaceRoom extends Room {
 
     // E10: a rematch only with a majority, the next track on a tie or without votes
     protected trackAfterVote(rematch: number, next: number): TrackId {
-        return rematch > next ? this.trackId : nextTrack(this.trackId);
+        return rematch > next ? this.trackId : nextTrack(this.trackId, this.map);
     }
 
     /**

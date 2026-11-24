@@ -16,7 +16,7 @@ function member(id: string, ready: boolean): MemberInfo {
 }
 
 function roomState(kind: RoomKind, resume: ResumeState | undefined, members: MemberInfo[]) {
-    return { room: { id: `${kind}-1`, kind, index: 1 }, resume, members };
+    return { room: { id: `${kind}-1`, kind, index: 1, mapId: 'bulli-bay' as const }, resume, members };
 }
 
 const ALIVE: ResumeState = { alive: true, spawnTick: 100, powerups: [] };

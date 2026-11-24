@@ -1,10 +1,11 @@
-import { PROTOCOL_VERSION, type HelloMessage, type ProfileId, type RoomKind } from '../../shared/protocol.js';
-import { FIRST_PAINT, savedPaint, STORAGE_KEYS, type MenuStorage } from '../ui/menu/menuState.js';
+import { PROTOCOL_VERSION, type HelloMessage, type MapId, type ProfileId, type RoomKind } from '../../shared/protocol.js';
+import { DEFAULT_MAP_ID, isMapId } from '../../shared/map/registry.js';
+import { FIRST_PAINT, savedMap, savedPaint, STORAGE_KEYS, type MenuStorage } from '../ui/menu/menuState.js';
 
 // The first message on every socket (docs/phase-1b-design.md 3, docs/ui.md
 // 5): who this page is (build, connection id, session token or resume
-// ticket) and what the menu picked last (name, car, paint), read from the
-// browser's storage. Pure, so the tests can pass their own storage.
+// ticket) and what the menu picked last (name, car, paint, map), read from
+// the browser's storage. Pure, so the tests can pass their own storage.
 
 export interface HelloContext {
     build: string | null;
@@ -13,6 +14,7 @@ export interface HelloContext {
     resume?: string;
     profile: ProfileId;
     room: RoomKind;
+    mapId?: MapId;
 }
 
 function read(storage: MenuStorage, key: string): string | null {
@@ -29,6 +31,9 @@ function read(storage: MenuStorage, key: string): string | null {
  * in it, so the loader fades into the same car (docs/ui.md D28).
  */
 export function helloFor(storage: MenuStorage, context: HelloContext): HelloMessage {
+    const mapId: MapId = context.mapId && isMapId(context.mapId)
+        ? context.mapId
+        : savedMap(storage) ?? DEFAULT_MAP_ID;
     return {
         type: 'hello',
         protocolVersion: PROTOCOL_VERSION,
@@ -40,6 +45,7 @@ export function helloFor(storage: MenuStorage, context: HelloContext): HelloMess
         carType: read(storage, STORAGE_KEYS.car) || 'bulli',
         profile: context.profile,
         room: context.room,
+        mapId,
         paint: savedPaint(storage) ?? FIRST_PAINT
     };
 }

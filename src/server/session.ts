@@ -65,9 +65,12 @@ export class Session {
     private readonly rttSamples: number[] = [];
     // Rate-limit bookkeeping (ms timestamps)
     lastHonkAt = 0;
+    lastDiscoveryAt = -Infinity;
     lastRenameAt = 0;
     lastJoinRoomAt = 0;
     lastPingAt = 0;
+    // Discoveries already broadcast by this session ("<mapId>:<discoveryId>")
+    readonly announcedDiscoveries = new Set<string>();
     private inputTokens = INPUT_BURST;
     private inputRefillAt = -1;
     private floodWindowStart = -1;
