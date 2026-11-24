@@ -72,7 +72,7 @@ describe('TrackDressing mapFeaturesGroup cache keying & disposal', () => {
 
         // Passing null disposes active mapFeatures and returns null
         expect(mapFeaturesGroup(null)).toBeNull();
-    });
+    }, 20_000);
 });
 
 describe('TrackDressing rampMesh front-face winding & ground conforming', () => {

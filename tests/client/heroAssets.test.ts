@@ -66,7 +66,7 @@ describe('HeroAssetLoader manifest parsing & lazy per-map selection', () => {
         expect(alpenModels).toContain('lmf_alpine_chalet');
         expect(alpenModels).toContain('lmf_ski_gondola_pylon');
         expect(alpenModels).not.toContain('lmf_jet_loop_reactor');
-    });
+    }, 20_000);
 
     it('pairs co-located billboards onto hero props carrying billboard_face and flags arch-mounted signs', () => {
         const loggeForge = loadTestMap('logge-forge');

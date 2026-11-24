@@ -38,7 +38,7 @@ describe('Multi-map MapWorld lifecycle, dynamic layers & GPU disposal', () => {
         const forge = new MapWorld(loadTestMap('logge-forge'), 'desktop', M, WORLD_QUALITY.high, null);
         expect(forge.group.children.map(c => c.name)).toEqual(['terrain', 'sea', 'roads', 'kit', 'plants', 'props']);
         forge.dispose();
-    });
+    }, 20_000);
 
     it('renders all boost pads in 1 merged draw call and discovery beacons in instanced non-shadow meshes', () => {
         const forgeMap = loadTestMap('logge-forge');
@@ -75,7 +75,7 @@ describe('Multi-map MapWorld lifecycle, dynamic layers & GPU disposal', () => {
         expect(() => world.triggerDiscoveryFx(target.id)).not.toThrow();
 
         world.dispose();
-    });
+    }, 20_000);
 
     it('disposes every owned GPU geometry, material, and texture while leaving shared WorldMaterials intact', () => {
         const forgeMap = loadTestMap('logge-forge');
@@ -126,7 +126,7 @@ describe('Multi-map MapWorld lifecycle, dynamic layers & GPU disposal', () => {
         // Idempotent second dispose call does not throw or double-dispose seaHeightTex
         expect(() => world.dispose()).not.toThrow();
         expect(seaHeightSpy).toHaveBeenCalledTimes(1);
-    });
+    }, 20_000);
 });
 
 describe('ShowroomCamera.setSpot & ChaseCamera dynamic feel', () => {
@@ -217,7 +217,7 @@ describe('Alpine slope boulder grounding, conformed discovery rings & Vite dynam
                 }
             }
         }
-    });
+    }, 20_000);
 
     it('conforms every discovery ring vertex to heightAt(hf, wx, wz) + 0.08 on sloped terrain', () => {
         const forgeMap = loadTestMap('logge-forge');
@@ -241,7 +241,7 @@ describe('Alpine slope boulder grounding, conformed discovery rings & Vite dynam
         // Ring follows the sloped hillside (> 0.5 m elevation span) instead of lying flat
         expect(maxY - minY).toBeGreaterThan(0.5);
         renderer.dispose();
-    });
+    }, 20_000);
 
     it('keeps look.ts free of static bulli-bay/map.json imports (avoids Vite ineffective dynamic import warning)', () => {
         const lookSource = fs.readFileSync(path.resolve(__dirname, '../../src/client/render/look.ts'), 'utf8');

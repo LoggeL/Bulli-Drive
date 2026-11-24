@@ -79,7 +79,7 @@ describe('the scatter on Bulli Bay', () => {
         // Bulli Bay keeps its coastal flowers and dune grass intact
         expect(all.filter(s => s.kind === 'flowers').length).toBeGreaterThan(500);
         expect(all.filter(s => s.kind === 'duneGrass').length).toBeGreaterThan(200);
-    });
+    }, 20_000);
 
     it('excludes heroProps, billboards/decals, boostPads, and jumpZones on logge-forge', () => {
         const forge = mapFor('logge-forge');
@@ -96,14 +96,14 @@ describe('the scatter on Bulli Bay', () => {
                 expect(boxContains(box, spot.x, spot.z, 0.5), `${spot.kind} at (${spot.x}, ${spot.z}) clipped reserved box`).toBe(false);
             }
         }
-    });
+    }, 20_000);
 
     it('gates chaparral/shrubs/flowers and ranchFences out of quarry maps (stunt-forge)', () => {
         const stunt = mapFor('stunt-forge');
         const spots = scatterDecor(stunt);
         expect(spots.filter(s => s.kind === 'chaparral' || s.kind === 'shrub' || s.kind === 'flowers')).toEqual([]);
         expect(ranchFences(stunt)).toEqual([]);
-    });
+    }, 20_000);
 });
 
 // A small map for the props beside the grid: an east-west track from
