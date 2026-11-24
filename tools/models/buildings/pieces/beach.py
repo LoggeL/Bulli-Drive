@@ -11,6 +11,7 @@ from mathutils import Vector
 
 STOREY = 2.8
 FOUNDATION = 2.0
+PIER_FOUNDATION = 0.3  # beach_w8_f1 doubles as pier-restaurant on a 0.35 m timber pier deck over open ocean
 PORCH = 2.4
 PITCH = 26.0
 SIDING = ["#CFE3D8", "#F0E3AE", "#C6DAE6", "#F1ECE1", "#EDC3B0", "#D9E6C9", "#B9D2D3"]
@@ -41,6 +42,7 @@ def build(spec, lod):
     W, D = float(spec["width"]), float(spec["depth"])
     floors = spec["floors"]
     shop = bool(spec.get("shop"))
+    foundation = PIER_FOUNDATION if spec["id"] == "beach_w8_f1" else FOUNDATION
     floor = 0.35 if shop else 0.6
     x0, x1 = -W / 2, W / 2
     yb = PORCH                 # house front behind the porch
@@ -74,7 +76,7 @@ def build(spec, lod):
     def siding_wall(o, ax, length, openings, s0):
         ops = [Opening(q.u0, q.u1, q.v0 - floor, q.v1 - floor, q.fill, q.depth, q.arch, q.reveal, q.floor) for q in openings]
         wall(k, Vector(o) + UP * floor, ax, length, ze - floor, siding, ops, s0=s0)
-        wall(k, Vector(o) + UP * (-FOUNDATION), ax, length, floor + FOUNDATION, skirt, [], s0=s0)
+        wall(k, Vector(o) + UP * (-foundation), ax, length, floor + foundation, skirt, [], s0=s0)
     siding_wall((x0, yb, 0), (1, 0, 0), W, fo, x0)
     so = []
     if lod < 2:
@@ -138,8 +140,8 @@ def build(spec, lod):
                 casing(k, x0 + q.u0, x0 + q.u1, yb, q.v0, q.v1, trim, sill=q.fill.region != "door_panel")
 
     # --- porch: deck, posts, shed roof, railing, steps
-    porch(k, x0, x1, yb, floor, ze, p, lod, shop, deckm, trim, roof_m)
-    return k, {"footprint": [x0, x1, 0.0, y1], "height": top + 0.1, "overhang": 1.0, "foundation": FOUNDATION,
+    porch(k, x0, x1, yb, floor, ze, p, lod, shop, deckm, trim, roof_m, foundation)
+    return k, {"footprint": [x0, x1, 0.0, y1], "height": top + 0.1, "overhang": 1.0, "foundation": foundation,
                "params": {"front_gable": fg}}
 
 
@@ -152,16 +154,16 @@ def casing(k, xa, xb, y, v0, v1, trim, sill=True):
         box(k, (xa - w - 0.02, y - 0.07, v0 - 0.05), (xb + w + 0.02, y, v0), trim, "yxXzZ")
 
 
-def porch(k, x0, x1, yb, floor, ze, p, lod, shop, deckm, trim, roof_m):
+def porch(k, x0, x1, yb, floor, ze, p, lod, shop, deckm, trim, roof_m, foundation):
     y0 = 0.0
     post = 0.13
     # deck boards on a rim joist
     rect(k, (x0, y0, floor), (1, 0, 0), (0, 1, 0), x1 - x0, yb - y0, deckm, x0, y0)
     box(k, (x0, y0, floor - 0.25), (x1, yb, floor), pal("wood_grey"), "yxXz")
-    # piers under the deck (extended to -FOUNDATION for sloped lots)
+    # piers under the deck (extended to -foundation)
     if lod < 2:
         for x in (x0 + 0.2, (x0 + x1) / 2, x1 - 0.2):
-            box(k, (x - 0.12, y0 + 0.1, -FOUNDATION), (x + 0.12, y0 + 0.34, floor - 0.25), pal("wood_grey"), "yxXY")
+            box(k, (x - 0.12, y0 + 0.1, -foundation), (x + 0.12, y0 + 0.34, floor - 0.25), pal("wood_grey"), "yxXY")
     # shed roof on posts
     zr_wall = min(ze - 0.25, floor + 2.9)
     zr_edge = zr_wall - 0.45
@@ -200,7 +202,7 @@ def porch(k, x0, x1, yb, floor, ze, p, lod, shop, deckm, trim, roof_m):
     nsteps = max(1, int(round(floor / 0.19)))
     for i in range(nsteps):
         z = floor - (i + 1) * floor / nsteps
-        box(k, (sx, y0 - (i + 1) * 0.3, -FOUNDATION), (sx + sw_, y0 - i * 0.3, z + floor / nsteps), deckm, "yxXZ")
+        box(k, (sx, y0 - (i + 1) * 0.3, -foundation), (sx + sw_, y0 - i * 0.3, z + floor / nsteps), deckm, "yxXZ")
     if lod == 2:
         return
     h = 0.95
