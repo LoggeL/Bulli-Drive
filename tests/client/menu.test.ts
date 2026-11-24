@@ -25,6 +25,7 @@ let menu: Menu;
 let store: Map<string, string>;
 const cars: string[] = [];
 const paints: string[] = [];
+const maps: string[] = [];
 const starts: MenuChoice[] = [];
 let startGate: Promise<void> = Promise.resolve();
 
@@ -37,6 +38,7 @@ async function openMenu(saved: Record<string, string> = {}): Promise<void> {
     menu.initMenu({
         onCar: car => { cars.push(car); },
         onPaint: paint => { paints.push(paint); },
+        onMap: map => { maps.push(map); },
         onStart: async choice => { starts.push(choice); await startGate; }
     }, { storage: storage(), pollMs: 100 });
     // The loader is gone (ui/loadingScreen.ts removeLoader)
@@ -54,7 +56,7 @@ beforeEach(async () => {
     vi.useFakeTimers();
     vi.resetModules();
     document.body.innerHTML = BODY;
-    cars.length = paints.length = starts.length = 0;
+    cars.length = paints.length = maps.length = starts.length = 0;
     assets.ready = false;
     assets.percent = 64;
     startGate = Promise.resolve();
@@ -139,7 +141,7 @@ describe('the main menu', () => {
         button.click();
         button.click();
         key($('#splash-name-input'), 'Enter');
-        expect(starts).toEqual([{ car: 'bulli', paint: 'sea', mode: 'party', name: 'Kalle' }]);
+        expect(starts).toEqual([{ car: 'bulli', paint: 'sea', map: 'bulli-bay', mode: 'party', name: 'Kalle' }]);
         expect($('#start-btn .btn-label').textContent).toBe('STARTING…');
         // The assets are in: the label says so, the start goes on
         assets.ready = true;
@@ -165,7 +167,7 @@ describe('the main menu', () => {
         expect($('.car-card[aria-current="true"]').dataset.car).toBe('bulli');
         expect($('#splash-screen').dataset.mode).toBe('party');
         expect(store.get('bulli-car-type')).toBe('bulli');
-        expect(starts).toEqual([{ car: 'bulli', paint: 'sea', mode: 'party', name: 'Player' }]);
+        expect(starts).toEqual([{ car: 'bulli', paint: 'sea', map: 'bulli-bay', mode: 'party', name: 'Player' }]);
     });
 
     it('loads the car renders once the menu shows, not alongside the loader', async () => {
@@ -240,12 +242,17 @@ describe('the gamepad in the menu', () => {
         // Right on the paint row: Sea Green -> Pearl White
         press(15);
         expect(paints).toEqual(['cream']);
+        // Down to map row, right to Alpen Pass, then down to mode -> drive
+        press(13);
+        expect(document.activeElement).toBe($('.map-card[aria-checked="true"]'));
+        press(15);
+        expect(maps).toEqual(['alpen-pass']);
         press(13);
         press(13);
         expect(document.activeElement).toBe($('#start-btn'));
         press(0);
         expect(starts).toHaveLength(1);
-        expect(starts[0]).toMatchObject({ car: 'beetle', paint: 'cream' });
+        expect(starts[0]).toMatchObject({ car: 'beetle', paint: 'cream', map: 'alpen-pass' });
     });
 
     it('opens the settings with Menu and closes them with B', async () => {

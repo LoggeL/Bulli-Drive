@@ -35,7 +35,7 @@ describe('acceptHello', () => {
             type: 'welcome', playerId: session.id, resumed: false, serverBuild: 'fedcba9876543210', tickRate: 60, snapshotRate: 20, name: 'SurfKing'
         }));
         expect((welcome as { sessionToken: string }).sessionToken).toMatch(/^[A-Za-z0-9_-]{22}$/);
-        expect(roomState).toEqual(expect.objectContaining({ type: 'roomState', room: { id: 'freeroam-1', kind: 'freeroam', index: 1 } }));
+        expect(roomState).toEqual(expect.objectContaining({ type: 'roomState', room: { id: 'freeroam-1', kind: 'freeroam', index: 1, mapId: 'bulli-bay' } }));
         expect(transport.closed).toBeNull();
     });
 

@@ -1,30 +1,33 @@
 import * as THREE from 'three';
 import { state } from './state.js';
-import { initWebSocket, markPlayerReady } from './network/websocket.js';
+import { initWebSocket } from './network/websocket.js';
 import { initKeyboard } from './controls/keyboard.js';
 import { setupMobileControls } from './controls/mobile.js';
 import { updateParticles, spawnDriftParticle, spawnBoostFireParticle, spawnDamageSmoke } from './effects/particles.js';
-import { updateResetControl, showInteractionPrompt } from './ui/hud.js';
-import { initSounds, startEngineSound, updateEngineSound } from './effects/sounds.js';
+import { updateResetControl, showInteractionPrompt, updatePowerupsUI, updateSpeedometer, updateHealthBar, updateDriveHud } from './ui/hud.js';
+import { updateEngineSound } from './effects/sounds.js';
 import { checkCoinCollection, animateCoins } from './world/coins.js';
 import { animatePowerups } from './world/powerups.js';
-import { updatePowerupsUI, updateSpeedometer, updateHealthBar, updateDriveHud } from './ui/hud.js';
 import { updateProjectiles } from './world/projectiles.js';
-import { applyMenuMode, initRoomMenu } from './ui/roomMenu.js';
-import { closeMenu, initMenu, menuCarFrame, menuChoice, menuOpen, onMenuLayout } from './ui/menu/menu.js';
+import { initRoomMenu } from './ui/roomMenu.js';
+import { initMenu, menuCarFrame, menuChoice, onMenuLayout, refreshMenuMapProgress } from './ui/menu/menu.js';
+import { initCodex, setCodexProgressListener } from './ui/codex.js';
+import { discoveryTracker } from './ui/discoveryTracker.js';
+import {
+    pollLocalHornForDiscovery, repaintLocalCar, startFromMenu, stepDiscoveriesForLocalCar,
+    switchLocalCar, updateRaceCamera
+} from './ui/gameSession.js';
 import { ShowroomCamera } from './camera/ShowroomCamera.js';
 import { spawnHintFor } from './camera/showroom.js';
-import type { MenuChoice } from './ui/menu/menuState.js';
-import { paintById, type PaintId } from '../shared/paints.js';
 import { netDriver } from './net/netDriver.js';
 import { groundHeight } from './world/ground.js';
 import { updatePalms } from './world/palms.js';
 import { lowerMapDetail, startKitPreload, updateMapScene } from './world/mapScene.js';
+import { loadGameMap } from './map/gameMap.js';
+import { registerShowroomCamera, updateWorldDynamic } from './map/worldBridge.js';
 import { updateMinimap } from './ui/minimap.js';
 import { finishLoader, loadingScreenCovers, onLoadPoll, showLoaderNotice, startLoadingScreen } from './ui/loadingScreen.js';
 import { trackLoadSteps } from './assets/loadSteps.js';
-import { Bulli, type CarType } from './entities/Bulli.js';
-import { sendToServer } from './network/socket.js';
 import { AdaptiveRenderQuality, detectRenderTier, wantsAntialias } from './effects/renderQuality.js';
 import { updateWorldShaders } from './effects/worldShaders.js';
 import { ensureCurrentBuild } from './buildVersion.js';
@@ -36,107 +39,40 @@ import { installPerfMonitor, type PerfMonitor } from './debug/perfMonitor.js';
 import { lightingTier, setupLighting, updateLighting } from './render/lighting.js';
 import { renderFrame } from './render/frameStats.js';
 import { startModelPreload } from './assets/gameModels.js';
-import { waitForGameAssets } from './ui/assetGate.js';
 import { updateCarModels } from './vehicle/CarModel.js';
-import { ChaseCamera, RACE_CAMERA, RACE_CAMERA_SLIP_BLEND, type ChaseTarget } from './camera/ChaseCamera.js';
+import { ChaseCamera, RACE_CAMERA } from './camera/ChaseCamera.js';
 import { E2E_DRAW_INTERVAL_MS, LOAD_DEBUG, SANDBOX, TUNE_PANEL, TUNE_REQUESTED } from './flags.js';
 import { gameHooks } from './game/hooks.js';
-import { assistProfileForDevice, type LocalVehicle } from './vehicle/LocalVehicle.js';
+import type { LocalVehicle } from './vehicle/LocalVehicle.js';
 import { updateRemoteCars } from './net/remotes.js';
-import type { ProfileId } from '../shared/protocol.js';
 import { raceClient } from './race/RaceClient.js';
 import { isGpuDiag, startGpuDiag } from './debug/gpuDiag.js';
 
 const chaseCamera = new ChaseCamera(RACE_CAMERA);
-const _chaseTarget: ChaseTarget = { position: new THREE.Vector3(), yaw: 0, speedRatio: 0, boost: false };
 // While the menu's showroom has the game camera, the chase camera follows
-// the car on this one (its damping starts from where it left the camera);
-// the way into the game ends on it (camera/ShowroomCamera.ts)
+// the car on this one (its damping starts from where it left the camera)
 const chaseView = new THREE.PerspectiveCamera();
 let showroom: ShowroomCamera | null = null;
-
 let renderQuality: AdaptiveRenderQuality;
-
-// A new body for the local car where the old one stood (the splash, the
-// race lobby), saved for the next visit and told to the server
-function switchLocalCar(carType: string): void {
-    localStorage.setItem('bulli-car-type', carType);
-    state.myCarType = carType;
-    if (state.bulli && state.bulli.carType !== carType) {
-        const previousPosition = state.bulli.group.position.clone();
-        const previousAngle = state.bulli.angle;
-        const visible = state.bulli.bodyGroup.visible;
-        state.scene.remove(state.bulli.group);
-        state.bulli.dispose();
-
-        state.bulli = new Bulli(state.myColor!, true, carType as CarType);
-        state.bulli.group.position.copy(previousPosition);
-        state.bulli.angle = previousAngle;
-        state.bulli.group.rotation.y = previousAngle;
-        state.bulli.bodyGroup.visible = visible;
-        state.bulli.createNametag(state.myName, true);
-        state.scene.add(state.bulli.group);
-    }
-    sendToServer({ type: 'setCar', carType, profile: assistProfileForDevice() as ProfileId });
-}
-
-// A paint picked in the menu: the own car repainted, the server told (docs/ui.md 5)
-function repaintLocalCar(paint: PaintId): void {
-    const hex = paintById(paint).hex;
-    state.myColor = hex;
-    state.bulli?.setPaint(hex);
-    showroom?.invalidate();
-    sendToServer({ type: 'setPaint', paint });
-}
-
-// DRIVE (ui/menu/menu.ts): sounds and assets, name, car, paint and mode to
-// the server, ready; then the way from the showroom into the chase camera
-async function startFromMenu(choice: MenuChoice): Promise<void> {
-    if (state.audioCtx?.state === 'suspended') await state.audioCtx.resume();
-    // The sounds decode while the last textures and car models come in (DRIVE shows it)
-    await Promise.all([initSounds(), waitForGameAssets()]);
-    startEngineSound();
-
-    state.myName = choice.name;
-    sendToServer({ type: 'rename', name: choice.name });
-    switchLocalCar(choice.car);
-    applyMenuMode(choice.mode);
-    sendToServer({ type: 'ready' });
-    markPlayerReady();
-    state.inMenu = false;
-    closeMenu();
-
-    const view = showroom;
-    if (!view) {
-        document.body.classList.remove('in-menu');
-        return;
-    }
-    void view.startTransition(state.camera).then(() => document.body.classList.remove('in-menu'));
-}
 // Only set with ?debug=perf (FPS/draw call/bandwidth overlay)
 let perfMonitor: PerfMonitor | null = null;
+// Last frame drawn under ?e2e=1&drawfps (flags.ts)
+let lastDrawAt = -Infinity;
 
-function init() {
-    // Scene
+function init(): void {
+    // Scene & Camera
     state.scene = new THREE.Scene();
-
-    // Camera
     chaseCamera.refreshEnvelope();
     state.camera = new THREE.PerspectiveCamera(
         chaseCamera.baseFov,
         window.innerWidth / window.innerHeight,
         0.1,
-        // The rendered hills beyond the playable area reach 1.6 km out
         2600
     );
     state.camera.position.set(0, RACE_CAMERA.height, RACE_CAMERA.distance);
 
-    // Renderer
-    // The browser can refuse WebGL (e.g. blocked for the site after a GPU
-    // crash): show why instead of an endless loading screen
+    // WebGL Renderer
     try {
-        // Lite graphics (after trouble) and CPU rasterizers skip MSAA: its
-        // buffers cost the most memory, and a third of every software frame
         state.renderer = new THREE.WebGLRenderer({ antialias: !isSafeMode() && wantsAntialias() });
     } catch (error) {
         console.error('WebGL is not available', error);
@@ -147,24 +83,17 @@ function init() {
     renderQuality = new AdaptiveRenderQuality(
         state.renderer, window.innerWidth, window.innerHeight, detectRenderTier(state.renderer)
     );
-    // Tone mapping, sky, fog, environment, lights and shadows
     setupLighting(state.scene, state.renderer);
-    // The picture says nothing a screen reader could read (docs/ui.md 4.4)
     state.renderer.domElement.setAttribute('aria-hidden', 'true');
     document.body.appendChild(state.renderer.domElement);
-    // Show a notice and pause rendering if the browser drops the GL context
     watchWebGLContext(state.renderer.domElement);
-    // ?gpudiag=1: turn the scene on part by part to find what crashes a GPU
     if (isGpuDiag()) startGpuDiag(state.scene, state.renderer);
-    // Car models (GLB + KTX2) load and compile while the splash screen is up;
-    // until they are there (or if they fail) the cars stay procedural
+
     startModelPreload(state.renderer, state.camera, state.scene)
         .catch(error => console.warn('Model preload failed', error));
-    // The map's building kit (GLB + KTX2 atlas) loads alongside
     if (!SANDBOX) startKitPreload(state.renderer);
 
-    // The loading screen shows the real progress of all that (docs/ui.md 3.2)
-    // and fades into the splash screen once the first view is complete
+    // Loading screen & progress steps
     const progress = startLoadingScreen(lightingTier(), { debug: LOAD_DEBUG });
     const liteReason = safeModeReason();
     if (liteReason) {
@@ -180,9 +109,7 @@ function init() {
         void progress.whenPhase('loader').then(finishLoader);
     }
 
-    // The menu's showroom: the own car at the head of the pier, the camera
-    // round it, until DRIVE (docs/ui.md 4.1); not in the sandbox, whose
-    // world has no pier
+    // Menu showroom camera
     const lite = isSafeMode();
     let lastLoaded = -1;
     if (!SANDBOX) {
@@ -195,12 +122,10 @@ function init() {
             spawnHint: () => spawnHintFor(state.room?.kind, menuChoice().mode, state.preview),
             reducedMotion: () => !!reducedMotion?.matches,
             lite,
-            // Phones (and CPU rasterizers) draw the showroom at 30 fps at most
             maxFps: lightingTier() === 'desktop' ? 0 : 30
         });
+        registerShowroomCamera(showroom);
         onMenuLayout(() => showroom?.invalidate());
-        // Lite graphics draw the showroom as a still: a texture, the kit or
-        // a car model that comes in behind the menu draws it again
         onLoadPoll(() => {
             const loaded = progress.overall('all');
             if (loaded !== lastLoaded) showroom?.invalidate();
@@ -212,24 +137,26 @@ function init() {
 
     // Audio Context
     try {
-        (window as any).AudioContext = (window as any).AudioContext || (window as any).webkitAudioContext;
-        state.audioCtx = new AudioContext();
-    } catch (e) { /* ignore */ }
+        const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        state.audioCtx = new AudioCtx();
+    } catch { /* ignore */ }
 
-    // Main menu (docs/ui.md 4): car, paint and mode change the showroom's
-    // car at once; DRIVE joins
+    // Main Menu, Codex & Room Switcher
     initMenu({
         onCar: car => {
             showroom?.swapCar();
-            // The new body swaps in at the bottom of the car's dip
             window.setTimeout(() => switchLocalCar(car), showroom ? 120 : 0);
         },
-        onPaint: repaintLocalCar,
-        onStart: startFromMenu
+        onPaint: paint => repaintLocalCar(paint, showroom),
+        onMap: mapId => {
+            // Warm the chosen map's JSON + terrain in the background for instant DRIVE switching
+            void loadGameMap(mapId).catch(() => undefined);
+        },
+        onStart: choice => startFromMenu(choice, showroom)
     });
+    initCodex(discoveryTracker);
+    setCodexProgressListener(refreshMenuMapProgress);
 
-    // Init WebSocket, or with ?sandbox=1 the offline test pad of the v2
-    // physics instead (its own chunk, only loaded with the flag)
     if (SANDBOX) {
         import('./sandbox/sandbox.js')
             .then(sandbox => sandbox.startSandbox())
@@ -238,21 +165,14 @@ function init() {
         initWebSocket();
     }
 
-    // Event Listeners
     window.addEventListener('resize', onWindowResize, false);
     initKeyboard();
     setupMobileControls();
-
-    // UI modules
     initRoomMenu();
     raceClient.setCarSwitcher(switchLocalCar);
 
-    // Test-only state probe, a no-op unless the page URL has ?e2e=1
     installE2EHook();
-    // Performance overlay, a no-op unless the page URL has ?debug=perf
     perfMonitor = installPerfMonitor();
-    // lil-gui tuning panel of the physics, only loaded with ?tune=1 in the
-    // sandbox: online the server drives with the default tuning
     if (TUNE_PANEL) {
         import('./debug/tuningPanel.js')
             .then(panel => panel.installTuningPanel())
@@ -261,12 +181,11 @@ function init() {
         showInteractionPrompt('TUNING ONLY IN THE SANDBOX (?sandbox=1&tune=1)');
     }
 
-    // Start Loop (the first frame's dt counts from here, as with THREE.Clock)
     state.clock.reset();
     requestAnimationFrame(animate);
 }
 
-function onWindowResize() {
+function onWindowResize(): void {
     if (!state.camera || !state.renderer) return;
     chaseCamera.refreshEnvelope();
     state.camera.aspect = window.innerWidth / window.innerHeight;
@@ -277,80 +196,35 @@ function onWindowResize() {
     renderQuality.resize(window.innerWidth, window.innerHeight);
 }
 
-// The camera swings a little towards the travel direction in a drift
-function updateRaceCamera(dt: number, carPos: THREE.Vector3, vehicle: LocalVehicle, camera: THREE.PerspectiveCamera) {
-    // A race spectator follows another car (race/RaceClient.ts)
-    const spectate = raceClient.spectateTarget();
-    if (spectate) {
-        _chaseTarget.position.copy(spectate.position);
-        _chaseTarget.position.y += spectate.airHeight;
-        _chaseTarget.yaw = spectate.yaw;
-        _chaseTarget.speedRatio = 0.5;
-        _chaseTarget.boost = false;
-        if (chaseCamera.update(dt, camera, _chaseTarget, state.cameraSnapPending)) state.cameraSnapPending = false;
-        return;
-    }
-    const s = vehicle.car.state;
-    const u = vehicle.forwardSpeed;
-    // The camera follows the car into the air (ChaseCamera eases it)
-    _chaseTarget.position.copy(carPos);
-    _chaseTarget.position.y += vehicle.airHeight;
-    _chaseTarget.yaw = vehicle.pose.yaw
-        + RACE_CAMERA_SLIP_BLEND * vehicle.slipAngle * Math.max(0, Math.min(1, u / 10));
-    _chaseTarget.speedRatio = Math.min(1, Math.abs(u) / Math.max(1, vehicle.car.params.topSpeed));
-    _chaseTarget.boost = s.boosting || vehicle.car.mods.turbo;
-    if (chaseCamera.update(dt, camera, _chaseTarget, state.cameraSnapPending)) {
-        state.cameraSnapPending = false;
-    }
-}
-
-// Last frame drawn under ?e2e=1&drawfps (flags.ts)
-let lastDrawAt = -Infinity;
-
-function animate(frameTime: number) {
+function animate(frameTime: number): void {
     requestAnimationFrame(animate);
     perfMonitor?.beginFrame();
-    // performance.now() rather than the rAF timestamp: the same clock
-    // THREE.Clock read, so dt keeps its meaning
     state.frameAt = performance.now();
     const dt = state.clock.update(state.frameAt).getDelta();
     const time = state.clock.getElapsed();
 
     if (state.bulli) {
+        // Check horn pulse before Bulli.update consumes state.inputs.f
+        pollLocalHornForDiscovery();
         state.bulli.update(dt);
 
-        // Engine sound from the speed and the height in the air
         const isAccelerating = Math.abs(state.inputs.throttle) > 0.02;
         const turboActive = state.bulli.powerups.speed.active;
-        // v2 only: the drift boost (Shift) sounds and burns like the Turbo
         const vehicle: LocalVehicle | undefined = state.bulli.vehicle;
-        // In the air the boost gives no thrust and the car's group stays on
-        // the ground under it: no flame, no turbo sound and no puffs there
-        // (docs/phase-1a-design.md, 26.9)
         const airborne = (vehicle?.airHeight ?? 0) > 0.3;
         const boostActive = (turboActive || !!vehicle?.car.state.boosting) && !airborne;
         updateEngineSound(state.bulli.speed, isAccelerating, boostActive, vehicle?.airHeight ?? 0);
 
-        // Update the automatic chase camera. Its yaw follows the car on the
-        // shortest arc, while position, framing and FOV use independent damping
-        // so a quick turn feels deliberate instead of whipping the view around.
         const carPos = state.bulli.group.position;
-        if (vehicle) updateRaceCamera(dt, carPos, vehicle, showroom?.busy ? chaseView : state.camera);
+        if (vehicle) updateRaceCamera(chaseCamera, dt, carPos, vehicle, showroom?.busy ? chaseView : state.camera);
 
-        // Effects based on speed
+        stepDiscoveriesForLocalCar(dt, vehicle);
+
         const speed = Math.abs(state.bulli.speed);
-
-        // Drift particles
-        if (speed > 0.1 && !airborne) {
-            spawnDriftParticle();
-        }
-
+        if (speed > 0.1 && !airborne) spawnDriftParticle();
         checkCoinCollection();
         updateProjectiles(dt);
-        // Boost fire trails
-        if (boostActive && speed > 0.05) {
-            spawnBoostFireParticle();
-        }
+        if (boostActive && speed > 0.05) spawnBoostFireParticle();
 
         updatePowerupsUI();
         updateSpeedometer();
@@ -358,86 +232,60 @@ function animate(frameTime: number) {
         updateHealthBar();
         updateResetControl(!state.dead);
 
-        // Damage smoke based on health
         if (state.health < 100 && !state.dead) {
             const damagePercent = 1 - state.health / 100;
             if (Math.random() < damagePercent * 0.3) {
-                spawnDamageSmoke(
-                    state.bulli.group.position.x,
-                    state.bulli.group.position.y,
-                    state.bulli.group.position.z,
-                    state.health
-                );
+                spawnDamageSmoke(carPos.x, carPos.y, carPos.z, state.health);
             }
         }
     }
 
-    // The menu's showroom, or the way from it into the game, has the camera
     if (showroom?.busy && state.camera) {
         showroom.update(state.camera, state.bulli, chaseView);
-        // The HUD comes in over the last 0.3 s of it
         if (!showroom.active && showroom.remaining() <= 0.3) document.body.classList.remove('in-menu');
     }
 
-    // Sandbox dummies and cones (game/hooks.ts, empty in the game)
     for (const hook of gameHooks.frame) hook(dt);
 
-    // Animate world objects
     animateCoins(time);
     animatePowerups(time);
 
-    // Remote cars: interpolated snapshots, the contact set predicted
-    // (net/remotes.ts), idle ones grey
     updateRemoteCars(dt, performance.now(), state.bulli?.vehicle?.alpha ?? 0);
     for (const id in state.remotePlayers) {
-        const remote = state.remotePlayers[id] as any;
+        const remote = state.remotePlayers[id] as unknown as {
+            update(dt: number): void;
+            health: number;
+            bodyGroup: THREE.Group;
+            group: THREE.Group;
+        };
         remote.update(dt);
-        // Damage smoke for remote players
         if (remote.health < 100 && remote.bodyGroup.visible) {
             const damagePercent = 1 - remote.health / 100;
             if (Math.random() < damagePercent * 0.15) {
-                spawnDamageSmoke(
-                    remote.group.position.x,
-                    remote.group.position.y,
-                    remote.group.position.z,
-                    remote.health
-                );
+                spawnDamageSmoke(remote.group.position.x, remote.group.position.y, remote.group.position.z, remote.health);
             }
         }
     }
 
-    // Race HUD, lobby and results, gate lights, the time trial ghost
     raceClient.frame(dt, performance.now(), time);
-
     updateParticles(dt);
     updateMinimap(frameTime);
 
-    // While the GL context is lost three.js skips rendering anyway; skip the
-    // adaptive quality sampling too so the gap doesn't lower the resolution.
-    // Nothing is drawn under the opaque loading screen either.
-    const drawNow = (E2E_DRAW_INTERVAL_MS === 0 || frameTime - lastDrawAt >= E2E_DRAW_INTERVAL_MS) && !loadingScreenCovers()
+    const drawNow = (E2E_DRAW_INTERVAL_MS === 0 || frameTime - lastDrawAt >= E2E_DRAW_INTERVAL_MS)
+        && !loadingScreenCovers()
         && (!showroom || showroom.shouldDraw(frameTime));
     if (drawNow && state.renderer && state.scene && state.camera && !isWebGLContextLost()) {
         lastDrawAt = frameTime;
         updateWorldShaders(state.clock.getElapsed());
         updateLighting();
-        // Terrain rings, kit cells and instanced plants for the final camera
         updateMapScene(state.camera);
-        // Near geometry or impostor per palm, for the final camera
+        updateWorldDynamic(dt, time, state.bulli?.group.position);
         updatePalms(state.camera);
-        // Car LODs, wheels, brake lights and blinkers
         updateCarModels(state.camera, dt);
-        // Frames the menu holds down (phones at 30 fps, the lite still)
-        // are no measure of the GPU: they would talk the resolution and the
-        // map's detail down for the whole session
         if (showroom?.paced) renderQuality.pause();
         else renderQuality.update(frameTime);
-        // A desktop GPU that is slow even at the lowest resolution: the
-        // map world drops to its mid detail level (once)
         if (renderQuality.struggling) lowerMapDetail();
-        // Counters include the shadow pass (perf overlay, e2e snapshot)
         renderFrame(state.renderer, state.scene, state.camera);
-        // The cross-fade of the way into the game holds this frame
         showroom?.afterRender(state.renderer.domElement);
     }
 

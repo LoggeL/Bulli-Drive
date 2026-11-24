@@ -1,13 +1,49 @@
 import * as THREE from 'three';
-import { RemotePlayer, Inputs } from './types.js';
-import type { PowerupData, CoinData, TerrainConfig, ScoreboardEntry, RoomInfo } from '../shared/protocol.js';
+import type { RemotePlayer, Inputs } from './types.js';
+import type { Bulli } from './entities/Bulli.js';
+import type { LocalVehicle } from './vehicle/LocalVehicle.js';
+import type { PowerupData, CoinData, TerrainConfig, ScoreboardEntry, RoomInfo, MapId } from '../shared/protocol.js';
+import { DEFAULT_MAP_ID } from '../shared/map/registry.js';
 import type { ColliderInput } from '../shared/world/colliders.js';
+
+export type CoinVisual = THREE.Object3D & { coinId?: number };
+
+export interface ParticleState {
+    x: number;
+    y: number;
+    z: number;
+    vx: number;
+    vy: number;
+    vz: number;
+    life: number;
+    decay: number;
+    initialScale: number;
+    initialOpacity: number;
+    color: number;
+    grows?: boolean;
+    followTarget: THREE.Object3D | null;
+    localX: number;
+    localY: number;
+    localZ: number;
+}
+
+export type LocalBulli = Bulli & {
+    powerups: Bulli['powerups'] & Record<string, { active: boolean; timer: number }>;
+    vehicle: LocalVehicle;
+};
+
+let localBulli: Bulli | null = null;
 
 export const state = {
     scene: null as unknown as THREE.Scene,
     camera: null as unknown as THREE.PerspectiveCamera,
     renderer: null as unknown as THREE.WebGLRenderer,
-    bulli: null as any, // Local car instance
+    get bulli(): LocalBulli {
+        return localBulli as unknown as LocalBulli;
+    },
+    set bulli(value: Bulli | null) {
+        localBulli = value;
+    },
     remotePlayers: {} as Record<string, RemotePlayer>,
     inputs: {
         throttle: 0, steer: 0, e: false, f: false
@@ -16,6 +52,8 @@ export const state = {
     isModalOpen: false,
     audioCtx: null as AudioContext | null,
     ws: null as WebSocket | null,
+    // Active map ID (bulli-bay at initial boot; live-swappable across all maps)
+    mapId: DEFAULT_MAP_ID as MapId,
     // Static colliders of the world (vehicle/simWorldClient.ts)
     worldColliders: [] as readonly ColliderInput[],
     // The old city's rendered terrain (world/environment.ts) and the sandbox's ground
@@ -35,9 +73,9 @@ export const state = {
     // Own Party score and rank from the server's scoreboard (0 = unknown)
     score: 0,
     rank: 0,
-    coins: [] as any[],
+    coins: [] as CoinVisual[],
     serverCoins: null as CoinData[] | null,
-    particles: [] as any[],
+    particles: [] as ParticleState[],
     // Frame timer of the game loop (main.ts animate); THREE.Clock is
     // deprecated since r183
     clock: new THREE.Timer(),

@@ -40,6 +40,7 @@ export const ROOM_SWEEP_INTERVAL_MS = 5_000;
 
 // Inbound rate limits per connection
 export const HONK_INTERVAL_MS = 300;
+export const DISCOVERY_INTERVAL_MS = 500;
 export const RENAME_INTERVAL_MS = 1000;
 export const JOIN_ROOM_INTERVAL_MS = 2000;
 // A car change reaches the room at most this often (Room.onSessionChanged)

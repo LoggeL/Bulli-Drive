@@ -130,6 +130,7 @@ export function metricsReport(src: HealthSources, nowMs: number): object {
         roomList: src.lobby.list().map(room => ({
             id: room.id,
             kind: room.kind,
+            mapId: room.mapId,
             players: room.size,
             tick: room.tick,
             bytesOut: room.bytesOut

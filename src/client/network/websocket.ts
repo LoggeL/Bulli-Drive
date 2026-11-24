@@ -1,7 +1,9 @@
+import type * as THREE from 'three';
 import { state } from '../state.js';
 import { CONFIG } from '../config.js';
 import {
     type GameEvent,
+    type MapId,
     type ProfileId,
     type MemberInfo,
     type ServerMessage
@@ -12,9 +14,13 @@ import { closeAction, reconnectDelayMs } from '../../shared/net/reconnect.js';
 import { isPowerupType } from '../../shared/party/rules.js';
 import { resetTuning, tuningIsDefault } from '../../shared/sim/tuning.js';
 import type { MapData } from '../../shared/map/mapData.js';
-import { gameMap, loadGameMap, reloadForMap } from '../map/gameMap.js';
+import { DEFAULT_MAP_ID, isMapId } from '../../shared/map/registry.js';
+import { cachedGameMap, gameMap, loadGameMap, reloadForMap, setGameMap } from '../map/gameMap.js';
+import {
+    applyAtmosphereForMap, applyShowroomSpotForMap, mountMapWorld, syncRaceLobbyTracks
+} from '../map/worldBridge.js';
 import { Bulli, type CarType } from '../entities/Bulli.js';
-import { createMapScene, setMapSceneRoom } from '../world/mapScene.js';
+import { setMapSceneRoom } from '../world/mapScene.js';
 import { clearPowerupMarkers, createPowerupMarker, applyPowerupEffect, setPowerupCollectedVisual } from '../world/powerups.js';
 import { clearProjectiles } from '../world/projectiles.js';
 import { clearCoins, confirmCoinPickup, createCoinsFromServer, removeCoinById, resetCoinById } from '../world/coins.js';
@@ -23,7 +29,9 @@ import { groundHeight } from '../world/ground.js';
 import { playCollisionSound, playHitSound } from '../effects/sounds.js';
 import { spawnExplosion, spawnParticles } from '../effects/particles.js';
 import { addKillfeedEntry, showHitmarker, updateScoreUI } from '../ui/hud.js';
-import { initMinimap } from '../ui/minimap.js';
+import { setMinimapMap } from '../ui/minimap.js';
+import { showFriendDiscoveryToast } from '../ui/codex.js';
+import { discoveryTracker } from '../ui/discoveryTracker.js';
 import { releaseKeyboardInputs } from '../controls/keyboard.js';
 import { resetMobileControls } from '../controls/mobile.js';
 import { sendToServer, setSocketNetsim } from './socket.js';
@@ -32,7 +40,7 @@ import { hideConnectionOverlay, loaderWaitingText, reconnectingText, showConnect
 import { roomSimWorld, setGameMapWorld } from '../vehicle/simWorldClient.js';
 import { assistProfileForDevice } from '../vehicle/LocalVehicle.js';
 import { startNetPump } from '../vehicle/v2Driver.js';
-import { preferredRoomKind, setCurrentRoom } from '../ui/roomMenu.js';
+import { preferredMapId, preferredRoomKind, setCurrentRoom } from '../ui/roomMenu.js';
 import { onOwnPaint } from '../ui/menu/paintSync.js';
 import { helloFor } from './hello.js';
 import { netDriver, placeholderCar } from '../net/netDriver.js';
@@ -45,15 +53,18 @@ import { mapFeaturesGroup } from '../race/TrackDressing.js';
 import { clearLoaderWaiting, loadingScreenCovers, loadProgress, showLoaderWaiting } from '../ui/loadingScreen.js';
 import { mapWorldBuilt } from '../assets/loadSteps.js';
 
-// The connection to the game server on protocol v2 (docs/phase-1b-design.md,
-// 3 and 11): the handshake, the map's world, the room state, the
-// events and the binary snapshots, which go to the prediction
-// (net/netDriver.ts) and the remote cars (net/remotes.ts). A lost
-// connection comes back on its own: the session token brings the same
-// player and car back within the grace time, a resume ticket from a
-// restart the colour and the Party score.
+// The connection to the game server on protocol v7: handshake, multi-map
+// live world swapping (zero page reload when switching maps), room state,
+// events and binary snapshots. Reconnects automatically with session tokens
+// and shutdown resume tickets.
 
 let map: MapData | null = null;
+let activeRampsGroup: THREE.Object3D | null = null;
+let firstWorldBuilt = false;
+let swappingMap = false;
+let roomSwapGeneration = 0;
+const pendingRoomMessages: ServerMessage[] = [];
+
 let clockTimer = 0;
 let snapshotWarned = false;
 // Random per page load, only in memory (duplicated tabs, 11.1)
@@ -129,11 +140,12 @@ export function initWebSocket() {
         sendToServer({ type: 'visibility', hidden: document.hidden });
         if (!document.hidden) netDriver.resync(performance.now());
     });
-    // The map first (sources and terrain), then the socket: 'roomState'
-    // needs the map to check the world and to predict
+    // Load the preferred map first (bulli-bay on first visit), then open the socket
+    const initialMap = preferredMapId();
+    state.mapId = initialMap;
     const tryLoad = (attempt: number): void => {
         loadProgress()?.start('map');
-        loadGameMap().then(() => {
+        loadGameMap(initialMap).then(() => {
             // The files are in; building the world is the other half
             loadProgress()?.report('map', 0.5);
             connect();
@@ -201,13 +213,14 @@ function sendHello() {
         sessionToken,
         resume,
         profile: assistProfileForDevice() as ProfileId,
-        room: state.room?.kind ?? preferredRoomKind()
+        room: state.room?.kind ?? preferredRoomKind(),
+        mapId: state.room?.mapId ?? preferredMapId()
     }));
 }
 
 function onFrame(data: string | ArrayBuffer) {
     if (typeof data !== 'string') {
-        onSnapshotFrame(data);
+        if (!swappingMap) onSnapshotFrame(data);
         return;
     }
     let msg: ServerMessage;
@@ -227,6 +240,8 @@ function onFrame(data: string | ArrayBuffer) {
 // The socket is gone: what happens next depends on why (11.1)
 function onClosed(code: number, reason: string) {
     window.clearTimeout(clockTimer);
+    swappingMap = false;
+    pendingRoomMessages.length = 0;
     connectionInfo.lastCloseCode = code;
     const now = performance.now();
     netDriver.suspend(now);
@@ -281,6 +296,13 @@ function startClockSync() {
 // ---- Messages ----
 
 function handleServerMessage(data: ServerMessage) {
+    // Buffer room-scoped messages while an async map download is completing so
+    // immediate spawn/raceState frames are never dropped.
+    if (swappingMap && data.type !== 'roomState' && data.type !== 'reject' && data.type !== 'welcome' && data.type !== 'shutdown' && data.type !== 'kicked') {
+        pendingRoomMessages.push(data);
+        return;
+    }
+
     switch (data.type) {
         case 'reject':
             // Full: the close that follows retries with backoff
@@ -370,39 +392,96 @@ function onSnapshotFrame(buffer: ArrayBuffer) {
     netDriver.onSnapshot(snap, state.bulli?.vehicle ?? null, performance.now());
 }
 
-// The map was built from the same sources and terrain before the socket
-// opened (map/gameMap.ts); the hash proves it is the server's
+// Verifies the client built the exact same worldHash as the server for the same mapId.
 function checkWorld(built: MapData, world: Extract<ServerMessage, { type: 'roomState' }>['world']): void {
     if (built.mapId !== world.mapId || built.worldHash !== world.worldHash) {
         console.warn(`World ${built.mapId} ${built.worldHash} differs from the server's ${world.mapId} ${world.worldHash}`);
-        reloadOnce(WORLD_RELOAD_KEY, world.worldHash);
+        reloadOnce(WORLD_RELOAD_KEY, `${world.mapId}:${world.worldHash}`);
     }
 }
 
-// A room: the first after joining or another after a switch
-// (docs/phase-1b-design.md, 9): same map, so the scene stays; players,
-// items and the car start over.
-function enterRoom(data: Extract<ServerMessage, { type: 'roomState' }>) {
-    if (!map) {
-        map = gameMap();
-        if (!map) throw new Error('roomState before the map was loaded');
-        checkWorld(map, data.world);
-        setGameMapWorld(map);
-        const ramps = mapFeaturesGroup(map);
-        if (ramps) state.scene.add(ramps);
-        // The map's world: terrain, sea, roads, buildings, plants (once per page)
-        createMapScene(map);
-        initMinimap(map);
-        // The loading screen: connected, the world stands, its textures load
+// Mounts a new MapData into the live 3D scene, sim world, minimap, race lobby, and discovery tracker.
+function mountActiveMap(nextMap: MapData): void {
+    map = nextMap;
+    const mapId: MapId = isMapId(nextMap.mapId) ? nextMap.mapId : DEFAULT_MAP_ID;
+    state.mapId = mapId;
+    setGameMap(nextMap);
+    setGameMapWorld(nextMap);
+
+    if (activeRampsGroup) {
+        state.scene.remove(activeRampsGroup);
+        activeRampsGroup = null;
+    }
+    const ramps = mapFeaturesGroup(nextMap);
+    if (ramps) {
+        activeRampsGroup = ramps;
+        state.scene.add(ramps);
+    }
+
+    mountMapWorld(nextMap);
+    applyAtmosphereForMap(nextMap);
+    applyShowroomSpotForMap(nextMap);
+    setMinimapMap(nextMap);
+    syncRaceLobbyTracks(nextMap);
+    discoveryTracker.setMap(mapId, nextMap.discoveries);
+
+    if (!firstWorldBuilt) {
+        firstWorldBuilt = true;
         const progress = loadProgress();
         if (progress) {
             progress.done('connect');
             mapWorldBuilt(progress, { renderer: state.renderer, scene: state.scene, camera: state.camera });
         }
-    } else {
+    }
+}
+
+// A room: the first after joining, a mode switch on the same map, or a live
+// switch to a different curated map (zero page reload).
+function enterRoom(data: Extract<ServerMessage, { type: 'roomState' }>) {
+    const targetMapId: MapId = isMapId(data.world.mapId) ? data.world.mapId : DEFAULT_MAP_ID;
+
+    // Fast synchronous path when the map is already mounted and active
+    if (!swappingMap && map && map.mapId === targetMapId) {
         checkWorld(map, data.world);
+        applyRoomState(data, map);
+        return;
     }
 
+    // Fast synchronous path on first room if the map is already cached in memory
+    if (!swappingMap && !map) {
+        const preloaded = cachedGameMap(targetMapId) ?? (gameMap()?.mapId === targetMapId ? gameMap() : null);
+        if (preloaded) {
+            checkWorld(preloaded, data.world);
+            mountActiveMap(preloaded);
+            applyRoomState(data, preloaded);
+            return;
+        }
+    }
+
+    // Async live map swap: load target MapData without reloading the page
+    const swapGen = ++roomSwapGeneration;
+    swappingMap = true;
+    pendingRoomMessages.length = 0;
+
+    void loadGameMap(targetMapId).then(nextMap => {
+        if (swapGen !== roomSwapGeneration) return;
+        checkWorld(nextMap, data.world);
+        mountActiveMap(nextMap);
+        applyRoomState(data, nextMap);
+        swappingMap = false;
+        const queued = pendingRoomMessages.splice(0, pendingRoomMessages.length);
+        for (const msg of queued) handleServerMessage(msg);
+    }).catch(error => {
+        if (swapGen !== roomSwapGeneration) return;
+        swappingMap = false;
+        pendingRoomMessages.length = 0;
+        if (reloadForMap(error)) return;
+        console.error(`Failed to swap map to ${targetMapId}`, error);
+        showConnectionNotice('Could not load map', 'Reconnect', reconnectNow);
+    });
+}
+
+function applyRoomState(data: Extract<ServerMessage, { type: 'roomState' }>, activeMap: MapData) {
     for (const id of Object.keys(state.remotePlayers)) removeRemotePlayer(id);
     clearRemoteViews();
     clearProjectiles();
@@ -416,9 +495,9 @@ function enterRoom(data: Extract<ServerMessage, { type: 'roomState' }>) {
     if (data.items) {
         const collectedPowerups = new Set(data.items.powerups.filter(p => p.collected).map(p => p.id));
         const collectedCoins = new Set(data.items.coins.filter(c => c.collected).map(c => c.id));
-        state.worldPowerups = map.items.powerups.map(p => ({ ...p, collected: collectedPowerups.has(p.id) }));
+        state.worldPowerups = activeMap.items.powerups.map(p => ({ ...p, collected: collectedPowerups.has(p.id) }));
         state.worldPowerups.forEach(p => createPowerupMarker(p));
-        state.serverCoins = map.items.coins.map(c => ({ ...c, collected: collectedCoins.has(c.id) }));
+        state.serverCoins = activeMap.items.coins.map(c => ({ ...c, collected: collectedCoins.has(c.id) }));
         createCoinsFromServer(state.serverCoins);
     } else {
         state.worldPowerups = [];
@@ -434,7 +513,7 @@ function enterRoom(data: Extract<ServerMessage, { type: 'roomState' }>) {
     state.dead = false;
 
     // A race room brings its race world (map + track) along
-    raceClient.enterRoom(data.room, data.race, map, state.myId ?? '');
+    raceClient.enterRoom(data.room, data.race, activeMap, state.myId ?? '');
     const world = roomSimWorld(data.room.kind);
     const car = state.bulli?.vehicle?.car ?? placeholderCar(state.myId ?? 'local', state.myCarType);
     netDriver.enterRoom(world, party, data.members, car, state.myId ?? '');
@@ -612,6 +691,12 @@ function handleEvent(event: GameEvent) {
             if (remote) remote.honk();
             return;
         }
+        case 'discovery': {
+            if (event.playerId !== me) {
+                showFriendDiscoveryToast(event.playerName, event.discoveryId, event.mapId);
+            }
+            return;
+        }
     }
 }
 
@@ -715,7 +800,7 @@ export function addRemotePlayer(member: MemberInfo) {
     remote.updateHealthBar();
 
     state.scene.add(remote.group);
-    state.remotePlayers[member.id] = remote as any;
+    state.remotePlayers[member.id] = remote as unknown as typeof state.remotePlayers[string];
     updateScoreboardUI();
 }
 

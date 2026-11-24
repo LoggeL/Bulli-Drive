@@ -30,7 +30,8 @@ import { createVehicleParams, isCarClassId } from '../../shared/sim/vehicleClass
 import { stepWorld } from '../../shared/sim/world.js';
 import type { SimWorld } from '../../shared/world/colliders.js';
 import type { MapData, SpawnSlot } from '../../shared/map/mapData.js';
-import { CAR_CHANGE_INTERVAL_MS, HONK_INTERVAL_MS } from '../config.js';
+import { DEFAULT_MAP_ID, type MapId } from '../../shared/map/registry.js';
+import { CAR_CHANGE_INTERVAL_MS, DISCOVERY_INTERVAL_MS, HONK_INTERVAL_MS } from '../config.js';
 import type { Session } from '../session.js';
 import { InputBuffer } from './InputBuffer.js';
 import { slotSpawn, type SpawnKeepOut, type SpawnPoint, type SpawnPose } from './spawn.js';
@@ -154,6 +155,7 @@ export abstract class Room {
     // Spawns handed out so far: the slot groups take turns (spawn.ts)
     protected spawnTurn = 0;
     private readonly compactAt = new Map<RoomMember, number>();
+    private readonly discoveryIds: ReadonlySet<string>;
 
     constructor(
         readonly kind: RoomKind,
@@ -161,12 +163,17 @@ export abstract class Room {
         readonly map: MapData,
         protected readonly now: () => number = Date.now
     ) {
-        this.id = `${kind}-${index}`;
+        this.id = map.mapId === DEFAULT_MAP_ID ? `${kind}-${index}` : `${map.mapId}:${kind}-${index}`;
         this.emptySinceMs = now();
+        this.discoveryIds = new Set(map.discoveries.map(d => d.id));
+    }
+
+    get mapId(): MapId {
+        return this.map.mapId as MapId;
     }
 
     get info(): RoomInfo {
-        return { id: this.id, kind: this.kind, index: this.index };
+        return { id: this.id, kind: this.kind, index: this.index, mapId: this.mapId };
     }
 
     /**
@@ -368,6 +375,7 @@ export abstract class Room {
         switch (msg.type) {
             case 'ready': return this.markReady(member);
             case 'honk': return this.handleHonk(member);
+            case 'discovery': return this.handleDiscovery(member, msg.discoveryId);
             case 'visibility':
                 member.hidden = msg.hidden;
                 return;
@@ -425,6 +433,21 @@ export abstract class Room {
         if (now - session.lastHonkAt < HONK_INTERVAL_MS) return;
         session.lastHonkAt = now;
         this.emit({ type: 'honk', id: member.id }, { exclude: member.id });
+    }
+
+    private handleDiscovery(member: RoomMember, discoveryId: string): void {
+        if (!member.ready || !this.discoveryIds.has(discoveryId)) return;
+        const session = member.session;
+        const dedupeKey = `${this.mapId}:${discoveryId}`;
+        if (session.announcedDiscoveries.has(dedupeKey)) return;
+        const now = this.now();
+        if (now - session.lastDiscoveryAt < DISCOVERY_INTERVAL_MS) return;
+        session.lastDiscoveryAt = now;
+        session.announcedDiscoveries.add(dedupeKey);
+        this.emit(
+            { type: 'discovery', playerId: member.id, playerName: session.name, discoveryId, mapId: this.mapId },
+            { exclude: member.id }
+        );
     }
 
     // ---- The tick (5.3) ----

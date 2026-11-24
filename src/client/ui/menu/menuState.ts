@@ -1,9 +1,10 @@
 import { DEFAULT_ROOM_KIND, isRoomKind } from '../../../shared/protocol.js';
+import { DEFAULT_MAP_ID, isMapId, MAP_IDS, type MapId } from '../../../shared/map/registry.js';
 import { isPaintId, PAINT_IDS, type PaintId } from '../../../shared/paints.js';
 import { MAX_NAME_LENGTH } from '../../../shared/constants.js';
 import type { CarClassId } from '../../../shared/sim/types.js';
 
-// The main menu's state (docs/ui.md 4): car, paint, mode and driver name,
+// The main menu's state (docs/ui.md 4): car, paint, map, mode and driver name,
 // kept in the browser's storage for the next visit, and the navigation
 // with keyboard and gamepad over the menu's rows. Pure: the storage is
 // passed in (localStorage in the page, a map in the tests), nothing here
@@ -12,17 +13,21 @@ import type { CarClassId } from '../../../shared/sim/types.js';
 /** The cars in the order of the carousel (the ids stay the sim's). */
 export const MENU_CARS: readonly CarClassId[] = ['bulli', 'beetle', 'pickup', 'sport', 'jeep'];
 
+/** The playable curated maps in card order. */
+export const MENU_MAPS: readonly MapId[] = MAP_IDS;
+
 /** The mode cards; the time trial is reached from the race lobby and counts as Race here. */
 export const MENU_MODES = ['party', 'freeroam', 'race'] as const;
 export type MenuMode = typeof MENU_MODES[number];
 
 /** The rows the keyboard's and the gamepad's up/down walk through. */
-export const MENU_ROWS = ['name', 'car', 'paint', 'mode', 'drive'] as const;
+export const MENU_ROWS = ['name', 'car', 'paint', 'map', 'mode', 'drive'] as const;
 export type MenuRow = typeof MENU_ROWS[number];
 
 export interface MenuChoice {
     car: CarClassId;
     paint: PaintId;
+    map: MapId;
     mode: MenuMode;
     name: string;
 }
@@ -32,6 +37,7 @@ export interface MenuChoice {
 export const STORAGE_KEYS = {
     car: 'bulli-car-type',
     paint: 'bulli-paint',
+    map: 'bulli-map-id',
     mode: 'bulli-room-kind',
     name: 'bulli-player-name'
 } as const;
@@ -76,12 +82,19 @@ export function savedPaint(storage: MenuStorage): PaintId | null {
     return isPaintId(paint) ? paint : null;
 }
 
+/** The map saved by the menu, null without a valid one (defaults to bulli-bay). */
+export function savedMap(storage: MenuStorage): MapId | null {
+    const map = read(storage, STORAGE_KEYS.map);
+    return isMapId(map) ? map : null;
+}
+
 /** The choice of the last visit; anything missing or invalid falls back to the defaults. */
 export function loadMenuChoice(storage: MenuStorage): MenuChoice {
     const car = read(storage, STORAGE_KEYS.car);
     return {
         car: MENU_CARS.includes(car as CarClassId) ? car as CarClassId : 'bulli',
         paint: savedPaint(storage) ?? FIRST_PAINT,
+        map: savedMap(storage) ?? DEFAULT_MAP_ID,
         mode: menuModeFor(read(storage, STORAGE_KEYS.mode)),
         name: cleanMenuName(read(storage, STORAGE_KEYS.name) ?? '')
     };
@@ -95,6 +108,7 @@ export function loadMenuChoice(storage: MenuStorage): MenuChoice {
 export function saveMenuChoice(storage: MenuStorage, choice: MenuChoice): void {
     write(storage, STORAGE_KEYS.car, choice.car);
     write(storage, STORAGE_KEYS.paint, choice.paint);
+    write(storage, STORAGE_KEYS.map, choice.map);
     if (!(choice.mode === 'race' && read(storage, STORAGE_KEYS.mode) === 'timetrial')) write(storage, STORAGE_KEYS.mode, choice.mode);
     const name = cleanMenuName(choice.name);
     if (name) write(storage, STORAGE_KEYS.name, name);
@@ -113,6 +127,10 @@ export function stepCar(car: CarClassId, direction: number): CarClassId {
 
 export function stepPaint(paint: PaintId, direction: number): PaintId {
     return step(PAINT_IDS, paint, direction);
+}
+
+export function stepMap(map: MapId, direction: number): MapId {
+    return step(MENU_MAPS, map, direction);
 }
 
 export function stepMode(mode: MenuMode, direction: number): MenuMode {
@@ -140,9 +158,9 @@ export interface MenuFocus {
 
 /**
  * What a navigation action does: up/down move between the rows, left/right
- * change the value of the row (car, paint or mode; nothing on the name and
- * DRIVE rows), LB/RB change the car from anywhere. activate, settings and
- * back leave the state as it is (the controller starts or opens dialogs).
+ * change the value of the row (car, paint, map or mode; nothing on the name
+ * and DRIVE rows), LB/RB change the car from anywhere. activate, settings
+ * and back leave the state as it is (the controller starts or opens dialogs).
  */
 export function navigate(focus: MenuFocus, action: MenuAction, options: { skipName?: boolean } = {}): MenuFocus {
     const { choice, row } = focus;
@@ -158,6 +176,7 @@ export function navigate(focus: MenuFocus, action: MenuAction, options: { skipNa
             const direction = action === 'right' ? 1 : -1;
             if (row === 'car') return { choice: { ...choice, car: stepCar(choice.car, direction) }, row };
             if (row === 'paint') return { choice: { ...choice, paint: stepPaint(choice.paint, direction) }, row };
+            if (row === 'map') return { choice: { ...choice, map: stepMap(choice.map, direction) }, row };
             if (row === 'mode') return { choice: { ...choice, mode: stepMode(choice.mode, direction) }, row };
             return focus;
         }

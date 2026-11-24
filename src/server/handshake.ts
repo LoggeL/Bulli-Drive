@@ -104,7 +104,7 @@ function takeOver(transport: Transport, hello: HelloMessage, ctx: HandshakeConte
         if (repainted) room.onSessionChanged(member, { paint: true });
     } else {
         session.connId = hello.connId;
-        ctx.lobby.rejoin(session, hello.room);
+        ctx.lobby.rejoin(session, hello.room, hello.mapId);
     }
     return session;
 }
@@ -178,7 +178,7 @@ export function acceptHelloResult(transport: Transport, text: string, ctx: Hands
     }
     ctx.sessions?.add(session);
     welcome(session, false, ctx);
-    ctx.lobby.join(session, hello.room);
+    ctx.lobby.join(session, hello.room, { mapId: hello.mapId ?? ticket?.mapId });
     sessionLog.log(`Player ${name} (${id}) joined ${session.room?.id}${ticket ? ' with a resume ticket' : ''}`);
     return { session, resumed: false };
 }

@@ -2,11 +2,14 @@
 // Field shapes must match what is actually serialized on each side.
 
 import * as v from 'valibot';
+import { MAP_IDS, type MapId } from './map/registry.js';
 import { PAINT_IDS } from './paints.js';
 import {
-    BOT_LEVELS, RACE_VOTES, TRACK_IDS,
+    ALL_TRACK_IDS, BOT_LEVELS, RACE_VOTES,
     type BotLevel, type RacePhase, type RacerStatus, type TrackId
 } from './race/types.js';
+
+export { MAP_IDS, type MapId };
 
 // Bumped on every incompatible wire change. The client sends it in 'hello';
 // the server rejects any other version with reload: true
@@ -21,7 +24,9 @@ import {
 // flip, previous buttons or Super Jump bits; the jump button bit is dropped.
 // v6 (docs/ui.md 5): the car paint from the menu (hello.paint, 'setPaint',
 // playerUpdated.color); an older server would drop 'setPaint'.
-export const PROTOCOL_VERSION = 6;
+// v7: multi-map rooms (hello.mapId, joinRoom.mapId, RoomInfo.mapId,
+// ALL_TRACK_IDS) and multiplayer discovery unlock events.
+export const PROTOCOL_VERSION = 7;
 
 // ---------- DTOs ----------
 
@@ -64,11 +69,12 @@ export function isRoomKind(value: unknown): value is RoomKind {
     return typeof value === 'string' && (ROOM_KINDS as readonly string[]).includes(value);
 }
 
-// The room instance a player is in: id 'party-1', kind 'party', index 1
+// The room instance a player is in: id 'party-1' (default map) or '<mapId>:party-1'
 export interface RoomInfo {
     id: string;
     kind: RoomKind;
     index: number;
+    mapId: MapId;
 }
 
 export interface ScoreboardEntry {
@@ -133,6 +139,8 @@ export const HelloSchema = v.object({
     carType: shortString(32),
     profile: v.picklist(ASSIST_PROFILE_IDS),
     room: v.picklist(ROOM_KINDS),
+    // Optional target map (defaults to bulli-bay when omitted)
+    mapId: v.optional(v.picklist(MAP_IDS)),
     // The paint picked in the menu (shared/paints.ts). Like carType it
     // may name a paint this server does not know (a palette changed with a
     // deploy): the server then picks one from the palette, the hello stays
@@ -149,10 +157,11 @@ export const ClientMessageSchema = v.variant('type', [
     // Clock sync (3.7); t is the client's performance.now()
     v.object({ type: v.literal('ping'), t: finiteNumber }),
     // Moves the player into a room of that kind (the fullest one with room).
-    // fresh: a new instance (race: "START OWN RACE"); track: its track
+    // fresh: a new instance (race: "START OWN RACE"); track: its track; mapId: target map
     v.object({
         type: v.literal('joinRoom'), kind: v.picklist(ROOM_KINDS),
-        fresh: v.optional(v.boolean()), track: v.optional(v.picklist(TRACK_IDS))
+        mapId: v.optional(v.picklist(MAP_IDS)),
+        fresh: v.optional(v.boolean()), track: v.optional(v.picklist(ALL_TRACK_IDS))
     }),
     v.object({ type: v.literal('setCar'), carType: shortString(32), profile: v.picklist(ASSIST_PROFILE_IDS) }),
     // Another paint from the menu (docs/ui.md 5): shown to the room like a car change
@@ -160,13 +169,15 @@ export const ClientMessageSchema = v.variant('type', [
     v.object({ type: v.literal('rename'), name: shortString(200) }),
     v.object({ type: v.literal('honk') }),
     v.object({ type: v.literal('shoot'), targetId: shortString(64) }),
+    // Discovery / easter-egg unlocked locally: relayed to friends in the same room
+    v.object({ type: v.literal('discovery'), discoveryId: shortString(64) }),
     v.object({ type: v.literal('visibility'), hidden: v.boolean() }),
     // E2E only (server started with E2E=1): puts the own car there, at rest
     // or rolling straight ahead at speed (m/s, e.g. towards a crest)
     v.object({ type: v.literal('debugPlace'), x: finiteNumber, z: finiteNumber, yaw: finiteNumber, speed: v.optional(finiteNumber) }),
     // Race lobby (docs/phase-2-design.md, 6.4 and 16.2)
     v.object({ type: v.literal('raceReady'), ready: v.boolean() }),
-    v.object({ type: v.literal('raceConfig'), track: v.optional(v.picklist(TRACK_IDS)), botLevel: v.optional(v.picklist(BOT_LEVELS)) }),
+    v.object({ type: v.literal('raceConfig'), track: v.optional(v.picklist(ALL_TRACK_IDS)), botLevel: v.optional(v.picklist(BOT_LEVELS)) }),
     v.object({ type: v.literal('raceVote'), choice: v.picklist(RACE_VOTES) }),
     v.object({ type: v.literal('timeTrialRestart') })
 ]);
@@ -227,7 +238,8 @@ export type GameEvent =
     // Back from the dead at (x, z): the car state is reset at tick
     | { type: 'respawn'; id: string; tick: number; x: number; z: number; yaw: number; health: number }
     | { type: 'carChanged'; id: string; carType: string; profile: ProfileId; tick: number }
-    | { type: 'honk'; id: string };
+    | { type: 'honk'; id: string }
+    | { type: 'discovery'; playerId: string; playerName: string; discoveryId: string; mapId: MapId };
 
 // The own car of a resumed session: whether it is in the sim, the tick it
 // last spawned (respawn shield) and its powerup windows

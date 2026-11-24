@@ -1,4 +1,5 @@
 import { state } from '../state.js';
+import type { DiscoveryDef } from '../../shared/map/discoverySchema.js';
 import type { MapData } from '../../shared/map/mapData.js';
 import { SURFACE, ZONE } from '../../shared/map/types.js';
 import { boxCorners, placementBox } from '../../shared/map/structures.js';
@@ -32,9 +33,26 @@ const colorCssCache = new Map<number, string>();
 let pixelRatio = 1;
 let lastUpdate = -Infinity;
 
-// The map layer: its origin in the world and metres per layer pixel
+// The map layer: its origin in the world and metres per layer pixel (updated from hf.spec in drawMapLayer)
 const layerFrame = { originX: -1000, originZ: -1000, metresPerPixel: 2 };
 const radarPixelsPerMetre = (RADAR_CENTER - RADAR_EDGE_INSET) / RADAR_RANGE;
+
+// Active map discovery markers & radar pin
+let discoveryDefs: readonly DiscoveryDef[] = [];
+let discoveryFoundIds: ReadonlySet<string> = new Set();
+let discoveryPinnedId: string | null = null;
+
+/** Supplies discovery markers & radar target pin for the active map. */
+export function setMinimapDiscoveries(
+    defs: readonly DiscoveryDef[],
+    foundIds: ReadonlySet<string>,
+    pinnedId: string | null
+): void {
+    discoveryDefs = defs;
+    discoveryFoundIds = foundIds;
+    discoveryPinnedId = pinnedId;
+    lastUpdate = -Infinity;
+}
 
 interface MarkerPoint {
     x: number;
@@ -112,12 +130,21 @@ const GROUND: Record<number, RGB> = {
     [SURFACE.wetSand]: [189, 169, 131],
     [SURFACE.rock]: [154, 145, 134],
     [SURFACE.dirt]: [150, 128, 96],
-    [SURFACE.gravel]: [160, 152, 138]
+    [SURFACE.gravel]: [160, 152, 138],
+    [SURFACE.snow]: [232, 238, 246],
+    [SURFACE.ice]: [166, 208, 228]
 };
 const DRY_GRASS: RGB = [150, 142, 94];
 const LAWN: RGB = [122, 146, 88];
 const ROAD_COLOR: Record<RoadSurfaceName, string> = {
-    asphalt: '#3a3d3e', concrete: '#8f8d86', dirt: '#8a6c4b', gravel: '#9d9585', sand: '#d8c290', wood: '#8a6a48'
+    asphalt: '#3a3d3e',
+    concrete: '#8f8d86',
+    dirt: '#8a6c4b',
+    gravel: '#9d9585',
+    sand: '#d8c290',
+    wood: '#8a6a48',
+    snow: '#e6edf5',
+    ice: '#96cce4'
 };
 
 /** Draws the map into a layer canvas of one pixel per grid point. */
@@ -409,6 +436,12 @@ export function initMinimap(map: MapData) {
     updateMinimap(performance.now());
 }
 
+/** Rebuilds the radar base layer when switching maps live without a reload. */
+export function setMinimapMap(map: MapData): void {
+    trackMode = null;
+    initMinimap(map);
+}
+
 // ---- Track mode (docs/phase-2-design.md, 17.3) ----
 // In a race the map shows the whole track, north up: the racing line as a
 // band, the gates as bars (the next one bright), start and finish
@@ -544,6 +577,42 @@ export function updateMinimap(now: number) {
         const point = worldToRadarMarker(powerup.x, powerup.z, originX, originZ, heading);
         if (!point.offMap) {
             drawMarker(ctx, point, 2.2, colorToCss(powerup.color), 'rgba(255,255,255,0.72)');
+        }
+    }
+
+    // Discovery POI markers & pinned radar target
+    if (discoveryDefs.length > 0) {
+        const pulse = 0.5 + 0.5 * Math.sin(now * 0.008);
+        for (const def of discoveryDefs) {
+            const isPinned = def.id === discoveryPinnedId;
+            const isFound = discoveryFoundIds.has(def.id);
+            const point = worldToRadarMarker(def.x, def.z, originX, originZ, heading);
+            if (isPinned) {
+                if (point.offMap) {
+                    drawMarker(ctx, point, 4.4, '#ffb347', '#fff8e7');
+                } else {
+                    ctx.save();
+                    ctx.translate(point.x, point.y);
+                    ctx.strokeStyle = `rgba(255, 196, 86, ${(0.55 + 0.45 * pulse).toFixed(2)})`;
+                    ctx.lineWidth = 1.6;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 5.2 + pulse * 2.8, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.fillStyle = '#ffb347';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 3.0, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                }
+            } else if (!point.offMap) {
+                drawMarker(
+                    ctx,
+                    point,
+                    isFound ? 2.1 : 2.5,
+                    isFound ? 'rgba(245, 200, 66, 0.78)' : 'rgba(116, 232, 224, 0.9)',
+                    isFound ? 'rgba(255, 248, 231, 0.5)' : 'rgba(18, 20, 22, 0.75)'
+                );
+            }
         }
     }
 

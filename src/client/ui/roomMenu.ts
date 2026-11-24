@@ -1,13 +1,14 @@
-import { DEFAULT_ROOM_KIND, isRoomKind, type RoomInfo, type RoomKind } from '../../shared/protocol.js';
+import { DEFAULT_ROOM_KIND, isRoomKind, type MapId, type RoomInfo, type RoomKind } from '../../shared/protocol.js';
+import { DEFAULT_MAP_ID, isMapId, mapDescriptor } from '../../shared/map/registry.js';
 import { sendToServer } from '../network/socket.js';
 import { state } from '../state.js';
+import { openCodex } from './codex.js';
+import { STORAGE_KEYS } from './menu/menuState.js';
 import { openSettings } from './menu/settingsDialog.js';
 
-// Party, Free Roam, Race or Time Trial (docs/phase-1b-design.md, 9 and
-// docs/phase-2-design.md, 17.6): the mode picked in the menu, the room chip
-// in the HUD with its mode menu (and the settings, docs/ui.md 13), and the
-// page classes that hide the Party HUD outside the Party and show the race
-// HUD in races.
+// Party, Free Roam, Race or Time Trial across all 4 playable maps: the mode &
+// map picked in the menu, the room chip in the HUD with its live map+mode
+// switcher (and Codex + Settings), and the body classes controlling HUD layout.
 
 const STORAGE_KEY = 'bulli-room-kind';
 // The server takes one room switch per two seconds
@@ -17,8 +18,14 @@ const SWITCH_TIMEOUT_MS = 5000;
 
 const LABELS: Record<RoomKind, string> = { party: 'PARTY', freeroam: 'FREE ROAM', race: 'RACE', timetrial: 'TIME TRIAL' };
 const NAMES: Record<RoomKind, string> = { party: 'Party', freeroam: 'Free Roam', race: 'Race', timetrial: 'Time Trial' };
+const MAP_SHORT_LABELS: Record<MapId, string> = {
+    'bulli-bay': 'BAY',
+    'alpen-pass': 'ALPEN',
+    'stunt-forge': 'STUNT',
+    'logge-forge': 'FORGE'
+};
 
-let pendingKind: RoomKind | null = null;
+let pendingSwitch: { kind: RoomKind; mapId?: MapId } | null = null;
 let lockedUntil = 0;
 let unlockTimer = 0;
 
@@ -32,9 +39,25 @@ export function preferredRoomKind(): RoomKind {
     }
 }
 
+/** The map this browser played last (localStorage), Bulli Bay by default. */
+export function preferredMapId(): MapId {
+    try {
+        const saved = localStorage.getItem(STORAGE_KEYS.map);
+        return isMapId(saved) ? saved : DEFAULT_MAP_ID;
+    } catch {
+        return DEFAULT_MAP_ID;
+    }
+}
+
 function rememberRoomKind(kind: RoomKind): void {
     try {
         localStorage.setItem(STORAGE_KEY, kind);
+    } catch { /* private mode: the default stays */ }
+}
+
+function rememberMapId(mapId: MapId): void {
+    try {
+        localStorage.setItem(STORAGE_KEYS.map, mapId);
     } catch { /* private mode: the default stays */ }
 }
 
@@ -49,15 +72,21 @@ export function isRaceKind(kind: RoomKind | undefined): boolean {
 }
 
 /**
- * DRIVE in the menu (ui/menu/menu.ts): moves to the chosen mode first if
- * the connection joined another one (the server handles joinRoom before
+ * DRIVE in the menu (ui/menu/menu.ts): moves to the chosen mode and map first
+ * if the connection joined another one (the server handles joinRoom before
  * ready). The menu shows a time trial as Race: a time trial played last
  * stays a time trial while Race stays picked.
  */
-export function applyMenuMode(mode: 'party' | 'freeroam' | 'race'): void {
+export function applyMenuMode(mode: 'party' | 'freeroam' | 'race', mapId?: MapId): void {
     const kind: RoomKind = mode === 'race' && (state.room?.kind ?? preferredRoomKind()) === 'timetrial' ? 'timetrial' : mode;
     rememberRoomKind(kind);
-    if (state.room && state.room.kind !== kind) requestRoom(kind);
+    if (mapId && isMapId(mapId)) rememberMapId(mapId);
+    if (!state.room) return;
+    const currentMap = state.room.mapId ?? DEFAULT_MAP_ID;
+    const targetMap = mapId && isMapId(mapId) ? mapId : currentMap;
+    if (state.room.kind !== kind || targetMap !== currentMap) {
+        requestRoom(kind, targetMap !== currentMap ? { mapId: targetMap } : {});
+    }
 }
 
 // ---- In the game ----
@@ -78,6 +107,7 @@ function setPanelOpen(open: boolean): void {
 function renderRoomUi(): void {
     const room = state.room;
     const kind = room?.kind ?? DEFAULT_ROOM_KIND;
+    const activeMap: MapId = room?.mapId && isMapId(room.mapId) ? room.mapId : state.mapId;
     document.body.classList.toggle('room-freeroam', kind === 'freeroam');
     document.body.classList.toggle('room-party', kind === 'party');
     document.body.classList.toggle('room-race', isRaceKind(kind));
@@ -87,12 +117,26 @@ function renderRoomUi(): void {
     const index = document.getElementById('room-chip-index');
     const chip = document.getElementById('room-chip');
     if (mode) mode.textContent = LABELS[kind];
-    if (index) index.textContent = room ? `ROOM ${room.index}` : 'OFFLINE';
-    if (chip) chip.setAttribute('aria-label', `Game mode: ${NAMES[kind]}${room ? `, room ${room.index}` : ''}. Change mode`);
+    if (index) {
+        index.textContent = !room
+            ? 'OFFLINE'
+            : activeMap === DEFAULT_MAP_ID
+                ? `ROOM ${room.index}`
+                : `${MAP_SHORT_LABELS[activeMap]} · R${room.index}`;
+    }
+    if (chip) {
+        const mapName = mapDescriptor(activeMap).name;
+        chip.setAttribute('aria-label', `Game mode: ${NAMES[kind]}${room ? `, ${mapName}, room ${room.index}` : ''}. Change mode or map`);
+    }
 
-    const locked = pendingKind !== null || performance.now() < lockedUntil;
+    const locked = pendingSwitch !== null || performance.now() < lockedUntil;
     document.querySelectorAll<HTMLButtonElement>('.room-option').forEach(option => {
         const current = option.dataset.room === kind;
+        option.setAttribute('aria-current', String(current));
+        option.disabled = current || locked || !room;
+    });
+    document.querySelectorAll<HTMLButtonElement>('.room-map-option').forEach(option => {
+        const current = option.dataset.map === activeMap;
         option.setAttribute('aria-current', String(current));
         option.disabled = current || locked || !room;
     });
@@ -110,6 +154,17 @@ export function initRoomMenu(): void {
             option.blur();
             requestRoom(option.dataset.room);
         });
+    });
+    document.querySelectorAll<HTMLButtonElement>('.room-map-option').forEach(option => {
+        option.addEventListener('click', () => {
+            if (!isMapId(option.dataset.map)) return;
+            option.blur();
+            requestRoom(state.room?.kind ?? DEFAULT_ROOM_KIND, { mapId: option.dataset.map });
+        });
+    });
+    document.getElementById('room-codex')?.addEventListener('click', () => {
+        setPanelOpen(false);
+        openCodex();
     });
     document.getElementById('room-settings')?.addEventListener('click', () => {
         setPanelOpen(false);
@@ -131,18 +186,28 @@ export function initRoomMenu(): void {
 }
 
 /**
- * Asks the server for a room of that kind (the answer is 'roomState').
- * fresh: a new race instance even from a race room ("START OWN RACE").
+ * Asks the server for a room of that kind and optional target map (the answer
+ * is 'roomState'). fresh: a new race instance even from a race room.
  */
-export function requestRoom(kind: RoomKind, options: { fresh?: boolean } = {}): void {
-    if (!state.room || (state.room.kind === kind && !options.fresh) || pendingKind) return;
+export function requestRoom(kind: RoomKind, options: { fresh?: boolean; mapId?: MapId } = {}): void {
+    if (!state.room || pendingSwitch) return;
+    const currentMap = state.room.mapId ?? DEFAULT_MAP_ID;
+    const targetMap = options.mapId && isMapId(options.mapId) ? options.mapId : currentMap;
+    const sameTarget = state.room.kind === kind && targetMap === currentMap;
+    if (sameTarget && !options.fresh) return;
     if (performance.now() < lockedUntil) return;
-    if (!sendToServer(options.fresh ? { type: 'joinRoom', kind, fresh: true } : { type: 'joinRoom', kind })) return;
-    pendingKind = kind;
+
+    const msg: { type: 'joinRoom'; kind: RoomKind; mapId?: MapId; fresh?: boolean } = { type: 'joinRoom', kind };
+    if (options.mapId && isMapId(options.mapId)) msg.mapId = options.mapId;
+    if (options.fresh) msg.fresh = true;
+
+    if (!sendToServer(msg)) return;
+    pendingSwitch = { kind, mapId: options.mapId };
     rememberRoomKind(kind);
+    if (options.mapId && isMapId(options.mapId)) rememberMapId(options.mapId);
     window.clearTimeout(unlockTimer);
     unlockTimer = window.setTimeout(() => {
-        pendingKind = null;
+        pendingSwitch = null;
         renderRoomUi();
     }, SWITCH_TIMEOUT_MS);
     renderRoomUi();
@@ -151,8 +216,11 @@ export function requestRoom(kind: RoomKind, options: { fresh?: boolean } = {}): 
 /** The server put this client into a room ('roomState'). */
 export function setCurrentRoom(room: RoomInfo): void {
     state.room = room;
-    if (pendingKind) {
-        pendingKind = null;
+    if (room.mapId && isMapId(room.mapId)) {
+        state.mapId = room.mapId;
+    }
+    if (pendingSwitch) {
+        pendingSwitch = null;
         window.clearTimeout(unlockTimer);
         lockedUntil = performance.now() + SWITCH_COOLDOWN_MS;
         unlockTimer = window.setTimeout(renderRoomUi, SWITCH_COOLDOWN_MS);

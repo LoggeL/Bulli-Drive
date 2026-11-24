@@ -2,7 +2,7 @@ import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'fs';
 import path from 'path';
 import * as v from 'valibot';
-import { ASSIST_PROFILE_IDS, ROOM_KINDS } from '../shared/protocol.js';
+import { ASSIST_PROFILE_IDS, MAP_IDS, ROOM_KINDS } from '../shared/protocol.js';
 import { RESUME_TICKET_MS } from '../shared/net/constants.js';
 
 // Resume tickets (docs/phase-1b-design.md, 11.3): a restart loses every
@@ -22,6 +22,7 @@ const TicketSchema = v.object({
     carType: v.pipe(v.string(), v.maxLength(32)),
     profile: v.picklist(ASSIST_PROFILE_IDS),
     roomKind: v.picklist(ROOM_KINDS),
+    mapId: v.optional(v.picklist(MAP_IDS)),
     score: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(1_000_000_000)),
     // Wall clock (ms): tickets cross processes
     exp: v.pipe(v.number(), v.finite()),

@@ -25,9 +25,12 @@ describe('the hello', () => {
         expect(v.safeParse(HelloSchema, hello).success).toBe(true);
     });
 
-    it('sends the paint, car and name the menu kept', () => {
-        const hello = helloFor(storage({ 'bulli-paint': 'ochre', 'bulli-car-type': 'sport', 'bulli-player-name': 'Ada' }), context);
-        expect(hello).toMatchObject({ paint: 'ochre', carType: 'sport', name: 'Ada', protocolVersion: PROTOCOL_VERSION });
+    it('sends the paint, car, map and name the menu kept', () => {
+        const hello = helloFor(storage({ 'bulli-paint': 'ochre', 'bulli-car-type': 'sport', 'bulli-map-id': 'logge-forge', 'bulli-player-name': 'Ada' }), context);
+        expect(hello).toMatchObject({ paint: 'ochre', carType: 'sport', mapId: 'logge-forge', name: 'Ada', protocolVersion: PROTOCOL_VERSION });
+        // Defaults to bulli-bay for missing or invalid stored map IDs
+        expect(helloFor(storage({ 'bulli-map-id': 'mars' }), context).mapId).toBe('bulli-bay');
+        expect(helloFor(storage({}), context).mapId).toBe('bulli-bay');
     });
 
     it('falls back to Sea Green for a paint that is not in the palette, and without storage', () => {

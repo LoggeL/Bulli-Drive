@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-    IDLE_PAD, loadMenuChoice, menuModeFor, navigate, padMenuActions, readPadMenu, saveMenuChoice, stepCar, stepMode, stepPaint, stepRow,
+    IDLE_PAD, loadMenuChoice, menuModeFor, navigate, padMenuActions, readPadMenu, saveMenuChoice, stepCar, stepMap, stepMode, stepPaint, stepRow,
     type MenuChoice, type MenuStorage, type PadMenuState
 } from '../../src/client/ui/menu/menuState.js';
 
@@ -19,25 +19,25 @@ const throwing: MenuStorage = {
     setItem: () => { throw new Error('QuotaExceededError'); }
 };
 
-const base: MenuChoice = { car: 'bulli', paint: 'sea', mode: 'party', name: 'Ada' };
+const base: MenuChoice = { car: 'bulli', paint: 'sea', map: 'bulli-bay', mode: 'party', name: 'Ada' };
 
 describe('the choice of the last visit', () => {
-    it('is the Bulli in Sea Green in the Party without a name on a first visit', () => {
-        expect(loadMenuChoice(memory())).toEqual({ car: 'bulli', paint: 'sea', mode: 'party', name: '' });
-        expect(loadMenuChoice(null)).toEqual({ car: 'bulli', paint: 'sea', mode: 'party', name: '' });
+    it('is the Bulli in Sea Green on Bulli Bay in the Party without a name on a first visit', () => {
+        expect(loadMenuChoice(memory())).toEqual({ car: 'bulli', paint: 'sea', map: 'bulli-bay', mode: 'party', name: '' });
+        expect(loadMenuChoice(null)).toEqual({ car: 'bulli', paint: 'sea', map: 'bulli-bay', mode: 'party', name: '' });
     });
 
-    it('comes back from the keys the game used before the menu, plus the paint', () => {
+    it('comes back from the keys the game used before the menu, plus paint and map', () => {
         const storage = memory({
-            'bulli-car-type': 'jeep', 'bulli-paint': 'ochre', 'bulli-room-kind': 'freeroam', 'bulli-player-name': 'SurfKing42'
+            'bulli-car-type': 'jeep', 'bulli-paint': 'ochre', 'bulli-map-id': 'logge-forge', 'bulli-room-kind': 'freeroam', 'bulli-player-name': 'SurfKing42'
         });
-        expect(loadMenuChoice(storage)).toEqual({ car: 'jeep', paint: 'ochre', mode: 'freeroam', name: 'SurfKing42' });
+        expect(loadMenuChoice(storage)).toEqual({ car: 'jeep', paint: 'ochre', map: 'logge-forge', mode: 'freeroam', name: 'SurfKing42' });
     });
 
     it('falls back value by value when something is invalid, and when the storage throws', () => {
-        const storage = memory({ 'bulli-car-type': 'tank', 'bulli-paint': 'neon', 'bulli-room-kind': 'deathmatch', 'bulli-player-name': 'Kalle' });
-        expect(loadMenuChoice(storage)).toEqual({ car: 'bulli', paint: 'sea', mode: 'party', name: 'Kalle' });
-        expect(loadMenuChoice(throwing)).toEqual({ car: 'bulli', paint: 'sea', mode: 'party', name: '' });
+        const storage = memory({ 'bulli-car-type': 'tank', 'bulli-paint': 'neon', 'bulli-map-id': 'mars', 'bulli-room-kind': 'deathmatch', 'bulli-player-name': 'Kalle' });
+        expect(loadMenuChoice(storage)).toEqual({ car: 'bulli', paint: 'sea', map: 'bulli-bay', mode: 'party', name: 'Kalle' });
+        expect(loadMenuChoice(throwing)).toEqual({ car: 'bulli', paint: 'sea', map: 'bulli-bay', mode: 'party', name: '' });
     });
 
     it('shows a time trial played last as Race', () => {
@@ -52,13 +52,13 @@ describe('the choice of the last visit', () => {
 });
 
 describe('saving the choice', () => {
-    it('writes car, paint, mode and name for the next visit', () => {
+    it('writes car, paint, map, mode and name for the next visit', () => {
         const storage = memory();
-        saveMenuChoice(storage, { car: 'sport', paint: 'red', mode: 'race', name: ' Ada ' });
+        saveMenuChoice(storage, { car: 'sport', paint: 'red', map: 'alpen-pass', mode: 'race', name: ' Ada ' });
         expect(Object.fromEntries(storage.store)).toEqual({
-            'bulli-car-type': 'sport', 'bulli-paint': 'red', 'bulli-room-kind': 'race', 'bulli-player-name': 'Ada'
+            'bulli-car-type': 'sport', 'bulli-paint': 'red', 'bulli-map-id': 'alpen-pass', 'bulli-room-kind': 'race', 'bulli-player-name': 'Ada'
         });
-        expect(loadMenuChoice(storage)).toEqual({ car: 'sport', paint: 'red', mode: 'race', name: 'Ada' });
+        expect(loadMenuChoice(storage)).toEqual({ car: 'sport', paint: 'red', map: 'alpen-pass', mode: 'race', name: 'Ada' });
     });
 
     it('keeps a time trial when Race stays picked, and a saved name when the field is empty', () => {
@@ -84,10 +84,13 @@ describe('stepping through the values', () => {
         expect(stepCar('sport', -1)).toBe('pickup');
     });
 
-    it('runs the paints and the modes round too', () => {
+    it('runs the paints, maps and the modes round too', () => {
         expect(stepPaint('anthracite', 1)).toBe('sea');
         expect(stepPaint('sea', -1)).toBe('anthracite');
         expect(stepPaint('cream', 1)).toBe('red');
+        expect(stepMap('bulli-bay', 1)).toBe('alpen-pass');
+        expect(stepMap('bulli-bay', -1)).toBe('logge-forge');
+        expect(stepMap('logge-forge', 1)).toBe('bulli-bay');
         expect(stepMode('race', 1)).toBe('party');
         expect(stepMode('party', -1)).toBe('race');
     });
@@ -114,9 +117,11 @@ describe('navigation', () => {
         focus = navigate(navigate(focus, 'down'), 'left');
         expect([focus.row, focus.choice.paint]).toEqual(['paint', 'anthracite']);
         focus = navigate(navigate(focus, 'down'), 'right');
+        expect([focus.row, focus.choice.map]).toEqual(['map', 'alpen-pass']);
+        focus = navigate(navigate(focus, 'down'), 'right');
         expect([focus.row, focus.choice.mode]).toEqual(['mode', 'freeroam']);
         // The other values stay
-        expect(focus.choice).toEqual({ car: 'beetle', paint: 'anthracite', mode: 'freeroam', name: 'Ada' });
+        expect(focus.choice).toEqual({ car: 'beetle', paint: 'anthracite', map: 'alpen-pass', mode: 'freeroam', name: 'Ada' });
     });
 
     it('changes nothing with left/right on the name and DRIVE rows', () => {
