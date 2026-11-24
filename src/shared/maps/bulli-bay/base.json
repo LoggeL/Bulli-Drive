@@ -20,7 +20,7 @@
     {"id":"harbor","x":-260,"z":520,"radii":[420,250],"height":3,"strength":1}
   ],
   "moles": [
-    {"id":"light-mole","line":[[-624,694],[-668,648]],"height":1.6,"width":7}
+    {"id":"light-mole","line":[[-624,694],[-670,646]],"height":1.6,"width":11}
   ],
   "views": [
     {"id":"lookout","from":[690,-777],"to":[-700,-20],"height":133,"slope":0.1,"spread":0.5,"length":380}

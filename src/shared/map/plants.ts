@@ -73,9 +73,10 @@ export const PLANT_AREA_MARGIN = 2;
 export const PLANT_BUILDING_MARGIN = 1.5;
 // Lowest ground above the water
 const PLANT_MIN_HEIGHT = 0.5;
-// Steepest ground under a plant: the gradient over ±1 m, tan 35° (a trunk
-// on a cliff face would float over the ground below it)
+// Steepest ground under a plant: the gradient over ±1 m, tan 35° for trees
+// and <= 0.55 (~29°) for boulders/rocks so wide rock footprints never float off cliffs
 export const PLANT_MAX_GRADE = 0.7;
+export const BOULDER_MAX_GRADE = 0.55;
 
 /** The ground's gradient at (x, z): the height change per metre from central differences over ±1 m. */
 export function groundGrade(hf: Heightfield, x: number, z: number): number {
@@ -123,12 +124,12 @@ function clearOfArea(area: RoadArea, x: number, z: number, margin: number): bool
 }
 
 /** Whether a plant of radius r may stand at (x, z) (roads and street palms aside). */
-export function plantFits(ctx: PlantContext, x: number, z: number, r: number, corridor: boolean): boolean {
+export function plantFits(ctx: PlantContext, x: number, z: number, r: number, corridor: boolean, maxGrade = PLANT_MAX_GRADE): boolean {
     if (!pointInPolygon(ctx.boundary, x, z)) return false;
     if (heightAt(ctx.hf, x, z) < ctx.hf.spec.waterLevel + PLANT_MIN_HEIGHT) return false;
     const surface = surfaceAt(ctx.hf, x, z);
     if (surface === SURFACE.water || surface === SURFACE.wetSand || surface === SURFACE.ice) return false;
-    if (groundGrade(ctx.hf, x, z) > PLANT_MAX_GRADE) return false;
+    if (groundGrade(ctx.hf, x, z) > maxGrade) return false;
     if (corridor && insideCorridor(ctx.net, x, z, PLANT_CORRIDOR_MARGIN + r)) return false;
     for (const area of ctx.areas) if (!clearOfArea(area, x, z, PLANT_AREA_MARGIN + r)) return false;
     if (ctx.buildings.contains(x, z, PLANT_BUILDING_MARGIN + r)) return false;
@@ -198,6 +199,7 @@ function talusRocks(ctx: PlantContext, out: Plant[]): void {
             const z = toMillimetre(spec.originZ + (j + 0.1 + 0.8 * hashUnit(hashMix(h, 2))) * TALUS_CELL);
             const ground = heightAt(ctx.hf, x, z);
             if (ground < spec.waterLevel + TALUS_MIN_HEIGHT) continue;
+            if (surfaceAt(ctx.hf, x, z) === SURFACE.ice) continue;
             if (groundGrade(ctx.hf, x, z) > TALUS_MAX_GRADE || !atRockFoot(ctx.hf, x, z)) continue;
             const kind: PlantKind = hashUnit(hashMix(h, 3)) < 0.4 ? 'boulder' : 'rock';
             const size = toMillimetre(0.6 + 0.6 * hashUnit(hashMix(h, 4)));
@@ -254,7 +256,8 @@ function moleRocks(ctx: PlantContext, out: Plant[]): void {
 export function placePlants(ctx: PlantContext): Plant[] {
     const out: Plant[] = [];
     const alpine = ctx.biome === 'alpine';
-    if (!alpine) streetPalms(ctx, out);
+    const quarry = ctx.biome === 'quarry';
+    if (!alpine && !quarry) streetPalms(ctx, out);
     const spec = ctx.hf.spec;
     const minX = spec.originX, minZ = spec.originZ;
     const extent = (spec.cols - 1) * spec.cellSize;
@@ -269,6 +272,7 @@ export function placePlants(ctx: PlantContext): Plant[] {
                 const z = toMillimetre(minZ + (j + 0.1 + 0.8 * hashUnit(hashMix(h, 2))) * rule.cell);
                 if (zoneAt(ctx.hf, x, z) !== rule.zone) continue;
                 let kind = pick(rule, hashUnit(hashMix(h, 3)));
+                if (quarry && (kind === 'oak' || kind === 'cypress' || kind === 'palm')) continue;
                 if (alpine) {
                     if (kind === 'palm' || (kind === 'oak' && surfaceAt(ctx.hf, x, z) === SURFACE.snow)) {
                         kind = 'cypress';
@@ -277,7 +281,8 @@ export function placePlants(ctx: PlantContext): Plant[] {
                     kind = 'cypress';
                 }
                 const size = toMillimetre(0.8 + 0.45 * hashUnit(hashMix(h, 4)));
-                if (!plantFits(ctx, x, z, PLANT_COLLIDERS[kind].r * size, true)) continue;
+                const maxGrade = kind === 'boulder' || kind === 'rock' ? BOULDER_MAX_GRADE : PLANT_MAX_GRADE;
+                if (!plantFits(ctx, x, z, PLANT_COLLIDERS[kind].r * size, true, maxGrade)) continue;
                 out.push({ kind, x, z, size, seed: hashMix(h, 5) % 100000 });
             }
         }

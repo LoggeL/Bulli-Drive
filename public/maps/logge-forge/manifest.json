@@ -1,8 +1,8 @@
 {
   "mapId": "logge-forge",
   "mapVersion": 1,
-  "bakeVersion": 3,
-  "sourceHash": "db326036a281bbc500c2aae3f2af65c1",
+  "bakeVersion": 4,
+  "sourceHash": "676b84a73ee72903e1987ac9d61cb65a",
   "grid": {
     "cols": 1001,
     "rows": 1001,
@@ -17,27 +17,27 @@
   "files": {
     "terrain": {
       "path": "terrain.bhf",
-      "hash": "6bf40a7334c93ff8",
+      "hash": "ca3fb69fa084e08e",
       "bytes": 3068567,
-      "gzipBytes": 244248,
-      "brotliBytes": 194270,
+      "gzipBytes": 255110,
+      "brotliBytes": 200839,
       "layers": {
-        "heights": 186346,
-        "surface": 7786,
+        "heights": 192235,
+        "surface": 7952,
         "zones": 76
       }
     }
   },
   "stats": {
-    "edges": 51,
-    "nodes": 39,
-    "areas": 2,
-    "roadKm": 14.806,
+    "edges": 50,
+    "nodes": 38,
+    "areas": 6,
+    "roadKm": 14.738,
     "minHeight": -10,
-    "maxHeight": 108.07,
+    "maxHeight": 105.99,
     "conflicts": 0,
     "maxConflictGap": 0.03,
     "infeasibleChains": 0,
-    "maxBakedGrade": 0.128
+    "maxBakedGrade": 0.122
   }
 }

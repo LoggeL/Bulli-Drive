@@ -1,8 +1,8 @@
 {
   "mapId": "stunt-forge",
   "mapVersion": 1,
-  "bakeVersion": 3,
-  "sourceHash": "c9cafc3fdf56b535514b3ae244f79380",
+  "bakeVersion": 4,
+  "sourceHash": "720165977397c03c96c892103ba7843f",
   "grid": {
     "cols": 601,
     "rows": 601,
@@ -17,27 +17,27 @@
   "files": {
     "terrain": {
       "path": "terrain.bhf",
-      "hash": "4b2b1eb1121b0c7a",
+      "hash": "1c777d5a07e45fb1",
       "bytes": 1106167,
-      "gzipBytes": 86412,
-      "brotliBytes": 72050,
+      "gzipBytes": 91409,
+      "brotliBytes": 76054,
       "layers": {
-        "heights": 70390,
-        "surface": 1481,
-        "zones": 62
+        "heights": 74470,
+        "surface": 1489,
+        "zones": 64
       }
     }
   },
   "stats": {
     "edges": 12,
     "nodes": 12,
-    "areas": 1,
-    "roadKm": 4.416,
+    "areas": 2,
+    "roadKm": 4.417,
     "minHeight": -4,
-    "maxHeight": 82.28,
+    "maxHeight": 74.28,
     "conflicts": 0,
     "maxConflictGap": 0.01,
     "infeasibleChains": 0,
-    "maxBakedGrade": 0.099
+    "maxBakedGrade": 0.124
   }
 }

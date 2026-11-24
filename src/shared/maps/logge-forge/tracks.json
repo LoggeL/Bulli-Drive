@@ -33,24 +33,7 @@
       },
       "gateSpacing": 260,
       "minCornerSpeed": 26,
-      "chevronCurvature": 0.025,
-      "ramps": [
-        {
-          "edge": "ring-ne1",
-          "s": 160,
-          "length": 14,
-          "height": 1.6,
-          "look": "steel"
-        },
-        {
-          "edge": "ring-se4",
-          "s": 160,
-          "length": 14,
-          "height": 1.6,
-          "look": "steel"
-        }
-      ],
-      "minJumps": 2
+      "chevronCurvature": 0.025
     },
     {
       "id": "arcade-dash",

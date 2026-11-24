@@ -16,7 +16,8 @@
       "kind": "lookout",
       "name": "North Canyon Gap",
       "x": 0,
-      "z": -455
+      "z": -455,
+      "area": "canyon-lookout-pad"
     },
     {
       "id": "east-crane",
@@ -265,12 +266,12 @@
         "yaw": 1.5708
       },
       {
-        "x": 0,
+        "x": -28,
         "z": -38,
         "yaw": 1.5708
       },
       {
-        "x": 0,
+        "x": 28,
         "z": 38,
         "yaw": 1.5708
       },
@@ -297,16 +298,16 @@
     ],
     "ramps": [
       {
-        "x": 0,
-        "z": -14,
+        "x": -18,
+        "z": -20,
         "yaw": 1.5708,
         "width": 6,
         "length": 10,
         "height": 1.6
       },
       {
-        "x": 0,
-        "z": 14,
+        "x": 18,
+        "z": 20,
         "yaw": -1.5708,
         "width": 6,
         "length": 10,
@@ -553,7 +554,7 @@
       "id": "canyon-gap-return",
       "x": 160,
       "z": -420,
-      "yaw": -1.5708,
+      "yaw": 1.5708,
       "width": 10,
       "length": 14,
       "height": 2.2,

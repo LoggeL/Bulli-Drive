@@ -75,10 +75,25 @@ export const LOT_RULES: Readonly<Partial<Record<number, LotRule>>> = {
 
 // A lot keeps this far from every road's corridor (m)
 export const LOT_CORRIDOR_MARGIN = 0.25;
-// Largest height difference of the ground under a lot (11.2) and the
+// Largest height difference of the ground under a lot (11.2), maximum
+// allowable downhill drop below foundation skirt (margin 0.15 m), maximum
+// uphill burial above origin (0.50 m so doors/windows never sink), and
 // lowest ground above the water level
-export const LOT_MAX_RELIEF = 2.5;
+export const LOT_MAX_RELIEF = 1.4;
+export const LOT_FOUNDATION_MARGIN = 0.15;
+export const LOT_MAX_BURIAL = 0.5;
 export const LOT_MIN_ABOVE_WATER = 0.5;
+
+/** Below-ground foundation skirt depth (m) of a kit building or landmark piece. */
+export function pieceFoundation(piece: KitPieceId): number {
+    if (piece.startsWith('beach_')) return 0.9;
+    if (piece.startsWith('downtown_') || piece.startsWith('revival_')) return 1.2;
+    if (piece.startsWith('spanish_') || piece.startsWith('industrial_')) return 1.0;
+    if (piece === 'landmark_lighthouse' || piece === 'landmark_diner') return 0.6;
+    if (piece === 'landmark_water_tower' || piece === 'landmark_gas_station') return 0.4;
+    if (piece === 'landmark_quay_crane') return 3.0;
+    return 0.4;
+}
 // After a dropped lot the next try starts this much further along (m)
 export const LOT_RETRY_STEP = 2;
 // The first lot of a row moves back towards the dropped try before it in
@@ -116,16 +131,35 @@ export function hashUnit(h: number): number {
     return h / 4294967296;
 }
 
+export type MapBiome = 'coastal' | 'alpine' | 'quarry' | 'forge';
+
 export interface LotContext {
     net: RoadNetwork;
     hf: Heightfield;
     areas: readonly RoadArea[];
     // Places no lot may overlap (landmarks, jumps and their landings, spawns)
     reserved: readonly OBox[];
+    // Biome hint gates coastal harbor/surf/cannery kit buildings out of alpine & quarry maps
+    biome?: MapBiome;
+}
+
+/** Lot rule for a zone in a given biome (no coastal beach/industrial shacks in alpine or quarry). */
+export function lotRuleForZone(zone: number, biome?: MapBiome): LotRule | undefined {
+    if ((biome === 'alpine' || biome === 'quarry') && (zone === ZONE.beach || zone === ZONE.industrial)) {
+        return undefined;
+    }
+    return LOT_RULES[zone];
 }
 
 /** Whether a lot's footprint may stand where it is (everything but the other lots). */
-export function lotFits(ctx: LotContext, box: OBox, zone: number): boolean {
+export function lotFits(
+    ctx: LotContext,
+    box: OBox,
+    zone: number,
+    piece?: KitPieceId,
+    originX?: number,
+    originZ?: number
+): boolean {
     const samples = boxSamples(box, LOT_SAMPLE_STEP);
     let low = Infinity, high = -Infinity;
     for (const [x, z] of samples) {
@@ -137,6 +171,11 @@ export function lotFits(ctx: LotContext, box: OBox, zone: number): boolean {
         for (const area of ctx.areas) if (pointInPolygon(area.polygon, x, z)) return false;
     }
     if (high - low > LOT_MAX_RELIEF || low < ctx.hf.spec.waterLevel + LOT_MIN_ABOVE_WATER) return false;
+    if (piece !== undefined) {
+        const originH = heightAt(ctx.hf, originX ?? box.x, originZ ?? box.z);
+        if (originH - low > pieceFoundation(piece) - LOT_FOUNDATION_MARGIN) return false;
+        if (high - originH > LOT_MAX_BURIAL) return false;
+    }
     for (const reserved of ctx.reserved) if (boxesOverlap(reserved, box)) return false;
     return true;
 }
@@ -186,7 +225,7 @@ function tryLot(row: SideRow, piece: KitPieceId, s: number, rule: LotRule, zone:
         edge: edge.id, side, index, zone
     };
     const box = placementBox(lot);
-    return lotFits(row.ctx, box, zone) && !row.index.overlaps(box, -LOT_TOUCH) ? lot : null;
+    return lotFits(row.ctx, box, zone, piece, lot.x, lot.z) && !row.index.overlaps(box, -LOT_TOUCH) ? lot : null;
 }
 
 // A row that starts after a dropped try at `before` moves back towards it:
@@ -250,7 +289,7 @@ function sideLots(ctx: LotContext, edge: RoadEdgeData, side: 'left' | 'right', i
     // road ends at a junction (or dead end), as close to it as it fits
     let limit = edge.length;
     const endZone = zoneBehind(row, edge.length - 4);
-    const endRule = LOT_RULES[endZone];
+    const endRule = lotRuleForZone(endZone, ctx.biome);
     if (endRule?.corners && rowEnd(ctx.net, edge.to)) {
         const h = hashMix(edgeHash, 0x7fffffff);
         const hashed = endRule.corners[h % endRule.corners.length];
@@ -275,7 +314,7 @@ function sideLots(ctx: LotContext, edge: RoadEdgeData, side: 'left' | 'right', i
         attempt++;
         // The zone behind the road at the lot's start
         const zone = zoneBehind(row, Math.min(edge.length, s + 4));
-        const rule = LOT_RULES[zone];
+        const rule = lotRuleForZone(zone, ctx.biome);
         if (!rule) {
             s += LOT_RETRY_STEP;
             rowStart = dropped = true;

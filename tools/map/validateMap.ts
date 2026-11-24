@@ -14,13 +14,19 @@ import {
 } from '../../src/shared/map/drivability.js';
 import { pointInPolygon, polygonEdgeDistance, segmentDistanceSq, type Vec2 } from '../../src/shared/map/geometry.js';
 import { FLAT_MARGIN, flatHalfWidths } from '../../src/shared/map/corridor.js';
+import { pieceFoundation, placeBuildings } from '../../src/shared/map/buildings.js';
 import { heightAt, meshDeviation, waterDepth, type Heightfield } from '../../src/shared/map/heightfield.js';
-import type { DiscoveriesFile } from '../../src/shared/map/discoverySchema.js';
+import {
+    billboardReservedBox, billboardStandFootprintBox, boostPadReservedBox, classifyMountedBillboards,
+    heroPropFootprintBox, heroPropReservedBoxes, type DiscoveriesFile
+} from '../../src/shared/map/discoverySchema.js';
 import type { MapFile, PoisFile, TracksFile, ZonesFile } from '../../src/shared/map/mapFiles.js';
-import { JUMP_LANDING, JUMP_RUNUP } from '../../src/shared/map/mapData.js';
+import { JUMP_LANDING, JUMP_RUNUP, LANDMARK_PIECES } from '../../src/shared/map/mapData.js';
 import { areaRailLine, areaRailSides, DEFAULT_AREA_RAIL_OFFSET, networkRailColliders } from '../../src/shared/map/rails.js';
+import { MAP_REGISTRY, type MapId } from '../../src/shared/map/registry.js';
 import { WATER_DEPTH } from '../../src/shared/sim/vehicle.js';
 import { AXIS_SNAP, isAxisYaw, routeBends, routeToTrack, snapYaw, type MapTrackDef } from '../../src/shared/map/routeToTrack.js';
+import { boxSamples, placeByCentre, placementBox, yawAxis, type OBox } from '../../src/shared/map/structures.js';
 import type { RampDef } from '../../src/shared/world/colliders.js';
 import { SIM_TUNING_DEFAULTS } from '../../src/shared/sim/constants.js';
 import {
@@ -130,6 +136,21 @@ export const JUMP_CHECK_SPEED = 90;
 // spare (docs/phase-1a-design.md, 27)
 export const JUMP_CLEAR_SPEED = 130;
 export const JUMP_CLEAR_MARGIN = 5;
+// Structure grounding, boost pad alignment, duplicate ramp & sheer cliff limits
+export const LANDMARK_MAX_AIR_GAP = 0.15;
+export const LANDMARK_MAX_BURIAL = 0.5;
+export const HERO_PROP_MAX_AIR_GAP = 0.25;
+export const HERO_PROP_MAX_BURIAL = 0.45;
+export const BILLBOARD_MAX_AIR_GAP = 0.2;
+export const BILLBOARD_MAX_BURIAL = 0.45;
+export const BUILDING_MAX_AIR_GAP = 0.05;
+export const BUILDING_MAX_BURIAL = 0.55;
+export const BOOST_PAD_MAX_ROAD_OFFSET = 1.5;
+export const BOOST_PAD_MAX_YAW_ERR_DEG = 6;
+export const RAMP_MIN_SEPARATION = 15;
+export const MAX_CLIFF_STEP = 8;
+export const MAX_ROCK_CLIFF_STEP = 16;
+export const CLIFF_CORRIDOR_EXEMPT_RADIUS = 16;
 
 function finding(check: string, message: string, at?: { x: number; z: number }, severity: Severity = 'error'): Finding {
     return at ? { check, severity, message, x: round(at.x), z: round(at.z) } : { check, severity, message };
@@ -1177,6 +1198,246 @@ export function checkDiscoveries(
     return findings;
 }
 
+function sampleBoxRange(hf: Heightfield, box: OBox, step: number): { minH: number; maxH: number } {
+    let minH = Infinity, maxH = -Infinity;
+    for (const [x, z] of boxSamples(box, step)) {
+        const h = heightAt(hf, x, z);
+        if (h < minH) minH = h;
+        if (h > maxH) maxH = h;
+    }
+    return { minH, maxH };
+}
+
+function pointOnAnyArea(net: RoadNetwork, x: number, z: number): boolean {
+    return net.areas.some(a => pointInPolygon(a.polygon, x, z));
+}
+
+// Landmarks, heroProps, standalone billboards, and procedural buildings must sit
+// grounded on baked pads/flat lots without floating past foundations or burying doors.
+export function checkStructureGrounding(
+    net: RoadNetwork,
+    hf: Heightfield,
+    map: MapFile,
+    pois: PoisFile,
+    discoveries?: DiscoveriesFile
+): Finding[] {
+    const check = 'grounding';
+    const findings: Finding[] = [];
+
+    // 1. Mesh landmarks
+    for (const mark of pois.landmarks) {
+        const piece = LANDMARK_PIECES[mark.kind];
+        if (!piece) continue;
+        const [ux, uz] = yawAxis(mark.yaw ?? 0);
+        const box = placementBox(placeByCentre(piece, mark.x, mark.z, ux, uz));
+        const originY = heightAt(hf, mark.x, mark.z);
+        const { minH, maxH } = sampleBoxRange(hf, box, 1);
+        const airGap = originY - minH - pieceFoundation(piece);
+        const burial = maxH - originY;
+        if (airGap > LANDMARK_MAX_AIR_GAP) {
+            findings.push(finding(check, `landmark ${mark.id} floats ${airGap.toFixed(2)} m past its foundation (max ${LANDMARK_MAX_AIR_GAP} m)`, mark));
+        }
+        if (burial > LANDMARK_MAX_BURIAL) {
+            findings.push(finding(check, `landmark ${mark.id} is buried ${burial.toFixed(2)} m into terrain (max ${LANDMARK_MAX_BURIAL} m)`, mark));
+        }
+    }
+
+    // 2. Hero props
+    for (const p of discoveries?.heroProps ?? []) {
+        const box = heroPropFootprintBox(p);
+        const { minH, maxH } = sampleBoxRange(hf, box, 1);
+        if (p.model === 'lmf_sailboat_ijsselmeer') {
+            if (maxH > -0.5) {
+                findings.push(finding(check, `heroProp ${p.id} (boat) sits on dry/shallow terrain (maxH ${maxH.toFixed(2)} m, need <= -0.5 m)`, p));
+            }
+            continue;
+        }
+        const originY = heightAt(hf, p.x, p.z);
+        const airGap = originY - minH;
+        const burial = maxH - originY;
+        if (airGap > HERO_PROP_MAX_AIR_GAP) {
+            findings.push(finding(check, `heroProp ${p.id} floats ${airGap.toFixed(2)} m above footprint ground (max ${HERO_PROP_MAX_AIR_GAP} m)`, p));
+        }
+        if (burial > HERO_PROP_MAX_BURIAL) {
+            findings.push(finding(check, `heroProp ${p.id} is buried ${burial.toFixed(2)} m into terrain (max ${HERO_PROP_MAX_BURIAL} m)`, p));
+        }
+    }
+
+    // 3. Standalone roadside/gantry billboards
+    if (discoveries) {
+        const { pairedIds, mountedOnArchIds } = classifyMountedBillboards(discoveries.heroProps, discoveries.billboards);
+        for (const b of discoveries.billboards) {
+            if (b.kind === 'decal' || b.kind === 'wall' || pairedIds.has(b.id) || mountedOnArchIds.has(b.id)) continue;
+            if (roadSurfaceAt(net, b.x, b.z) !== null && !pointOnAnyArea(net, b.x, b.z)) {
+                findings.push(finding(check, `billboard ${b.id} stands on a road carriageway`, b));
+            }
+            const box = billboardStandFootprintBox(b);
+            const originY = heightAt(hf, b.x, b.z);
+            const { minH, maxH } = sampleBoxRange(hf, box, 0.5);
+            const airGap = originY - minH;
+            const burial = maxH - originY;
+            if (airGap > BILLBOARD_MAX_AIR_GAP) {
+                findings.push(finding(check, `billboard ${b.id} floats ${airGap.toFixed(2)} m above footprint ground (max ${BILLBOARD_MAX_AIR_GAP} m)`, b));
+            }
+            if (burial > BILLBOARD_MAX_BURIAL) {
+                findings.push(finding(check, `billboard ${b.id} is buried ${burial.toFixed(2)} m into terrain (max ${BILLBOARD_MAX_BURIAL} m)`, b));
+            }
+        }
+    }
+
+    // 4. Procedural buildings
+    const reserved: OBox[] = [];
+    for (const mark of pois.landmarks) {
+        const piece = LANDMARK_PIECES[mark.kind];
+        if (!piece) continue;
+        const [ux, uz] = yawAxis(mark.yaw ?? 0);
+        reserved.push(placementBox(placeByCentre(piece, mark.x, mark.z, ux, uz)));
+    }
+    for (const p of discoveries?.heroProps ?? []) reserved.push(...heroPropReservedBoxes(p));
+    for (const b of discoveries?.billboards ?? []) reserved.push(billboardReservedBox(b));
+    for (const pad of discoveries?.boostPads ?? []) reserved.push(boostPadReservedBox(pad));
+    const biome = (map.mapId in MAP_REGISTRY) ? MAP_REGISTRY[map.mapId as MapId].atmosphere.biome : undefined;
+    const buildings = placeBuildings({ net, hf, areas: net.areas, reserved, biome });
+    for (const b of buildings) {
+        const originY = heightAt(hf, b.x, b.z);
+        const { minH, maxH } = sampleBoxRange(hf, placementBox(b), 2);
+        const airGap = originY - minH - pieceFoundation(b.piece);
+        const burial = maxH - originY;
+        if (airGap > BUILDING_MAX_AIR_GAP) {
+            findings.push(finding(check, `building ${b.edge}:${b.side}#${b.index} (${b.piece}) floats ${airGap.toFixed(2)} m past its foundation`, b));
+        }
+        if (burial > BUILDING_MAX_BURIAL) {
+            findings.push(finding(check, `building ${b.edge}:${b.side}#${b.index} (${b.piece}) is buried ${burial.toFixed(2)} m into terrain`, b));
+        }
+    }
+
+    return findings;
+}
+
+// Boost pads must align with a road centerline/tangent, lie inside a flat area,
+// or serve as an off-road jump run-up aiming straight into a free-roam ramp.
+export function checkBoostPads(
+    net: RoadNetwork,
+    pois: PoisFile,
+    discoveries?: DiscoveriesFile
+): Finding[] {
+    if (!discoveries) return [];
+    const check = 'boostPads';
+    const findings: Finding[] = [];
+    const jumps = pois.jumps ?? [];
+    for (const pad of discoveries.boostPads) {
+        if (pointOnAnyArea(net, pad.x, pad.z)) continue;
+        const hit = nearestRoad(net, pad.x, pad.z, 25);
+        const fx = Math.sin(pad.yaw), fz = Math.cos(pad.yaw);
+        if (!hit) {
+            // Off-road pad: allowed only when aligned as a run-up straight into a map jump ramp
+            const alignedJump = jumps.some(j => {
+                const dx = j.x - pad.x, dz = j.z - pad.z;
+                const ahead = dx * fx + dz * fz;
+                const side = Math.abs(dx * fz - dz * fx);
+                const jfx = Math.sin(j.yaw), jfz = Math.cos(j.yaw);
+                const dot = Math.abs(fx * jfx + fz * jfz);
+                return ahead > 5 && ahead <= 50 && side <= 3 && dot >= Math.cos(5 * Math.PI / 180);
+            });
+            if (!alignedJump) {
+                findings.push(finding(check, `boostPad ${pad.id} is off-road without an aligned jump ramp ahead`, pad));
+            }
+            continue;
+        }
+        const onRoad = roadSurfaceAt(net, pad.x, pad.z) !== null;
+        const dot = Math.min(1, Math.abs(hit.tx * fx + hit.tz * fz));
+        const yawErrDeg = Math.acos(dot) * 180 / Math.PI;
+        if (!onRoad || hit.distance > BOOST_PAD_MAX_ROAD_OFFSET) {
+            findings.push(finding(check, `boostPad ${pad.id} is ${hit.distance.toFixed(2)} m off ${hit.edge.id} centerline (max ${BOOST_PAD_MAX_ROAD_OFFSET} m)`, pad));
+        } else if (yawErrDeg > BOOST_PAD_MAX_YAW_ERR_DEG) {
+            findings.push(finding(check, `boostPad ${pad.id} is skewed ${yawErrDeg.toFixed(1)}° from ${hit.edge.id} tangent (max ${BOOST_PAD_MAX_YAW_ERR_DEG}°)`, pad));
+        }
+    }
+    return findings;
+}
+
+// No two map ramps, and no track ramp against any map ramp (or another ramp on
+// the same track), may overlap or sit closer than RAMP_MIN_SEPARATION.
+export function checkDuplicateRamps(
+    net: RoadNetwork,
+    pois: PoisFile,
+    routes: readonly ResolvedRoute[]
+): Finding[] {
+    const check = 'ramps';
+    const findings: Finding[] = [];
+    const mapRamps: { label: string; x: number; z: number }[] = [
+        ...(pois.jumps ?? []).map(j => ({ label: `jump ${j.id}`, x: j.x, z: j.z })),
+        ...pois.arena.ramps.map((r, i) => ({ label: `arena ramp ${i + 1}`, x: r.x, z: r.z }))
+    ];
+    for (let i = 0; i < mapRamps.length; i++) {
+        for (let j = i + 1; j < mapRamps.length; j++) {
+            const d = Math.hypot(mapRamps[i].x - mapRamps[j].x, mapRamps[i].z - mapRamps[j].z);
+            if (d < RAMP_MIN_SEPARATION) {
+                findings.push(finding(check, `${mapRamps[i].label} overlaps ${mapRamps[j].label} (${d.toFixed(1)} m apart, need >= ${RAMP_MIN_SEPARATION} m)`, mapRamps[i]));
+            }
+        }
+    }
+    for (const route of routes) {
+        const built = routeToTrack(net, route, 0);
+        for (let i = 0; i < built.ramps.length; i++) {
+            const tr = built.ramps[i];
+            const label = `track ${route.track.id} ramp #${i + 1}`;
+            for (const mr of mapRamps) {
+                const d = Math.hypot(tr.x - mr.x, tr.z - mr.z);
+                if (d < RAMP_MIN_SEPARATION) {
+                    findings.push(finding(check, `${label} duplicates ${mr.label} (${d.toFixed(1)} m apart, need >= ${RAMP_MIN_SEPARATION} m)`, tr));
+                }
+            }
+            for (let j = i + 1; j < built.ramps.length; j++) {
+                const other = built.ramps[j];
+                const d = Math.hypot(tr.x - other.x, tr.z - other.z);
+                if (d < RAMP_MIN_SEPARATION) {
+                    findings.push(finding(check, `${label} overlaps ramp #${j + 1} (${d.toFixed(1)} m apart)`, tr));
+                }
+            }
+        }
+    }
+    return findings;
+}
+
+// Catch sheer 1-cell cliff steps (> MAX_CLIFF_STEP) caused by baker noFill shears
+// or corridor bugs: forbidden on all non-rock cells outside walled areas, and on
+// any cell (including rock) within CLIFF_CORRIDOR_EXEMPT_RADIUS of roads or unwalled areas.
+export function checkSheerCliffs(net: RoadNetwork, hf: Heightfield): Finding[] {
+    const check = 'terrain';
+    const { cols, rows, cellSize, originX, originZ, heightOffset, heightScale } = hf.spec;
+    const h = (i: number, j: number) => heightOffset + hf.q[j * cols + i] * heightScale;
+    const walledAreas = net.areas.filter(a => a.walls);
+    const openAreas = net.areas.filter(a => !a.walls);
+    const nearWalled = (x: number, z: number) => walledAreas.some(
+        a => pointInPolygon(a.polygon, x, z) || polygonEdgeDistance(a.polygon, x, z) <= cellSize * 2
+    );
+    const nearCorridor = (x: number, z: number) =>
+        nearestRoad(net, x, z, CLIFF_CORRIDOR_EXEMPT_RADIUS) !== null
+        || openAreas.some(a => pointInPolygon(a.polygon, x, z) || polygonEdgeDistance(a.polygon, x, z) <= CLIFF_CORRIDOR_EXEMPT_RADIUS);
+
+    let worst = 0, worstX = 0, worstZ = 0, count = 0;
+    for (let j = 0; j < rows - 1; j++) {
+        const z = originZ + j * cellSize;
+        for (let i = 0; i < cols - 1; i++) {
+            const k = j * cols + i;
+            const s0 = hf.surface[k], sx = hf.surface[k + 1], sz = hf.surface[k + cols];
+            if (s0 === SURFACE.wood || sx === SURFACE.wood || sz === SURFACE.wood) continue;
+            const step = Math.max(Math.abs(h(i + 1, j) - h(i, j)), Math.abs(h(i, j + 1) - h(i, j)));
+            if (step <= MAX_CLIFF_STEP) continue;
+            const x = originX + i * cellSize;
+            if (nearWalled(x, z)) continue;
+            const isNaturalRock = s0 === SURFACE.rock || sx === SURFACE.rock || sz === SURFACE.rock;
+            if (isNaturalRock && step <= MAX_ROCK_CLIFF_STEP && !nearCorridor(x, z)) continue;
+            count++;
+            if (step > worst) { worst = step; worstX = x; worstZ = z; }
+        }
+    }
+    return count > 0
+        ? [finding(check, `${count} terrain cells have sheer 1-cell cliff steps > ${MAX_CLIFF_STEP} m (worst ${worst.toFixed(2)} m)`, { x: worstX, z: worstZ })]
+        : [];
+}
+
 export function validateMap(bundle: MapBundle): ValidationResult {
     const { net, hf } = bundle;
     const findings: Finding[] = [
@@ -1189,8 +1450,11 @@ export function validateMap(bundle: MapBundle): ValidationResult {
         ...checkBoundary(net, bundle.map),
         ...checkPois(net, hf, bundle.map, bundle.pois),
         ...checkDiscoveries(bundle.discoveries, hf, bundle.map, bundle.pois),
+        ...checkStructureGrounding(net, hf, bundle.map, bundle.pois, bundle.discoveries),
+        ...checkBoostPads(net, bundle.pois, bundle.discoveries),
         ...checkZones(bundle.zones, hf),
-        ...checkTerrainMesh(hf)
+        ...checkTerrainMesh(hf),
+        ...checkSheerCliffs(net, hf)
     ];
     const tracks: TrackStats[] = [];
     const routes: ResolvedRoute[] = [];
@@ -1200,6 +1464,7 @@ export function validateMap(bundle: MapBundle): ValidationResult {
         if (result.stats) tracks.push(result.stats);
         if (result.route) routes.push(result.route);
     }
+    findings.push(...checkDuplicateRamps(net, bundle.pois, routes));
     const bySurface: Record<string, number> = {};
     let km = 0, pavedKm = 0;
     for (const edge of net.edges) {

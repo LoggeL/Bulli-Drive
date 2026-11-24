@@ -13,22 +13,28 @@ import {
     DEFAULT_MAX_GRADE, FLAT_MARGIN, flatHalfWidths, longitudinalProfile, MIN_VERTICAL_RADIUS, movingAverage,
     PROFILE_SMOOTH_WINDOW, TerrainShaper, type ConflictReport, type CorridorLine, type ProfilePin
 } from '../../src/shared/map/corridor.js';
+import {
+    billboardStandFootprintBox, classifyMountedBillboards, heroPropFootprintBox, type DiscoveriesFile
+} from '../../src/shared/map/discoverySchema.js';
 import { pointInPolygon, polygonEdgeDistance } from '../../src/shared/map/geometry.js';
 import {
     encodeHeightfield, quantizeHeight, zoneCols, zoneRows, type GridSpec, type Heightfield
 } from '../../src/shared/map/heightfield.js';
+import { LANDMARK_PIECES } from '../../src/shared/map/mapData.js';
 import {
     buildRoadNetwork, junctionRadius, nearestRoad, roadChains, type RoadChain, type RoadEdgeData, type RoadNetwork
 } from '../../src/shared/map/roadNetwork.js';
-import type { MapFile, ZonesFile } from '../../src/shared/map/mapFiles.js';
+import type { MapFile, PoisFile, ZonesFile } from '../../src/shared/map/mapFiles.js';
 import type { RoadNetworkFile } from '../../src/shared/map/roadSchema.js';
+import { AXIS_SNAP, snapYaw } from '../../src/shared/map/routeToTrack.js';
 import { pointAt } from '../../src/shared/map/spline.js';
+import { boxCorners, placeByCentre, placementBox, yawAxis, type OBox } from '../../src/shared/map/structures.js';
 import { SURFACE, ZONE } from '../../src/shared/map/types.js';
 import { baseSample, regionSurface, smoothstep, type BaseTerrain, type KeepWeight } from './baseTerrain.js';
 
 // Bumped whenever the bake's algorithm changes its output; part of the
 // sourceHash, so a stale terrain.bhf is detected
-export const BAKE_VERSION = 3;
+export const BAKE_VERSION = 4;
 
 // Natural ground below the water line by more than this is sea floor
 const WATER_SURFACE_DEPTH = 0.05;
@@ -44,6 +50,8 @@ export interface BakeInput {
     base: BaseTerrain;
     map: MapFile;
     zones: ZonesFile;
+    pois?: PoisFile;
+    discoveries?: DiscoveriesFile;
     spec: GridSpec;
     sourceHash: Uint8Array;
 }
@@ -365,19 +373,149 @@ export const KEEP_ROAD_NEAR = 3;
 export const KEEP_ROAD_FAR = 6;
 export const KEEP_AREA_NEAR = 6;
 export const KEEP_AREA_FAR = 22;
-// Beside a road the embankments fill even on a cliff face, within this
-// many m of its flat zone (the road's shoulder rests on the fill)
+// Beside a road or connected area, embankments fill even on a cliff face,
+// tapering smoothly from FILL_ROAD_NEAR to FILL_ROAD_FAR m beyond the flat zone
 export const FILL_ROAD_CLEAR = 8;
-// A point counts as on a cliff's face (no fill) from this weight on
-// (BaseSample.cliff)
+export const FILL_ROAD_NEAR = 2;
+export const FILL_ROAD_FAR = 14;
+// Unconnected decks/overlooks taper fill over this many m beyond FLAT_MARGIN
+// so a cliff face right below the deck keeps its steep natural drop without a 1-cell shear
+export const FILL_UNCONNECTED_AREA_FAR = 4;
+// Cliff face weight ramp: full fill below CLIFF_NO_FILL_LO, zero fill above CLIFF_NO_FILL_HI
 export const CLIFF_NO_FILL = 0.5;
+export const CLIFF_NO_FILL_LO = 0.15;
+export const CLIFF_NO_FILL_HI = 0.6;
+// Flat pad collars and embankment slopes for landmarks, heroProps, billboards, jump ramps
+export const LANDMARK_PAD_MARGIN = 2.5;
+export const HERO_PROP_PAD_MARGIN = 3;
+export const BILLBOARD_PAD_MARGIN = 2.5;
+export const RAMP_APPROACH_PAD = 10;
+export const RAMP_PAD_MARGIN = 3;
+export const PAD_EMBANKMENT_RUN = 1.2;
+export const RAMP_EMBANKMENT_RUN = 1.5;
 
-// Whether (x, z) lies within FILL_ROAD_CLEAR m of a road's flat zone
-function besideRoad(net: RoadNetwork, x: number, z: number): boolean {
-    const hit = nearestRoad(net, x, z, net.maxHalfWidth + 8 + FILL_ROAD_CLEAR);
-    if (!hit) return false;
+// Smooth fill-retention weight (0..1) beside a road's flat zone: 1 near the road, 0 beyond FILL_ROAD_FAR
+function roadFillKeep(net: RoadNetwork, x: number, z: number): number {
+    const hit = nearestRoad(net, x, z, net.maxHalfWidth + 8 + FILL_ROAD_FAR);
+    if (!hit) return 0;
     const flat = flatHalfWidths(hit.edge.profile);
-    return hit.distance <= Math.max(flat.left, flat.right) + FILL_ROAD_CLEAR;
+    const beyond = hit.distance - Math.max(flat.left, flat.right);
+    if (beyond <= FILL_ROAD_NEAR) return 1;
+    if (beyond >= FILL_ROAD_FAR) return 0;
+    return 1 - smoothstep((beyond - FILL_ROAD_NEAR) / (FILL_ROAD_FAR - FILL_ROAD_NEAR));
+}
+
+// Smooth fill-retention weight (0..1) beside an unwalled area's flat zone
+function areaFillKeep(net: RoadNetwork, x: number, z: number): number {
+    let keep = 0;
+    for (const area of net.areas) {
+        if (area.walls) continue;
+        const edgeDist = pointInPolygon(area.polygon, x, z) ? 0 : polygonEdgeDistance(area.polygon, x, z);
+        const beyond = edgeDist - FLAT_MARGIN;
+        if (beyond <= 0) return 1;
+        if (area.connects.length > 0) {
+            if (beyond < FILL_ROAD_FAR) {
+                const w = beyond <= FILL_ROAD_NEAR ? 1 : 1 - smoothstep((beyond - FILL_ROAD_NEAR) / (FILL_ROAD_FAR - FILL_ROAD_NEAR));
+                if (w > keep) keep = w;
+            }
+        } else if (beyond < FILL_UNCONNECTED_AREA_FAR) {
+            const w = 1 - smoothstep(beyond / FILL_UNCONNECTED_AREA_FAR);
+            if (w > keep) keep = w;
+        }
+    }
+    return keep;
+}
+
+// Whether all four corners of a box already sit inside an existing flat road area
+function boxInsideAnyArea(net: RoadNetwork, box: OBox): boolean {
+    const corners = boxCorners(box, 0);
+    for (const area of net.areas) {
+        if (corners.every(([cx, cz]) => pointInPolygon(area.polygon, cx, cz))) return true;
+    }
+    return false;
+}
+
+// Whether the center of a box sits on a walled area (pier, quay) where pads must not spill into sea
+function onWalledArea(net: RoadNetwork, x: number, z: number): boolean {
+    for (const area of net.areas) {
+        if (area.walls && pointInPolygon(area.polygon, x, z)) return true;
+    }
+    return false;
+}
+
+function bakeStructurePads(
+    shaper: TerrainShaper,
+    net: RoadNetwork,
+    pois: PoisFile | undefined,
+    discoveries: DiscoveriesFile | undefined
+): void {
+    // 1. Mesh landmarks (harbor-light, old-barn, cannery, water-tower, etc.)
+    for (const landmark of pois?.landmarks ?? []) {
+        const piece = LANDMARK_PIECES[landmark.kind];
+        if (!piece) continue;
+        if (landmark.area) {
+            const area = net.areas.find(a => a.id === landmark.area);
+            if (area) continue;
+        }
+        if (onWalledArea(net, landmark.x, landmark.z)) continue;
+        const [ux, uz] = yawAxis(landmark.yaw ?? 0);
+        const box = placementBox(placeByCentre(piece, landmark.x, landmark.z, ux, uz));
+        if (boxInsideAnyArea(net, box)) continue;
+        const targetY = shaper.padTargetY(box, LANDMARK_PAD_MARGIN, shaper.sampleShaped(landmark.x, landmark.z));
+        shaper.addPad(box, targetY, LANDMARK_PAD_MARGIN, PAD_EMBANKMENT_RUN, true);
+    }
+
+    // 2. Non-boat heroProps (rotated footprint from manifest + flat collar)
+    for (const prop of discoveries?.heroProps ?? []) {
+        if (prop.model === 'lmf_sailboat_ijsselmeer') continue;
+        if (onWalledArea(net, prop.x, prop.z)) continue;
+        const box = heroPropFootprintBox(prop);
+        if (boxInsideAnyArea(net, box)) continue;
+        const targetY = shaper.padTargetY(box, HERO_PROP_PAD_MARGIN, shaper.sampleShaped(prop.x, prop.z));
+        shaper.addPad(box, targetY, HERO_PROP_PAD_MARGIN, PAD_EMBANKMENT_RUN, true);
+    }
+
+    // 3. Standalone roadside/gantry billboards (skip paired, arch-mounted, wall signs)
+    //    and off-road ground decals so painted grids sit flat without terrain poke
+    if (discoveries) {
+        const { pairedIds, mountedOnArchIds } = classifyMountedBillboards(discoveries.heroProps, discoveries.billboards);
+        for (const b of discoveries.billboards) {
+            if (b.kind === 'wall' || pairedIds.has(b.id) || mountedOnArchIds.has(b.id)) continue;
+            if (onWalledArea(net, b.x, b.z)) continue;
+            if (b.kind === 'decal') {
+                const [ux, uz] = yawAxis(b.yaw);
+                const box: OBox = { x: b.x, z: b.z, hw: b.width / 2, hd: b.height / 2, ux, uz };
+                if (boxInsideAnyArea(net, box)) continue;
+                const targetY = shaper.padTargetY(box, 2, shaper.sampleShaped(b.x, b.z));
+                shaper.addPad(box, targetY, 2, RAMP_EMBANKMENT_RUN, true);
+                continue;
+            }
+            const box = billboardStandFootprintBox(b);
+            if (boxInsideAnyArea(net, box)) continue;
+            const targetY = shaper.padTargetY(box, BILLBOARD_PAD_MARGIN, shaper.sampleShaped(b.x, b.z));
+            shaper.addPad(box, targetY, BILLBOARD_PAD_MARGIN, PAD_EMBANKMENT_RUN, true);
+        }
+    }
+
+    // 4. Free-roam jump ramps (+ 10 m flat approach behind rear edge)
+    for (const jump of pois?.jumps ?? []) {
+        if (onWalledArea(net, jump.x, jump.z)) continue;
+        const yaw = snapYaw(jump.yaw, AXIS_SNAP);
+        const [ux, uz] = yawAxis(yaw);
+        const shift = RAMP_APPROACH_PAD / 2;
+        const box: OBox = {
+            x: jump.x - ux * shift,
+            z: jump.z - uz * shift,
+            hw: jump.width / 2,
+            hd: jump.length / 2 + shift,
+            ux, uz
+        };
+        if (boxInsideAnyArea(net, box)) continue;
+        // On a road, yieldToExisting preserves the road's own flat zone without conflicts;
+        // off-road, the entire ramp + 10 m approach flattens cleanly to ramp center height
+        const targetY = shaper.padTargetY(box, RAMP_PAD_MARGIN, shaper.sampleShaped(jump.x, jump.z));
+        shaper.addPad(box, targetY, RAMP_PAD_MARGIN, RAMP_EMBANKMENT_RUN, true);
+    }
 }
 
 export function terrainKeep(net: RoadNetwork): KeepWeight {
@@ -408,15 +546,22 @@ export function bakeTerrain(input: BakeInput): BakeResult {
     const n = spec.cols * spec.rows;
     const natural = new Float64Array(n);
     const coast = new Float64Array(n);
-    // The cliffs' faces and the sea at their foot: no embankment fill
-    const noFill = new Uint8Array(n);
+    // Smooth no-fill weights (0..1) on cliff faces and the sea at their foot,
+    // exempted smoothly beside roads and areas so cliff vistas never produce 1-cell shears
+    const noFill = new Float64Array(n);
     for (let j = 0; j < spec.rows; j++) {
         const z = spec.originZ + j * spec.cellSize;
         for (let i = 0; i < spec.cols; i++) {
-            const sample = baseSample(base, spec.originX + i * spec.cellSize, z, keep);
-            natural[j * spec.cols + i] = sample.height;
-            coast[j * spec.cols + i] = sample.coast;
-            if (sample.cliff > CLIFF_NO_FILL && !besideRoad(net, spec.originX + i * spec.cellSize, z)) noFill[j * spec.cols + i] = 1;
+            const x = spec.originX + i * spec.cellSize;
+            const sample = baseSample(base, x, z, keep);
+            const k = j * spec.cols + i;
+            natural[k] = sample.height;
+            coast[k] = sample.coast;
+            if (sample.cliff > CLIFF_NO_FILL_LO) {
+                const cliffW = smoothstep((sample.cliff - CLIFF_NO_FILL_LO) / (CLIFF_NO_FILL_HI - CLIFF_NO_FILL_LO));
+                const keepFill = Math.max(roadFillKeep(net, x, z), areaFillKeep(net, x, z));
+                noFill[k] = cliffW * (1 - keepFill);
+            }
         }
     }
     lap('natural');
@@ -427,13 +572,16 @@ export function bakeTerrain(input: BakeInput): BakeResult {
     const { heights: edgeHeights, chains, reports } = roadProfiles(net, spec, natural, areaHeights);
     lap('profiles');
 
-    // 3. Corridors and areas
+    // 3. Corridors, areas, and flat pads under landmarks, heroProps, billboards & ramps
     const shaper = new TerrainShaper(spec, natural);
     for (const chain of chains) shaper.addLine(corridorLine(net, chain, edgeHeights));
     net.areas.forEach((area, i) => shaper.addArea({
         polygon: area.polygon, y: areaHeights[i], margin: FLAT_MARGIN,
         walls: area.walls ?? false, surface: SURFACE[area.surface]
     }));
+    if (input.pois || input.discoveries) {
+        bakeStructurePads(shaper, net, input.pois, input.discoveries);
+    }
     const { heights, conflicts, conflictMask } = shaper.finish(noFill);
     lap('corridors');
 

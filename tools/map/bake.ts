@@ -28,11 +28,15 @@ export { bakeSources, sourceHash, type MapSources } from './bakeSources.js';
 
 export function readSources(mapId: string): MapSources {
     const dir = path.join(ROOT, 'src/shared/maps', mapId);
+    const poisPath = path.join(dir, 'pois.json');
+    const discoveriesPath = path.join(dir, 'discoveries.json');
     return {
         roads: readFileSync(path.join(dir, 'roads.json')),
         map: readFileSync(path.join(dir, 'map.json')),
         zones: readFileSync(path.join(dir, 'zones.json')),
-        base: readFileSync(path.join(dir, 'base.json'))
+        base: readFileSync(path.join(dir, 'base.json')),
+        ...(existsSync(poisPath) ? { pois: readFileSync(poisPath) } : {}),
+        ...(existsSync(discoveriesPath) ? { discoveries: readFileSync(discoveriesPath) } : {})
     };
 }
 

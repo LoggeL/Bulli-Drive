@@ -263,7 +263,20 @@
       "x": 210,
       "z": -310,
       "y": 140,
-      "kind": "joint"
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "yield",
+        "crosswalks": false,
+        "radius": 18
+      }
+    },
+    {
+      "id": "chalet-mid-gate",
+      "x": 324,
+      "z": -292,
+      "y": 138,
+      "kind": "end"
     },
     {
       "id": "t-6w",
@@ -329,14 +342,14 @@
       "id": "piste-mid",
       "x": -585,
       "z": -100,
-      "y": 84,
+      "y": 80,
       "kind": "joint"
     },
     {
       "id": "piste-low",
-      "x": -575,
+      "x": -545,
       "z": 180,
-      "y": 38,
+      "y": 30,
       "kind": "joint"
     },
     {
@@ -1119,13 +1132,37 @@
         "type": "catmullRom",
         "points": [
           [
-            -555,
-            260
+            -530,
+            235
+          ],
+          [
+            -530,
+            290
           ]
         ]
       },
       "profile": "ski-piste",
       "maxGrade": 0.2,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "chalet-mid-spur",
+      "name": "Hütten-Aussicht",
+      "from": "t-5e",
+      "to": "chalet-mid-gate",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            258,
+            -276
+          ]
+        ]
+      },
+      "profile": "touge",
+      "maxGrade": 0.11,
       "tags": [
         "noRail"
       ]
@@ -1414,6 +1451,94 @@
       "connects": [
         "summit-lot-gate"
       ],
+      "rails": [
+        {
+          "from": 0,
+          "to": 1,
+          "kind": "wood"
+        },
+        {
+          "from": 2,
+          "to": 3,
+          "kind": "wood"
+        },
+        {
+          "from": 3,
+          "to": 0,
+          "kind": "wood"
+        }
+      ],
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "mid-chalet-pad",
+      "polygon": [
+        [
+          324,
+          -316
+        ],
+        [
+          324,
+          -272
+        ],
+        [
+          378,
+          -272
+        ],
+        [
+          378,
+          -316
+        ]
+      ],
+      "y": 138,
+      "surface": "asphalt",
+      "curb": false,
+      "connects": [
+        "chalet-mid-gate"
+      ],
+      "rails": [
+        {
+          "from": 1,
+          "to": 2,
+          "kind": "wood"
+        },
+        {
+          "from": 2,
+          "to": 3,
+          "kind": "wood"
+        }
+      ],
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "ramsen-plaza",
+      "polygon": [
+        [
+          -324,
+          355
+        ],
+        [
+          -324,
+          408
+        ],
+        [
+          -276,
+          408
+        ],
+        [
+          -276,
+          355
+        ]
+      ],
+      "y": 12,
+      "surface": "concrete",
+      "curb": true,
+      "markings": "plazaPavers",
+      "connects": [],
       "tags": [
         "noRail"
       ]

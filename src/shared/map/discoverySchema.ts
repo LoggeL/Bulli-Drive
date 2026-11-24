@@ -38,6 +38,111 @@ export const HERO_PROP_MODELS = [
 ] as const;
 export type HeroPropModelId = typeof HERO_PROP_MODELS[number];
 
+/** Horizontal XZ footprints of all 24 hero-prop GLBs (matches public/models/props/manifest.json). */
+export const HERO_PROP_FOOTPRINTS: Readonly<Record<HeroPropModelId, { minX: number; maxX: number; minZ: number; maxZ: number }>> = {
+    lmf_alpine_chalet: { minX: -7.414, maxX: 7.414, minZ: -5.9, maxZ: 6.6 },
+    lmf_arcanum_tower: { minX: -4.574, maxX: 4.574, minZ: -4.558, maxZ: 4.809 },
+    lmf_codex_monolith: { minX: -3.3, maxX: 7.325, minZ: -1.9, maxZ: 1.907 },
+    lmf_festival_stage: { minX: -10.375, maxX: 10.375, minZ: -5.1, maxZ: 6.14 },
+    lmf_forge_arch: { minX: -10.913, maxX: 10.913, minZ: -2.2, maxZ: 2.2 },
+    lmf_jet_loop_reactor: { minX: -4.1, maxX: 4.1, minZ: -4.1, maxZ: 4.1 },
+    lmf_melodai_arch: { minX: -8.25, maxX: 8.25, minZ: -2.405, maxZ: 2.405 },
+    lmf_red_knopf: { minX: -3.479, maxX: 3.479, minZ: -3.3, maxZ: 3.3 },
+    lmf_sailboat_ijsselmeer: { minX: -1.88, maxX: 1.88, minZ: -6.65, maxZ: 6.75 },
+    lmf_selantis_arch: { minX: -8.9, maxX: 8.9, minZ: -2.3, maxZ: 2.764 },
+    lmf_ski_gondola_pylon: { minX: -4.975, maxX: 4.3, minZ: -5.818, maxZ: 5.818 },
+    lmf_theater_facade: { minX: -10.263, maxX: 10.263, minZ: -2.4, maxZ: 4.204 },
+    prop_billboard_gantry: { minX: -8, maxX: 8, minZ: -1, maxZ: 2.081 },
+    prop_embedding_cube: { minX: -3.485, maxX: 3.485, minZ: -3.188, maxZ: 3.188 },
+    prop_fi_toaster_shrine: { minX: -1.7, maxX: 1.969, minZ: -1.1, maxZ: 1.1 },
+    prop_jp_whirlpool_tent: { minX: -4.85, maxX: 4.85, minZ: -3.85, maxZ: 3.85 },
+    prop_kniffel_die: { minX: -2.545, maxX: 2.545, minZ: -2.545, maxZ: 2.545 },
+    prop_nether_portal: { minX: -4.97, maxX: 4.97, minZ: -0.925, maxZ: 0.925 },
+    prop_oilbert_icons: { minX: -3.9, maxX: 3.9, minZ: -1.6, maxZ: 1.6 },
+    prop_roadside_billboard: { minX: -4.45, maxX: 4.45, minZ: -1.433, maxZ: 1.567 },
+    prop_stadtpin_marker: { minX: -3.27, maxX: 3.27, minZ: -3.25, maxZ: 3.25 },
+    prop_sudsblaster: { minX: -1.8, maxX: 1.8, minZ: -1.8, maxZ: 4.416 },
+    prop_vertical_frame_916: { minX: -3.775, maxX: 3.775, minZ: -1.924, maxZ: 1.2 },
+    prop_win98_frame: { minX: -9.01, maxX: 9.01, minZ: -1.7, maxZ: 1.7 }
+};
+
+export const MODELS_WITH_BILLBOARD_FACE: ReadonlySet<HeroPropModelId> = new Set([
+    'prop_roadside_billboard',
+    'prop_billboard_gantry',
+    'prop_win98_frame'
+]);
+
+/** Rotated horizontal footprint box of a HeroPropDef in world coordinates. */
+export function heroPropFootprintBox(prop: HeroPropDef): OBox {
+    const f = HERO_PROP_FOOTPRINTS[prop.model];
+    const scale = prop.scale ?? 1;
+    const [ux, uz] = yawAxis(prop.yaw);
+    const cx = ((f.minX + f.maxX) / 2) * scale;
+    const cz = ((f.minZ + f.maxZ) / 2) * scale;
+    return {
+        x: toMillimetre(prop.x + cx * uz + cz * ux),
+        z: toMillimetre(prop.z - cx * ux + cz * uz),
+        hw: toMillimetre(((f.maxX - f.minX) / 2) * scale),
+        hd: toMillimetre(((f.maxZ - f.minZ) / 2) * scale),
+        ux, uz
+    };
+}
+
+/** Rotated horizontal footprint box of a standalone roadside/gantry billboard stand. */
+export function billboardStandFootprintBox(b: BillboardDef): OBox {
+    const model: HeroPropModelId = b.kind === 'gantry' ? 'prop_billboard_gantry' : 'prop_roadside_billboard';
+    const defaultWidth = b.kind === 'gantry' ? 12 : 8;
+    const scale = Math.max(0.55, Math.min(1.6, b.width / defaultWidth));
+    const f = HERO_PROP_FOOTPRINTS[model];
+    const [ux, uz] = yawAxis(b.yaw);
+    const cx = ((f.minX + f.maxX) / 2) * scale;
+    const cz = ((f.minZ + f.maxZ) / 2) * scale;
+    return {
+        x: toMillimetre(b.x + cx * uz + cz * ux),
+        z: toMillimetre(b.z - cx * ux + cz * uz),
+        hw: toMillimetre(((f.maxX - f.minX) / 2) * scale),
+        hd: toMillimetre(((f.maxZ - f.minZ) / 2) * scale),
+        ux, uz
+    };
+}
+
+/** Returns IDs of billboards paired onto heroProp billboard_face nodes or mounted high on arches. */
+export function classifyMountedBillboards(
+    heroProps: readonly HeroPropDef[],
+    billboards: readonly BillboardDef[]
+): { pairedIds: Set<string>; mountedOnArchIds: Set<string> } {
+    const pairedPropIds = new Set<string>();
+    const pairedIds = new Set<string>();
+    const mountedOnArchIds = new Set<string>();
+    for (const b of billboards) {
+        if (b.kind === 'decal') continue;
+        let matched: HeroPropDef | null = null;
+        let bestDistSq = 16; // 4.0 m squared
+        for (const p of heroProps) {
+            const dx = p.x - b.x, dz = p.z - b.z;
+            const d2 = dx * dx + dz * dz;
+            if (d2 < bestDistSq && MODELS_WITH_BILLBOARD_FACE.has(p.model) && !pairedPropIds.has(p.id)) {
+                bestDistSq = d2;
+                matched = p;
+            }
+        }
+        if (matched) {
+            pairedPropIds.add(matched.id);
+            pairedIds.add(b.id);
+            continue;
+        }
+        if (b.kind === 'gantry' && (b.yOffset ?? 0) > 1.0) {
+            const onMonument = heroProps.some(p => {
+                if (MODELS_WITH_BILLBOARD_FACE.has(p.model)) return false;
+                const dx = p.x - b.x, dz = p.z - b.z;
+                return dx * dx + dz * dz < 9; // 3.0 m squared
+            });
+            if (onMonument) mountedOnArchIds.add(b.id);
+        }
+    }
+    return { pairedIds, mountedOnArchIds };
+}
+
 export const BILLBOARD_TEXTURES = [
     // Signs & Posters (15)
     'sign_lmf_welcome',
@@ -286,13 +391,26 @@ export function heroPropReservedBoxes(prop: HeroPropDef): OBox[] {
     return boxes;
 }
 
+// Extra clear corridor (m) kept in front of a billboard's face so trees never obscure it
+export const BILLBOARD_FRONT_CLEAR = 8;
+
 /** Reserved keep-out box for a roadside/gantry billboard so trees do not block its face. */
 export function billboardReservedBox(b: BillboardDef): OBox {
     const [ux, uz] = yawAxis(b.yaw);
     if (b.kind === 'decal') {
         return { x: toMillimetre(b.x), z: toMillimetre(b.z), hw: toMillimetre(b.width / 2), hd: toMillimetre(b.height / 2), ux, uz };
     }
-    return { x: toMillimetre(b.x), z: toMillimetre(b.z), hw: toMillimetre(b.width / 2 + 1), hd: 2.5, ux, uz };
+    // Back extends 2.5 m behind the sign; front extends 2.5 + BILLBOARD_FRONT_CLEAR m in front (+z)
+    const back = 2.5;
+    const front = 2.5 + BILLBOARD_FRONT_CLEAR;
+    const shift = (front - back) / 2;
+    return {
+        x: toMillimetre(b.x + ux * shift),
+        z: toMillimetre(b.z + uz * shift),
+        hw: toMillimetre(b.width / 2 + 2.5),
+        hd: toMillimetre((front + back) / 2),
+        ux, uz
+    };
 }
 
 /** Reserved keep-out box for a boost pad so trees/buildings do not obstruct approach/exit. */

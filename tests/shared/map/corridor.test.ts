@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-    CONFLICT_TOLERANCE, EMBANKMENT_RUN, flatHalfWidths, limitGrade, longitudinalProfile, movingAverage,
-    pinEnvelope, TerrainShaper, type CorridorLine, type GridGeometry
+    CONFLICT_TOLERANCE, EMBANKMENT_FILLET, EMBANKMENT_RUN, embankmentOffset, flatHalfWidths, limitGrade,
+    longitudinalProfile, movingAverage, pinEnvelope, TerrainShaper, type CorridorLine, type GridGeometry
 } from '../../../src/shared/map/corridor.js';
 import { heightAt, quantizeHeight, type GridSpec } from '../../../src/shared/map/heightfield.js';
 import { SURFACE } from '../../../src/shared/map/types.js';
@@ -331,9 +331,9 @@ describe('TerrainShaper: a level road across a 20 % slope', () => {
     // Ground rises 0.2 m per m towards +z; the road runs along x at z = 0, y = 0
     // Built inside each test, not while collecting them: Stryker only
     // activates a mutant while a test runs
-    const shape = () => {
+    const shape = (fillet = 0) => {
         const natural = plane((_, z) => 0.2 * z);
-        const shaper = new TerrainShaper(GRID, natural);
+        const shaper = new TerrainShaper(GRID, natural, EMBANKMENT_RUN, fillet);
         shaper.addLine(straight(-200, 0, 200, 0, () => 0));
         const { heights, conflicts } = shaper.finish();
         return { natural, heights, conflicts };
@@ -362,8 +362,10 @@ describe('TerrainShaper: a level road across a 20 % slope', () => {
     });
 
     it('never gets steeper than 1 : 1.5 where it shapes the ground', () => {
-        const { natural, heights } = shape();
-        expect(steepestShapedSlope(heights, natural)).toBeLessThanOrEqual(SLOPE + 1e-12);
+        for (const fillet of [0, EMBANKMENT_FILLET]) {
+            const { natural, heights } = shape(fillet);
+            expect(steepestShapedSlope(heights, natural)).toBeLessThanOrEqual(SLOPE + 1e-12);
+        }
     });
 
     it('gives every cell under the road four corners at road height', () => {
@@ -387,7 +389,7 @@ describe('TerrainShaper: no fill on a cliff face', () => {
     const shape = (mark: boolean) => {
         const natural = plane((_, z) => (z < -12 ? 2 * (z + 12) : 0));
         const noFill = Uint8Array.from(plane((_, z) => (z <= -14 ? 1 : 0)));
-        const shaper = new TerrainShaper(GRID, natural);
+        const shaper = new TerrainShaper(GRID, natural, EMBANKMENT_RUN, 0);
         shaper.addLine(straight(-200, 0, 200, 0, () => 0));
         return { natural, ...shaper.finish(mark ? noFill : undefined) };
     };
@@ -465,7 +467,7 @@ describe('TerrainShaper: two corridors', () => {
     it('joins roads far enough apart with slopes, without conflict', () => {
         // Flat zones 22 m apart: room for 14.7 m at 1 : 1.5
         const natural = plane(() => 0);
-        const shaper = new TerrainShaper(GRID, natural);
+        const shaper = new TerrainShaper(GRID, natural, EMBANKMENT_RUN, 0);
         shaper.addLine(straight(-100, 0, 100, 0, () => 0));
         shaper.addLine(straight(-100, 40, 100, 40, () => 10));
         const { heights, conflicts } = shaper.finish();
@@ -483,7 +485,7 @@ describe('TerrainShaper: search radius', () => {
         // allows (z - 9) / 1.5 m: 14 m at z = 30, 34 m at z = 60, and
         // reaches the 40 m first at z = 69.
         const natural = plane((_, z) => (z >= 30 ? 40 : 0));
-        const shaper = new TerrainShaper(GRID, natural);
+        const shaper = new TerrainShaper(GRID, natural, EMBANKMENT_RUN, 0);
         shaper.addLine(straight(-100, 0, 100, 0, () => 0));
         const { heights } = shaper.finish();
         expect(at(heights, 0, 30)).toBeCloseTo(14, 9);
@@ -491,7 +493,7 @@ describe('TerrainShaper: search radius', () => {
         expect(at(heights, 0, 68)).toBeCloseTo(59 / 1.5, 9);
         expect(at(heights, 0, 70)).toBe(40);
         // A lower block needs a shorter reach: the same road, 10 m block
-        const low = new TerrainShaper(GRID, plane((_, z) => (z >= 30 ? 10 : 0)));
+        const low = new TerrainShaper(GRID, plane((_, z) => (z >= 30 ? 10 : 0)), EMBANKMENT_RUN, 0);
         low.addLine(straight(-100, 0, 100, 0, () => 0));
         const lowHeights = low.finish().heights;
         expect(at(lowHeights, 0, 30)).toBe(10);
@@ -501,7 +503,7 @@ describe('TerrainShaper: search radius', () => {
     it('stops at 240 m however high the ground around is', () => {
         // A 300 m wall: the cone would need 9 + 1.5 · 300 = 459 m
         const natural = plane((_, z) => (z >= 20 ? 300 : 0));
-        const shaper = new TerrainShaper(GRID, natural);
+        const shaper = new TerrainShaper(GRID, natural, EMBANKMENT_RUN, 0);
         shaper.addLine(straight(-10, -150, 10, -150, () => 0));
         const { heights } = shaper.finish();
         // 170 m north of the wall's foot (z = 20) is 170 m from the road:
@@ -518,7 +520,7 @@ describe('TerrainShaper: walls, areas and surfaces', () => {
         const n = line.x.length;
         // Road heading east: left is north (-z)
         line.wallLeft = new Array(n).fill(1);
-        const shaper = new TerrainShaper(GRID, natural);
+        const shaper = new TerrainShaper(GRID, natural, EMBANKMENT_RUN, 0);
         shaper.addLine(line);
         const { heights } = shaper.finish();
         expect(at(heights, 0, -8)).toBe(0);    // flat zone
@@ -527,7 +529,7 @@ describe('TerrainShaper: walls, areas and surfaces', () => {
     });
 
     it('holds an area at its height with a flat margin and slopes beyond', () => {
-        const shaper = new TerrainShaper(GRID, plane(() => 0));
+        const shaper = new TerrainShaper(GRID, plane(() => 0), EMBANKMENT_RUN, 0);
         shaper.addArea({ polygon: [[-20, -20], [20, -20], [20, 20], [-20, 20]], y: 5, margin: 4, walls: false, surface: SURFACE.concrete });
         const { heights } = shaper.finish();
         expect(at(heights, 0, 0)).toBe(5);
@@ -723,7 +725,7 @@ describe('TerrainShaper: sides, widths, flags per vertex and the conflict report
             const line = straight(x0, z0, x1, z1, () => 0);
             line.halfLeft = new Array(line.x.length).fill(12);
             line.halfRight = new Array(line.x.length).fill(5);
-            const shaper = new TerrainShaper(GRID, plane(() => 6));
+            const shaper = new TerrainShaper(GRID, plane(() => 6), EMBANKMENT_RUN, 0);
             shaper.addLine(line);
             const { heights } = shaper.finish();
             const h = (p: readonly number[]) => heights[cellOf(p[0], p[1])];
@@ -741,7 +743,7 @@ describe('TerrainShaper: sides, widths, flags per vertex and the conflict report
         const line = straight(-100, 0, 100, 0, () => 0);
         const n = line.x.length;
         line.halfLeft = line.halfRight = Array.from({ length: n }, (_, k) => 9 + 20 * k / (n - 1));
-        const shaper = new TerrainShaper(GRID, plane(() => 6));
+        const shaper = new TerrainShaper(GRID, plane(() => 6), EMBANKMENT_RUN, 0);
         shaper.addLine(line);
         const { heights } = shaper.finish();
         expect(at(heights, 0, 18)).toBe(0);
@@ -761,7 +763,7 @@ describe('TerrainShaper: sides, widths, flags per vertex and the conflict report
             wallLeft: flag(2),
             surface: xs.map(x => (x >= 2 ? SURFACE.asphalt : SURFACE.dirt)), surfaceHalf: new Array(n).fill(6)
         };
-        const shaper = new TerrainShaper(GRID, plane(() => 6));
+        const shaper = new TerrainShaper(GRID, plane(() => 6), EMBANKMENT_RUN, 0);
         shaper.addLine(line);
         const { heights } = shaper.finish();
         // x = 0: vertex -1 (no wall, dirt); x = 2: vertex 2 (wall, asphalt)
@@ -788,7 +790,7 @@ describe('TerrainShaper: sides, widths, flags per vertex and the conflict report
     });
 
     it('shapes an area on every side and leaves the surface of an area without one alone', () => {
-        const shaper = new TerrainShaper(GRID, plane(() => 0));
+        const shaper = new TerrainShaper(GRID, plane(() => 0), EMBANKMENT_RUN, 0);
         shaper.addArea({ polygon: [[-20, -20], [20, -20], [20, 20], [-20, 20]], y: 5, margin: 4, walls: false });
         const { heights } = shaper.finish();
         for (const [x, z] of [[24, 0], [-24, 0], [0, 24], [0, -24]]) expect(at(heights, x, z), `${x} ${z}`).toBe(5);
@@ -810,5 +812,103 @@ describe('TerrainShaper: sides, widths, flags per vertex and the conflict report
         expect(conflicts.worstX).toBeGreaterThanOrEqual(-40);
         expect(conflicts.worstX).toBeLessThanOrEqual(-30);
         expect(Math.abs(conflicts.worstX % 2)).toBe(0);
+    });
+});
+
+describe('TerrainShaper: C1 embankment fillets, continuous noFill & structure pads', () => {
+    it('computes C1 quadratic shoulder offsets matching hand-calculated values', () => {
+        expect(embankmentOffset(0, 1.5, 3)).toBe(0);
+        // d = 1 < fillet 3: d² / (2·3·1.5) = 1/9
+        expect(embankmentOffset(1, 1.5, 3)).toBeCloseTo(1 / 9, 12);
+        // d = 3 == fillet: 3² / 9 = 1 = (3 - 1.5) / 1.5
+        expect(embankmentOffset(3, 1.5, 3)).toBeCloseTo(1, 12);
+        // d = 6 > fillet: (6 - 1.5) / 1.5 = 3
+        expect(embankmentOffset(6, 1.5, 3)).toBeCloseTo(3, 12);
+    });
+
+    it('rounds both shoulder and toe creases with default fillet without creating tight-corridor conflicts', () => {
+        const natural = plane(() => 0);
+        const shaper = new TerrainShaper(GRID, natural);
+        shaper.addArea({ polygon: [[-20, -20], [20, -20], [20, 20], [-20, 20]], y: 6, margin: 4, walls: false });
+        const { heights, conflicts } = shaper.finish();
+        expect(conflicts.count).toBe(0);
+        // Flat across polygon + 4 m margin
+        expect(at(heights, 24, 0)).toBe(6);
+        // 2 m past flat zone (d=2 < fillet=3): shoulder fillet drops 4/(2·3·1.5) = 4/9 m, much gentler than linear 2/1.5 = 1.333 m
+        expect(at(heights, 26, 0)).toBeCloseTo(6 - 4 / 9, 9);
+        // Toe meets y=0 smoothly: at d=10.5 (x=34.5 -> x=34 has loSoft = 6 - 8.5/1.5 = 0.333 < toeRadius=1),
+        // quadratic toe fillet lifts height smoothly above loSoft
+        const toeH = at(heights, 34, 0);
+        expect(toeH).toBeGreaterThan(6 - 8.5 / 1.5 + 0.05);
+        expect(steepestShapedSlope(heights, natural)).toBeLessThanOrEqual(SLOPE + 1e-12);
+
+        // Two tight corridors separated by exactly enough linear run (21 m between flat edges for 14 m drop = 1:1.5)
+        // must relax shoulder fillets cleanly with 0 conflicts
+        const tight = new TerrainShaper(GRID, plane(() => 0));
+        tight.addLine(straight(-100, 0, 100, 0, () => 0));
+        tight.addLine(straight(-100, 39, 100, 39, () => 14));
+        expect(tight.finish().conflicts.count).toBe(0);
+    });
+
+    it('smoothly blends embankment fill with fractional noFill weights while preserving flat zones', () => {
+        // Road at z=0, y=10 over flat natural ground y=0; noFill varies from 0 to 1 across x
+        const natural = plane(() => 0);
+        const shaper = new TerrainShaper(GRID, natural, EMBANKMENT_RUN, 0);
+        shaper.addLine(straight(-100, 0, 100, 0, () => 10));
+        const noFill = new Float64Array(GRID.cols * GRID.rows);
+        for (let j = 0; j < GRID.rows; j++) {
+            for (let i = 0; i < GRID.cols; i++) {
+                const x = GRID.originX + i * 2;
+                noFill[j * GRID.cols + i] = x <= -20 ? 0 : x >= 20 ? 1 : (x + 20) / 40;
+            }
+        }
+        const { heights } = shaper.finish(noFill);
+        // 3 m beyond flat zone (z = 12): raw fill height = 10 - 3/1.5 = 8 m
+        expect(at(heights, -20, 12)).toBeCloseTo(8, 12);     // nf = 0 -> full fill
+        expect(at(heights, -10, 12)).toBeCloseTo(6, 12);     // nf = 0.25 -> 75% fill
+        expect(at(heights, 0, 12)).toBeCloseTo(4, 12);       // nf = 0.50 -> 50% fill
+        expect(at(heights, 10, 12)).toBeCloseTo(2, 12);      // nf = 0.75 -> 25% fill
+        expect(at(heights, 20, 12)).toBeCloseTo(0, 12);      // nf = 1.00 -> natural
+        // Road's own flat zone stays pinned at 10 m even where noFill = 1
+        expect(at(heights, 20, 0)).toBe(10);
+    });
+
+    it('flattens rotated structure pads cleanly and yields to roads via padTargetY without conflict', () => {
+        // 1. Standalone pad on a 30 % hillside: every cell inside rotated pad + collar equals targetY = 0
+        const hill = plane((_, z) => 0.3 * z);
+        const s1 = new TerrainShaper(GRID, hill);
+        const ux = Math.SQRT1_2, uz = Math.SQRT1_2; // 45 deg
+        const pad = { x: 0, z: 0, hw: 4, hd: 3, ux, uz };
+        s1.addPad(pad, 0, 2, 1.5, false);
+        const r1 = s1.finish();
+        expect(r1.conflicts.count).toBe(0);
+        for (let z = -6; z <= 6; z += 2) {
+            for (let x = -6; x <= 6; x += 2) {
+                const lx = Math.abs(x * uz - z * ux);
+                const lz = Math.abs(x * ux + z * uz);
+                if (lx <= 6 && lz <= 5) expect(at(r1.heights, x, z), `(${x},${z})`).toBeCloseTo(0, 9);
+            }
+        }
+
+        // 2. Pad sitting on a road's 1:1.5 fill embankment: padTargetY raises targetY to maxLo over footprint
+        // so the entire pad flattens to a single level with 0 burial, 0 gap, 0 conflicts, and untouched road
+        const flat = plane(() => 0);
+        const s2 = new TerrainShaper(GRID, flat);
+        s2.addLine(straight(-100, 0, 100, 0, () => 40)); // flat zone z in [-9, 9], fill cone reaches z = 69
+        const offRoadPad = { x: 0, z: 40, hw: 4, hd: 4, ux: 0, uz: 1 };
+        const targetY = s2.padTargetY(offRoadPad, 2, s2.sampleShaped(0, 40));
+        // Uphill edge of pad+collar is at z = 34 (d = 25 m beyond road flat edge z=9): lo = 40 - 25/1.5 = 23.333 m
+        expect(targetY).toBeCloseTo(40 - 25 / 1.5, 9);
+        s2.addPad(offRoadPad, targetY, 2, 1.2, true);
+        const r2 = s2.finish();
+        expect(r2.conflicts.count).toBe(0);
+        // Road flat zone completely untouched at 40 m
+        for (const z of [-8, 0, 8]) expect(at(r2.heights, 0, z)).toBe(40);
+        // Entire pad + collar dead flat at targetY (0 gap, 0 burial)
+        for (let z = 34; z <= 46; z += 2) {
+            for (let x = -6; x <= 6; x += 2) {
+                expect(at(r2.heights, x, z), `pad (${x},${z})`).toBeCloseTo(targetY, 9);
+            }
+        }
     });
 });
