@@ -20,9 +20,9 @@ import { worldTexture } from './textures.js';
 
 // Far away the terrain rings are coarser than the ground under a road; the
 // road rises a little with the distance so the ground never pokes through
-// (m per m beyond LIFT_FROM)
-const DISTANCE_LIFT = 0.0025;
-const LIFT_FROM = 40;
+// (m per m beyond ROAD_LIFT_FROM)
+export const ROAD_DISTANCE_LIFT = 0.0025;
+export const ROAD_LIFT_FROM = 40;
 
 // World-space texture coordinates of the tiling maps (uRoadTexScale: repeats
 // per metre, a uniform so the layers can share their shader program)
@@ -34,7 +34,7 @@ function worldUvVertex(): string {
 	vRoadB = roadB;
 	{
 		vec3 roadW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
-		transformed.y += max( 0.0, length( roadW - cameraPosition ) - ${LIFT_FROM.toFixed(1)} ) * ${DISTANCE_LIFT};
+		transformed.y += max( 0.0, length( roadW - cameraPosition ) - ${ROAD_LIFT_FROM.toFixed(1)} ) * ${ROAD_DISTANCE_LIFT};
 		// Horizontal faces map the ground plane, curb faces run along it
 		vec2 roadTex = abs( objectNormal.y ) > 0.5 ? roadW.xz * ${s} : vec2( roadW.x + roadW.z, roadW.y ) * ${s};
 		#ifdef USE_MAP

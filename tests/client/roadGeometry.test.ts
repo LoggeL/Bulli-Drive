@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { buildRoadNetwork } from '../../src/shared/map/roadNetwork.js';
 import type { RoadArea } from '../../src/shared/map/roadSchema.js';
 import {
-    AREA_LIFT, AREA_WALL_DEPTH, areaFrame, buildRoadGeometry, CENTRE_CODE, cornerCurve, edgeRuns, edgeStations, END_CODE, MAX_STATION_STEP, ROAD_FLAG,
-    groundNormal, ROAD_LIFT, splitByChunk, triangulatePolygon, MeshArrays
+    AREA_LIFT, AREA_MAX_EDGE, AREA_WALL_DEPTH, areaFrame, buildRoadGeometry, CENTRE_CODE, cornerCurve, edgeRuns, edgeStations, END_CODE, MAX_STATION_STEP, ROAD_FLAG,
+    groundNormal, ROAD_LIFT, splitByChunk, subdivideAreaMesh, triangulatePolygon, MeshArrays
 } from '../../src/client/world/roadGeometry.js';
 import { roadBlock } from '../../src/client/world/roads.js';
 import { edge, network, node, PROFILE } from '../shared/map/fixtures.js';
@@ -243,6 +243,49 @@ describe('lots', () => {
             const cross = [e[1] * f[2] - e[2] * f[1], e[2] * f[0] - e[0] * f[2], e[0] * f[1] - e[1] * f[0]];
             expect(cross[0] * mesh.normals[i * 3] + cross[2] * mesh.normals[i * 3 + 2]).toBeGreaterThan(0);
         }
+    });
+
+    it('subdivides giant areas (like the 240x200 m stunt bowl) so every edge stays <= AREA_MAX_EDGE and interior vertices stay local', () => {
+        const bowl: RoadArea = {
+            id: 'stunt-bowl',
+            polygon: [[-120, -100], [120, -100], [120, 100], [-120, 100]],
+            surface: 'concrete',
+            curb: false,
+            markings: 'none',
+            connects: []
+        };
+        const net = buildRoadNetwork(network([node('a', 300, 0), node('b', 340, 0)], [edge('ab', 'a', 'b')], { areas: [bowl] }));
+        const mesh = buildRoadGeometry(net, flat).concrete;
+        const { area, allUp } = triangles(mesh);
+        expect(area).toBeCloseTo(240 * 200, 4);
+        expect(allUp).toBe(true);
+
+        // No triangle edge may exceed AREA_MAX_EDGE (so vertex distance-lift stays local across the bowl)
+        const P = mesh.positions;
+        let maxEdge = 0;
+        for (let t = 0; t < mesh.index.length; t += 3) {
+            const ids = [mesh.index[t], mesh.index[t + 1], mesh.index[t + 2]];
+            for (let k = 0; k < 3; k++) {
+                const u = ids[k], v = ids[(k + 1) % 3];
+                const len = Math.hypot(P[v * 3] - P[u * 3], P[v * 3 + 2] - P[u * 3 + 2]);
+                if (len > maxEdge) maxEdge = len;
+            }
+        }
+        expect(maxEdge).toBeLessThanOrEqual(AREA_MAX_EDGE + 1e-6);
+
+        // Interior vertices exist near the center (0, 0) rather than only on the ±100..±120 perimeter
+        const verts = vertices(mesh);
+        expect(verts.some(v => Math.hypot(v.x, v.z) < 15)).toBe(true);
+
+        // Direct subdivideAreaMesh check preserves area and splits long diagonals
+        const sub = subdivideAreaMesh([[0, 0], [100, 0], [100, 100], [0, 100]], [[0, 1, 2], [0, 2, 3]], 25);
+        expect(sub.points.length).toBeGreaterThan(4);
+        let subArea = 0;
+        for (const [i, j, k] of sub.tris) {
+            subArea += Math.abs((sub.points[j][0] - sub.points[i][0]) * (sub.points[k][1] - sub.points[i][1])
+                - (sub.points[j][1] - sub.points[i][1]) * (sub.points[k][0] - sub.points[i][0])) / 2;
+        }
+        expect(subArea).toBeCloseTo(10000, 6);
     });
 });
 

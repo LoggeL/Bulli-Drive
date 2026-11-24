@@ -391,6 +391,104 @@ export function triangulatePolygon(polygon: readonly Vec2[]): [number, number, n
     return ShapeUtils.triangulateShape(contour, []) as [number, number, number][];
 }
 
+// Maximum interior edge length (m) for subdivided road areas (e.g. giant plazas & stunt bowls)
+// so vertex-shader distance lift stays local instead of lifting interior surfaces over pads/decals
+export const AREA_MAX_EDGE = 20;
+
+/**
+ * Conforming longest-edge bisection of a triangulated polygon so no interior
+ * triangle spans more than `maxEdge` metres (zero T-junctions, preserves exact
+ * outline & area).
+ */
+export function subdivideAreaMesh(
+    outline: readonly Vec2[],
+    triangles: readonly [number, number, number][],
+    maxEdge = AREA_MAX_EDGE
+): { points: Vec2[]; tris: [number, number, number][] } {
+    const points: Vec2[] = outline.map(([x, z]) => [x, z]);
+    let tris: [number, number, number][] = triangles.map(([a, b, c]) => [a, b, c]);
+    const midpoints = new Map<string, number>();
+    const edgeKey = (a: number, b: number) => (a < b ? `${a}:${b}` : `${b}:${a}`);
+    const getMid = (a: number, b: number): number => {
+        const key = edgeKey(a, b);
+        const existing = midpoints.get(key);
+        if (existing !== undefined) return existing;
+        const idx = points.length;
+        points.push([(points[a][0] + points[b][0]) * 0.5, (points[a][1] + points[b][1]) * 0.5]);
+        midpoints.set(key, idx);
+        return idx;
+    };
+    const distSq = (a: number, b: number) => {
+        const dx = points[b][0] - points[a][0];
+        const dz = points[b][1] - points[a][1];
+        return dx * dx + dz * dz;
+    };
+
+    const maxSq = maxEdge * maxEdge;
+    for (let pass = 0; pass < 12; pass++) {
+        let changed = false;
+        const next: [number, number, number][] = [];
+        for (const [a, b, c] of tris) {
+            const lab = distSq(a, b), lbc = distSq(b, c), lca = distSq(c, a);
+            const best = Math.max(lab, lbc, lca);
+            if (best <= maxSq) {
+                next.push([a, b, c]);
+                continue;
+            }
+            changed = true;
+            if (lab >= lbc && lab >= lca) {
+                const m = getMid(a, b);
+                next.push([a, m, c], [m, b, c]);
+            } else if (lbc >= lca) {
+                const m = getMid(b, c);
+                next.push([a, b, m], [a, m, c]);
+            } else {
+                const m = getMid(c, a);
+                next.push([a, b, m], [m, b, c]);
+            }
+        }
+        tris = next;
+        if (!changed) break;
+    }
+
+    // Conformance pass: split any triangle whose shared edge was split by a neighbour
+    for (let pass = 0; pass < 6; pass++) {
+        let fixed = false;
+        const next: [number, number, number][] = [];
+        for (const [a, b, c] of tris) {
+            const mab = midpoints.get(edgeKey(a, b));
+            const mbc = midpoints.get(edgeKey(b, c));
+            const mca = midpoints.get(edgeKey(c, a));
+            const splits = (mab !== undefined ? 1 : 0) + (mbc !== undefined ? 1 : 0) + (mca !== undefined ? 1 : 0);
+            if (splits === 0) {
+                next.push([a, b, c]);
+                continue;
+            }
+            fixed = true;
+            if (splits === 3) {
+                next.push([a, mab!, mca!], [mab!, b, mbc!], [mca!, mbc!, c], [mab!, mbc!, mca!]);
+            } else if (splits === 1) {
+                if (mab !== undefined) next.push([a, mab, c], [mab, b, c]);
+                else if (mbc !== undefined) next.push([a, b, mbc], [a, mbc, c]);
+                else next.push([a, b, mca!], [mca!, b, c]);
+            } else {
+                // 2 edges split: split longest of the two first (remaining split resolves cleanly on next pass if needed)
+                if (mab !== undefined && mbc !== undefined) {
+                    next.push([a, mab, c], [mab, b, mbc], [mab, mbc, c]);
+                } else if (mbc !== undefined && mca !== undefined) {
+                    next.push([a, b, mbc], [a, mbc, mca], [mca, mbc, c]);
+                } else {
+                    next.push([a, mab!, mca!], [mab!, b, c], [mab!, c, mca!]);
+                }
+            }
+        }
+        tris = next;
+        if (!fixed) break;
+    }
+
+    return { points, tris };
+}
+
 function addArea(layers: Record<RoadLayer, MeshArrays>, area: RoadArea, height: HeightFn): void {
     const base = layerOf(area.surface);
     if (!base) return;
@@ -409,18 +507,19 @@ function addArea(layers: Record<RoadLayer, MeshArrays>, area: RoadArea, height: 
         const steps = Math.max(1, Math.ceil(l / 8));
         for (let k = 0; k < steps; k++) outline.push([p[0] + (q[0] - p[0]) * k / steps, p[1] + (q[1] - p[1]) * k / steps]);
     }
+    const { points, tris } = subdivideAreaMesh(outline, triangulatePolygon(outline));
     const first = out.vertexCount;
     // An area at a fixed height is level (on its walls the ground at the
     // outline would already lean down to the terrain outside)
     const level = area.y;
     const flat: [number, number, number] = [0, 1, 0];
-    for (const [x, z] of outline) {
+    for (const [x, z] of points) {
         const u = (x - frame.ox) * frame.ux + (z - frame.oz) * frame.uz;
         const v = (x - frame.ox) * frame.vx + (z - frame.oz) * frame.vz;
         if (level === undefined) out.vertex(x, height(x, z) + AREA_LIFT, z, groundNormal(height, x, z), u, v, a, b);
         else out.vertex(x, level + AREA_LIFT, z, flat, u, v, a, b);
     }
-    for (const [i, j, k] of triangulatePolygon(outline)) out.tri(first + i, first + j, first + k);
+    for (const [i, j, k] of tris) out.tri(first + i, first + j, first + k);
     // A level area on walls (the quay) shows its walls down to below the sea floor
     if (level !== undefined && area.walls) addAreaWalls(out, outline, level + AREA_LIFT, a, b);
     // A curb round a lot without roads (the plaza)

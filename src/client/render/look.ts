@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { lookAzimuth } from '../../shared/map/lighting.js';
-import type { MapAtmosphereSpec } from '../../shared/map/registry.js';
-import mapFile from '../../shared/maps/bulli-bay/map.json';
+import { MAP_REGISTRY, type MapAtmosphereSpec } from '../../shared/map/registry.js';
+
+const DEFAULT_BULLI_BAY = MAP_REGISTRY['bulli-bay'].atmosphere;
 
 // The realistic, calm sunset look of the world (graphics G1), extended for
 // multi-map uniform-driven atmosphere (Bulli Bay sunset, Portes du Bulli alpine
@@ -14,8 +15,8 @@ import mapFile from '../../shared/maps/bulli-bay/map.json';
 export const LOOK = {
     // Degrees above the horizon and direction the sun shines from (0 = +z,
     // 90 = +x): Bulli Bay's evening sun over the Pacific (compass 285°, 17°).
-    sunElevation: mapFile.lighting.sunElevation,
-    sunAzimuth: lookAzimuth(mapFile.lighting.sunAzimuth),
+    sunElevation: DEFAULT_BULLI_BAY.sunElevation,
+    sunAzimuth: lookAzimuth(DEFAULT_BULLI_BAY.sunAzimuth),
     sunColor: 0xffbd88,
     sunIntensity: 3.9,
     exposure: 1.0,
@@ -60,7 +61,7 @@ export function sunDirectionFor(compassAzimuthDeg: number, elevationDeg: number,
 }
 
 /** Unit vector from the scene towards the sun (default: Bulli Bay). */
-export const SUN_DIRECTION = sunDirectionFor(mapFile.lighting.sunAzimuth, mapFile.lighting.sunElevation);
+export const SUN_DIRECTION = sunDirectionFor(DEFAULT_BULLI_BAY.sunAzimuth, DEFAULT_BULLI_BAY.sunElevation);
 
 const glslFloat = (value: number) => (Number.isInteger(value) ? value.toFixed(1) : String(value));
 

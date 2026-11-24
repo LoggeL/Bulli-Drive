@@ -7,7 +7,12 @@ import {
     billboardUrl, createFallbackProp, parseBillboardsManifest, parsePropsManifest, propUrl,
     requiredBillboardTexturesForMap, requiredPropModelsForMap
 } from '../../src/client/assets/HeroAssetLoader.js';
-import { matchPairedBillboards } from '../../src/client/world/heroProps.js';
+import {
+    BOOST_PAD_BASE_LIFT, BOOST_PAD_DISTANCE_LIFT, DECAL_BASE_LIFT, DECAL_DISTANCE_LIFT,
+    HeroPropsLayer, matchPairedBillboards, surfaceLiftAtDistance
+} from '../../src/client/world/heroProps.js';
+import { AREA_LIFT, ROAD_LIFT } from '../../src/client/world/roadGeometry.js';
+import { ROAD_DISTANCE_LIFT } from '../../src/client/world/roads.js';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -93,5 +98,26 @@ describe('HeroAssetLoader manifest parsing & lazy per-map selection', () => {
         let meshes = 0;
         monument.traverse(o => { if ((o as THREE.Mesh).isMesh) meshes++; });
         expect(meshes).toBeGreaterThan(0);
+    });
+
+    it('lifts ground decals and boost pads strictly above roads/areas at all camera distances', () => {
+        for (const dist of [0, 30, 60, 150, 350]) {
+            const areaLift = surfaceLiftAtDistance(AREA_LIFT, ROAD_DISTANCE_LIFT, dist);
+            const roadLift = surfaceLiftAtDistance(ROAD_LIFT, ROAD_DISTANCE_LIFT, dist);
+            const decalLift = surfaceLiftAtDistance(DECAL_BASE_LIFT, DECAL_DISTANCE_LIFT, dist);
+            const padLift = surfaceLiftAtDistance(BOOST_PAD_BASE_LIFT, BOOST_PAD_DISTANCE_LIFT, dist);
+            expect(decalLift, `decal > road at ${dist}m`).toBeGreaterThan(roadLift);
+            expect(padLift, `boostPad > decal at ${dist}m`).toBeGreaterThan(decalLift);
+            expect(padLift, `boostPad > area at ${dist}m`).toBeGreaterThan(areaLift);
+        }
+
+        // Verify the actual boost pad ShaderMaterial vertex shader applies BOOST_PAD_DISTANCE_LIFT
+        const stuntMap = loadTestMap('stunt-forge');
+        const layer = new HeroPropsLayer(stuntMap, 'desktop', null);
+        const padMesh = layer.boostPadsGroup.getObjectByName('boost-pads-merged') as THREE.Mesh;
+        const padMat = padMesh.material as THREE.ShaderMaterial;
+        expect(padMat.vertexShader).toContain(String(BOOST_PAD_DISTANCE_LIFT));
+        expect(padMat.vertexShader).toContain('cameraPosition');
+        layer.dispose();
     });
 });
