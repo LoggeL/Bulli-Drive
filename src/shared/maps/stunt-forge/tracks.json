@@ -1,0 +1,91 @@
+{
+  "format": "bulli-tracks",
+  "version": 1,
+  "mapId": "stunt-forge",
+  "tracks": [
+    {
+      "id": "quarry-rallycross",
+      "name": "Quarry Rallycross",
+      "kind": "circuit",
+      "laps": 3,
+      "trackVersion": 1,
+      "route": [
+        "rim-1",
+        "rim-2",
+        "rim-3",
+        "rim-4",
+        "rim-5",
+        "rim-6",
+        "rim-7",
+        "rim-8"
+      ],
+      "start": {
+        "edge": "rim-5",
+        "s": 250
+      },
+      "gateSpacing": 220,
+      "minCornerSpeed": 28,
+      "chevronCurvature": 0.025,
+      "ramps": [
+        {
+          "edge": "rim-1",
+          "s": 230,
+          "length": 14,
+          "height": 1.8,
+          "look": "steel"
+        },
+        {
+          "edge": "rim-2",
+          "s": 170,
+          "length": 14,
+          "height": 1.8,
+          "look": "steel"
+        }
+      ],
+      "minJumps": 2
+    },
+    {
+      "id": "bowl-sprint",
+      "name": "Bowl Sprint",
+      "kind": "sprint",
+      "laps": 1,
+      "trackVersion": 1,
+      "route": [
+        "rim-6",
+        "rim-7",
+        "rim-8",
+        "rim-1",
+        "rim-2",
+        "rim-3"
+      ],
+      "start": {
+        "edge": "rim-6",
+        "s": 60
+      },
+      "finish": {
+        "edge": "rim-3",
+        "s": 320
+      },
+      "gateSpacing": 220,
+      "minCornerSpeed": 28,
+      "chevronCurvature": 0.025,
+      "ramps": [
+        {
+          "edge": "rim-1",
+          "s": 230,
+          "length": 14,
+          "height": 1.8,
+          "look": "steel"
+        },
+        {
+          "edge": "rim-2",
+          "s": 170,
+          "length": 14,
+          "height": 1.8,
+          "look": "steel"
+        }
+      ],
+      "minJumps": 2
+    }
+  ]
+}

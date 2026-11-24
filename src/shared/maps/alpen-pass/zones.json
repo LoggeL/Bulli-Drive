@@ -1,0 +1,192 @@
+{
+  "format": "bulli-zones",
+  "version": 1,
+  "mapId": "alpen-pass",
+  "zones": [
+    {
+      "id": "gipfel-zone",
+      "zone": "hills",
+      "name": "Gipfelstation 2026",
+      "label": [
+        0,
+        -620
+      ],
+      "polygon": [
+        [
+          -760,
+          -760
+        ],
+        [
+          760,
+          -760
+        ],
+        [
+          760,
+          -340
+        ],
+        [
+          -760,
+          -340
+        ]
+      ]
+    },
+    {
+      "id": "touge-zone",
+      "zone": "hills",
+      "name": "Alpen Touge",
+      "label": [
+        0,
+        -100
+      ],
+      "polygon": [
+        [
+          -360,
+          -340
+        ],
+        [
+          360,
+          -340
+        ],
+        [
+          360,
+          230
+        ],
+        [
+          -360,
+          230
+        ]
+      ]
+    },
+    {
+      "id": "piste-zone",
+      "zone": "dunes",
+      "name": "Feldberg Ski Piste",
+      "label": [
+        -540,
+        -120
+      ],
+      "polygon": [
+        [
+          -760,
+          -340
+        ],
+        [
+          -360,
+          -340
+        ],
+        [
+          -360,
+          230
+        ],
+        [
+          -760,
+          230
+        ]
+      ]
+    },
+    {
+      "id": "glacier-zone",
+      "zone": "hills",
+      "name": "Flachau Ridge",
+      "label": [
+        540,
+        -100
+      ],
+      "polygon": [
+        [
+          360,
+          -340
+        ],
+        [
+          760,
+          -340
+        ],
+        [
+          760,
+          230
+        ],
+        [
+          360,
+          230
+        ]
+      ]
+    },
+    {
+      "id": "ramsen-tal",
+      "zone": "residential",
+      "name": "Ramsen-Tal",
+      "label": [
+        -300,
+        370
+      ],
+      "polygon": [
+        [
+          -740,
+          230
+        ],
+        [
+          120,
+          230
+        ],
+        [
+          120,
+          740
+        ],
+        [
+          -740,
+          740
+        ]
+      ]
+    },
+    {
+      "id": "chalet-yard",
+      "zone": "arena",
+      "name": "Chalet Yard",
+      "polygon": [
+        [
+          -620,
+          440
+        ],
+        [
+          -620,
+          580
+        ],
+        [
+          -440,
+          580
+        ],
+        [
+          -440,
+          440
+        ]
+      ]
+    },
+    {
+      "id": "eissee",
+      "zone": "beach",
+      "name": "Eissee Drift Oval",
+      "label": [
+        380,
+        450
+      ],
+      "polygon": [
+        [
+          120,
+          230
+        ],
+        [
+          740,
+          230
+        ],
+        [
+          740,
+          740
+        ],
+        [
+          120,
+          740
+        ]
+      ]
+    }
+  ]
+}

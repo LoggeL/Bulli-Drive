@@ -1,0 +1,561 @@
+{
+  "format": "bulli-roads",
+  "version": 1,
+  "mapId": "stunt-forge",
+  "profiles": {
+    "haul": {
+      "width": 13,
+      "lanes": [
+        1,
+        1
+      ],
+      "surface": "asphalt",
+      "markings": {
+        "center": "dashedYellow",
+        "lanes": "none",
+        "edges": true
+      },
+      "curb": {
+        "left": false,
+        "right": false,
+        "height": 0
+      },
+      "sidewalk": {
+        "left": 0,
+        "right": 0
+      },
+      "shoulder": 1.5,
+      "wear": 0.55,
+      "designSpeed": 38
+    },
+    "rally": {
+      "width": 12,
+      "lanes": [
+        1,
+        1
+      ],
+      "surface": "gravel",
+      "markings": {
+        "center": "none",
+        "lanes": "none",
+        "edges": false
+      },
+      "curb": {
+        "left": false,
+        "right": false,
+        "height": 0
+      },
+      "sidewalk": {
+        "left": 0,
+        "right": 0
+      },
+      "shoulder": 1.5,
+      "wear": 0.75,
+      "designSpeed": 36
+    },
+    "dirt": {
+      "width": 11,
+      "lanes": [
+        1,
+        1
+      ],
+      "surface": "dirt",
+      "markings": {
+        "center": "none",
+        "lanes": "none",
+        "edges": false
+      },
+      "curb": {
+        "left": false,
+        "right": false,
+        "height": 0
+      },
+      "sidewalk": {
+        "left": 0,
+        "right": 0
+      },
+      "shoulder": 1,
+      "wear": 0.85,
+      "designSpeed": 34
+    }
+  },
+  "nodes": [
+    {
+      "id": "rim-nw",
+      "x": -380,
+      "z": -380,
+      "y": 14,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "none",
+        "crosswalks": false
+      }
+    },
+    {
+      "id": "rim-n",
+      "x": 0,
+      "z": -420,
+      "y": 14,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "yield",
+        "crosswalks": false
+      }
+    },
+    {
+      "id": "rim-ne",
+      "x": 380,
+      "z": -380,
+      "y": 14,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "none",
+        "crosswalks": false
+      }
+    },
+    {
+      "id": "rim-e",
+      "x": 400,
+      "z": 0,
+      "y": 14,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "yield",
+        "crosswalks": false
+      }
+    },
+    {
+      "id": "rim-se",
+      "x": 380,
+      "z": 380,
+      "y": 14,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "none",
+        "crosswalks": false
+      }
+    },
+    {
+      "id": "rim-s",
+      "x": 0,
+      "z": 420,
+      "y": 14,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "yield",
+        "crosswalks": false
+      }
+    },
+    {
+      "id": "rim-sw",
+      "x": -380,
+      "z": 380,
+      "y": 14,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "none",
+        "crosswalks": false
+      }
+    },
+    {
+      "id": "rim-w",
+      "x": -400,
+      "z": 0,
+      "y": 14,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "yield",
+        "crosswalks": false
+      }
+    },
+    {
+      "id": "bowl-n",
+      "x": 0,
+      "z": -100,
+      "y": -4,
+      "kind": "end"
+    },
+    {
+      "id": "bowl-s",
+      "x": 0,
+      "z": 100,
+      "y": -4,
+      "kind": "end"
+    },
+    {
+      "id": "bowl-e",
+      "x": 120,
+      "z": 0,
+      "y": -4,
+      "kind": "end"
+    },
+    {
+      "id": "bowl-w",
+      "x": -120,
+      "z": 0,
+      "y": -4,
+      "kind": "end"
+    }
+  ],
+  "edges": [
+    {
+      "id": "rim-1",
+      "name": "North Canyon Strip",
+      "from": "rim-nw",
+      "to": "rim-n",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -300,
+            -420
+          ],
+          [
+            -200,
+            -420
+          ],
+          [
+            -100,
+            -420
+          ]
+        ]
+      },
+      "profile": "rally",
+      "maxGrade": 0.14,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "rim-2",
+      "name": "North Canyon Strip",
+      "from": "rim-n",
+      "to": "rim-ne",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            100,
+            -420
+          ],
+          [
+            200,
+            -420
+          ],
+          [
+            300,
+            -420
+          ]
+        ]
+      },
+      "profile": "rally",
+      "maxGrade": 0.14,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "rim-3",
+      "name": "East Ridge Rally",
+      "from": "rim-ne",
+      "to": "rim-e",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            445,
+            -260
+          ],
+          [
+            385,
+            -140
+          ]
+        ]
+      },
+      "profile": "rally",
+      "maxGrade": 0.14,
+      "bumps": [
+        {
+          "s": 180,
+          "length": 42,
+          "height": 1.2
+        }
+      ],
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "rim-4",
+      "name": "East Ridge Rally",
+      "from": "rim-e",
+      "to": "rim-se",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            445,
+            130
+          ],
+          [
+            390,
+            260
+          ]
+        ]
+      },
+      "profile": "rally",
+      "maxGrade": 0.14,
+      "bumps": [
+        {
+          "s": 180,
+          "length": 42,
+          "height": 1.2
+        }
+      ],
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "rim-5",
+      "name": "Quarry Haul South",
+      "from": "rim-se",
+      "to": "rim-s",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            280,
+            445
+          ],
+          [
+            160,
+            420
+          ],
+          [
+            80,
+            420
+          ]
+        ]
+      },
+      "profile": "haul",
+      "maxGrade": 0.11,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "rim-6",
+      "name": "Quarry Haul South",
+      "from": "rim-s",
+      "to": "rim-sw",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -100,
+            420
+          ],
+          [
+            -220,
+            445
+          ],
+          [
+            -310,
+            415
+          ]
+        ]
+      },
+      "profile": "haul",
+      "maxGrade": 0.11,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "rim-7",
+      "name": "West Dirt Special",
+      "from": "rim-sw",
+      "to": "rim-w",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -445,
+            250
+          ],
+          [
+            -385,
+            130
+          ]
+        ]
+      },
+      "profile": "dirt",
+      "maxGrade": 0.14,
+      "bumps": [
+        {
+          "s": 170,
+          "length": 38,
+          "height": 1.2
+        }
+      ],
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "rim-8",
+      "name": "West Dirt Special",
+      "from": "rim-w",
+      "to": "rim-nw",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -445,
+            -140
+          ],
+          [
+            -385,
+            -260
+          ]
+        ]
+      },
+      "profile": "dirt",
+      "maxGrade": 0.14,
+      "bumps": [
+        {
+          "s": 170,
+          "length": 38,
+          "height": 1.2
+        }
+      ],
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "drop-n",
+      "name": "North Ramp",
+      "from": "rim-n",
+      "to": "bowl-n",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            0,
+            -260
+          ]
+        ]
+      },
+      "profile": "haul",
+      "maxGrade": 0.1,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "drop-s",
+      "name": "South Ramp",
+      "from": "rim-s",
+      "to": "bowl-s",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            0,
+            260
+          ]
+        ]
+      },
+      "profile": "haul",
+      "maxGrade": 0.1,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "drop-e",
+      "name": "East Ramp",
+      "from": "rim-e",
+      "to": "bowl-e",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            260,
+            0
+          ]
+        ]
+      },
+      "profile": "rally",
+      "maxGrade": 0.1,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "drop-w",
+      "name": "West Ramp",
+      "from": "rim-w",
+      "to": "bowl-w",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -260,
+            0
+          ]
+        ]
+      },
+      "profile": "dirt",
+      "maxGrade": 0.1,
+      "tags": [
+        "noRail"
+      ]
+    }
+  ],
+  "areas": [
+    {
+      "id": "stunt-bowl",
+      "polygon": [
+        [
+          -120,
+          -100
+        ],
+        [
+          -120,
+          100
+        ],
+        [
+          120,
+          100
+        ],
+        [
+          120,
+          -100
+        ]
+      ],
+      "y": -4,
+      "surface": "concrete",
+      "curb": false,
+      "connects": [
+        "bowl-n",
+        "bowl-s",
+        "bowl-e",
+        "bowl-w"
+      ],
+      "tags": [
+        "noRail"
+      ]
+    }
+  ]
+}

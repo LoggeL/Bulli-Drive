@@ -18,11 +18,13 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.
 const FILES = [
     'src/shared/map/buildings.ts',
     'src/shared/map/corridor.ts',
+    'src/shared/map/discoverySchema.ts',
     'src/shared/map/geometry.ts',
     'src/shared/map/heightfield.ts',
     'src/shared/map/mapData.ts',
     'src/shared/map/plants.ts',
     'src/shared/map/rails.ts',
+    'src/shared/map/registry.ts',
     'src/shared/map/roadNetwork.ts',
     'src/shared/map/roadSchema.ts',
     'src/shared/map/routeToTrack.ts',

@@ -44,7 +44,9 @@ export const SURFACE = {
     sand: 6,
     wetSand: 7,
     rock: 8,
-    water: 9
+    water: 9,
+    snow: 10,
+    ice: 11
 } as const;
 export type SurfaceId = typeof SURFACE[keyof typeof SURFACE];
 export type SurfaceName = keyof typeof SURFACE;
@@ -52,7 +54,7 @@ export type SurfaceName = keyof typeof SURFACE;
 // Rasterising priority per surface ID (table 8.1): where two sources claim
 // the same grid point, the higher priority wins (the pier's wood over the
 // road it starts from, any road over the ground next to it).
-export const SURFACE_PRIORITY: readonly number[] = [9, 8, 10, 6, 5, 2, 3, 4, 1, 0];
+export const SURFACE_PRIORITY: readonly number[] = [9, 8, 10, 6, 5, 2, 3, 4, 1, 0, 4, 7];
 
 // Grip factor g and rolling resistance d (m/s²) per surface ID (table 8.1,
 // start values). The sim applies them per axle (vehicle.ts, unpaved ones
@@ -60,8 +62,8 @@ export const SURFACE_PRIORITY: readonly number[] = [9, 8, 10, 6, 5, 2, 3, 4, 1, 
 // corner speeds with them (drivability.ts). Water is the sea floor under
 // shallow water, driven through like soft sand with a wading drag; deeper
 // than WATER_DEPTH the car stops and is reset (section 7).
-export const SURFACE_GRIP: readonly number[] = [1.0, 0.97, 0.9, 0.8, 0.75, 0.7, 0.6, 0.72, 0.85, 0.55];
-export const SURFACE_ROLL: readonly number[] = [0, 0, 0.1, 0.4, 0.5, 0.8, 1.6, 0.9, 0.3, 3.0];
+export const SURFACE_GRIP: readonly number[] = [1.0, 0.97, 0.9, 0.8, 0.75, 0.7, 0.6, 0.72, 0.85, 0.55, 0.65, 0.35];
+export const SURFACE_ROLL: readonly number[] = [0, 0, 0.1, 0.4, 0.5, 0.8, 1.6, 0.9, 0.3, 3.0, 1.1, 0.15];
 
 // Paved surfaces: the car's class-specific offroad factors do not apply
 export function isPaved(surface: number): boolean {

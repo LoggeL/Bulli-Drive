@@ -1,0 +1,1693 @@
+{
+  "format": "bulli-roads",
+  "version": 1,
+  "mapId": "logge-forge",
+  "profiles": {
+    "boulevard": {
+      "width": 14,
+      "lanes": [
+        2,
+        2
+      ],
+      "surface": "asphalt",
+      "markings": {
+        "center": "doubleYellow",
+        "lanes": "dashed",
+        "edges": true
+      },
+      "curb": {
+        "left": true,
+        "right": true,
+        "height": 0.15
+      },
+      "sidewalk": {
+        "left": 3,
+        "right": 3
+      },
+      "shoulder": 0,
+      "wear": 0.25,
+      "designSpeed": 44
+    },
+    "ring": {
+      "width": 12,
+      "lanes": [
+        1,
+        1
+      ],
+      "surface": "asphalt",
+      "markings": {
+        "center": "dashedYellow",
+        "lanes": "none",
+        "edges": true
+      },
+      "curb": {
+        "left": false,
+        "right": false,
+        "height": 0
+      },
+      "sidewalk": {
+        "left": 0,
+        "right": 0
+      },
+      "shoulder": 1.5,
+      "wear": 0.3,
+      "designSpeed": 40
+    },
+    "quadrant": {
+      "width": 10,
+      "lanes": [
+        1,
+        1
+      ],
+      "surface": "asphalt",
+      "markings": {
+        "center": "dashedWhite",
+        "lanes": "none",
+        "edges": false
+      },
+      "curb": {
+        "left": true,
+        "right": true,
+        "height": 0.12
+      },
+      "sidewalk": {
+        "left": 2,
+        "right": 2
+      },
+      "shoulder": 0.5,
+      "wear": 0.3,
+      "designSpeed": 36
+    },
+    "mountain": {
+      "width": 10,
+      "lanes": [
+        1,
+        1
+      ],
+      "surface": "asphalt",
+      "markings": {
+        "center": "solidYellow",
+        "lanes": "none",
+        "edges": true
+      },
+      "curb": {
+        "left": false,
+        "right": false,
+        "height": 0
+      },
+      "sidewalk": {
+        "left": 0,
+        "right": 0
+      },
+      "shoulder": 1.2,
+      "wear": 0.4,
+      "designSpeed": 30
+    },
+    "trail": {
+      "width": 8,
+      "lanes": [
+        1,
+        1
+      ],
+      "surface": "dirt",
+      "markings": {
+        "center": "none",
+        "lanes": "none",
+        "edges": false
+      },
+      "curb": {
+        "left": false,
+        "right": false,
+        "height": 0
+      },
+      "sidewalk": {
+        "left": 0,
+        "right": 0
+      },
+      "shoulder": 1,
+      "wear": 0.75,
+      "designSpeed": 30
+    },
+    "pier": {
+      "width": 10,
+      "lanes": [
+        1,
+        1
+      ],
+      "surface": "wood",
+      "markings": {
+        "center": "none",
+        "lanes": "none",
+        "edges": false
+      },
+      "curb": {
+        "left": false,
+        "right": false,
+        "height": 0
+      },
+      "sidewalk": {
+        "left": 0,
+        "right": 0
+      },
+      "shoulder": 0,
+      "wear": 0.4,
+      "designSpeed": 30
+    }
+  },
+  "nodes": [
+    {
+      "id": "hub-n",
+      "x": 0,
+      "z": -90,
+      "y": 18,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "yield",
+        "crosswalks": true
+      }
+    },
+    {
+      "id": "hub-e",
+      "x": 90,
+      "z": 0,
+      "y": 18,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "yield",
+        "crosswalks": true
+      }
+    },
+    {
+      "id": "hub-s",
+      "x": 0,
+      "z": 90,
+      "y": 18,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "yield",
+        "crosswalks": true
+      }
+    },
+    {
+      "id": "hub-w",
+      "x": -90,
+      "z": 0,
+      "y": 18,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "yield",
+        "crosswalks": true
+      }
+    },
+    {
+      "id": "in-n",
+      "x": 0,
+      "z": -340,
+      "y": 16,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "stop",
+        "crosswalks": true
+      }
+    },
+    {
+      "id": "in-e",
+      "x": 340,
+      "z": 0,
+      "y": 16,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "stop",
+        "crosswalks": true
+      }
+    },
+    {
+      "id": "in-s",
+      "x": 0,
+      "z": 340,
+      "y": 16,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "stop",
+        "crosswalks": true
+      }
+    },
+    {
+      "id": "in-w",
+      "x": -340,
+      "z": 0,
+      "y": 16,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "stop",
+        "crosswalks": true
+      }
+    },
+    {
+      "id": "in-nw",
+      "x": -340,
+      "z": -340,
+      "y": 16,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "stop",
+        "crosswalks": true
+      }
+    },
+    {
+      "id": "in-ne",
+      "x": 340,
+      "z": -340,
+      "y": 12,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "stop",
+        "crosswalks": true
+      }
+    },
+    {
+      "id": "in-se",
+      "x": 340,
+      "z": 340,
+      "y": 28,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "stop",
+        "crosswalks": false
+      }
+    },
+    {
+      "id": "in-sw",
+      "x": -340,
+      "z": 340,
+      "y": 14,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "stop",
+        "crosswalks": true,
+        "radius": 22
+      }
+    },
+    {
+      "id": "out-n",
+      "x": 0,
+      "z": -720,
+      "y": 18,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "yield",
+        "crosswalks": false
+      }
+    },
+    {
+      "id": "out-e",
+      "x": 720,
+      "z": 0,
+      "y": 20,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "yield",
+        "crosswalks": false
+      }
+    },
+    {
+      "id": "out-s",
+      "x": 0,
+      "z": 720,
+      "y": 18,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "yield",
+        "crosswalks": false
+      }
+    },
+    {
+      "id": "out-w",
+      "x": -720,
+      "z": 0,
+      "y": 16,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "yield",
+        "crosswalks": false
+      }
+    },
+    {
+      "id": "out-nw",
+      "x": -700,
+      "z": -700,
+      "y": 26,
+      "kind": "joint"
+    },
+    {
+      "id": "out-ne",
+      "x": 720,
+      "z": -680,
+      "y": 44,
+      "kind": "joint"
+    },
+    {
+      "id": "out-se",
+      "x": 700,
+      "z": 680,
+      "y": 50,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "none",
+        "crosswalks": false,
+        "radius": 24
+      }
+    },
+    {
+      "id": "out-sw-n",
+      "x": -740,
+      "z": 340,
+      "y": 26,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "yield",
+        "crosswalks": false,
+        "radius": 20
+      }
+    },
+    {
+      "id": "out-sw-s",
+      "x": -300,
+      "z": 720,
+      "y": 16,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "yield",
+        "crosswalks": false
+      }
+    },
+    {
+      "id": "arena-gate",
+      "x": 450,
+      "z": -360,
+      "y": 10,
+      "kind": "end"
+    },
+    {
+      "id": "ne-mid",
+      "x": 520,
+      "z": 0,
+      "y": 14,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "none",
+        "crosswalks": false,
+        "radius": 20
+      }
+    },
+    {
+      "id": "suds-end",
+      "x": 640,
+      "z": -140,
+      "y": 14,
+      "kind": "end"
+    },
+    {
+      "id": "kniffel-j",
+      "x": 340,
+      "z": -720,
+      "y": 22,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "none",
+        "crosswalks": false
+      }
+    },
+    {
+      "id": "kniffel-end",
+      "x": 380,
+      "z": -580,
+      "y": 22,
+      "kind": "end"
+    },
+    {
+      "id": "nw-w-mid",
+      "x": -720,
+      "z": -240,
+      "y": 12,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "yield",
+        "crosswalks": false
+      }
+    },
+    {
+      "id": "poolparty-end",
+      "x": -640,
+      "z": -240,
+      "y": 12,
+      "kind": "end"
+    },
+    {
+      "id": "ppk-j",
+      "x": -340,
+      "z": -720,
+      "y": 20,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "yield",
+        "crosswalks": false,
+        "radius": 20
+      }
+    },
+    {
+      "id": "se-mid-e",
+      "x": 720,
+      "z": 240,
+      "y": 20,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "none",
+        "crosswalks": false
+      }
+    },
+    {
+      "id": "se-mid-s",
+      "x": 340,
+      "z": 720,
+      "y": 34,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "none",
+        "crosswalks": false
+      }
+    },
+    {
+      "id": "codex-end",
+      "x": 650,
+      "z": 530,
+      "y": 58,
+      "kind": "end"
+    },
+    {
+      "id": "pier-j",
+      "x": -450,
+      "z": 340,
+      "y": 14,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "yield",
+        "crosswalks": false
+      }
+    },
+    {
+      "id": "pier-base",
+      "x": -460,
+      "z": 460,
+      "y": 4,
+      "kind": "joint"
+    },
+    {
+      "id": "pier-tip",
+      "x": -475,
+      "z": 560,
+      "y": 4,
+      "kind": "end"
+    },
+    {
+      "id": "aft-1",
+      "x": -830,
+      "z": 540,
+      "y": 46,
+      "kind": "joint"
+    },
+    {
+      "id": "aft-2",
+      "x": -740,
+      "z": 780,
+      "y": 70,
+      "kind": "joint"
+    },
+    {
+      "id": "aft-3",
+      "x": -575,
+      "z": 720,
+      "y": 90,
+      "kind": "joint"
+    },
+    {
+      "id": "summit-top",
+      "x": -650,
+      "z": 650,
+      "y": 102,
+      "kind": "end"
+    }
+  ],
+  "edges": [
+    {
+      "id": "hub-ne",
+      "name": "Die Esse Platz",
+      "from": "hub-n",
+      "to": "hub-e",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            64,
+            -64
+          ]
+        ]
+      },
+      "profile": "boulevard",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "hub-se",
+      "name": "Die Esse Platz",
+      "from": "hub-e",
+      "to": "hub-s",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            64,
+            64
+          ]
+        ]
+      },
+      "profile": "boulevard",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "hub-sw",
+      "name": "Die Esse Platz",
+      "from": "hub-s",
+      "to": "hub-w",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -64,
+            64
+          ]
+        ]
+      },
+      "profile": "boulevard",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "hub-nw",
+      "name": "Die Esse Platz",
+      "from": "hub-w",
+      "to": "hub-n",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -64,
+            -64
+          ]
+        ]
+      },
+      "profile": "boulevard",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "spoke-n",
+      "name": "Nord-Allee",
+      "from": "hub-n",
+      "to": "in-n",
+      "curve": {
+        "type": "catmullRom",
+        "points": []
+      },
+      "profile": "boulevard",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "spoke-e",
+      "name": "Purpur-Allee",
+      "from": "hub-e",
+      "to": "in-e",
+      "curve": {
+        "type": "catmullRom",
+        "points": []
+      },
+      "profile": "boulevard",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "spoke-s",
+      "name": "Rotglut-Allee",
+      "from": "hub-s",
+      "to": "in-s",
+      "curve": {
+        "type": "catmullRom",
+        "points": []
+      },
+      "profile": "boulevard",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "spoke-w",
+      "name": "Strohgelb-Allee",
+      "from": "hub-w",
+      "to": "in-w",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -180,
+            -26
+          ],
+          [
+            -265,
+            22
+          ]
+        ]
+      },
+      "profile": "boulevard",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "in-n-ne",
+      "name": "Arcade Ring",
+      "from": "in-n",
+      "to": "in-ne",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            170,
+            -340
+          ]
+        ]
+      },
+      "profile": "quadrant",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "in-ne-e",
+      "name": "Arcade Ring",
+      "from": "in-ne",
+      "to": "in-e",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            340,
+            -170
+          ]
+        ]
+      },
+      "profile": "quadrant",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "in-e-se",
+      "name": "Blau Campus Ring",
+      "from": "in-e",
+      "to": "in-se",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            340,
+            170
+          ]
+        ]
+      },
+      "profile": "quadrant",
+      "maxGrade": 0.1,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "in-se-s",
+      "name": "Blau Campus Ring",
+      "from": "in-se",
+      "to": "in-s",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            170,
+            340
+          ]
+        ]
+      },
+      "profile": "quadrant",
+      "maxGrade": 0.1,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "in-s-sw",
+      "name": "Bands Promenade",
+      "from": "in-s",
+      "to": "in-sw",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -170,
+            340
+          ]
+        ]
+      },
+      "profile": "quadrant",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "in-sw-w",
+      "name": "Ramsen Boulevard",
+      "from": "in-sw",
+      "to": "in-w",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -340,
+            170
+          ]
+        ]
+      },
+      "profile": "quadrant",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "in-w-nw",
+      "name": "Ramsen Boulevard",
+      "from": "in-w",
+      "to": "in-nw",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -340,
+            -170
+          ]
+        ]
+      },
+      "profile": "quadrant",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "in-nw-n",
+      "name": "Theaterstrasse",
+      "from": "in-nw",
+      "to": "in-n",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -170,
+            -340
+          ]
+        ]
+      },
+      "profile": "quadrant",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "rad-n",
+      "name": "Win98 Avenue",
+      "from": "in-n",
+      "to": "out-n",
+      "curve": {
+        "type": "catmullRom",
+        "points": []
+      },
+      "profile": "ring",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "rad-e1",
+      "name": "GeoGames Avenue",
+      "from": "in-e",
+      "to": "ne-mid",
+      "curve": {
+        "type": "catmullRom",
+        "points": []
+      },
+      "profile": "ring",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "rad-e2",
+      "name": "GeoGames Avenue",
+      "from": "ne-mid",
+      "to": "out-e",
+      "curve": {
+        "type": "catmullRom",
+        "points": []
+      },
+      "profile": "ring",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "rad-s",
+      "name": "Marathon Straight",
+      "from": "in-s",
+      "to": "out-s",
+      "curve": {
+        "type": "catmullRom",
+        "points": []
+      },
+      "profile": "ring",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "rad-w",
+      "name": "Selantis Road",
+      "from": "in-w",
+      "to": "out-w",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -480,
+            0
+          ],
+          [
+            -560,
+            0
+          ]
+        ]
+      },
+      "profile": "ring",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "ring-nw1",
+      "name": "LMF Ringstrasse",
+      "from": "out-w",
+      "to": "nw-w-mid",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -755,
+            -120
+          ]
+        ]
+      },
+      "profile": "ring",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "ring-nw2",
+      "name": "LMF Ringstrasse",
+      "from": "nw-w-mid",
+      "to": "out-nw",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -770,
+            -400
+          ],
+          [
+            -715,
+            -560
+          ]
+        ]
+      },
+      "profile": "ring",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "ring-nw3",
+      "name": "LMF Ringstrasse",
+      "from": "out-nw",
+      "to": "ppk-j",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -590,
+            -765
+          ],
+          [
+            -465,
+            -700
+          ]
+        ]
+      },
+      "profile": "ring",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "ring-nw4",
+      "name": "LMF Ringstrasse",
+      "from": "ppk-j",
+      "to": "out-n",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -220,
+            -755
+          ],
+          [
+            -110,
+            -705
+          ]
+        ]
+      },
+      "profile": "ring",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "ring-ne1",
+      "name": "LMF Ringstrasse",
+      "from": "out-n",
+      "to": "kniffel-j",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            110,
+            -720
+          ],
+          [
+            230,
+            -720
+          ]
+        ]
+      },
+      "profile": "ring",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "ring-ne2",
+      "name": "LMF Ringstrasse",
+      "from": "kniffel-j",
+      "to": "out-ne",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            465,
+            -755
+          ],
+          [
+            600,
+            -705
+          ]
+        ]
+      },
+      "profile": "ring",
+      "maxGrade": 0.1,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "ring-ne3",
+      "name": "LMF Ringstrasse",
+      "from": "out-ne",
+      "to": "out-e",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            785,
+            -480
+          ],
+          [
+            725,
+            -320
+          ],
+          [
+            770,
+            -160
+          ]
+        ]
+      },
+      "profile": "ring",
+      "maxGrade": 0.1,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "ring-se1",
+      "name": "LMF Ringstrasse",
+      "from": "out-e",
+      "to": "se-mid-e",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            760,
+            120
+          ]
+        ]
+      },
+      "profile": "ring",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "ring-se2",
+      "name": "LMF Ringstrasse",
+      "from": "se-mid-e",
+      "to": "out-se",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            785,
+            400
+          ],
+          [
+            735,
+            560
+          ]
+        ]
+      },
+      "profile": "ring",
+      "maxGrade": 0.11,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "ring-se3",
+      "name": "LMF Ringstrasse",
+      "from": "out-se",
+      "to": "se-mid-s",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            570,
+            765
+          ],
+          [
+            455,
+            705
+          ]
+        ]
+      },
+      "profile": "ring",
+      "maxGrade": 0.11,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "ring-se4",
+      "name": "LMF Ringstrasse",
+      "from": "se-mid-s",
+      "to": "out-s",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            230,
+            720
+          ],
+          [
+            110,
+            720
+          ]
+        ]
+      },
+      "profile": "ring",
+      "maxGrade": 0.1,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "ring-sw1",
+      "name": "LMF Ringstrasse",
+      "from": "out-s",
+      "to": "out-sw-s",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -100,
+            755
+          ],
+          [
+            -200,
+            710
+          ]
+        ]
+      },
+      "profile": "ring",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "ring-sw2",
+      "name": "Harbor Connector",
+      "from": "out-sw-s",
+      "to": "in-sw",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -285,
+            580
+          ],
+          [
+            -330,
+            460
+          ]
+        ]
+      },
+      "profile": "ring",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "ring-sw3a",
+      "name": "Palatina Coast Road",
+      "from": "in-sw",
+      "to": "pier-j",
+      "curve": {
+        "type": "catmullRom",
+        "points": []
+      },
+      "profile": "ring",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "ring-sw3b",
+      "name": "Palatina Coast Road",
+      "from": "pier-j",
+      "to": "out-sw-n",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -565,
+            315
+          ],
+          [
+            -660,
+            355
+          ]
+        ]
+      },
+      "profile": "ring",
+      "maxGrade": 0.1,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "ring-sw4",
+      "name": "Palatina Coast Road",
+      "from": "out-sw-n",
+      "to": "out-w",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -775,
+            220
+          ],
+          [
+            -725,
+            110
+          ]
+        ]
+      },
+      "profile": "ring",
+      "maxGrade": 0.1,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "spur-arena",
+      "name": "Neon Reactor Way",
+      "from": "in-ne",
+      "to": "arena-gate",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            400,
+            -355
+          ]
+        ]
+      },
+      "profile": "quadrant",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "spur-suds",
+      "name": "Sudsblaster Quarry",
+      "from": "ne-mid",
+      "to": "suds-end",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            520,
+            -75
+          ],
+          [
+            575,
+            -125
+          ]
+        ]
+      },
+      "profile": "trail",
+      "maxGrade": 0.14,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "spur-kniffel",
+      "name": "Tulpenweg",
+      "from": "kniffel-j",
+      "to": "kniffel-end",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            345,
+            -650
+          ]
+        ]
+      },
+      "profile": "trail",
+      "maxGrade": 0.14,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "spur-ppk",
+      "name": "PowerPoint Alley",
+      "from": "in-nw",
+      "to": "ppk-j",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -450,
+            -520
+          ],
+          [
+            -345,
+            -640
+          ]
+        ]
+      },
+      "profile": "quadrant",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "spur-poolparty",
+      "name": "Poolparty Einfahrt",
+      "from": "nw-w-mid",
+      "to": "poolparty-end",
+      "curve": {
+        "type": "catmullRom",
+        "points": []
+      },
+      "profile": "quadrant",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "spur-reactor-e",
+      "name": "Reactor Service Road",
+      "from": "in-se",
+      "to": "se-mid-e",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            540,
+            290
+          ]
+        ]
+      },
+      "profile": "quadrant",
+      "maxGrade": 0.11,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "spur-transcripator",
+      "name": "Transcripator Canyon",
+      "from": "in-se",
+      "to": "se-mid-s",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            290,
+            540
+          ]
+        ]
+      },
+      "profile": "quadrant",
+      "maxGrade": 0.11,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "spur-codex",
+      "name": "Quota Ridge Trail",
+      "from": "out-se",
+      "to": "codex-end",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            645,
+            635
+          ],
+          [
+            645,
+            580
+          ]
+        ]
+      },
+      "profile": "trail",
+      "maxGrade": 0.16,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "spur-pier-approach",
+      "name": "Abseits Promenade",
+      "from": "pier-j",
+      "to": "pier-base",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -452,
+            405
+          ]
+        ]
+      },
+      "profile": "quadrant",
+      "maxGrade": 0.11,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "spur-pier-deck",
+      "name": "IJsselmeer Pier",
+      "from": "pier-base",
+      "to": "pier-tip",
+      "curve": {
+        "type": "catmullRom",
+        "points": []
+      },
+      "profile": "pier",
+      "maxGrade": 0.06,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "climb-aftermovie-1",
+      "name": "Mount Aftermovie Pass",
+      "from": "out-sw-n",
+      "to": "aft-1",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -800,
+            430
+          ]
+        ]
+      },
+      "profile": "mountain",
+      "maxGrade": 0.12,
+      "rails": [
+        {
+          "side": "left",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        },
+        {
+          "side": "right",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        }
+      ]
+    },
+    {
+      "id": "climb-aftermovie-2",
+      "name": "Mount Aftermovie Pass",
+      "from": "aft-1",
+      "to": "aft-2",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -845,
+            680
+          ]
+        ]
+      },
+      "profile": "mountain",
+      "maxGrade": 0.12,
+      "rails": [
+        {
+          "side": "left",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        },
+        {
+          "side": "right",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        }
+      ]
+    },
+    {
+      "id": "climb-aftermovie-3",
+      "name": "Mount Aftermovie Pass",
+      "from": "aft-2",
+      "to": "aft-3",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -640,
+            815
+          ],
+          [
+            -565,
+            780
+          ]
+        ]
+      },
+      "profile": "mountain",
+      "maxGrade": 0.12,
+      "rails": [
+        {
+          "side": "left",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        },
+        {
+          "side": "right",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        }
+      ]
+    },
+    {
+      "id": "climb-aftermovie-4",
+      "name": "Mount Aftermovie Pass",
+      "from": "aft-3",
+      "to": "summit-top",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -600,
+            675
+          ]
+        ]
+      },
+      "profile": "mountain",
+      "maxGrade": 0.12,
+      "rails": [
+        {
+          "side": "left",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        },
+        {
+          "side": "right",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        }
+      ]
+    }
+  ],
+  "areas": [
+    {
+      "id": "forge-plaza",
+      "polygon": [
+        [
+          -46,
+          -46
+        ],
+        [
+          -46,
+          46
+        ],
+        [
+          46,
+          46
+        ],
+        [
+          46,
+          -46
+        ]
+      ],
+      "y": 18,
+      "surface": "concrete",
+      "curb": true,
+      "markings": "plazaPavers",
+      "connects": [],
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "bomberman-lot",
+      "polygon": [
+        [
+          450,
+          -430
+        ],
+        [
+          450,
+          -290
+        ],
+        [
+          630,
+          -290
+        ],
+        [
+          630,
+          -430
+        ]
+      ],
+      "y": 10,
+      "surface": "concrete",
+      "curb": false,
+      "connects": [
+        "arena-gate"
+      ],
+      "tags": [
+        "noRail"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,142 @@
+{
+  "format": "bulli-zones",
+  "version": 1,
+  "mapId": "stunt-forge",
+  "zones": [
+    {
+      "id": "stunt-bowl",
+      "zone": "arena",
+      "name": "Mega Stunt Bowl",
+      "label": [
+        0,
+        0
+      ],
+      "polygon": [
+        [
+          -120,
+          -100
+        ],
+        [
+          -120,
+          100
+        ],
+        [
+          120,
+          100
+        ],
+        [
+          120,
+          -100
+        ]
+      ]
+    },
+    {
+      "id": "north-mesa",
+      "zone": "hills",
+      "name": "Canyon Gap Mesa",
+      "label": [
+        0,
+        -420
+      ],
+      "polygon": [
+        [
+          -540,
+          -540
+        ],
+        [
+          540,
+          -540
+        ],
+        [
+          540,
+          -240
+        ],
+        [
+          -540,
+          -240
+        ]
+      ]
+    },
+    {
+      "id": "east-quarry",
+      "zone": "cliffs",
+      "name": "East Quarry Rim",
+      "label": [
+        420,
+        0
+      ],
+      "polygon": [
+        [
+          220,
+          -240
+        ],
+        [
+          540,
+          -240
+        ],
+        [
+          540,
+          240
+        ],
+        [
+          220,
+          240
+        ]
+      ]
+    },
+    {
+      "id": "west-rally",
+      "zone": "ranch",
+      "name": "Gravel Rally Stage",
+      "label": [
+        -420,
+        0
+      ],
+      "polygon": [
+        [
+          -540,
+          -240
+        ],
+        [
+          -220,
+          -240
+        ],
+        [
+          -220,
+          240
+        ],
+        [
+          -540,
+          240
+        ]
+      ]
+    },
+    {
+      "id": "south-terrace",
+      "zone": "industrial",
+      "name": "Quarry Yards",
+      "label": [
+        0,
+        420
+      ],
+      "polygon": [
+        [
+          -540,
+          240
+        ],
+        [
+          540,
+          240
+        ],
+        [
+          540,
+          540
+        ],
+        [
+          -540,
+          540
+        ]
+      ]
+    }
+  ]
+}

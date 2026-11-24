@@ -11,7 +11,9 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const from = path.join(root, 'src', 'shared', 'maps');
 const to = path.join(root, 'dist', 'shared', 'maps');
-for (const map of readdirSync(from)) {
+for (const entry of readdirSync(from, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const map = entry.name;
     mkdirSync(path.join(to, map), { recursive: true });
     for (const file of readdirSync(path.join(from, map)).filter(name => name.endsWith('.json'))) {
         cpSync(path.join(from, map, file), path.join(to, map, file));

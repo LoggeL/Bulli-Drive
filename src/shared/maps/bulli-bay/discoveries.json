@@ -1,0 +1,115 @@
+{
+  "format": "bulli-discoveries",
+  "version": 1,
+  "mapId": "bulli-bay",
+  "discoveries": [
+    {
+      "id": "bay-lmf-postcard",
+      "title": "Postcard from Forge Island",
+      "subtitle": "Logge Media Forge · Aus Neugier. Gemacht.",
+      "alloy": "coastal",
+      "projectRef": "https://lmf.logge.top/",
+      "x": -350,
+      "z": -114,
+      "hint": "Look along the northern rim of Sunset Plaza for a glowing steel workshop poster.",
+      "codexEntry": "Bulli Bay was only the beginning. Over on Forge Island (Logge's Discovery World), Logge Media Forge keeps the fire burning across 43 projects and 140 GitHub repos.",
+      "toast": "Postcard found: Aus Neugier. Gemacht.",
+      "rewardEffect": "sparks",
+      "trigger": { "kind": "proximity", "radius": 18 }
+    },
+    {
+      "id": "bay-oilbert-surf",
+      "title": "Oilbert Was Here",
+      "subtitle": "Oilbert's Adventure · Surf Shop Poster",
+      "alloy": "games",
+      "projectRef": "https://lmf.logge.top/#werk/oilbert",
+      "x": -596,
+      "z": -160,
+      "hint": "Honk near the beach Surf Shop to salute a brave little red-and-white VW bus.",
+      "codexEntry": "Before cruising 19 km of coastal California roads in 3D, a red-and-white VW bus named Oilbert jumped green and crumbling orange platforms in Vanilla JS.",
+      "toast": "Oilbert approves! +100 Golden Wrenches",
+      "rewardEffect": "confetti",
+      "trigger": { "kind": "horn", "radius": 22 }
+    },
+    {
+      "id": "bay-ppk-diner",
+      "title": "Image First at Bulli's Diner",
+      "subtitle": "PowerPoint Karaoke · VW-Bus vs. Wohnwagen",
+      "alloy": "web",
+      "projectRef": "https://lmf.logge.top/#werk/powerpoint-karaoke",
+      "x": 612,
+      "z": 146,
+      "hint": "Pull into Bulli's Diner and read the suspiciously confident presentation slide.",
+      "codexEntry": "One of Logge's 17 real PowerPoint Karaoke decks is literally titled 'VW-Bus vs. Wohnwagen: Image First'. The diner regulars unanimously agree.",
+      "toast": "Folie 10/10 — VW-Bus wins on image!",
+      "rewardEffect": "flash",
+      "trigger": { "kind": "park", "radius": 18, "holdSec": 1.5, "maxSpeed": 2.5 }
+    },
+    {
+      "id": "bay-ridge-werkzeugwand",
+      "title": "Bulli Ridge Forge Plaque",
+      "subtitle": "LMF Werkzeugwand · 133 m Summit",
+      "alloy": "forge",
+      "projectRef": "https://lmf.logge.top/#werkstatt",
+      "x": 672,
+      "z": -782,
+      "hint": "Climb all 133 m to Bulli Ridge Lookout and honk toward the horizon.",
+      "codexEntry": "Built with TypeScript, Three.js, Vite, Docker, and Blender — straight off Logge's Werkzeugwand. Next stop: Portes du Bulli and Logge's Discovery World!",
+      "toast": "Summit Salute! Das Feuer ist noch an.",
+      "rewardEffect": "sparks",
+      "trigger": { "kind": "horn", "radius": 24 }
+    }
+  ],
+  "heroProps": [],
+  "billboards": [
+    {
+      "id": "bb-bay-lmf",
+      "texture": "sign_lmf_welcome",
+      "kind": "roadside",
+      "x": -350,
+      "z": -118,
+      "yaw": 0,
+      "width": 8,
+      "height": 4,
+      "emissive": true,
+      "discoveryId": "bay-lmf-postcard"
+    },
+    {
+      "id": "bb-bay-oilbert",
+      "texture": "sign_oilbert_ad",
+      "kind": "roadside",
+      "x": -596,
+      "z": -160,
+      "yaw": -1.5708,
+      "width": 6,
+      "height": 3,
+      "emissive": false,
+      "discoveryId": "bay-oilbert-surf"
+    },
+    {
+      "id": "bb-bay-ppk",
+      "texture": "sign_ppk_bulli",
+      "kind": "roadside",
+      "x": 612,
+      "z": 148,
+      "yaw": 3.1416,
+      "width": 7,
+      "height": 3.5,
+      "emissive": false,
+      "discoveryId": "bay-ppk-diner"
+    },
+    {
+      "id": "bb-bay-werkzeugwand",
+      "texture": "sign_werkzeugwand",
+      "kind": "roadside",
+      "x": 686,
+      "z": -782,
+      "yaw": -1.5708,
+      "width": 6,
+      "height": 3,
+      "emissive": true,
+      "discoveryId": "bay-ridge-werkzeugwand"
+    }
+  ],
+  "boostPads": []
+}

@@ -1,0 +1,29 @@
+{
+  "format": "bulli-map",
+  "version": 1,
+  "mapId": "alpen-pass",
+  "mapVersion": 1,
+  "name": "Portes du Bulli",
+  "boundary": [
+    [
+      -740,
+      -740
+    ],
+    [
+      740,
+      -740
+    ],
+    [
+      740,
+      740
+    ],
+    [
+      -740,
+      740
+    ]
+  ],
+  "lighting": {
+    "sunAzimuth": 135,
+    "sunElevation": 24
+  }
+}

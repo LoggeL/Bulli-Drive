@@ -4,8 +4,41 @@ import type { RampDef } from '../world/colliders.js';
 // Conventions as in the sim: 1 u = 1 m, forward is (sin yaw, cos yaw), left
 // is (cos yaw, -sin yaw); yaw = 0 points to +z, π/2 to +x.
 
-export const TRACK_IDS = ['downtown-loop', 'coast-sprint', 'hill-sprint', 'harbor-circuit', 'dune-rally', 'grand-tour'] as const;
-export type TrackId = typeof TRACK_IDS[number];
+export const BULLI_BAY_TRACK_IDS = [
+    'downtown-loop', 'coast-sprint', 'hill-sprint', 'harbor-circuit', 'dune-rally', 'grand-tour'
+] as const;
+
+export const ALPEN_PASS_TRACK_IDS = [
+    'alpen-touge-descent', 'gipfel-climb', 'frozen-lake-drift'
+] as const;
+
+export const STUNT_FORGE_TRACK_IDS = [
+    'quarry-rallycross', 'bowl-sprint'
+] as const;
+
+export const LOGGE_FORGE_TRACK_IDS = [
+    'forge-grand-circuit', 'arcade-dash', 'ramsen-summit-sprint'
+] as const;
+
+export const ALL_TRACK_IDS = [
+    ...BULLI_BAY_TRACK_IDS,
+    ...ALPEN_PASS_TRACK_IDS,
+    ...STUNT_FORGE_TRACK_IDS,
+    ...LOGGE_FORGE_TRACK_IDS
+] as const;
+
+// Default map's track list kept as TRACK_IDS for backward compatibility with
+// existing Bulli Bay single-map callers and integration tests.
+export const TRACK_IDS = BULLI_BAY_TRACK_IDS;
+
+export type TrackId = typeof ALL_TRACK_IDS[number];
+
+export const MAP_TRACK_IDS: Readonly<Record<string, readonly TrackId[]>> = {
+    'bulli-bay': BULLI_BAY_TRACK_IDS,
+    'alpen-pass': ALPEN_PASS_TRACK_IDS,
+    'stunt-forge': STUNT_FORGE_TRACK_IDS,
+    'logge-forge': LOGGE_FORGE_TRACK_IDS
+};
 
 export type RacePhase = 'lobby' | 'countdown' | 'racing' | 'finished' | 'results';
 

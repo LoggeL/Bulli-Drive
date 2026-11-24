@@ -14,6 +14,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { brotliCompressSync, constants as zlibConstants, gzipSync } from 'node:zlib';
 import { BHF_HEADER_BYTES } from '../../src/shared/map/heightfield.js';
+import { MAP_IDS } from '../../src/shared/map/registry.js';
 import { BAKE_VERSION, type BakeResult } from './bakeTerrain.js';
 import { bakeSources, type MapSources } from './bakeSources.js';
 import { toHex } from './hash.js';
@@ -89,16 +90,7 @@ export function buildManifest(mapId: string, result: BakeResult) {
     };
 }
 
-function main(argv: string[]): number {
-    const arg = (name: string) => {
-        const i = argv.indexOf(name);
-        return i >= 0 ? argv[i + 1] : undefined;
-    };
-    const mapId = arg('--map') ?? 'bulli-bay';
-    const outDir = path.resolve(ROOT, arg('--out') ?? path.join('public/maps', mapId));
-    const check = argv.includes('--check');
-    const strict = argv.includes('--strict');
-
+function bakeOne(mapId: string, outDir: string, check: boolean, strict: boolean): number {
     const started = performance.now();
     const result = bakeSources(mapId, readSources(mapId));
     const { report } = result;
@@ -127,7 +119,7 @@ function main(argv: string[]): number {
     if (check) {
         const committed = existsSync(terrainPath) ? readFileSync(terrainPath) : null;
         if (!committed || Buffer.compare(committed, Buffer.from(result.bytes)) !== 0) {
-            console.error(`${path.relative(ROOT, terrainPath)} is not the bake of the current sources: run npx tsx tools/map/bake.ts`);
+            console.error(`${path.relative(ROOT, terrainPath)} is not the bake of the current sources: run npx tsx tools/map/bake.ts --map ${mapId}`);
             return 1;
         }
         console.log(`${path.relative(ROOT, terrainPath)} is up to date`);
@@ -141,6 +133,26 @@ function main(argv: string[]): number {
         console.log(`wrote ${path.relative(ROOT, outDir)}/{terrain.bhf,manifest.json} and ${path.relative(ROOT, previewDir)}/preview.png`);
     }
     return strict && problems ? 1 : 0;
+}
+
+function main(argv: string[]): number {
+    const arg = (name: string) => {
+        const i = argv.indexOf(name);
+        return i >= 0 ? argv[i + 1] : undefined;
+    };
+    const check = argv.includes('--check');
+    const strict = argv.includes('--strict');
+    if (argv.includes('--all')) {
+        let exit = 0;
+        for (const mapId of MAP_IDS) {
+            const code = bakeOne(mapId, path.resolve(ROOT, 'public/maps', mapId), check, strict);
+            if (code !== 0) exit = code;
+        }
+        return exit;
+    }
+    const mapId = arg('--map') ?? 'bulli-bay';
+    const outDir = path.resolve(ROOT, arg('--out') ?? path.join('public/maps', mapId));
+    return bakeOne(mapId, outDir, check, strict);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

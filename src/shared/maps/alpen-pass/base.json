@@ -1,0 +1,243 @@
+{
+  "format": "bulli-base",
+  "version": 1,
+  "mapId": "alpen-pass",
+  "seed": 2026,
+  "sea": {
+    "floor": -10,
+    "shelf": 80
+  },
+  "coast": [
+    [
+      -950,
+      -950
+    ],
+    [
+      950,
+      -950
+    ],
+    [
+      950,
+      950
+    ],
+    [
+      -950,
+      950
+    ]
+  ],
+  "beach": {
+    "width": 10,
+    "top": 0,
+    "blend": 20
+  },
+  "land": {
+    "base": 14,
+    "tilt": [
+      0,
+      0
+    ],
+    "tiltOrigin": [
+      0,
+      0
+    ]
+  },
+  "hills": [
+    {
+      "id": "summit-peak",
+      "x": 0,
+      "z": -660,
+      "radii": [
+        620,
+        340
+      ],
+      "height": 186
+    },
+    {
+      "id": "west-shoulder",
+      "x": -460,
+      "z": -480,
+      "radii": [
+        340,
+        320
+      ],
+      "height": 142
+    },
+    {
+      "id": "east-shoulder",
+      "x": 480,
+      "z": -440,
+      "radii": [
+        360,
+        340
+      ],
+      "height": 138
+    },
+    {
+      "id": "mid-shelf",
+      "x": 0,
+      "z": -200,
+      "radii": [
+        680,
+        290
+      ],
+      "height": 92
+    },
+    {
+      "id": "lower-bench",
+      "x": -40,
+      "z": 70,
+      "radii": [
+        660,
+        240
+      ],
+      "height": 46
+    }
+  ],
+  "flats": [
+    {
+      "id": "ramsen-tal",
+      "x": -340,
+      "z": 480,
+      "radii": [
+        340,
+        240
+      ],
+      "height": 12,
+      "strength": 1
+    },
+    {
+      "id": "eissee-basin",
+      "x": 380,
+      "z": 450,
+      "radii": [
+        290,
+        240
+      ],
+      "height": 12,
+      "strength": 1
+    },
+    {
+      "id": "summit-pad",
+      "x": 0,
+      "z": -600,
+      "radii": [
+        100,
+        65
+      ],
+      "height": 176,
+      "strength": 0.95
+    }
+  ],
+  "cliffs": [],
+  "ridges": [
+    {
+      "id": "north-crest",
+      "line": [
+        [
+          -700,
+          -730,
+          185
+        ],
+        [
+          -360,
+          -710,
+          198
+        ],
+        [
+          0,
+          -695,
+          210
+        ],
+        [
+          360,
+          -710,
+          198
+        ],
+        [
+          700,
+          -730,
+          180
+        ]
+      ],
+      "width": 170
+    }
+  ],
+  "noise": {
+    "amplitude": 2,
+    "wavelength": 260,
+    "octaves": 4,
+    "gain": 0.45,
+    "ridged": 0.35,
+    "regions": [
+      {
+        "id": "valley-calm",
+        "polygon": [
+          [
+            -760,
+            240
+          ],
+          [
+            760,
+            240
+          ],
+          [
+            760,
+            760
+          ],
+          [
+            -760,
+            760
+          ]
+        ],
+        "amplitude": 0.3,
+        "blend": 80
+      }
+    ]
+  },
+  "regions": [
+    {
+      "id": "alpine-snow",
+      "surface": "snow",
+      "polygon": [
+        [
+          -800,
+          -800
+        ],
+        [
+          800,
+          -800
+        ],
+        [
+          800,
+          210
+        ],
+        [
+          -800,
+          210
+        ]
+      ]
+    },
+    {
+      "id": "eissee-ice",
+      "surface": "ice",
+      "polygon": [
+        [
+          160,
+          270
+        ],
+        [
+          600,
+          270
+        ],
+        [
+          600,
+          630
+        ],
+        [
+          160,
+          630
+        ]
+      ]
+    }
+  ]
+}

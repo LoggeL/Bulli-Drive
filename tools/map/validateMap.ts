@@ -15,6 +15,7 @@ import {
 import { pointInPolygon, polygonEdgeDistance, segmentDistanceSq, type Vec2 } from '../../src/shared/map/geometry.js';
 import { FLAT_MARGIN, flatHalfWidths } from '../../src/shared/map/corridor.js';
 import { heightAt, meshDeviation, waterDepth, type Heightfield } from '../../src/shared/map/heightfield.js';
+import type { DiscoveriesFile } from '../../src/shared/map/discoverySchema.js';
 import type { MapFile, PoisFile, TracksFile, ZonesFile } from '../../src/shared/map/mapFiles.js';
 import { JUMP_LANDING, JUMP_RUNUP } from '../../src/shared/map/mapData.js';
 import { areaRailLine, areaRailSides, DEFAULT_AREA_RAIL_OFFSET, networkRailColliders } from '../../src/shared/map/rails.js';
@@ -46,6 +47,7 @@ export interface MapBundle {
     zones: ZonesFile;
     pois: PoisFile;
     tracks: TracksFile;
+    discoveries?: DiscoveriesFile;
     hf: Heightfield;
 }
 
@@ -54,9 +56,9 @@ export interface MapBundle {
 // Free space between the drivable surfaces of two roads that do not meet
 export const ROAD_CLEARANCE = 1;
 // Steepest maxGrade per surface: paved roads 12 % (the Ridge Road), gravel
-// and dirt 18 %, sand 20 % (dune tracks), the pier's wood 8 %
+// and dirt 18 %, sand 20 % (dune tracks), the pier's wood 8 %, snow 22 %, ice 5 %
 export const MAX_GRADE_BY_SURFACE: Record<string, number> = {
-    asphalt: 0.12, concrete: 0.12, wood: 0.08, gravel: 0.18, dirt: 0.18, sand: 0.2
+    asphalt: 0.12, concrete: 0.12, wood: 0.08, gravel: 0.18, dirt: 0.18, sand: 0.2, snow: 0.22, ice: 0.05
 };
 // The baked grade may exceed maxGrade by this: 1 cm of quantisation per
 // metre plus the bilinear surface in the tightest hairpins (A11)
@@ -1114,6 +1116,67 @@ export interface ValidationResult {
     roads: { km: number; pavedKm: number; bySurface: Record<string, number> };
 }
 
+// Discoveries, hero props, billboards and boost pads lie inside the map
+// boundary, clear of spawn slots, and on dry ground (except moored boats).
+export function checkDiscoveries(
+    discoveries: DiscoveriesFile | undefined,
+    hf: Heightfield,
+    map: MapFile,
+    pois: PoisFile
+): Finding[] {
+    if (!discoveries) return [];
+    const check = 'discoveries';
+    const findings: Finding[] = [];
+    const allSpawns = [...pois.spawns.freeRoam, ...pois.spawns.party];
+    const clearOfSpawns = (label: string, x: number, z: number, minDist: number) => {
+        for (const slot of allSpawns) {
+            if (Math.hypot(x - slot.x, z - slot.z) < minDist) {
+                findings.push(finding(check, `${label} overlaps spawn at (${slot.x} | ${slot.z})`, { x, z }));
+                break;
+            }
+        }
+    };
+    for (const d of discoveries.discoveries) {
+        if (!pointInPolygon(map.boundary, d.x, d.z)) {
+            findings.push(finding(check, `discovery ${d.id} is outside the map boundary`, d));
+        }
+        if (waterDepth(hf, d.x, d.z) > WATER_DEPTH) {
+            findings.push(finding(check, `discovery ${d.id} stands in deep water`, d));
+        }
+    }
+    for (const p of discoveries.heroProps) {
+        const boat = p.model === 'lmf_sailboat_ijsselmeer';
+        if (!boat && !pointInPolygon(map.boundary, p.x, p.z)) {
+            findings.push(finding(check, `heroProp ${p.id} is outside the map boundary`, p));
+        }
+        if (!boat && waterDepth(hf, p.x, p.z) > 0.2) {
+            findings.push(finding(check, `heroProp ${p.id} stands in water`, p));
+        }
+        if (p.collider || (p.colliders && p.colliders.length > 0)) {
+            clearOfSpawns(`heroProp ${p.id}`, p.x, p.z, 5);
+        }
+    }
+    for (const b of discoveries.billboards) {
+        if (!pointInPolygon(map.boundary, b.x, b.z)) {
+            findings.push(finding(check, `billboard ${b.id} is outside the map boundary`, b));
+        }
+        if (waterDepth(hf, b.x, b.z) > 0.2) {
+            findings.push(finding(check, `billboard ${b.id} stands in water`, b));
+        }
+        if (b.kind !== 'decal') clearOfSpawns(`billboard ${b.id}`, b.x, b.z, 4);
+    }
+    for (const pad of discoveries.boostPads) {
+        if (!pointInPolygon(map.boundary, pad.x, pad.z)) {
+            findings.push(finding(check, `boostPad ${pad.id} is outside the map boundary`, pad));
+        }
+        if (waterDepth(hf, pad.x, pad.z) > 0.1) {
+            findings.push(finding(check, `boostPad ${pad.id} stands in water`, pad));
+        }
+        clearOfSpawns(`boostPad ${pad.id}`, pad.x, pad.z, 4);
+    }
+    return findings;
+}
+
 export function validateMap(bundle: MapBundle): ValidationResult {
     const { net, hf } = bundle;
     const findings: Finding[] = [
@@ -1125,6 +1188,7 @@ export function validateMap(bundle: MapBundle): ValidationResult {
         ...checkAreaRails(net, hf),
         ...checkBoundary(net, bundle.map),
         ...checkPois(net, hf, bundle.map, bundle.pois),
+        ...checkDiscoveries(bundle.discoveries, hf, bundle.map, bundle.pois),
         ...checkZones(bundle.zones, hf),
         ...checkTerrainMesh(hf)
     ];

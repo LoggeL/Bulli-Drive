@@ -1,0 +1,29 @@
+{
+  "format": "bulli-map",
+  "version": 1,
+  "mapId": "logge-forge",
+  "mapVersion": 1,
+  "name": "Logge's Discovery World",
+  "boundary": [
+    [
+      -920,
+      -920
+    ],
+    [
+      920,
+      -920
+    ],
+    [
+      920,
+      920
+    ],
+    [
+      -920,
+      920
+    ]
+  ],
+  "lighting": {
+    "sunAzimuth": 295,
+    "sunElevation": 14
+  }
+}

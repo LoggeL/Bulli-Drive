@@ -1,0 +1,203 @@
+{
+  "format": "bulli-discoveries",
+  "version": 1,
+  "mapId": "stunt-forge",
+  "discoveries": [
+    {
+      "id": "stunt-canyon-gap",
+      "title": "35 m Quarry Canyon Leap",
+      "subtitle": "Full-Send Airtime Challenge",
+      "alloy": "stunt",
+      "x": -135,
+      "z": -420,
+      "hint": "Hit the boost pad and send the North Mesa steel kicker for massive airtime.",
+      "codexEntry": "Kiesgrube's signature full-send gap ramp — built to reward clean throttle lines and plush suspension landings.",
+      "toast": "BIG AIR! 35 m Quarry Canyon Cleared!",
+      "rewardEffect": "confetti",
+      "trigger": {
+        "kind": "airtime",
+        "radius": 48,
+        "minAirSec": 0.9
+      }
+    },
+    {
+      "id": "stunt-spiral-pad",
+      "title": "Sudden Death Spiral Drift Pad",
+      "subtitle": "Bomberman Arena Homage",
+      "alloy": "games",
+      "projectRef": "https://lmf.logge.top/#werk/bomberman-web",
+      "x": 0,
+      "z": 0,
+      "hint": "Drop into the center of the Mega Stunt Bowl and honk on the neon grid.",
+      "codexEntry": "Inspired by Logge's deterministic 60-tick Bomberman where Sudden Death collapses inward in a relentless spiral.",
+      "toast": "SUDDEN DEATH! Spiral Shockwave Triggered!",
+      "rewardEffect": "shockwave",
+      "trigger": {
+        "kind": "horn",
+        "radius": 22
+      }
+    },
+    {
+      "id": "stunt-suds-perch",
+      "title": "SB-1 Sudsblaster Overlook",
+      "subtitle": "Voxel Blitz Quarry Monument",
+      "alloy": "games",
+      "projectRef": "https://lmf.logge.top/#werk/voxel-blitz",
+      "x": 465,
+      "z": 0,
+      "hint": "Climb the East Quarry Rim to find a suspiciously soapy heavy weapon.",
+      "codexEntry": "The iconic SB-1 Sudsblaster from Logge's 32-player Voxel Blitz shooter — fires rising tactical soap bubbles.",
+      "toast": "SB-1 SUDSBLASTER! Tactical Bubbles Deployed!",
+      "rewardEffect": "bubbles",
+      "trigger": {
+        "kind": "proximity",
+        "radius": 24
+      },
+      "heroPropId": "stunt-sudsblaster"
+    }
+  ],
+  "heroProps": [
+    {
+      "id": "stunt-sudsblaster",
+      "model": "prop_sudsblaster",
+      "x": 465,
+      "z": 0,
+      "yaw": -1.5708,
+      "scale": 1.2,
+      "collider": {
+        "kind": "circle",
+        "r": 3.5,
+        "top": "infinity"
+      },
+      "clearRadius": 8,
+      "discoveryId": "stunt-suds-perch"
+    },
+    {
+      "id": "stunt-oilbert-totem",
+      "model": "prop_oilbert_icons",
+      "x": -465,
+      "z": 0,
+      "yaw": 1.5708,
+      "scale": 1,
+      "collider": {
+        "kind": "circle",
+        "r": 3,
+        "top": "infinity"
+      },
+      "clearRadius": 7
+    },
+    {
+      "id": "stunt-kniffel-die",
+      "model": "prop_kniffel_die",
+      "x": 0,
+      "z": 465,
+      "yaw": 0.4,
+      "scale": 1,
+      "collider": {
+        "kind": "obox",
+        "hw": 2.6,
+        "hd": 2.6,
+        "top": 5.2
+      },
+      "clearRadius": 7
+    }
+  ],
+  "billboards": [
+    {
+      "id": "bb-stunt-grid",
+      "texture": "decal_bomberman_grid",
+      "kind": "decal",
+      "x": 0,
+      "z": 0,
+      "yaw": 0,
+      "width": 28,
+      "height": 28,
+      "emissive": true,
+      "discoveryId": "stunt-spiral-pad"
+    },
+    {
+      "id": "bb-stunt-gantry",
+      "texture": "sign_ppk_bulli",
+      "kind": "gantry",
+      "x": 0,
+      "z": -380,
+      "yaw": 0,
+      "width": 12,
+      "height": 4,
+      "emissive": true
+    },
+    {
+      "id": "bb-stunt-welcome",
+      "texture": "sign_lmf_welcome",
+      "kind": "roadside",
+      "x": 40,
+      "z": -135,
+      "yaw": 0,
+      "width": 8,
+      "height": 4,
+      "emissive": true
+    }
+  ],
+  "boostPads": [
+    {
+      "id": "bp-stunt-canyon-e",
+      "x": -205,
+      "z": -420,
+      "yaw": 1.5708,
+      "width": 8,
+      "length": 14,
+      "impulseSpeed": 15,
+      "boostFill": 0.7
+    },
+    {
+      "id": "bp-stunt-canyon-w",
+      "x": 205,
+      "z": -420,
+      "yaw": -1.5708,
+      "width": 8,
+      "length": 14,
+      "impulseSpeed": 15,
+      "boostFill": 0.7
+    },
+    {
+      "id": "bp-stunt-bowl-n",
+      "x": 0,
+      "z": -76,
+      "yaw": 0,
+      "width": 7,
+      "length": 12,
+      "impulseSpeed": 13,
+      "boostFill": 0.5
+    },
+    {
+      "id": "bp-stunt-bowl-s",
+      "x": 0,
+      "z": 76,
+      "yaw": 3.1416,
+      "width": 7,
+      "length": 12,
+      "impulseSpeed": 13,
+      "boostFill": 0.5
+    },
+    {
+      "id": "bp-stunt-drop-s",
+      "x": 0,
+      "z": 240,
+      "yaw": 0,
+      "width": 8,
+      "length": 14,
+      "impulseSpeed": 12,
+      "boostFill": 0.5
+    },
+    {
+      "id": "bp-stunt-rim-e",
+      "x": 435,
+      "z": 160,
+      "yaw": 0,
+      "width": 8,
+      "length": 14,
+      "impulseSpeed": 12,
+      "boostFill": 0.5
+    }
+  ]
+}

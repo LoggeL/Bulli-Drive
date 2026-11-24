@@ -1,0 +1,357 @@
+{
+  "format": "bulli-base",
+  "version": 1,
+  "mapId": "logge-forge",
+  "seed": 1337,
+  "sea": {
+    "floor": -10,
+    "shelf": 120
+  },
+  "coast": [
+    [
+      -780,
+      -880
+    ],
+    [
+      0,
+      -900
+    ],
+    [
+      780,
+      -880
+    ],
+    [
+      890,
+      -400
+    ],
+    [
+      890,
+      420
+    ],
+    [
+      800,
+      860
+    ],
+    [
+      180,
+      880
+    ],
+    [
+      -220,
+      870
+    ],
+    [
+      -420,
+      840
+    ],
+    [
+      -420,
+      560
+    ],
+    [
+      -510,
+      520
+    ],
+    [
+      -560,
+      560
+    ],
+    [
+      -600,
+      840
+    ],
+    [
+      -840,
+      820
+    ],
+    [
+      -890,
+      320
+    ],
+    [
+      -890,
+      -380
+    ]
+  ],
+  "beach": {
+    "width": 32,
+    "top": 3,
+    "blend": 40
+  },
+  "land": {
+    "base": 14,
+    "tilt": [
+      0,
+      0
+    ],
+    "tiltOrigin": [
+      0,
+      0
+    ]
+  },
+  "hills": [
+    {
+      "id": "mount-aftermovie",
+      "x": -660,
+      "z": 680,
+      "radii": [
+        240,
+        220
+      ],
+      "height": 94
+    },
+    {
+      "id": "arcanum-crag",
+      "x": 760,
+      "z": -640,
+      "radii": [
+        180,
+        170
+      ],
+      "height": 38
+    },
+    {
+      "id": "codex-ridge",
+      "x": 700,
+      "z": 580,
+      "radii": [
+        230,
+        210
+      ],
+      "height": 48
+    },
+    {
+      "id": "reactor-hill",
+      "x": 440,
+      "z": 340,
+      "radii": [
+        240,
+        220
+      ],
+      "height": 18
+    },
+    {
+      "id": "transcripator-hill",
+      "x": 260,
+      "z": 680,
+      "radii": [
+        210,
+        170
+      ],
+      "height": 24
+    },
+    {
+      "id": "nw-hill",
+      "x": -680,
+      "z": -620,
+      "radii": [
+        200,
+        180
+      ],
+      "height": 14
+    },
+    {
+      "id": "selantis-bluff",
+      "x": -740,
+      "z": 240,
+      "radii": [
+        160,
+        160
+      ],
+      "height": 14
+    }
+  ],
+  "flats": [
+    {
+      "id": "forge-hub-flat",
+      "x": 0,
+      "z": 0,
+      "radii": [
+        170,
+        170
+      ],
+      "height": 18,
+      "strength": 1
+    },
+    {
+      "id": "bomberman-flat",
+      "x": 540,
+      "z": -360,
+      "radii": [
+        140,
+        130
+      ],
+      "height": 10,
+      "strength": 1
+    },
+    {
+      "id": "ramsen-flat",
+      "x": -340,
+      "z": -280,
+      "radii": [
+        140,
+        130
+      ],
+      "height": 16,
+      "strength": 1
+    },
+    {
+      "id": "poolparty-flat",
+      "x": -640,
+      "z": -240,
+      "radii": [
+        110,
+        110
+      ],
+      "height": 12,
+      "strength": 1
+    },
+    {
+      "id": "bands-flat",
+      "x": -200,
+      "z": 340,
+      "radii": [
+        120,
+        120
+      ],
+      "height": 14,
+      "strength": 1
+    },
+    {
+      "id": "harbor-flat",
+      "x": -440,
+      "z": 450,
+      "radii": [
+        110,
+        90
+      ],
+      "height": 4,
+      "strength": 0.9
+    }
+  ],
+  "cliffs": [],
+  "ridges": [],
+  "noise": {
+    "amplitude": 1.6,
+    "wavelength": 300,
+    "octaves": 4,
+    "gain": 0.45,
+    "ridged": 0.2,
+    "regions": [
+      {
+        "id": "center-smooth",
+        "polygon": [
+          [
+            -200,
+            -200
+          ],
+          [
+            200,
+            -200
+          ],
+          [
+            200,
+            200
+          ],
+          [
+            -200,
+            200
+          ]
+        ],
+        "amplitude": 0.2,
+        "blend": 50
+      },
+      {
+        "id": "arena-smooth",
+        "polygon": [
+          [
+            400,
+            -490
+          ],
+          [
+            680,
+            -490
+          ],
+          [
+            680,
+            -230
+          ],
+          [
+            400,
+            -230
+          ]
+        ],
+        "amplitude": 0.1,
+        "blend": 40
+      }
+    ]
+  },
+  "regions": [
+    {
+      "id": "aftermovie-snow",
+      "surface": "snow",
+      "polygon": [
+        [
+          -850,
+          520
+        ],
+        [
+          -520,
+          520
+        ],
+        [
+          -520,
+          840
+        ],
+        [
+          -850,
+          840
+        ]
+      ]
+    },
+    {
+      "id": "suds-quarry-rock",
+      "surface": "rock",
+      "polygon": [
+        [
+          560,
+          -220
+        ],
+        [
+          700,
+          -220
+        ],
+        [
+          700,
+          -60
+        ],
+        [
+          560,
+          -60
+        ]
+      ]
+    },
+    {
+      "id": "selantis-sand",
+      "surface": "sand",
+      "polygon": [
+        [
+          -860,
+          140
+        ],
+        [
+          -780,
+          140
+        ],
+        [
+          -780,
+          360
+        ],
+        [
+          -860,
+          360
+        ]
+      ]
+    }
+  ]
+}

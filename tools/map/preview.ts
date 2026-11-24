@@ -17,7 +17,9 @@ const COLORS: Record<number, [number, number, number]> = {
     [SURFACE.sand]: [225, 205, 150],
     [SURFACE.wetSand]: [185, 165, 120],
     [SURFACE.rock]: [125, 115, 105],
-    [SURFACE.water]: [40, 95, 140]
+    [SURFACE.water]: [40, 95, 140],
+    [SURFACE.snow]: [236, 242, 248],
+    [SURFACE.ice]: [170, 215, 240]
 };
 
 export function renderPreview(result: BakeResult): Uint8Array {

@@ -1,0 +1,1422 @@
+{
+  "format": "bulli-roads",
+  "version": 1,
+  "mapId": "alpen-pass",
+  "profiles": {
+    "touge": {
+      "width": 11,
+      "lanes": [
+        1,
+        1
+      ],
+      "surface": "asphalt",
+      "markings": {
+        "center": "solidYellow",
+        "lanes": "none",
+        "edges": true
+      },
+      "curb": {
+        "left": false,
+        "right": false,
+        "height": 0
+      },
+      "sidewalk": {
+        "left": 0,
+        "right": 0
+      },
+      "shoulder": 1.5,
+      "wear": 0.35,
+      "designSpeed": 30
+    },
+    "valley": {
+      "width": 12,
+      "lanes": [
+        1,
+        1
+      ],
+      "surface": "asphalt",
+      "markings": {
+        "center": "dashedWhite",
+        "lanes": "none",
+        "edges": true
+      },
+      "curb": {
+        "left": true,
+        "right": true,
+        "height": 0.15
+      },
+      "sidewalk": {
+        "left": 2,
+        "right": 2
+      },
+      "shoulder": 0.5,
+      "wear": 0.25,
+      "designSpeed": 40
+    },
+    "ski-piste": {
+      "width": 12,
+      "lanes": [
+        1,
+        1
+      ],
+      "surface": "snow",
+      "markings": {
+        "center": "none",
+        "lanes": "none",
+        "edges": false
+      },
+      "curb": {
+        "left": false,
+        "right": false,
+        "height": 0
+      },
+      "sidewalk": {
+        "left": 0,
+        "right": 0
+      },
+      "shoulder": 1.5,
+      "wear": 0.6,
+      "designSpeed": 28
+    },
+    "ice-oval": {
+      "width": 16,
+      "lanes": [
+        2,
+        2
+      ],
+      "surface": "ice",
+      "markings": {
+        "center": "none",
+        "lanes": "none",
+        "edges": false
+      },
+      "curb": {
+        "left": false,
+        "right": false,
+        "height": 0
+      },
+      "sidewalk": {
+        "left": 0,
+        "right": 0
+      },
+      "shoulder": 2,
+      "wear": 0.2,
+      "designSpeed": 25
+    }
+  },
+  "nodes": [
+    {
+      "id": "v-arena-j",
+      "x": -530,
+      "z": 340,
+      "y": 12,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "yield",
+        "crosswalks": false,
+        "radius": 18
+      }
+    },
+    {
+      "id": "arena-gate",
+      "x": -530,
+      "z": 440,
+      "y": 12,
+      "kind": "end"
+    },
+    {
+      "id": "v-west",
+      "x": -420,
+      "z": 340,
+      "y": 12,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "yield",
+        "crosswalks": false
+      }
+    },
+    {
+      "id": "v-mid",
+      "x": -160,
+      "z": 340,
+      "y": 12,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "stop",
+        "crosswalks": true
+      }
+    },
+    {
+      "id": "v-south-w",
+      "x": -300,
+      "z": 620,
+      "y": 12,
+      "kind": "joint"
+    },
+    {
+      "id": "v-south-e",
+      "x": 100,
+      "z": 620,
+      "y": 12,
+      "kind": "joint"
+    },
+    {
+      "id": "v-lake-w",
+      "x": 100,
+      "z": 450,
+      "y": 12,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "yield",
+        "crosswalks": false,
+        "radius": 18
+      }
+    },
+    {
+      "id": "v-east",
+      "x": 100,
+      "z": 340,
+      "y": 12,
+      "kind": "joint"
+    },
+    {
+      "id": "ice-w",
+      "x": 200,
+      "z": 450,
+      "y": 12,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "none",
+        "crosswalks": false,
+        "radius": 22
+      }
+    },
+    {
+      "id": "ice-n",
+      "x": 380,
+      "z": 300,
+      "y": 12,
+      "kind": "joint"
+    },
+    {
+      "id": "ice-e",
+      "x": 560,
+      "z": 450,
+      "y": 12,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "none",
+        "crosswalks": false,
+        "radius": 22
+      }
+    },
+    {
+      "id": "ice-s",
+      "x": 380,
+      "z": 600,
+      "y": 12,
+      "kind": "joint"
+    },
+    {
+      "id": "t-base",
+      "x": -160,
+      "z": 220,
+      "y": 18,
+      "kind": "joint"
+    },
+    {
+      "id": "t-1e",
+      "x": 210,
+      "z": 180,
+      "y": 38,
+      "kind": "joint"
+    },
+    {
+      "id": "t-2w",
+      "x": -210,
+      "z": 50,
+      "y": 64,
+      "kind": "joint"
+    },
+    {
+      "id": "t-3e",
+      "x": 210,
+      "z": -70,
+      "y": 90,
+      "kind": "joint"
+    },
+    {
+      "id": "t-4w",
+      "x": -210,
+      "z": -190,
+      "y": 116,
+      "kind": "joint"
+    },
+    {
+      "id": "t-5e",
+      "x": 210,
+      "z": -310,
+      "y": 140,
+      "kind": "joint"
+    },
+    {
+      "id": "t-6w",
+      "x": -200,
+      "z": -435,
+      "y": 164,
+      "kind": "joint"
+    },
+    {
+      "id": "summit-w",
+      "x": -110,
+      "z": -580,
+      "y": 176,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "yield",
+        "crosswalks": false,
+        "radius": 18
+      }
+    },
+    {
+      "id": "summit-mid",
+      "x": 0,
+      "z": -580,
+      "y": 176,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "none",
+        "crosswalks": false,
+        "radius": 16
+      }
+    },
+    {
+      "id": "summit-lot-gate",
+      "x": 0,
+      "z": -608,
+      "y": 176,
+      "kind": "end"
+    },
+    {
+      "id": "summit-e",
+      "x": 110,
+      "z": -580,
+      "y": 176,
+      "kind": "junction",
+      "junction": {
+        "shape": "auto",
+        "control": "yield",
+        "crosswalks": false,
+        "radius": 18
+      }
+    },
+    {
+      "id": "piste-top",
+      "x": -490,
+      "z": -500,
+      "y": 138,
+      "kind": "joint"
+    },
+    {
+      "id": "piste-mid",
+      "x": -585,
+      "z": -100,
+      "y": 84,
+      "kind": "joint"
+    },
+    {
+      "id": "piste-low",
+      "x": -575,
+      "z": 180,
+      "y": 38,
+      "kind": "joint"
+    },
+    {
+      "id": "glacier-1",
+      "x": 460,
+      "z": -540,
+      "y": 152,
+      "kind": "joint"
+    },
+    {
+      "id": "glacier-2",
+      "x": 650,
+      "z": -340,
+      "y": 126,
+      "kind": "joint"
+    },
+    {
+      "id": "glacier-3",
+      "x": 455,
+      "z": -160,
+      "y": 100,
+      "kind": "joint"
+    },
+    {
+      "id": "glacier-4",
+      "x": 660,
+      "z": 20,
+      "y": 74,
+      "kind": "joint"
+    },
+    {
+      "id": "glacier-5",
+      "x": 475,
+      "z": 190,
+      "y": 48,
+      "kind": "joint"
+    },
+    {
+      "id": "glacier-6",
+      "x": 670,
+      "z": 330,
+      "y": 26,
+      "kind": "joint"
+    }
+  ],
+  "edges": [
+    {
+      "id": "val-arena-link",
+      "name": "Chaletstrasse",
+      "from": "v-arena-j",
+      "to": "arena-gate",
+      "curve": {
+        "type": "catmullRom",
+        "points": []
+      },
+      "profile": "valley"
+    },
+    {
+      "id": "val-w1",
+      "name": "Ramsen-Tal Allee",
+      "from": "v-arena-j",
+      "to": "v-west",
+      "curve": {
+        "type": "catmullRom",
+        "points": []
+      },
+      "profile": "valley"
+    },
+    {
+      "id": "val-w2",
+      "name": "Ramsen-Tal Allee",
+      "from": "v-west",
+      "to": "v-mid",
+      "curve": {
+        "type": "catmullRom",
+        "points": []
+      },
+      "profile": "valley"
+    },
+    {
+      "id": "val-e1",
+      "name": "Seestrasse",
+      "from": "v-mid",
+      "to": "v-east",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -110,
+            340
+          ],
+          [
+            -40,
+            340
+          ],
+          [
+            35,
+            340
+          ]
+        ]
+      },
+      "profile": "valley"
+    },
+    {
+      "id": "val-s1",
+      "name": "Talring Süd",
+      "from": "v-west",
+      "to": "v-south-w",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -390,
+            490
+          ],
+          [
+            -360,
+            580
+          ]
+        ]
+      },
+      "profile": "valley",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "val-s2",
+      "name": "Talring Süd",
+      "from": "v-south-w",
+      "to": "v-south-e",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -100,
+            635
+          ]
+        ]
+      },
+      "profile": "valley",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "val-s3a",
+      "name": "Seeuferweg",
+      "from": "v-south-e",
+      "to": "v-lake-w",
+      "curve": {
+        "type": "catmullRom",
+        "points": []
+      },
+      "profile": "valley",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "val-s3b",
+      "name": "Seeuferweg",
+      "from": "v-lake-w",
+      "to": "v-east",
+      "curve": {
+        "type": "catmullRom",
+        "points": []
+      },
+      "profile": "valley",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "val-ice-w",
+      "name": "Eissee Zufahrt",
+      "from": "v-lake-w",
+      "to": "ice-w",
+      "curve": {
+        "type": "catmullRom",
+        "points": []
+      },
+      "profile": "valley",
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "ice-nw",
+      "name": "Eissee Oval",
+      "from": "ice-w",
+      "to": "ice-n",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            205,
+            365
+          ],
+          [
+            270,
+            305
+          ],
+          [
+            330,
+            300
+          ]
+        ]
+      },
+      "profile": "ice-oval",
+      "maxGrade": 0.04,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "ice-ne",
+      "name": "Eissee Oval",
+      "from": "ice-n",
+      "to": "ice-e",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            430,
+            300
+          ],
+          [
+            490,
+            305
+          ],
+          [
+            555,
+            365
+          ]
+        ]
+      },
+      "profile": "ice-oval",
+      "maxGrade": 0.04,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "ice-se",
+      "name": "Eissee Oval",
+      "from": "ice-e",
+      "to": "ice-s",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            555,
+            535
+          ],
+          [
+            490,
+            595
+          ],
+          [
+            430,
+            600
+          ]
+        ]
+      },
+      "profile": "ice-oval",
+      "maxGrade": 0.04,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "ice-sw",
+      "name": "Eissee Oval",
+      "from": "ice-s",
+      "to": "ice-w",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            330,
+            600
+          ],
+          [
+            270,
+            595
+          ],
+          [
+            205,
+            535
+          ]
+        ]
+      },
+      "profile": "ice-oval",
+      "maxGrade": 0.04,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "touge-0",
+      "name": "Alpenpass",
+      "from": "v-mid",
+      "to": "t-base",
+      "curve": {
+        "type": "catmullRom",
+        "points": []
+      },
+      "profile": "touge",
+      "maxGrade": 0.11,
+      "rails": [
+        {
+          "side": "left",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        },
+        {
+          "side": "right",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        }
+      ]
+    },
+    {
+      "id": "touge-1",
+      "name": "Alpenpass",
+      "from": "t-base",
+      "to": "t-1e",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -60,
+            218
+          ],
+          [
+            55,
+            180
+          ],
+          [
+            140,
+            200
+          ]
+        ]
+      },
+      "profile": "touge",
+      "maxGrade": 0.11,
+      "rails": [
+        {
+          "side": "left",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        },
+        {
+          "side": "right",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        }
+      ]
+    },
+    {
+      "id": "touge-2",
+      "name": "Alpenpass",
+      "from": "t-1e",
+      "to": "t-2w",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            295,
+            152
+          ],
+          [
+            305,
+            96
+          ],
+          [
+            205,
+            62
+          ],
+          [
+            75,
+            86
+          ],
+          [
+            -65,
+            42
+          ]
+        ]
+      },
+      "profile": "touge",
+      "maxGrade": 0.11,
+      "rails": [
+        {
+          "side": "left",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        },
+        {
+          "side": "right",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        }
+      ]
+    },
+    {
+      "id": "touge-3",
+      "name": "Alpenpass",
+      "from": "t-2w",
+      "to": "t-3e",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -295,
+            18
+          ],
+          [
+            -305,
+            -36
+          ],
+          [
+            -195,
+            -62
+          ],
+          [
+            -65,
+            -36
+          ],
+          [
+            75,
+            -80
+          ]
+        ]
+      },
+      "profile": "touge",
+      "maxGrade": 0.11,
+      "rails": [
+        {
+          "side": "left",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        },
+        {
+          "side": "right",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        }
+      ]
+    },
+    {
+      "id": "touge-4",
+      "name": "Alpenpass",
+      "from": "t-3e",
+      "to": "t-4w",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            295,
+            -102
+          ],
+          [
+            305,
+            -156
+          ],
+          [
+            195,
+            -182
+          ],
+          [
+            65,
+            -156
+          ],
+          [
+            -75,
+            -200
+          ]
+        ]
+      },
+      "profile": "touge",
+      "maxGrade": 0.11,
+      "rails": [
+        {
+          "side": "left",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        },
+        {
+          "side": "right",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        }
+      ]
+    },
+    {
+      "id": "touge-5",
+      "name": "Alpenpass",
+      "from": "t-4w",
+      "to": "t-5e",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -295,
+            -222
+          ],
+          [
+            -305,
+            -276
+          ],
+          [
+            -195,
+            -302
+          ],
+          [
+            -65,
+            -276
+          ],
+          [
+            75,
+            -320
+          ]
+        ]
+      },
+      "profile": "touge",
+      "maxGrade": 0.11,
+      "rails": [
+        {
+          "side": "left",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        },
+        {
+          "side": "right",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        }
+      ]
+    },
+    {
+      "id": "touge-6",
+      "name": "Alpenpass",
+      "from": "t-5e",
+      "to": "t-6w",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            295,
+            -346
+          ],
+          [
+            305,
+            -398
+          ],
+          [
+            185,
+            -424
+          ],
+          [
+            55,
+            -398
+          ],
+          [
+            -75,
+            -442
+          ]
+        ]
+      },
+      "profile": "touge",
+      "maxGrade": 0.11,
+      "rails": [
+        {
+          "side": "left",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        },
+        {
+          "side": "right",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        }
+      ]
+    },
+    {
+      "id": "touge-7",
+      "name": "Alpenpass",
+      "from": "t-6w",
+      "to": "summit-w",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -200,
+            -485
+          ],
+          [
+            -145,
+            -520
+          ],
+          [
+            -110,
+            -548
+          ]
+        ]
+      },
+      "profile": "touge",
+      "maxGrade": 0.11,
+      "rails": [
+        {
+          "side": "left",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        },
+        {
+          "side": "right",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        }
+      ]
+    },
+    {
+      "id": "summit-crest-w",
+      "name": "Gipfelstrasse",
+      "from": "summit-w",
+      "to": "summit-mid",
+      "curve": {
+        "type": "catmullRom",
+        "points": []
+      },
+      "profile": "touge",
+      "maxGrade": 0.08,
+      "rails": [
+        {
+          "side": "left",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        },
+        {
+          "side": "right",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        }
+      ]
+    },
+    {
+      "id": "summit-crest-e",
+      "name": "Gipfelstrasse",
+      "from": "summit-mid",
+      "to": "summit-e",
+      "curve": {
+        "type": "catmullRom",
+        "points": []
+      },
+      "profile": "touge",
+      "maxGrade": 0.08,
+      "rails": [
+        {
+          "side": "left",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        },
+        {
+          "side": "right",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        }
+      ]
+    },
+    {
+      "id": "summit-lot-link",
+      "name": "Gipfelplatz",
+      "from": "summit-mid",
+      "to": "summit-lot-gate",
+      "curve": {
+        "type": "catmullRom",
+        "points": []
+      },
+      "profile": "valley",
+      "maxGrade": 0.06,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "piste-1",
+      "name": "Feldberg Piste",
+      "from": "summit-w",
+      "to": "piste-top",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -230,
+            -580
+          ],
+          [
+            -380,
+            -555
+          ]
+        ]
+      },
+      "profile": "ski-piste",
+      "maxGrade": 0.18,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "piste-2",
+      "name": "Feldberg Piste",
+      "from": "piste-top",
+      "to": "piste-mid",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -565,
+            -355
+          ],
+          [
+            -590,
+            -235
+          ]
+        ]
+      },
+      "profile": "ski-piste",
+      "maxGrade": 0.18,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "piste-3",
+      "name": "Feldberg Piste",
+      "from": "piste-mid",
+      "to": "piste-low",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -580,
+            40
+          ]
+        ]
+      },
+      "profile": "ski-piste",
+      "maxGrade": 0.2,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "piste-4",
+      "name": "Feldberg Piste",
+      "from": "piste-low",
+      "to": "v-arena-j",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            -555,
+            260
+          ]
+        ]
+      },
+      "profile": "ski-piste",
+      "maxGrade": 0.2,
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "glacier-1",
+      "name": "Flachau Pass",
+      "from": "summit-e",
+      "to": "glacier-1",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            235,
+            -555
+          ],
+          [
+            355,
+            -565
+          ]
+        ]
+      },
+      "profile": "touge",
+      "maxGrade": 0.11,
+      "rails": [
+        {
+          "side": "left",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        },
+        {
+          "side": "right",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        }
+      ]
+    },
+    {
+      "id": "glacier-2",
+      "name": "Flachau Pass",
+      "from": "glacier-1",
+      "to": "glacier-2",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            615,
+            -475
+          ]
+        ]
+      },
+      "profile": "touge",
+      "maxGrade": 0.11,
+      "rails": [
+        {
+          "side": "left",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        },
+        {
+          "side": "right",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        }
+      ]
+    },
+    {
+      "id": "glacier-3",
+      "name": "Flachau Pass",
+      "from": "glacier-2",
+      "to": "glacier-3",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            570,
+            -245
+          ]
+        ]
+      },
+      "profile": "touge",
+      "maxGrade": 0.11,
+      "rails": [
+        {
+          "side": "left",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        },
+        {
+          "side": "right",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        }
+      ]
+    },
+    {
+      "id": "glacier-4",
+      "name": "Flachau Pass",
+      "from": "glacier-3",
+      "to": "glacier-4",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            555,
+            -75
+          ]
+        ]
+      },
+      "profile": "touge",
+      "maxGrade": 0.11,
+      "rails": [
+        {
+          "side": "left",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        },
+        {
+          "side": "right",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        }
+      ]
+    },
+    {
+      "id": "glacier-5",
+      "name": "Flachau Pass",
+      "from": "glacier-4",
+      "to": "glacier-5",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            570,
+            110
+          ]
+        ]
+      },
+      "profile": "touge",
+      "maxGrade": 0.11,
+      "rails": [
+        {
+          "side": "left",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        },
+        {
+          "side": "right",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        }
+      ]
+    },
+    {
+      "id": "glacier-6",
+      "name": "Flachau Pass",
+      "from": "glacier-5",
+      "to": "glacier-6",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            600,
+            240
+          ]
+        ]
+      },
+      "profile": "touge",
+      "maxGrade": 0.11,
+      "rails": [
+        {
+          "side": "left",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        },
+        {
+          "side": "right",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        }
+      ]
+    },
+    {
+      "id": "glacier-7",
+      "name": "Flachau Pass",
+      "from": "glacier-6",
+      "to": "ice-e",
+      "curve": {
+        "type": "catmullRom",
+        "points": [
+          [
+            690,
+            415
+          ],
+          [
+            645,
+            450
+          ]
+        ]
+      },
+      "profile": "touge",
+      "maxGrade": 0.11,
+      "rails": [
+        {
+          "side": "left",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        },
+        {
+          "side": "right",
+          "from": 0,
+          "to": -1,
+          "kind": "wbeam"
+        }
+      ]
+    }
+  ],
+  "areas": [
+    {
+      "id": "chalet-yard",
+      "polygon": [
+        [
+          -620,
+          440
+        ],
+        [
+          -620,
+          580
+        ],
+        [
+          -440,
+          580
+        ],
+        [
+          -440,
+          440
+        ]
+      ],
+      "y": 12,
+      "surface": "concrete",
+      "curb": false,
+      "connects": [
+        "arena-gate"
+      ],
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "summit-plaza",
+      "polygon": [
+        [
+          -60,
+          -668
+        ],
+        [
+          -60,
+          -608
+        ],
+        [
+          60,
+          -608
+        ],
+        [
+          60,
+          -668
+        ]
+      ],
+      "y": 176,
+      "surface": "asphalt",
+      "curb": true,
+      "markings": "parking",
+      "connects": [
+        "summit-lot-gate"
+      ],
+      "tags": [
+        "noRail"
+      ]
+    }
+  ]
+}
