@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { mapFor } from '../../../src/server/maps.js';
-import { LOT_RULES, LOT_SNAP, placeBuildings, type BuildingLot } from '../../../src/shared/map/buildings.js';
+import { LOT_MAX_RELIEF, LOT_RULES, LOT_SNAP, pieceFoundation, placeBuildings, type BuildingLot } from '../../../src/shared/map/buildings.js';
 import { pointInPolygon, polylineDistance, type Vec2 } from '../../../src/shared/map/geometry.js';
 import { heightAt, zoneAt } from '../../../src/shared/map/heightfield.js';
 import {
     arenaFence, boundaryFence, CONTAINER_TOP, createMapData, FENCE_PIECE, FOUNTAIN_RADIUS, FOUNTAIN_TOP, heightfieldHash,
     JUMP_LANDING, JUMP_RUNUP, JUMP_SIDE, LANDMARK_PIECES, roadResetPose, zoneFence
 } from '../../../src/shared/map/mapData.js';
-import { atRockFoot, groundGrade, MOLE_FLANK, placePlants, PLANT_COLLIDERS, PLANT_MAX_GRADE, plantFits, TALUS_MIN_HEIGHT } from '../../../src/shared/map/plants.js';
+import { atRockFoot, BOULDER_MAX_GRADE, groundGrade, MOLE_FLANK, placePlants, PLANT_COLLIDERS, PLANT_MAX_GRADE, plantFits, TALUS_MIN_HEIGHT } from '../../../src/shared/map/plants.js';
 import { networkRailColliders, type SegmentCollider } from '../../../src/shared/map/rails.js';
 import { buildRoadNetwork, insideCorridor, roadSurfaceIdAt } from '../../../src/shared/map/roadNetwork.js';
 import type { RoadArea } from '../../../src/shared/map/roadSchema.js';
@@ -537,6 +537,100 @@ describe('heightfieldHash', () => {
     });
 });
 
+describe('systemic placement rules: building relief/seat/biome, multi-gate arena fences & flora limits', () => {
+    it('rejects building lots that float past foundation or bury uphill doors even when relief <= LOT_MAX_RELIEF', () => {
+        const net = buildRoadNetwork(network([node('a', 0, 0), node('b', 160, 0)], [edge('ab', 'a', 'b')]));
+        // Road runs along z=0 (width 10 -> edge at z=±5). Residential lots have setback 4 -> front at z=9, back ~z=23.
+        // Case 1: downhill drop of 1.1 m across lot depth (total relief 1.1 <= 1.4, but originH - minH = 1.1 > foundation(1.0) - 0.15 = 0.85)
+        const downhillHf = makeHeightfield((_, z) => (z <= 9 ? 10 : Math.max(8.9, 10 - (z - 9) * 0.085)), () => ZONE.residential);
+        expect(placeBuildings({ net, hf: downhillHf, areas: [], reserved: [], biome: 'coastal' }).filter(b => b.side === 'right')).toEqual([]);
+
+        // Case 2: uphill rise of 0.70 m across lot depth (total relief 0.70 <= 1.4, but maxH - originH = 0.70 > 0.50 max burial)
+        const uphillHf = makeHeightfield((_, z) => (z <= 9 ? 10 : Math.min(10.7, 10 + (z - 9) * 0.06)), () => ZONE.residential);
+        expect(placeBuildings({ net, hf: uphillHf, areas: [], reserved: [], biome: 'coastal' }).filter(b => b.side === 'right')).toEqual([]);
+
+        // Case 3: gentle 0.35 m rise passes cleanly
+        const gentleHf = makeHeightfield((_, z) => (z <= 9 ? 10 : Math.min(10.35, 10 + (z - 9) * 0.03)), () => ZONE.residential);
+        const placed = placeBuildings({ net, hf: gentleHf, areas: [], reserved: [], biome: 'coastal' }).filter(b => b.side === 'right');
+        expect(placed.length).toBeGreaterThan(0);
+        for (const lot of placed) {
+            const originH = heightAt(gentleHf, lot.x, lot.z);
+            let minH = Infinity, maxH = -Infinity;
+            for (const [x, z] of boxSamples(placementBox(lot), 2)) {
+                const h = heightAt(gentleHf, x, z);
+                if (h < minH) minH = h;
+                if (h > maxH) maxH = h;
+            }
+            expect(originH - minH).toBeLessThanOrEqual(pieceFoundation(lot.piece) - 0.15 + 1e-6);
+            expect(maxH - originH).toBeLessThanOrEqual(0.5 + 1e-6);
+        }
+    });
+
+    it('gates coastal beach and harbor industrial buildings out of alpine and quarry biomes', () => {
+        const net = buildRoadNetwork(network([node('a', 0, 0), node('b', 160, 0)], [edge('ab', 'a', 'b')]));
+        const beachHf = makeHeightfield(() => 5, () => ZONE.beach);
+        const indHf = makeHeightfield(() => 5, () => ZONE.industrial);
+        expect(placeBuildings({ net, hf: beachHf, areas: [], reserved: [], biome: 'coastal' }).length).toBeGreaterThan(0);
+        expect(placeBuildings({ net, hf: beachHf, areas: [], reserved: [], biome: 'alpine' })).toEqual([]);
+        expect(placeBuildings({ net, hf: beachHf, areas: [], reserved: [], biome: 'quarry' })).toEqual([]);
+        expect(placeBuildings({ net, hf: indHf, areas: [], reserved: [], biome: 'coastal' }).length).toBeGreaterThan(0);
+        expect(placeBuildings({ net, hf: indHf, areas: [], reserved: [], biome: 'alpine' })).toEqual([]);
+        expect(placeBuildings({ net, hf: indHf, areas: [], reserved: [], biome: 'quarry' })).toEqual([]);
+    });
+
+    it('cuts open gates in arenaFence at every area.connects road node and closes them all in Party mode', () => {
+        const net = buildRoadNetwork(network(
+            [
+                node('rn', 0, -140), node('bn', 0, -50),
+                node('rs', 0, 140), node('bs', 0, 50),
+                node('re', 160, 0), node('be', 60, 0),
+                node('rw', -160, 0), node('bw', -60, 0)
+            ],
+            [edge('dn', 'rn', 'bn'), edge('ds', 'rs', 'bs'), edge('de', 're', 'be'), edge('dw', 'rw', 'bw')],
+            {
+                areas: [{
+                    id: 'bowl', polygon: [[-60, -50], [-60, 50], [60, 50], [60, -50]],
+                    y: 0, surface: 'concrete', curb: false, connects: ['bn', 'bs', 'be', 'bw']
+                }]
+            }
+        ));
+        const area = net.areas[0];
+        const fence = arenaFence(area, { x: 0, z: -50, yaw: 0, width: 14 }, net);
+        // 4 connected drop roads -> 4 gate openings, 4 closing colliders for Party mode
+        expect(fence.gates).toHaveLength(4);
+        expect(fence.lines).toHaveLength(4);
+        // Verify none of the 4 perimeter lines crosses the center of any of the 4 drop road entries
+        const segments: SegmentCollider[] = [];
+        for (const line of fence.lines) {
+            for (let i = 1; i < line.length; i++) {
+                segments.push({ kind: 'segment', ax: line[i - 1][0], az: line[i - 1][1], bx: line[i][0], bz: line[i][1], r: 0.4, top: Infinity });
+            }
+        }
+        // Arena fence sits 0.5 m inset inside the polygon outline ([-59.5..59.5, -49.5..49.5])
+        const gateMidpoints: readonly [number, number][] = [[0, -49.5], [0, 49.5], [59.5, 0], [-59.5, 0]];
+        for (const [gx, gz] of gateMidpoints) {
+            expect(segments.some(s => colliderHolds(s, gx, gz)), `entry (${gx},${gz}) blocked`).toBe(false);
+        }
+        // Party mode gate colliders block every one of the 4 openings
+        for (const [gx, gz] of gateMidpoints) {
+            expect(fence.gates.some(g => colliderHolds(g, gx, gz)), `party gate (${gx},${gz}) open`).toBe(true);
+        }
+    });
+
+    it('enforces BOULDER_MAX_GRADE <= 0.55 and gates oaks, cypresses and palms out of quarry biome', () => {
+        expect(BOULDER_MAX_GRADE).toBeLessThanOrEqual(0.55);
+        // Steep 62% slope (within PLANT_MAX_GRADE 0.70, above BOULDER_MAX_GRADE 0.55): boulders rejected
+        const steepHf = makeHeightfield((x) => 10 + 0.62 * x, () => ZONE.wild, () => SURFACE.rock);
+        const net = buildRoadNetwork(network([node('a', -100, -100), node('b', 100, -100)], [edge('ab', 'a', 'b')]));
+        const boundary: Vec2[] = [[-140, -140], [140, -140], [140, 140], [-140, 140]];
+        const quarryPlants = placePlants({
+            net, hf: steepHf, areas: [], boundary, buildings: new BoxIndex(), reserved: [], moles: [], biome: 'quarry'
+        });
+        expect(quarryPlants.filter(p => p.kind === 'oak' || p.kind === 'cypress' || p.kind === 'palm')).toEqual([]);
+        expect(quarryPlants.filter(p => (p.kind === 'boulder' || p.kind === 'rock') && groundGrade(steepHf, p.x, p.z) > BOULDER_MAX_GRADE)).toEqual([]);
+    });
+});
+
 describe('Bulli Bay', () => {
     const map = mapFor();
     // Sweeping every building takes several seconds on a 4-core CI runner
@@ -555,9 +649,11 @@ describe('Bulli Bay', () => {
         expect(map.structures.filter(s => s.kind === 'container')).toHaveLength(12);
         // The jumps of pois.json and the arena's two ramps
         expect(map.ramps).toHaveLength((map.sources.pois.jumps ?? []).length + 2);
-        // A town and a countryside (regression lock of the placement, see the commit)
-        expect(map.buildings.length).toBeGreaterThan(400);
+        // A town and a countryside (regression lock after BAKE_VERSION=4 + LOT_MAX_RELIEF=1.4 + foundation/burial filter: 359 grounded buildings, 0 floating/buried)
+        expect(map.buildings.length).toBeGreaterThan(300);
         expect(map.plants.length).toBeGreaterThan(1500);
+        // Water tower 6 m keepout: no plants overlap tower legs
+        expect(map.plants.filter(p => Math.hypot(p.x - 150, p.z + 150) < 6)).toEqual([]);
     });
 
     it('keeps every building clear of the corridors and areas, in its zone, on level dry ground, apart from the others', { timeout: WHOLE_MAP_TIMEOUT }, () => {
@@ -572,7 +668,7 @@ describe('Bulli Bay', () => {
                 low = Math.min(low, h);
                 high = Math.max(high, h);
             }
-            expect(high - low).toBeLessThanOrEqual(2.5);
+            expect(high - low).toBeLessThanOrEqual(LOT_MAX_RELIEF);
             expect(low).toBeGreaterThan(0.5);
         }
         const index = new BoxIndex();

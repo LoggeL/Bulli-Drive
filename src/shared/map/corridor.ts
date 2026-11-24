@@ -7,10 +7,13 @@
 
 import { pointInPolygon, polygonEdgeDistance, type Vec2 } from './geometry.js';
 import type { RoadProfile } from './roadSchema.js';
+import type { OBox } from './structures.js';
 import { SURFACE_PRIORITY } from './types.js';
 
 // Horizontal run per metre of height of an embankment or cut (1 : 1.5)
 export const EMBANKMENT_RUN = 1.5;
+// Width (m) of the C1 shoulder & toe fillet easing embankments into flat zones and natural ground
+export const EMBANKMENT_FILLET = 3;
 // The flat zone reaches at least this far beyond the drivable edge: two
 // grid cells, so every cell the road touches has four corners at road
 // height and the bilinear surface there is exactly the road
@@ -398,17 +401,29 @@ const BLOCK = 16;
 // Upper limit of the search radius around a corridor (m)
 const MAX_REACH = 240;
 
+// C1 height allowance at distance d beyond a flat zone: smooth quadratic shoulder
+// over [0, fillet], then constant 1 : run slope beyond (never steeper than 1 : run)
+export function embankmentOffset(d: number, run: number, fillet: number): number {
+    if (d <= 0) return 0;
+    if (fillet <= 0) return d / run;
+    if (d < fillet) return (d * d) / (2 * fillet * run);
+    return (d - fillet / 2) / run;
+}
+
 // Collects for every grid point the lowest and highest height the corridors
 // allow and shapes the natural terrain into that range:
-//   lo = max over corridors (road - d / 1.5), hi = min (road + d / 1.5)
+//   lo = max over corridors (road - offset(d)), hi = min (road + offset(d))
 // with d the distance beyond the flat zone (0 inside it). Each bound is a
-// cone around the road, so the result never gets steeper than 1 : 1.5
-// where a corridor shapes it, and it is continuous where corridors meet.
+// C1-filleted cone around the road, so the result never gets steeper than
+// 1 : 1.5 where a corridor shapes it, and it is continuous where corridors meet.
 // Conflicts (lo > hi) are reported, not hidden (6.4, step 6).
 export class TerrainShaper {
     readonly lo: Float64Array;
     readonly hi: Float64Array;
-    // 1 where a flat zone (a road's, an area's) fixes the height
+    // C1 shoulder-filleted bounds (always inside [lo, hi]; relaxed back to [lo, hi] where two corridors meet tightly)
+    private readonly loSoft: Float64Array;
+    private readonly hiSoft: Float64Array;
+    // 1 where a flat zone (a road's, an area's, a pad's) fixes the height
     readonly flat: Uint8Array;
     // Stamped surface ID per grid point, -1 = none
     readonly surface: Int16Array;
@@ -416,10 +431,17 @@ export class TerrainShaper {
     private readonly blockMax: Float64Array;
     private readonly blockCols: number;
 
-    constructor(readonly grid: GridGeometry, readonly natural: Float64Array, readonly run = EMBANKMENT_RUN) {
+    constructor(
+        readonly grid: GridGeometry,
+        readonly natural: Float64Array,
+        readonly run = EMBANKMENT_RUN,
+        readonly fillet = EMBANKMENT_FILLET
+    ) {
         const n = grid.cols * grid.rows;
         this.lo = new Float64Array(n).fill(-Infinity);
         this.hi = new Float64Array(n).fill(Infinity);
+        this.loSoft = new Float64Array(n).fill(-Infinity);
+        this.hiSoft = new Float64Array(n).fill(Infinity);
         this.flat = new Uint8Array(n);
         this.surface = new Int16Array(n).fill(-1);
         this.blockCols = Math.ceil(grid.cols / BLOCK);
@@ -448,13 +470,17 @@ export class TerrainShaper {
     // that the cone from the road reaches every grid point whose natural
     // height it has to change. A block of the grid matters when its highest
     // point is above the cone's top or its lowest below the cone's bottom
-    // at the block's nearest distance d: flat + run · (height difference)
+    // at the block's nearest distance d: flat + fillet/2 + run · (height difference)
     // ≥ d. Every block within MAX_REACH is checked (by its min and max, so
     // no grid point is missed), the radius is the farthest distance the
     // cone reaches into a block that matters.
-    private reach(minX: number, minZ: number, maxX: number, maxZ: number, yMin: number, yMax: number, flat: number): number {
+    private reach(
+        minX: number, minZ: number, maxX: number, maxZ: number,
+        yMin: number, yMax: number, flat: number, run = this.run
+    ): number {
         const g = this.grid;
-        let radius = flat + 2 * g.cellSize;
+        const filletPad = this.fillet / 2;
+        let radius = flat + filletPad + 2 * g.cellSize;
         const [i0, i1] = this.span(minX - MAX_REACH, maxX + MAX_REACH, g.originX, g.cols);
         const [j0, j1] = this.span(minZ - MAX_REACH, maxZ + MAX_REACH, g.originZ, g.rows);
         const extent = (BLOCK - 1) * g.cellSize;
@@ -467,19 +493,45 @@ export class TerrainShaper {
                 const d = Math.sqrt(dx * dx + dz * dz);
                 if (d > MAX_REACH) continue;
                 const b = bj * this.blockCols + bi;
-                const need = flat + this.run * Math.max(0, this.blockMax[b] - yMin, yMax - this.blockMin[b]);
+                const need = flat + filletPad + run * Math.max(0, this.blockMax[b] - yMin, yMax - this.blockMin[b]);
                 if (need >= d && need + g.cellSize > radius) radius = need + g.cellSize;
             }
         }
         return radius < MAX_REACH ? radius : MAX_REACH;
     }
 
-    private bound(k: number, y: number, d: number): void {
-        const lo = d > 0 ? y - d / this.run : y;
-        const hi = d > 0 ? y + d / this.run : y;
+    private bound(k: number, y: number, d: number, run = this.run): void {
+        const lin = d > 0 ? d / run : 0;
+        const soft = embankmentOffset(d, run, this.fillet);
+        const lo = y - lin, hi = y + lin;
+        const loS = y - soft, hiS = y + soft;
         if (d <= 0) this.flat[k] = 1;
         if (lo > this.lo[k]) this.lo[k] = lo;
         if (hi < this.hi[k]) this.hi[k] = hi;
+        if (loS > this.loSoft[k]) this.loSoft[k] = loS;
+        if (hiS < this.hiSoft[k]) this.hiSoft[k] = hiS;
+    }
+
+    /** Preliminary height at grid cell k from the bounds accumulated so far (ignoring noFill). */
+    private cellShaped(k: number): number {
+        const lo = this.lo[k], hi = this.hi[k];
+        if (lo > hi) return (lo + hi) / 2;
+        const h = this.natural[k];
+        return h < lo ? lo : h > hi ? hi : h;
+    }
+
+    /** Bilinear lookup of the preliminary shaped ground (after roads/areas, before pads/finish). */
+    sampleShaped(x: number, z: number): number {
+        const g = this.grid;
+        let gx = (x - g.originX) / g.cellSize;
+        let gz = (z - g.originZ) / g.cellSize;
+        gx = Math.max(0, Math.min(g.cols - 1, gx));
+        gz = Math.max(0, Math.min(g.rows - 1, gz));
+        const i = Math.min(g.cols - 2, Math.floor(gx)), j = Math.min(g.rows - 2, Math.floor(gz));
+        const fx = gx - i, fz = gz - j, k = j * g.cols + i;
+        const top = this.cellShaped(k) + (this.cellShaped(k + 1) - this.cellShaped(k)) * fx;
+        const bottom = this.cellShaped(k + g.cols) + (this.cellShaped(k + g.cols + 1) - this.cellShaped(k + g.cols)) * fx;
+        return top + (bottom - top) * fz;
     }
 
     private stamp(k: number, surface: number): void {
@@ -572,24 +624,122 @@ export class TerrainShaper {
         }
     }
 
-    // The shaped terrain: the natural height clamped into [lo, hi], the
-    // midpoint where the corridors disagree
     /**
-     * The shaped heights. `noFill` (optional, per grid point): where it is
-     * set, the embankments do not fill (a cliff face and the sea at its
-     * foot: the fill of a road on the edge would spread down the face as one
-     * smooth 1 : 1.5 slope); flat zones and cuts still apply.
+     * Picks the nearest height to `preferredY` that lies inside existing `[lo, hi]`
+     * across every non-flat grid point of the pad's flat footprint, so a pad on a
+     * distant road/area embankment flattens completely without conflict or burial.
      */
-    finish(noFill?: Uint8Array): { heights: Float64Array; conflicts: ConflictReport; conflictMask: Uint8Array } {
+    padTargetY(obox: OBox, flatMargin: number, preferredY: number): number {
+        const g = this.grid;
+        const hw = obox.hw + flatMargin;
+        const hd = obox.hd + flatMargin;
+        const extentX = hw * Math.abs(obox.uz) + hd * Math.abs(obox.ux);
+        const extentZ = hw * Math.abs(obox.ux) + hd * Math.abs(obox.uz);
+        const [i0, i1] = this.span(obox.x - extentX, obox.x + extentX, g.originX, g.cols);
+        const [j0, j1] = this.span(obox.z - extentZ, obox.z + extentZ, g.originZ, g.rows);
+        let maxLo = -Infinity;
+        let minHi = Infinity;
+        for (let j = j0; j <= j1; j++) {
+            const pz = g.originZ + j * g.cellSize;
+            for (let i = i0; i <= i1; i++) {
+                const px = g.originX + i * g.cellSize;
+                const dx = px - obox.x, dz = pz - obox.z;
+                const lx = Math.abs(dx * obox.uz - dz * obox.ux);
+                const lz = Math.abs(dx * obox.ux + dz * obox.uz);
+                if (lx > hw || lz > hd) continue;
+                const cell = j * g.cols + i;
+                if (this.flat[cell] || this.lo[cell] > this.hi[cell]) continue;
+                if (this.lo[cell] > maxLo) maxLo = this.lo[cell];
+                if (this.hi[cell] < minHi) minHi = this.hi[cell];
+            }
+        }
+        if (maxLo > minHi) return (maxLo + minHi) / 2;
+        if (preferredY < maxLo) return maxLo;
+        if (preferredY > minHi) return minHi;
+        return preferredY;
+    }
+
+    /**
+     * Flattens an oriented rectangular pad to `targetY` with `flatMargin` m of
+     * flat collar and a smooth `1 : embankmentRun` ramp back to natural ground.
+     * When `yieldToExisting` is true, existing flat zones (roads, areas) stay
+     * untouched and pad bounds clamp inside existing `[lo, hi]` so pads never
+     * introduce corridor conflicts.
+     */
+    addPad(
+        obox: OBox,
+        targetY: number,
+        flatMargin: number,
+        embankmentRun = this.run,
+        yieldToExisting = false
+    ): void {
+        const g = this.grid;
+        const hw = obox.hw + flatMargin;
+        const hd = obox.hd + flatMargin;
+        const extentX = hw * Math.abs(obox.uz) + hd * Math.abs(obox.ux);
+        const extentZ = hw * Math.abs(obox.ux) + hd * Math.abs(obox.uz);
+        const minX = obox.x - extentX, maxX = obox.x + extentX;
+        const minZ = obox.z - extentZ, maxZ = obox.z + extentZ;
+        const radius = this.reach(minX, minZ, maxX, maxZ, targetY, targetY, 0, embankmentRun);
+        const [i0, i1] = this.span(minX - radius, maxX + radius, g.originX, g.cols);
+        const [j0, j1] = this.span(minZ - radius, maxZ + radius, g.originZ, g.rows);
+        for (let j = j0; j <= j1; j++) {
+            const pz = g.originZ + j * g.cellSize;
+            for (let i = i0; i <= i1; i++) {
+                const px = g.originX + i * g.cellSize;
+                const dx = px - obox.x, dz = pz - obox.z;
+                const lx = Math.abs(dx * obox.uz - dz * obox.ux);
+                const lz = Math.abs(dx * obox.ux + dz * obox.uz);
+                const ox = lx > hw ? lx - hw : 0;
+                const oz = lz > hd ? lz - hd : 0;
+                const d = ox > 0 || oz > 0 ? Math.sqrt(ox * ox + oz * oz) : 0;
+                if (d > radius) continue;
+                const cell = j * g.cols + i;
+                if (!yieldToExisting) {
+                    this.bound(cell, targetY, d, embankmentRun);
+                    continue;
+                }
+                if (this.flat[cell] || this.lo[cell] > this.hi[cell]) continue;
+                const lin = d > 0 ? d / embankmentRun : 0;
+                const soft = embankmentOffset(d, embankmentRun, this.fillet);
+                let lo = targetY - lin, hi = targetY + lin;
+                let loS = targetY - soft, hiS = targetY + soft;
+                if (lo > this.hi[cell]) lo = this.hi[cell];
+                if (hi < this.lo[cell]) hi = this.lo[cell];
+                if (loS > this.hi[cell]) loS = this.hi[cell];
+                if (hiS < this.lo[cell]) hiS = this.lo[cell];
+                if (d <= 0 && lo >= targetY - 1e-9 && hi <= targetY + 1e-9) this.flat[cell] = 1;
+                if (lo > this.lo[cell]) this.lo[cell] = lo;
+                if (hi < this.hi[cell]) this.hi[cell] = hi;
+                if (loS > this.loSoft[cell]) this.loSoft[cell] = loS;
+                if (hiS < this.hiSoft[cell]) this.hiSoft[cell] = hiS;
+            }
+        }
+    }
+
+    // The shaped terrain: the natural height clamped into [lo, hi] with C1 shoulder
+    // & toe fillets outside flat zones, the midpoint where the corridors disagree
+    /**
+     * The shaped heights. `noFill` (optional, per grid point, `0..1`): `0` applies
+     * full embankment fill, `1` skips fill (a cliff face and the sea at its foot),
+     * intermediate weights smoothly blend the fill height back to natural ground;
+     * flat zones and cuts still apply.
+     */
+    finish(noFill?: ArrayLike<number>): { heights: Float64Array; conflicts: ConflictReport; conflictMask: Uint8Array } {
         const g = this.grid;
         const heights = new Float64Array(this.natural.length);
         const conflictMask = new Uint8Array(this.natural.length);
         const conflicts: ConflictReport = { count: 0, maxGap: 0, worstX: 0, worstZ: 0 };
+        const toeRadius = this.fillet > 0 ? this.fillet / (2 * this.run) : 0;
+        const applyNoFill = (rawLo: number, h: number, nf: number): number =>
+            nf >= 1 ? -Infinity : nf > 0 && rawLo > h ? h + (rawLo - h) * (1 - nf) : rawLo;
         for (let k = 0; k < heights.length; k++) {
-            const hi = this.hi[k];
-            const lo = noFill && noFill[k] && !this.flat[k] ? -Infinity : this.lo[k];
-            if (lo > hi) {
-                const gap = lo - hi;
+            const hiLin = this.hi[k];
+            const nf = noFill && !this.flat[k] ? noFill[k] : 0;
+            const h = this.natural[k];
+            const loLin = applyNoFill(this.lo[k], h, nf);
+            if (loLin > hiLin) {
+                const gap = loLin - hiLin;
                 if (gap > CONFLICT_TOLERANCE) {
                     conflicts.count++;
                     conflictMask[k] = 1;
@@ -599,10 +749,42 @@ export class TerrainShaper {
                     conflicts.worstX = g.originX + (k % g.cols) * g.cellSize;
                     conflicts.worstZ = g.originZ + Math.floor(k / g.cols) * g.cellSize;
                 }
-                heights[k] = (lo + hi) / 2;
+                heights[k] = (loLin + hiLin) / 2;
+            } else if (this.flat[k] || toeRadius <= 0) {
+                heights[k] = h < loLin ? loLin : h > hiLin ? hiLin : h;
             } else {
-                const h = this.natural[k];
-                heights[k] = h < lo ? lo : h > hi ? hi : h;
+                let lo = applyNoFill(this.loSoft[k], h, nf);
+                let hi = this.hiSoft[k];
+                // When two corridors sit close enough that their shoulder fillets meet,
+                // scale both fillets back proportionally inside [loLin, hiLin] so no conflict arises
+                if (lo > hi) {
+                    const dLo = lo - loLin;
+                    const dHi = hiLin - hi;
+                    const denom = dLo + dHi;
+                    const t = denom > 1e-12 ? (hiLin - loLin) / denom : 0;
+                    const meet = loLin + t * dLo;
+                    lo = hi = meet;
+                }
+                const span = hi - lo;
+                const kToe = span * 0.25 < toeRadius ? span * 0.25 : toeRadius;
+                let v = h;
+                if (lo > -Infinity) {
+                    const diffLo = Math.abs(v - lo);
+                    v = v > lo ? v : lo;
+                    if (kToe > 0 && diffLo < kToe) {
+                        const t = 1 - diffLo / kToe;
+                        v += 0.25 * kToe * t * t;
+                    }
+                }
+                if (hi < Infinity) {
+                    const diffHi = Math.abs(v - hi);
+                    v = v < hi ? v : hi;
+                    if (kToe > 0 && diffHi < kToe) {
+                        const t = 1 - diffHi / kToe;
+                        v -= 0.25 * kToe * t * t;
+                    }
+                }
+                heights[k] = v;
             }
         }
         return { heights, conflicts, conflictMask };

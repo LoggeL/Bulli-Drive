@@ -17,7 +17,8 @@
       "kind": "plaza",
       "name": "Ramsen-Tal Dorfplatz",
       "x": -300,
-      "z": 340
+      "z": 365,
+      "area": "ramsen-plaza"
     },
     {
       "id": "eissee-oval",
@@ -549,8 +550,8 @@
   "jumps": [
     {
       "id": "feldberg-kicker",
-      "x": -560,
-      "z": 245,
+      "x": -530,
+      "z": 292,
       "yaw": 0,
       "width": 8,
       "length": 12,

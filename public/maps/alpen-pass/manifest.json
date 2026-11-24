@@ -1,8 +1,8 @@
 {
   "mapId": "alpen-pass",
   "mapVersion": 1,
-  "bakeVersion": 3,
-  "sourceHash": "4b02f1f8707dfd5afeac7e5ed359f247",
+  "bakeVersion": 4,
+  "sourceHash": "8defdd2313d225f0852978e55f474a3c",
   "grid": {
     "cols": 801,
     "rows": 801,
@@ -17,26 +17,26 @@
   "files": {
     "terrain": {
       "path": "terrain.bhf",
-      "hash": "7bfb218be263c708",
+      "hash": "cc0ff3ba48c0ab03",
       "bytes": 1964867,
-      "gzipBytes": 210117,
-      "brotliBytes": 177264,
+      "gzipBytes": 207179,
+      "brotliBytes": 173804,
       "layers": {
-        "heights": 174166,
-        "surface": 3638,
-        "zones": 61
+        "heights": 169441,
+        "surface": 4252,
+        "zones": 54
       }
     }
   },
   "stats": {
-    "edges": 35,
-    "nodes": 32,
-    "areas": 2,
-    "roadKm": 10.577,
-    "minHeight": 10.97,
-    "maxHeight": 220.18,
+    "edges": 36,
+    "nodes": 33,
+    "areas": 4,
+    "roadKm": 10.704,
+    "minHeight": 10.68,
+    "maxHeight": 204.53,
     "conflicts": 0,
-    "maxConflictGap": 0.01,
+    "maxConflictGap": 0,
     "infeasibleChains": 0,
     "maxBakedGrade": 0.2
   }

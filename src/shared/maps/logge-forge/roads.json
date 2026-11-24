@@ -431,7 +431,7 @@
       "id": "kniffel-j",
       "x": 340,
       "z": -720,
-      "y": 22,
+      "y": 18,
       "kind": "junction",
       "junction": {
         "shape": "auto",
@@ -443,7 +443,7 @@
       "id": "kniffel-end",
       "x": 380,
       "z": -580,
-      "y": 22,
+      "y": 15,
       "kind": "end"
     },
     {
@@ -505,8 +505,8 @@
     {
       "id": "codex-end",
       "x": 650,
-      "z": 530,
-      "y": 58,
+      "z": 534,
+      "y": 56,
       "kind": "end"
     },
     {
@@ -526,41 +526,34 @@
       "x": -460,
       "z": 460,
       "y": 4,
-      "kind": "joint"
-    },
-    {
-      "id": "pier-tip",
-      "x": -475,
-      "z": 560,
-      "y": 4,
       "kind": "end"
     },
     {
       "id": "aft-1",
-      "x": -830,
-      "z": 540,
-      "y": 46,
+      "x": -845,
+      "z": 520,
+      "y": 45,
       "kind": "joint"
     },
     {
       "id": "aft-2",
-      "x": -740,
-      "z": 780,
-      "y": 70,
+      "x": -770,
+      "z": 815,
+      "y": 69,
       "kind": "joint"
     },
     {
       "id": "aft-3",
-      "x": -575,
-      "z": 720,
-      "y": 90,
+      "x": -595,
+      "z": 755,
+      "y": 89,
       "kind": "joint"
     },
     {
       "id": "summit-top",
-      "x": -650,
-      "z": 650,
-      "y": 102,
+      "x": -636,
+      "z": 644,
+      "y": 100,
       "kind": "end"
     }
   ],
@@ -1486,21 +1479,6 @@
       ]
     },
     {
-      "id": "spur-pier-deck",
-      "name": "IJsselmeer Pier",
-      "from": "pier-base",
-      "to": "pier-tip",
-      "curve": {
-        "type": "catmullRom",
-        "points": []
-      },
-      "profile": "pier",
-      "maxGrade": 0.06,
-      "tags": [
-        "noRail"
-      ]
-    },
-    {
       "id": "climb-aftermovie-1",
       "name": "Mount Aftermovie Pass",
       "from": "out-sw-n",
@@ -1509,8 +1487,8 @@
         "type": "catmullRom",
         "points": [
           [
-            -800,
-            430
+            -810,
+            420
           ]
         ]
       },
@@ -1540,8 +1518,8 @@
         "type": "catmullRom",
         "points": [
           [
-            -845,
-            680
+            -855,
+            685
           ]
         ]
       },
@@ -1571,12 +1549,12 @@
         "type": "catmullRom",
         "points": [
           [
-            -640,
-            815
+            -665,
+            835
           ],
           [
-            -565,
-            780
+            -590,
+            805
           ]
         ]
       },
@@ -1606,8 +1584,8 @@
         "type": "catmullRom",
         "points": [
           [
-            -600,
-            675
+            -592,
+            682
           ]
         ]
       },
@@ -1648,6 +1626,22 @@
         [
           46,
           -46
+        ],
+        [
+          16,
+          -46
+        ],
+        [
+          16,
+          -64
+        ],
+        [
+          -16,
+          -64
+        ],
+        [
+          -16,
+          -46
         ]
       ],
       "y": 18,
@@ -1684,6 +1678,137 @@
       "curb": false,
       "connects": [
         "arena-gate"
+      ],
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "ijsselmeer-pier",
+      "polygon": [
+        [
+          -465,
+          460
+        ],
+        [
+          -465,
+          560
+        ],
+        [
+          -455,
+          560
+        ],
+        [
+          -455,
+          460
+        ]
+      ],
+      "y": 4,
+      "surface": "wood",
+      "curb": false,
+      "walls": true,
+      "connects": [
+        "pier-base"
+      ],
+      "rails": [
+        {
+          "from": 0,
+          "to": 3,
+          "kind": "wood",
+          "flare": [
+            5,
+            1.8
+          ]
+        }
+      ],
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "theater-plaza",
+      "polygon": [
+        [
+          -325,
+          -284
+        ],
+        [
+          -325,
+          -216
+        ],
+        [
+          -271,
+          -216
+        ],
+        [
+          -271,
+          -284
+        ]
+      ],
+      "y": 16,
+      "surface": "concrete",
+      "curb": true,
+      "markings": "plazaPavers",
+      "connects": [],
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "aftermovie-summit",
+      "polygon": [
+        [
+          -688,
+          614
+        ],
+        [
+          -688,
+          658
+        ],
+        [
+          -636,
+          658
+        ],
+        [
+          -636,
+          614
+        ]
+      ],
+      "y": 100,
+      "surface": "asphalt",
+      "curb": false,
+      "connects": [
+        "summit-top"
+      ],
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "codex-overlook",
+      "polygon": [
+        [
+          624,
+          496
+        ],
+        [
+          624,
+          534
+        ],
+        [
+          666,
+          534
+        ],
+        [
+          666,
+          496
+        ]
+      ],
+      "y": 56,
+      "surface": "dirt",
+      "curb": false,
+      "connects": [
+        "codex-end"
       ],
       "tags": [
         "noRail"

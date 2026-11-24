@@ -337,7 +337,11 @@
             445
           ],
           [
-            160,
+            180,
+            420
+          ],
+          [
+            120,
             420
           ],
           [
@@ -552,6 +556,51 @@
         "bowl-s",
         "bowl-e",
         "bowl-w"
+      ],
+      "tags": [
+        "noRail"
+      ]
+    },
+    {
+      "id": "canyon-lookout-pad",
+      "polygon": [
+        [
+          -24,
+          -470
+        ],
+        [
+          -24,
+          -426
+        ],
+        [
+          24,
+          -426
+        ],
+        [
+          24,
+          -470
+        ]
+      ],
+      "y": 14,
+      "surface": "gravel",
+      "curb": false,
+      "connects": [],
+      "rails": [
+        {
+          "from": 0,
+          "to": 1,
+          "kind": "wood"
+        },
+        {
+          "from": 2,
+          "to": 3,
+          "kind": "wood"
+        },
+        {
+          "from": 3,
+          "to": 0,
+          "kind": "wood"
+        }
       ],
       "tags": [
         "noRail"

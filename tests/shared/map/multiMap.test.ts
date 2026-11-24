@@ -7,6 +7,7 @@ import {
     BILLBOARD_TEXTURES, HERO_PROP_MODELS, billboardReservedBox, boostPadReservedBox, heroPropColliders,
     heroPropReservedBoxes, parseDiscoveriesFile, type DiscoveriesFile, type HeroPropDef
 } from '../../../src/shared/map/discoverySchema.js';
+import { pieceFoundation } from '../../../src/shared/map/buildings.js';
 import { pointInPolygon } from '../../../src/shared/map/geometry.js';
 import { decodeHeightfield, heightAt, surfaceAt, waterDepth } from '../../../src/shared/map/heightfield.js';
 import { buildMapFromRaw, fetchMapData, importMapSources, type MapManifestJson } from '../../../src/shared/map/loadMap.js';
@@ -16,6 +17,7 @@ import {
     DEFAULT_MAP_ID, MAP_GRIDS, MAP_IDS, MAP_REGISTRY, isMapId, mapDescriptor, mapGrid, type MapId
 } from '../../../src/shared/map/registry.js';
 import { roadSurfaceIdAt } from '../../../src/shared/map/roadNetwork.js';
+import { boxSamples, placementBox } from '../../../src/shared/map/structures.js';
 import { SURFACE, SURFACE_GRIP, SURFACE_PRIORITY, SURFACE_ROLL } from '../../../src/shared/map/types.js';
 import { createCourse, createRaceProgress, passGate } from '../../../src/shared/race/progress.js';
 import { createRaceWorld } from '../../../src/shared/race/raceWorld.js';
@@ -26,7 +28,9 @@ import { ALL_TRACK_IDS, MAP_TRACK_IDS, TRACK_IDS } from '../../../src/shared/rac
 import { readSources, sourceHash } from '../../../tools/map/bake.js';
 import { toHex } from '../../../tools/map/hash.js';
 import { loadMapBundle } from '../../../tools/map/mapBundle.js';
-import { validateMap } from '../../../tools/map/validateMap.js';
+import {
+    checkBoostPads, checkDuplicateRamps, checkSheerCliffs, checkStructureGrounding, validateMap
+} from '../../../tools/map/validateMap.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 
@@ -212,7 +216,8 @@ describe('discoverySchema validation and deterministic colliders', () => {
         const boxes = heroPropReservedBoxes(prop);
         expect(boxes).toHaveLength(3);
         expect(boxes[0]).toEqual({ x: 100, z: 200, hw: 12, hd: 12, ux: 1, uz: 0 });
-        expect(billboardReservedBox(validFile.billboards[0])).toEqual({ x: 10, z: 20, hw: 7, hd: 2.5, ux: 0, uz: 1 });
+        // Billboard width=12, yaw=0 at (10,20): hw=12/2+2.5=8.5, back=2.5, front=2.5+8=10.5 => shift=+4 (z=24), hd=6.5
+        expect(billboardReservedBox(validFile.billboards[0])).toEqual({ x: 10, z: 24, hw: 8.5, hd: 6.5, ux: 0, uz: 1 });
         expect(boostPadReservedBox(validFile.boostPads[0])).toEqual({ x: 0, z: -20, hw: 5.5, hd: 11, ux: 0, uz: 1 });
     });
 
@@ -375,10 +380,12 @@ describe('biome features and flagship Logge Forge easter-egg catalog', () => {
         expect([...usedTextures].sort()).toEqual([...BILLBOARD_TEXTURES].sort());
     });
 
-    it('gates tropical palms and lake-ice trees out of alpen-pass while keeping bulli-bay bit-for-bit identical', () => {
+    it('gates tropical palms and lake-ice trees out of alpen-pass and pins bulli-bay BAKE_VERSION=4 worldHash', () => {
         const bulli = buildMapFromRaw('bulli-bay', readRawSources('bulli-bay'), readTerrainBytes('bulli-bay'));
-        expect(bulli.worldHash).toBe('0ba6f448');
-        expect(bulli.plants.filter(p => p.kind === 'palm')).toHaveLength(125);
+        // Updated for BAKE_VERSION=4: structure/ramp pads, smooth noFill cliff blend, C1 fillets,
+        // LOT_MAX_RELIEF=1.4 + foundation/burial lot filter, beach_w8_f1 pier restaurant, water-tower keepout
+        expect(bulli.worldHash).toBe('2558cc83');
+        expect(bulli.plants.filter(p => p.kind === 'palm')).toHaveLength(132);
 
         const alpen = buildMapFromRaw('alpen-pass', readRawSources('alpen-pass'), readTerrainBytes('alpen-pass'));
         expect(alpen.plants.filter(p => p.kind === 'palm')).toEqual([]);
@@ -415,5 +422,104 @@ describe('biome features and flagship Logge Forge easter-egg catalog', () => {
         const stageLocalZ = -(marquee.z - stage.z); // stage.yaw === pi
         expect(stageLocalZ - 0.25).toBeGreaterThan(4.8);
         expect((marquee.yOffset ?? 0) - marquee.height / 2).toBeGreaterThan(8.0);
+    });
+
+    it('guarantees zero floating/buried structures, clean harbor water, open stunt-bowl gates, and flat Eissee ice across all 4 maps', () => {
+        for (const id of MAP_IDS) {
+            const m = buildMapFromRaw(id, readRawSources(id), readTerrainBytes(id));
+            // Every procedural building sits within its foundation skirt and burial cap
+            for (const b of m.buildings) {
+                const y0 = heightAt(m.hf, b.x, b.z);
+                let minH = Infinity, maxH = -Infinity;
+                for (const [x, z] of boxSamples(placementBox(b), 2)) {
+                    const h = heightAt(m.hf, x, z);
+                    if (h < minH) minH = h;
+                    if (h > maxH) maxH = h;
+                }
+                expect(y0 - minH - pieceFoundation(b.piece), `${id} bldg float ${b.edge}`).toBeLessThanOrEqual(0.05);
+                expect(maxH - y0, `${id} bldg burial ${b.edge}`).toBeLessThanOrEqual(0.5);
+            }
+            // Every ramp has zero terrain poke and grounded rear edge
+            for (const r of m.ramps) {
+                const fx = Math.sin(r.yaw), fz = Math.cos(r.yaw);
+                const lx = fz, lz = -fx;
+                const base = heightAt(m.hf, r.x - fx * r.length / 2, r.z - fz * r.length / 2);
+                for (let u = 0; u <= 1; u += 0.2) {
+                    const deckY = base + u * r.height;
+                    for (const s of [-0.5, 0, 0.5]) {
+                        const gh = heightAt(m.hf, r.x + fx * (u - 0.5) * r.length + lx * s * r.width, r.z + fz * (u - 0.5) * r.length + lz * s * r.width);
+                        expect(gh - deckY, `${id} ramp ${r.id} poke`).toBeLessThanOrEqual(0.12);
+                        if (u === 0) expect(Math.abs(gh - base), `${id} ramp ${r.id} rear gap`).toBeLessThanOrEqual(0.15);
+                    }
+                }
+            }
+        }
+
+        // logge-forge: sailboat floats in genuine open harbor water (h < -3 m) & ijsselmeer-pier is a wooden area
+        const forge = buildMapFromRaw('logge-forge', readRawSources('logge-forge'), readTerrainBytes('logge-forge'));
+        const boat = forge.heroProps.find(p => p.id === 'hp-sailboat')!;
+        expect(heightAt(forge.hf, boat.x, boat.z)).toBeLessThan(-3);
+        expect(forge.net.areas.some(a => a.id === 'ijsselmeer-pier' && a.surface === 'wood')).toBe(true);
+
+        // alpen-pass: Eissee frozen lake is flat (< 0.5 m relief) and has zero beach surf shacks
+        const alpen = buildMapFromRaw('alpen-pass', readRawSources('alpen-pass'), readTerrainBytes('alpen-pass'));
+        let iceMin = Infinity, iceMax = -Infinity;
+        const { cols, rows, heightOffset, heightScale } = alpen.hf.spec;
+        for (let k = 0; k < cols * rows; k++) {
+            if (alpen.hf.surface[k] === SURFACE.ice) {
+                const h = heightOffset + alpen.hf.q[k] * heightScale;
+                if (h < iceMin) iceMin = h;
+                if (h > iceMax) iceMax = h;
+            }
+        }
+        expect(iceMax - iceMin).toBeLessThan(0.5);
+        expect(alpen.buildings.filter(b => b.piece.startsWith('beach_'))).toEqual([]);
+
+        // stunt-forge: all 4 bowl access roads (N/S/E/W) are open in free-roam simWorld, zero coastal buildings/oaks/cypresses
+        const stunt = buildMapFromRaw('stunt-forge', readRawSources('stunt-forge'), readTerrainBytes('stunt-forge'));
+        expect(stunt.buildings).toEqual([]);
+        expect(stunt.plants.filter(p => p.kind === 'oak' || p.kind === 'cypress' || p.kind === 'palm')).toEqual([]);
+        const segments = stunt.colliders.filter(c => c.kind === 'segment');
+        for (const [gx, gz] of [[0, -100], [0, 100], [120, 0], [-120, 0]]) {
+            const blocked = segments.some(s => {
+                const ex = s.bx - s.ax, ez = s.bz - s.az;
+                const t = Math.max(0, Math.min(1, ((gx - s.ax) * ex + (gz - s.az) * ez) / (ex * ex + ez * ez)));
+                return Math.hypot(gx - (s.ax + t * ex), gz - (s.az + t * ez)) < s.r + 1.5;
+            });
+            expect(blocked, `stunt-bowl entry (${gx},${gz}) blocked by fence`).toBe(false);
+        }
+    });
+
+    it('validateMap catches injected floating props, road billboards, off-road boostPads, duplicate ramps, and sheer cliff steps', () => {
+        const bundle = loadMapBundle('stunt-forge');
+        // 1. Injected floating heroProp on a steep cliff edge
+        const badProp = { ...bundle.discoveries!.heroProps[0], id: 'bad-prop', x: 520, z: 0 };
+        expect(checkStructureGrounding(bundle.net, bundle.hf, bundle.map, bundle.pois, {
+            ...bundle.discoveries!, heroProps: [badProp]
+        }).some(f => f.message.includes('bad-prop'))).toBe(true);
+
+        // 2. Injected billboard standing on a road carriageway
+        const roadBb = { ...bundle.discoveries!.billboards[2], id: 'road-bb', x: 0, z: -260 };
+        expect(checkStructureGrounding(bundle.net, bundle.hf, bundle.map, bundle.pois, {
+            ...bundle.discoveries!, billboards: [roadBb]
+        }).some(f => f.message.includes('road carriageway'))).toBe(true);
+
+        // 3. Injected skewed/off-road boost pad
+        const badPad = { ...bundle.discoveries!.boostPads[0], id: 'bad-pad', x: 435, z: 160, yaw: 0 };
+        expect(checkBoostPads(bundle.net, bundle.pois, { ...bundle.discoveries!, boostPads: [badPad] })
+            .some(f => f.message.includes('bad-pad'))).toBe(true);
+
+        // 4. Injected duplicate ramp overlapping canyon-gap-launch
+        const dupPois = { ...bundle.pois, jumps: [...(bundle.pois.jumps ?? []), { ...bundle.pois.jumps![0], id: 'dup-jump' }] };
+        expect(checkDuplicateRamps(bundle.net, dupPois, []).some(f => f.message.includes('dup-jump'))).toBe(true);
+
+        // 5. Injected sheer 12 m 1-cell cliff step inside non-rock terrain
+        const badHf = { ...bundle.hf, q: new Uint16Array(bundle.hf.q), surface: new Uint8Array(bundle.hf.surface) };
+        const idx = 200 * badHf.spec.cols + 200;
+        badHf.surface[idx] = SURFACE.grass;
+        badHf.surface[idx + 1] = SURFACE.grass;
+        badHf.surface[idx + badHf.spec.cols] = SURFACE.grass;
+        badHf.q[idx + 1] = Math.min(65535, badHf.q[idx] + Math.round(12 / badHf.spec.heightScale));
+        expect(checkSheerCliffs(bundle.net, badHf).some(f => f.message.includes('sheer 1-cell cliff'))).toBe(true);
     });
 });

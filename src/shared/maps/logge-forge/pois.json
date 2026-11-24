@@ -39,22 +39,24 @@
       "id": "ijsselmeer-pier",
       "kind": "pier",
       "name": "IJsselmeer Pier",
-      "x": -468,
-      "z": 510
+      "x": -460,
+      "z": 510,
+      "area": "ijsselmeer-pier"
     },
     {
       "id": "aftermovie-peak",
       "kind": "lookout",
       "name": "Mount Aftermovie",
       "x": -650,
-      "z": 650
+      "z": 650,
+      "area": "aftermovie-summit"
     },
     {
       "id": "harbor-light",
       "kind": "lighthouse",
       "name": "Palatina Lighthouse",
-      "x": -575,
-      "z": 540
+      "x": -535,
+      "z": 495
     }
   ],
   "spawns": {

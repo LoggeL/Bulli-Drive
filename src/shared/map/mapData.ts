@@ -138,7 +138,7 @@ export const LANDMARK_PIECES: Partial<Record<Landmark['kind'], KitPieceId>> = {
     lightMast: 'arena_floodlight',
     cannery: 'industrial_b8_d36_cannery',
     barn: 'industrial_b4_d24',
-    restaurant: 'beach_w11_f2_shop',
+    restaurant: 'beach_w8_f1',
     surfShop: 'beach_w9_f1_shop'
 };
 // The plaza fountain: a basin one can jump onto (as in the old city)
@@ -219,34 +219,103 @@ function insetRectangle(polygon: readonly Vec2[], inset: number): [number, numbe
 }
 
 /**
- * The arena's chain-link fence (12): round the lot, a gap for the gate.
- * The lot is an axis-aligned rectangle and the gate sits on one of its
- * sides, facing along an axis (the validator checks both). Returns the
- * fence as polylines and the gate across its gap.
+ * The arena's chain-link fence (12): round the lot, with a gate opening at
+ * `gate` AND at every additional road node listed in `area.connects` (when
+ * `net` is provided), so multi-entry arenas like Stunt Bowl never seal off
+ * access roads. Returns the fence polylines, primary gate collider, and all
+ * gate colliders (closed in enclosed Party mode).
  */
-export function arenaFence(area: RoadArea, gate: PoisFile['arena']['gate']): {
-    lines: Vec2[][]; gate: SegmentCollider; border: { minX: number; maxX: number; minZ: number; maxZ: number };
+export function arenaFence(
+    area: RoadArea,
+    gate: PoisFile['arena']['gate'],
+    net?: RoadNetwork
+): {
+    lines: Vec2[][];
+    gate: SegmentCollider;
+    gates: SegmentCollider[];
+    border: { minX: number; maxX: number; minZ: number; maxZ: number };
 } {
     const [x0, z0, x1, z1] = insetRectangle(area.polygon, ARENA_FENCE_INSET);
     // Corners counter-clockwise from the north-west one (north = -z)
     const ring: Vec2[] = [[x0, z0], [x0, z1], [x1, z1], [x1, z0]];
-    const half = gate.width / 2;
-    // The side nearest to the gate, and where along it the gap lies
-    let best = -1, bestDistance = Infinity;
-    for (let i = 0; i < 4; i++) {
-        const [ax, az] = ring[i], [bx, bz] = ring[(i + 1) % 4];
-        const along = ax === bx;
-        const d = along ? Math.abs(gate.x - ax) : Math.abs(gate.z - az);
-        if (d < bestDistance) { bestDistance = d; best = i; }
+    const sideLengths = ring.map((a, i) => {
+        const b = ring[(i + 1) % 4];
+        return Math.abs(b[0] - a[0]) + Math.abs(b[1] - a[1]);
+    });
+
+    interface OpeningSpec { x: number; z: number; width: number; primary: boolean }
+    const specs: OpeningSpec[] = [{ x: gate.x, z: gate.z, width: gate.width, primary: true }];
+    if (net) {
+        for (const nodeId of area.connects) {
+            const node = net.nodeById.get(nodeId);
+            if (!node) continue;
+            const dx = node.x - gate.x, dz = node.z - gate.z;
+            const nearPrimary = dx * dx + dz * dz <= (gate.width / 2 + 2) * (gate.width / 2 + 2);
+            if (nearPrimary) continue;
+            let roadWidth = gate.width;
+            for (const end of node.ends) {
+                const w = net.edges[end.edge].profile.width + 2;
+                if (w > roadWidth) roadWidth = w;
+            }
+            specs.push({ x: node.x, z: node.z, width: roadWidth, primary: false });
+        }
     }
-    const a = ring[best], b = ring[(best + 1) % 4];
-    const dx = Math.sign(b[0] - a[0]), dz = Math.sign(b[1] - a[1]);
-    // Gap ends on that side
-    const centre: Vec2 = dx !== 0 ? [gate.x, a[1]] : [a[0], gate.z];
-    const gapA: Vec2 = [centre[0] - dx * half, centre[1] - dz * half];
-    const gapB: Vec2 = [centre[0] + dx * half, centre[1] + dz * half];
-    const line: Vec2[] = [gapB, b, ring[(best + 2) % 4], ring[(best + 3) % 4], a, gapA];
-    return { lines: [line], gate: segment(gapA, gapB, Infinity), border: { minX: x0, maxX: x1, minZ: z0, maxZ: z1 } };
+
+    interface SideOpening {
+        side: number;
+        t0: number;
+        t1: number;
+        gapA: Vec2;
+        gapB: Vec2;
+        collider: SegmentCollider;
+        primary: boolean;
+    }
+    const openings: SideOpening[] = [];
+    for (const spec of specs) {
+        let best = -1, bestDistance = Infinity;
+        for (let i = 0; i < 4; i++) {
+            const [ax, az] = ring[i], [bx, bz] = ring[(i + 1) % 4];
+            const alongZ = ax === bx;
+            const d = alongZ ? Math.abs(spec.x - ax) : Math.abs(spec.z - az);
+            if (d < bestDistance) { bestDistance = d; best = i; }
+        }
+        const a = ring[best], b = ring[(best + 1) % 4];
+        const dx = Math.sign(b[0] - a[0]), dz = Math.sign(b[1] - a[1]);
+        const len = sideLengths[best];
+        const half = spec.width / 2;
+        const centerT = dx !== 0 ? (spec.x - a[0]) * dx : (spec.z - a[1]) * dz;
+        const t0 = Math.max(0, Math.min(len, centerT - half));
+        const t1 = Math.max(0, Math.min(len, centerT + half));
+        const gapA: Vec2 = [a[0] + dx * t0, a[1] + dz * t0];
+        const gapB: Vec2 = [a[0] + dx * t1, a[1] + dz * t1];
+        openings.push({ side: best, t0, t1, gapA, gapB, collider: segment(gapA, gapB, Infinity), primary: spec.primary });
+    }
+
+    const primaryGate = openings.find(o => o.primary)!.collider;
+    const allGates = openings.map(o => o.collider);
+    openings.sort((u, v) => u.side - v.side || u.t0 - v.t0);
+
+    const lines: Vec2[][] = [];
+    const samePoint = (p: Vec2, q: Vec2) => Math.abs(p[0] - q[0]) < 1e-6 && Math.abs(p[1] - q[1]) < 1e-6;
+    const m = openings.length;
+    for (let k = 0; k < m; k++) {
+        const cur = openings[k];
+        const next = openings[(k + 1) % m];
+        const line: Vec2[] = [cur.gapB];
+        if (m === 1) {
+            line.push(ring[(cur.side + 1) % 4], ring[(cur.side + 2) % 4], ring[(cur.side + 3) % 4], ring[cur.side]);
+        } else if (cur.side !== next.side || next.t0 < cur.t1) {
+            let s = (cur.side + 1) % 4;
+            while (s !== (next.side + 1) % 4) {
+                if (!samePoint(line[line.length - 1], ring[s])) line.push(ring[s]);
+                s = (s + 1) % 4;
+            }
+        }
+        if (!samePoint(line[line.length - 1], next.gapA)) line.push(next.gapA);
+        if (line.length >= 2) lines.push(line);
+    }
+
+    return { lines, gate: primaryGate, gates: allGates, border: { minX: x0, maxX: x1, minZ: z0, maxZ: z1 } };
 }
 
 // The Party zone's fence is laid in steps of this length; a step whose
@@ -393,7 +462,7 @@ export function createMapData(sources: MapSources, hf: Heightfield): MapData {
     const structures = [...landmarkStructures(pois), ...containerStructures(pois)];
     const arenaArea = net.areas.find(area => area.id === pois.arena.area);
     if (!arenaArea) throw new Error(`pois.json: the arena's area ${pois.arena.area} is not in roads.json`);
-    const arena = arenaFence(arenaArea, pois.arena.gate);
+    const arena = arenaFence(arenaArea, pois.arena.gate, net);
 
     const discoveries: readonly DiscoveryDef[] = sources.discoveries?.discoveries ?? [];
     const heroProps: readonly HeroPropDef[] = sources.discoveries?.heroProps ?? [];
@@ -404,8 +473,12 @@ export function createMapData(sources: MapSources, hf: Heightfield): MapData {
         : MAP_REGISTRY[DEFAULT_MAP_ID].atmosphere;
 
     // Reserved for landmarks, jumps, spawns, hero monuments, billboards & boost pads
+    const waterTowerKeepout: OBox[] = pois.landmarks
+        .filter(l => l.kind === 'waterTower')
+        .map(l => ({ x: toMillimetre(l.x), z: toMillimetre(l.z), hw: 6, hd: 6, ux: 0, uz: 1 }));
     const reserved: OBox[] = [
         ...structures.map(placementBox),
+        ...waterTowerKeepout,
         ...ramps.map(jumpZone),
         ...pois.spawns.freeRoam.map(slot => spawnZone(slot.x, slot.z)),
         ...pois.spawns.party.map(slot => spawnZone(slot.x, slot.z)),
@@ -413,7 +486,7 @@ export function createMapData(sources: MapSources, hf: Heightfield): MapData {
         ...billboards.map(billboardReservedBox),
         ...boostPads.map(boostPadReservedBox)
     ];
-    const buildings = placeBuildings({ net, hf, areas: net.areas, reserved });
+    const buildings = placeBuildings({ net, hf, areas: net.areas, reserved, biome: atmosphere.biome });
     const buildingIndex = new BoxIndex();
     for (const lot of buildings) buildingIndex.add(placementBox(lot));
     const plants = placePlants({
@@ -481,7 +554,7 @@ export function createMapData(sources: MapSources, hf: Heightfield): MapData {
     const partyFence = pois.party ? zoneFence(partyZone, walls) : [];
     const partyColliders: SegmentCollider[] = [];
     for (const [a, b] of partyFence) segmentChain(a, b, 8, Infinity, partyColliders);
-    if (!pois.party) partyColliders.push(arena.gate);
+    if (!pois.party) partyColliders.push(...arena.gates);
     const partyWorld = createSimWorld(model, [...colliders, ...partyColliders], rampDefs, boostPads);
     partyWorld.border = partyZone;
 

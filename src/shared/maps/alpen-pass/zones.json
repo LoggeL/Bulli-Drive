@@ -122,14 +122,14 @@
       "polygon": [
         [
           -740,
-          230
+          290
         ],
         [
-          120,
-          230
+          95,
+          290
         ],
         [
-          120,
+          95,
           740
         ],
         [
@@ -163,7 +163,7 @@
     },
     {
       "id": "eissee",
-      "zone": "beach",
+      "zone": "wild",
       "name": "Eissee Drift Oval",
       "label": [
         380,

@@ -84,7 +84,7 @@
         "r": 3,
         "top": "infinity"
       },
-      "clearRadius": 7
+      "clearRadius": 14
     },
     {
       "id": "stunt-kniffel-die",
@@ -99,7 +99,34 @@
         "hd": 2.6,
         "top": 5.2
       },
-      "clearRadius": 7
+      "clearRadius": 24
+    },
+    {
+      "id": "hp-stunt-gantry",
+      "model": "prop_billboard_gantry",
+      "x": 0,
+      "z": -380,
+      "yaw": 3.1416,
+      "scale": 1.1,
+      "colliders": [
+        {
+          "kind": "obox",
+          "dx": -7.2,
+          "dz": 0,
+          "hw": 0.9,
+          "hd": 1,
+          "top": "infinity"
+        },
+        {
+          "kind": "obox",
+          "dx": 7.2,
+          "dz": 0,
+          "hw": 0.9,
+          "hd": 1,
+          "top": "infinity"
+        }
+      ],
+      "clearRadius": 12
     }
   ],
   "billboards": [
@@ -121,7 +148,8 @@
       "kind": "gantry",
       "x": 0,
       "z": -380,
-      "yaw": 0,
+      "yOffset": 6.5,
+      "yaw": 3.1416,
       "width": 12,
       "height": 4,
       "emissive": true
@@ -131,7 +159,7 @@
       "texture": "sign_lmf_welcome",
       "kind": "roadside",
       "x": 40,
-      "z": -135,
+      "z": -152,
       "yaw": 0,
       "width": 8,
       "height": 4,
@@ -151,9 +179,9 @@
     },
     {
       "id": "bp-stunt-canyon-w",
-      "x": 205,
+      "x": 115,
       "z": -420,
-      "yaw": -1.5708,
+      "yaw": 1.5708,
       "width": 8,
       "length": 14,
       "impulseSpeed": 15,
@@ -183,7 +211,7 @@
       "id": "bp-stunt-drop-s",
       "x": 0,
       "z": 240,
-      "yaw": 0,
+      "yaw": 3.1416,
       "width": 8,
       "length": 14,
       "impulseSpeed": 12,
@@ -191,9 +219,9 @@
     },
     {
       "id": "bp-stunt-rim-e",
-      "x": 435,
-      "z": 160,
-      "yaw": 0,
+      "x": 442.28,
+      "z": 103.98,
+      "yaw": 0.2225,
       "width": 8,
       "length": 14,
       "impulseSpeed": 12,
