@@ -372,4 +372,46 @@ describe('biome features and flagship Logge Forge easter-egg catalog', () => {
         expect([...usedModels].sort()).toEqual([...HERO_PROP_MODELS].sort());
         expect([...usedTextures].sort()).toEqual([...BILLBOARD_TEXTURES].sort());
     });
+
+    it('gates tropical palms and lake-ice trees out of alpen-pass while keeping bulli-bay bit-for-bit identical', () => {
+        const bulli = buildMapFromRaw('bulli-bay', readRawSources('bulli-bay'), readTerrainBytes('bulli-bay'));
+        expect(bulli.worldHash).toBe('0ba6f448');
+        expect(bulli.plants.filter(p => p.kind === 'palm')).toHaveLength(125);
+
+        const alpen = buildMapFromRaw('alpen-pass', readRawSources('alpen-pass'), readTerrainBytes('alpen-pass'));
+        expect(alpen.plants.filter(p => p.kind === 'palm')).toEqual([]);
+        expect(alpen.plants.filter(p => p.kind === 'cypress').length).toBeGreaterThan(200);
+        expect(alpen.plants.filter(p => surfaceAt(alpen.hf, p.x, p.z) === SURFACE.ice)).toEqual([]);
+        // Snowy slopes grow alpine evergreen cypresses, never broad-leaf oaks
+        const snowyOaks = alpen.plants.filter(p => p.kind === 'oak' && surfaceAt(alpen.hf, p.x, p.z) === SURFACE.snow);
+        expect(snowyOaks).toEqual([]);
+    });
+
+    it('clears monument beams on logge-forge billboards (bb-lmf-welcome & bb-bands-marquee)', () => {
+        const forge = buildMapFromRaw('logge-forge', readRawSources('logge-forge'), readTerrainBytes('logge-forge'));
+        const propManifest = JSON.parse(
+            readFileSync(path.join(ROOT, 'public/models/props/manifest.json'), 'utf8')
+        ) as { props: Record<string, { bounds: { min: [number, number, number]; max: [number, number, number] }; billboardNode?: string }> };
+
+        // bb-lmf-welcome must stay within < 3 m of hp-forge-arch so heroProps mounts it on the arch,
+        // while clearing the full arch depth (Z[-2.2..2.2] / upper beam + badge <= 1.72) and 7.6 m vault opening
+        const arch = forge.heroProps.find(p => p.id === 'hp-forge-arch')!;
+        const welcome = forge.billboards.find(b => b.id === 'bb-lmf-welcome')!;
+        const archBounds = propManifest.props[arch.model].bounds;
+        const distToArch = Math.hypot(welcome.x - arch.x, welcome.z - arch.z);
+        expect(distToArch).toBeLessThan(3.0);
+        // Frame back sits at localZ - 0.25; must clear the arch's Z face without clipping
+        const welcomeLocalZ = welcome.z - arch.z; // arch.yaw === 0
+        expect(welcomeLocalZ - 0.25).toBeGreaterThan(1.75);
+        expect(welcomeLocalZ).toBeGreaterThan(archBounds.max[2]);
+        expect((welcome.yOffset ?? 0) - welcome.height / 2).toBeGreaterThanOrEqual(7.6);
+        expect((welcome.yOffset ?? 0) + welcome.height / 2).toBeLessThan(archBounds.max[1]);
+
+        // bb-bands-marquee sits clear of lmf_festival_stage's upper front truss (localZ <= 4.75) & stage deck
+        const stage = forge.heroProps.find(p => p.id === 'hp-festival-stage')!;
+        const marquee = forge.billboards.find(b => b.id === 'bb-bands-marquee')!;
+        const stageLocalZ = -(marquee.z - stage.z); // stage.yaw === pi
+        expect(stageLocalZ - 0.25).toBeGreaterThan(4.8);
+        expect((marquee.yOffset ?? 0) - marquee.height / 2).toBeGreaterThan(8.0);
+    });
 });

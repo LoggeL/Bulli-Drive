@@ -93,6 +93,8 @@ export interface PlantContext {
     reserved: readonly OBox[];
     // Breakwater lines (pois.json moles): rock armour along them
     moles?: readonly (readonly Vec2[])[];
+    // Biome hint gates tropical California palms out of alpine snow worlds
+    biome?: 'coastal' | 'alpine' | 'quarry' | 'forge';
 }
 
 function pick(rule: PlantRule, u: number): PlantKind {
@@ -125,7 +127,7 @@ export function plantFits(ctx: PlantContext, x: number, z: number, r: number, co
     if (!pointInPolygon(ctx.boundary, x, z)) return false;
     if (heightAt(ctx.hf, x, z) < ctx.hf.spec.waterLevel + PLANT_MIN_HEIGHT) return false;
     const surface = surfaceAt(ctx.hf, x, z);
-    if (surface === SURFACE.water || surface === SURFACE.wetSand) return false;
+    if (surface === SURFACE.water || surface === SURFACE.wetSand || surface === SURFACE.ice) return false;
     if (groundGrade(ctx.hf, x, z) > PLANT_MAX_GRADE) return false;
     if (corridor && insideCorridor(ctx.net, x, z, PLANT_CORRIDOR_MARGIN + r)) return false;
     for (const area of ctx.areas) if (!clearOfArea(area, x, z, PLANT_AREA_MARGIN + r)) return false;
@@ -251,7 +253,8 @@ function moleRocks(ctx: PlantContext, out: Plant[]): void {
 /** Every plant with a collider: street palms, then the zones in PLANT_RULES order, row by row, then the talus at the rock faces and the breakwaters' armour. */
 export function placePlants(ctx: PlantContext): Plant[] {
     const out: Plant[] = [];
-    streetPalms(ctx, out);
+    const alpine = ctx.biome === 'alpine';
+    if (!alpine) streetPalms(ctx, out);
     const spec = ctx.hf.spec;
     const minX = spec.originX, minZ = spec.originZ;
     const extent = (spec.cols - 1) * spec.cellSize;
@@ -265,7 +268,14 @@ export function placePlants(ctx: PlantContext): Plant[] {
                 const x = toMillimetre(minX + (i + 0.1 + 0.8 * hashUnit(hashMix(h, 1))) * rule.cell);
                 const z = toMillimetre(minZ + (j + 0.1 + 0.8 * hashUnit(hashMix(h, 2))) * rule.cell);
                 if (zoneAt(ctx.hf, x, z) !== rule.zone) continue;
-                const kind = pick(rule, hashUnit(hashMix(h, 3)));
+                let kind = pick(rule, hashUnit(hashMix(h, 3)));
+                if (alpine) {
+                    if (kind === 'palm' || (kind === 'oak' && surfaceAt(ctx.hf, x, z) === SURFACE.snow)) {
+                        kind = 'cypress';
+                    }
+                } else if (kind === 'palm' && surfaceAt(ctx.hf, x, z) === SURFACE.snow) {
+                    kind = 'cypress';
+                }
                 const size = toMillimetre(0.8 + 0.45 * hashUnit(hashMix(h, 4)));
                 if (!plantFits(ctx, x, z, PLANT_COLLIDERS[kind].r * size, true)) continue;
                 out.push({ kind, x, z, size, seed: hashMix(h, 5) % 100000 });

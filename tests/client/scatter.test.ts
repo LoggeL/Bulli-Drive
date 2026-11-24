@@ -67,6 +67,18 @@ describe('the scatter on Bulli Bay', () => {
         expect(half.length).toBeLessThan(all.length * 0.65);
         for (const spot of half) expect(full.has(key(spot))).toBe(true);
     });
+
+    it('omits tropical bougainvillea flowers and beach/dune decor on alpine maps', () => {
+        const alpine = mapFor('alpen-pass');
+        const spots = scatterDecor(alpine);
+        expect(spots.length).toBeGreaterThan(100);
+        expect(spots.filter(s => s.kind === 'flowers')).toEqual([]);
+        expect(spots.filter(s => s.kind === 'duneGrass')).toEqual([]);
+        expect(spots.filter(s => s.kind === 'sunshade' || s.kind === 'volleyball')).toEqual([]);
+        // Bulli Bay keeps its coastal flowers and dune grass intact
+        expect(all.filter(s => s.kind === 'flowers').length).toBeGreaterThan(500);
+        expect(all.filter(s => s.kind === 'duneGrass').length).toBeGreaterThan(200);
+    });
 });
 
 // A small map for the props beside the grid: an east-west track from
