@@ -57,23 +57,23 @@ export const SIM_TUNING = {
     GRIP_CIRCLE: 0.6,
     // Reverse
     REV_TOP: 15,
-    REV_ACCEL: 6,
+    REV_ACCEL: 6.8,
     REVERSE_HOLD_TICKS: 8,
     // Handbrake: extra braking without throttle, rear grip drop/recovery time
-    HB_DECEL: 5,
-    HB_DROP_TIME: 0.08,
-    HB_RECOVER_TIME: 0.35,
+    HB_DECEL: 3.8,
+    HB_DROP_TIME: 0.065,
+    HB_RECOVER_TIME: 0.28,
     // Longitudinal load transfer
     LOAD_GAIN: 0.5,
     LOAD_TAU: 0.08,
     LOAD_MAX_REAR: 0.2,     // share of Fz moved to the rear under throttle
     LOAD_MAX_FRONT: 0.1,    // share of Fz moved to the front under braking
     // Steering rate of the road wheels (rad/s)
-    STEER_RATE_IN: 3.5,
-    STEER_RATE_OUT: 5,
+    STEER_RATE_IN: 4.8,
+    STEER_RATE_OUT: 6.8,
     // Assists: spin guard stiffness and slip-angle damping
-    K_SPIN: 15,
-    K_BD: 6,
+    K_SPIN: 14.5,
+    K_BD: 5.9,
     BETA_DAMP_FROM: 15 * DEG,
     // Limits
     R_MAX: 6,               // rad/s
@@ -84,6 +84,8 @@ export const SIM_TUNING = {
     BOOST_MIN: 0.15,        // meter needed to start a boost
     DRIFT_FILL: 0.35,
     AIR_FILL: 0.10,
+    // Default boost-pad re-trigger cooldown (ticks)
+    BOOST_PAD_COOLDOWN_TICKS: 30,
     // Yaw in the air (section 26): no steering; the yaw rate eases at
     // AIR_YAW_RESPONSE (1/s) towards AIR_ALIGN (1/s) times the slip angle,
     // which turns the nose into the flight direction for a straight landing
@@ -93,8 +95,8 @@ export const SIM_TUNING = {
     RESET_GHOST_TICKS: 120,
     // Global knobs
     gripScale: 1.0,
-    yawDampHigh: 0,
-    driftReleaseKick: 0,    // m/s once when a drift of >= 72 ticks ends ("mini turbo")
+    yawDampHigh: 0.45,
+    driftReleaseKick: 5.5,  // max m/s mini-turbo on releasing a sustained drift (tiered)
     // Wall contact
     WALL_FRICTION: 0.15,
     WALL_BOUNCE_MAX: 3,

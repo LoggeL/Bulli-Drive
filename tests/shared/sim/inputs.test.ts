@@ -44,14 +44,18 @@ describe('applyContactGhostFloor', () => {
 describe('step events', () => {
     const NONE = {
         wallImpact: 0, wallX: 0, wallZ: 0, carImpact: 0, carImpactId: '', landedImpact: 0,
-        boostStarted: false, drifting: false, reset: false
+        boostStarted: false, drifting: false, driftTier: 0 as const, driftKick: 0,
+        boostPadId: '', boostPadTriggered: false, surface: 0, surfaceFront: 0, surfaceRear: 0,
+        reset: false
     };
 
     it('start empty and are cleared completely for every tick', () => {
         expect(createStepEvents()).toEqual(NONE);
         const events = {
             wallImpact: 3, wallX: 1, wallZ: 2, carImpact: 4, carImpactId: 'b', landedImpact: 5,
-            boostStarted: true, drifting: true, reset: true
+            boostStarted: true, drifting: true, driftTier: 3 as const, driftKick: 4.5,
+            boostPadId: 'pad-1', boostPadTriggered: true, surface: 10, surfaceFront: 10, surfaceRear: 11,
+            reset: true
         };
         resetStepEvents(events);
         expect(events).toEqual(NONE);

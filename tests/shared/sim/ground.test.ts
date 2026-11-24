@@ -189,7 +189,8 @@ describe('v2 vertical motion: steep flanks, touchdown and the lift-off margin', 
         // car kept its 20 m/s.
         const world = createGroundWorld((x, z) => 0.6 * x + 0.8 * z);
         const car = spawnCar(world, 'a', 'bulli', 0, 0, Math.atan2(0.6, 0.8), 20);
-        const onStop = -SIM_TUNING.SUSP_TRAVEL - 0.01;
+        // Bulli's own class travel is 0.27 m: -0.28 m puts it past the bump stop
+        const onStop = -0.27 - 0.01;
         Object.assign(car.state, { y: 0, vy: 0, susp: onStop, grounded: true });
         stepVertical(car, world, 1e-6);
         expect(car.state.vx).toBeCloseTo(6, 3);
@@ -204,49 +205,46 @@ describe('v2 vertical motion: steep flanks, touchdown and the lift-off margin', 
     });
 
     it('takes the bump stop before the spring acts, and catches the body on it after', () => {
-        // Before: up a 20 % grade at 20 m/s along z, on the bump stop,
-        // vy = 0. The stop leaves vz = 20 − 0.2·λ with λ = 4/1.04 = 3.846:
-        // 19.231, vy = 3.846 = ∇h·v. Then the spring on the stop (k·0.25 =
-        // 39.48 above g; the damper sees vy = ∇h·v) adds 39.48/180 = 0.219
-        // upwards and, below FLANK_FROM, nothing to vz. Without the first
-        // stop the damper would take the push, vz stays 19.36.
+        // Before: up a 20 % grade at 20 m/s along z, on Bulli's bump stop
+        // (travel 0.27 m, freq 1.85 Hz), vy = 0. The stop leaves
+        // vz = 20 − 0.2·λ with λ = 4/1.04 = 3.846: 19.231, vy = 3.846 = ∇h·v.
+        // Then at full stop (u = 1) the progressive cushion gives kEff = 2.5·k,
+        // adding 2.5 · (2π·1.85)² · 0.27 / 180 upwards, and below FLANK_FROM
+        // nothing to vz.
         const grade = createGroundWorld((_x, z) => 0.2 * z);
         const up = spawnCar(grade, 'a', 'bulli', 0, 0, 0, 20);
-        Object.assign(up.state, { y: 0, vy: 0, susp: -SIM_TUNING.SUSP_TRAVEL - 0.01, grounded: true });
+        const travel = 0.27;
+        Object.assign(up.state, { y: 0, vy: 0, susp: -travel - 0.01, grounded: true });
         stepVertical(up, grade, 1 / 180);
-        const lambda = 4 / 1.04, k = (4 * Math.PI) ** 2;
+        const lambda = 4 / 1.04, k = (2 * Math.PI * 1.85) ** 2, kEff = 2.5 * k;
         expect(up.state.vz).toBeCloseTo(20 - 0.2 * lambda, 9);
-        expect(up.state.vy).toBeCloseTo(lambda + k * 0.25 / 180, 9);
-        // After: on flat ground 24 cm compressed and sinking at 5 m/s, the
-        // spring and damper (15 + 37.9 + 100.5 m/s²) slow it to 4.23 m/s in
-        // the substep, which still takes it 2.35 cm down, past the stop:
-        // there it stops dead (inelastic, vy = 0), no deeper than 25 cm.
+        expect(up.state.vy).toBeCloseTo(lambda + kEff * travel / 180, 9);
+        // After: on flat ground 26 cm compressed and sinking at 5 m/s, the
+        // body hits Bulli's 27 cm bump stop and stops dead (inelastic, vy = 0).
         const flat = createFlatWorld();
         const down = spawnCar(flat, 'b', 'bulli', 0, 0, 0, 0);
-        Object.assign(down.state, { y: 0, vy: -5, susp: -0.24, grounded: true });
+        Object.assign(down.state, { y: 0, vy: -5, susp: -0.26, grounded: true });
         stepVertical(down, flat, 1 / 180);
-        expect(down.state.susp).toBe(-SIM_TUNING.SUSP_TRAVEL);
+        expect(down.state.susp).toBe(-travel);
         expect(down.state.vy).toBe(0);
     });
 
     it('pays for the push up a steep flank with speed along its travel, never sideways', () => {
         // A 100 % flank rising towards +x. Diagonally up it at (10, 10) m/s,
-        // the body moving with the ground (vy = ∇h·v = 10) and 20 cm
-        // compressed: the spring alone speeds it up by
-        // Δvy = k·0.2·Δt = (4π)²·0.2/180 = 0.1755 m/s. That costs
+        // the body moving with the ground (vy = ∇h·v = 10) and 15 cm
+        // compressed (within Bulli's linear 60 % of 27 cm travel, freq 1.85 Hz):
+        // the spring alone speeds it up by Δvy = (2π·1.85)²·0.15/180. That costs
         // (∇h·v̂)·Δvy along the travel: v shrinks by (∇h·v)/|v|²·Δvy = Δvy/20,
-        // both components alike (a push along the normal would also take
-        // Δvy off vx alone). Along the contour (∇h·v = 0) nothing is taken,
-        // so a car crossing a bumpy bank is not pushed down it.
+        // both components alike. Along the contour (∇h·v = 0) nothing is taken.
         const world = createGroundWorld(x => x);
-        const dt = 1 / 180, dvy = (4 * Math.PI) ** 2 * 0.2 * dt;
+        const dt = 1 / 180, dvy = (2 * Math.PI * 1.85) ** 2 * 0.15 * dt;
         const up = spawnCar(world, 'a', 'bulli', 5, 0, Math.PI / 4, 0);
-        Object.assign(up.state, { y: 5, vx: 10, vz: 10, vy: 10, susp: -0.2, grounded: true });
+        Object.assign(up.state, { y: 5, vx: 10, vz: 10, vy: 10, susp: -0.15, grounded: true });
         stepVertical(up, world, dt);
         expect(up.state.vx).toBeCloseTo(10 * (1 - dvy / 20), 9);
         expect(up.state.vz).toBeCloseTo(10 * (1 - dvy / 20), 9);
         const across = spawnCar(world, 'b', 'bulli', 5, 0, 0, 0);
-        Object.assign(across.state, { y: 5, vx: 0, vz: 20, vy: 0, susp: -0.2, grounded: true });
+        Object.assign(across.state, { y: 5, vx: 0, vz: 20, vy: 0, susp: -0.15, grounded: true });
         stepVertical(across, world, dt);
         expect(across.state.vx).toBe(0);
         expect(across.state.vz).toBe(20);
@@ -256,7 +254,7 @@ describe('v2 vertical motion: steep flanks, touchdown and the lift-off margin', 
         // 0.375·10/100 · Δvy · 0.5
         const mid = createGroundWorld(x => 0.375 * x);
         const half = spawnCar(mid, 'c', 'bulli', 5, 0, Math.PI / 2, 0);
-        Object.assign(half.state, { y: 1.875, vx: 10, vz: 0, vy: 3.75, susp: -0.2, grounded: true });
+        Object.assign(half.state, { y: 1.875, vx: 10, vz: 0, vy: 3.75, susp: -0.15, grounded: true });
         stepVertical(half, mid, dt);
         expect(half.state.vx).toBeCloseTo(10 * (1 - 0.0375 * dvy * 0.5), 9);
         // A body the spring lets sink (above its rest, F < g) costs nothing
@@ -293,13 +291,13 @@ describe('v2 vertical motion: steep flanks, touchdown and the lift-off margin', 
         // One substep of 1/180 s from 1 cm above flat ground at -6 m/s: the
         // underside ends 3.395 cm lower, 2.395 cm "below" the ground. The
         // wheels land on the ground and the body keeps its height: 2.395 cm
-        // under the full extension g/k = 15/(4π)² = 9.499 cm.
+        // under Bulli's full extension g/k = 15/(2π·1.85)² = 11.103 cm.
         const world = createFlatWorld();
         const car = spawnCar(world, 'a', 'bulli', 0, 0, 0, 20);
         Object.assign(car.state, { y: 0.01, vy: -6, grounded: false, susp: 0 });
         const dt = 1 / 180;
         stepVertical(car, world, dt);
-        const extension = G / (4 * Math.PI) ** 2;
+        const extension = G / (2 * Math.PI * 1.85) ** 2;
         const below = -(0.01 + (-6 - G * dt) * dt);
         expect(car.state.grounded).toBe(true);
         expect(car.state.y).toBe(0);

@@ -43,6 +43,21 @@ export type ColliderInput =
 // flush with the ground behind it (docs/phase-2-design.md, 5.5).
 export interface RampDef { x: number; z: number; yaw: number; width: number; length: number; height: number }
 
+// Oriented rectangular trigger pad on the road/terrain that applies a
+// deterministic forward speed impulse along (sin yaw, cos yaw) up to
+// min(impulseSpeed, V_ABS) and adds boostFill to the boost meter.
+export interface BoostPadVolume {
+    id: string;
+    x: number;
+    z: number;
+    yaw: number;
+    width: number;
+    length: number;
+    impulseSpeed: number;
+    boostFill: number;
+    cooldownTicks?: number;
+}
+
 // ---- Spatial grid ----
 
 // A square grid of `cells` × `cells` cells of `cellSize` m from `origin`
@@ -198,6 +213,10 @@ export interface SimWorld {
     grid: SpatialGrid;
     ramps: RampDef[];
     rampBases: number[];         // height of each ramp's rear edge (terrain there)
+    // Optional deterministic boost pads (multi-map stunt/discovery worlds)
+    boostPads?: readonly BoostPadVolume[];
+    // Index of the boost pad containing (x, z), -1 = none
+    boostPadAt?(x: number, z: number): number;
     // The reset target: the racing line of a race world
     // (docs/phase-2-design.md, 5.6), the nearest road of a map
     // (docs/phase-3-design.md, 8.3). Returns false to reset in place; a
@@ -238,6 +257,15 @@ function rampHeight(ramp: RampDef, rampBase: number, x: number, z: number): numb
 // True when (x, z) lies on the ramp's footprint
 export function insideRamp(ramp: RampDef, x: number, z: number): boolean {
     return rampHeight(ramp, 0, x, z) > -Infinity;
+}
+
+// True when (x, z) lies inside the oriented boost pad footprint
+export function insideBoostPad(pad: BoostPadVolume, x: number, z: number): boolean {
+    const dx = x - pad.x, dz = z - pad.z;
+    const sin = Math.sin(pad.yaw), cos = Math.cos(pad.yaw);
+    const along = dx * sin + dz * cos;
+    const across = dx * cos - dz * sin;
+    return Math.abs(across) <= pad.width / 2 && Math.abs(along) <= pad.length / 2;
 }
 
 // Height of a ramp's surface at the point of its footprint nearest to (x, z)
@@ -328,9 +356,11 @@ const ASPHALT = (): number => 0;
 export function createSimWorld(
     ground: TerrainConfig | GroundModel,
     colliders: readonly ColliderInput[],
-    ramps: readonly RampDef[] = []
+    ramps: readonly RampDef[] = [],
+    boostPads: readonly BoostPadVolume[] = []
 ): SimWorld {
     const rampList = ramps.map(ramp => ({ ...ramp }));
+    const padList = boostPads.map(pad => ({ ...pad }));
     const terrain = isTerrainConfig(ground) ? ground : null;
     const terrainHeight = terrain
         ? (x: number, z: number): number => getTerrainHeight(terrain, x, z)
@@ -343,6 +373,11 @@ export function createSimWorld(
     const sins = rampList.map(ramp => Math.sin(ramp.yaw));
     const coss = rampList.map(ramp => Math.cos(ramp.yaw));
     const reach = rampList.map(ramp => Math.sqrt(ramp.length * ramp.length + ramp.width * ramp.width) / 2);
+    // Precomputed trig & bounding radius for boost pads (fast-path when empty)
+    const padCount = padList.length;
+    const padSins = padList.map(pad => Math.sin(pad.yaw));
+    const padCoss = padList.map(pad => Math.cos(pad.yaw));
+    const padReach = padList.map(pad => Math.sqrt(pad.length * pad.length + pad.width * pad.width) / 2);
     // Height of ramp i's surface at (x, z), or -Infinity off its footprint
     const onRamp = (i: number, x: number, z: number): number => {
         const ramp = rampList[i];
@@ -370,9 +405,28 @@ export function createSimWorld(
         }
         return found;
     };
+    const boostPadAt = (x: number, z: number): number => {
+        if (world.boostPads !== padList) {
+            const pads = world.boostPads;
+            if (!pads) return -1;
+            for (let i = 0; i < pads.length; i++) {
+                if (insideBoostPad(pads[i], x, z)) return i;
+            }
+            return -1;
+        }
+        for (let i = 0; i < padCount; i++) {
+            const pad = padList[i];
+            const dx = x - pad.x, dz = z - pad.z;
+            if (dx > padReach[i] || dx < -padReach[i] || dz > padReach[i] || dz < -padReach[i]) continue;
+            const along = dx * padSins[i] + dz * padCoss[i];
+            const across = dx * padCoss[i] - dz * padSins[i];
+            if (Math.abs(across) <= pad.width / 2 && Math.abs(along) <= pad.length / 2) return i;
+        }
+        return -1;
+    };
     const list: Collider[] = colliders.map(input => placeCollider(input, groundHeight));
     const model = terrain ? null : ground as GroundModel;
-    return {
+    const world: SimWorld = {
         terrain,
         colliders: list,
         grid: new SpatialGrid(list, model ? model.grid : DEFAULT_GRID),
@@ -388,6 +442,11 @@ export function createSimWorld(
         rampAt,
         queryBuffer: new Int32Array(list.length)
     };
+    if (padCount > 0) {
+        world.boostPads = padList;
+        world.boostPadAt = boostPadAt;
+    }
+    return world;
 }
 
 function borderOf(bound: number): SimWorld['border'] {

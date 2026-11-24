@@ -8,17 +8,21 @@
 // steer > 0 and yawRate > 0 mean left. u = v·f, w = v·l, β = atan2(w, u).
 
 import { MEGA_SCALE } from '../constants.js';
-import { isPaved, SURFACE_GRIP, SURFACE_ROLL } from '../map/types.js';
-import type { SimWorld } from '../world/colliders.js';
+import { insideBoostPad, type BoostPadVolume, type SimWorld } from '../world/colliders.js';
 import { pushOutOfColliders, supportHeight } from './collision.js';
 import { DRAFT_FILL } from '../race/rules.js';
-import { BTN_BOOST, BTN_HANDBRAKE, BTN_RESET, DEG, DT, SIM_TUNING as T, V_ABS, V_SAFE } from './constants.js';
+import { BTN_BOOST, BTN_HANDBRAKE, BTN_RESET, DEG, DT, SIM_TUNING as T, SIM_TUNING_DEFAULTS, V_ABS, V_SAFE } from './constants.js';
+import {
+    SIM_SURFACE_ICE, SIM_SURFACE_SNOW, surfaceDriftFill, surfaceGrip, surfacePhysics, surfaceRoll, surfaceYawDamp
+} from './surfaces.js';
 import { createVehicleParams } from './vehicleClasses.js';
 import { tireCurve } from './tire.js';
 import {
     createStepEvents, createVehicleInput, createVehicleModifiers, createVehicleState,
-    type AssistProfile, type CarClassId, type SimCar, type VehicleParams, type VehicleState
+    type AssistProfile, type CarClassId, type DriftTier, type SimCar, type VehicleParams, type VehicleState
 } from './types.js';
+
+export { SIM_SURFACE_ICE, SIM_SURFACE_SNOW, surfaceDriftFill, surfaceGrip, surfacePhysics, surfaceRoll, surfaceYawDamp };
 
 // Half the spacing of the central differences for the ground gradient (m)
 const GRADIENT_STEP = 0.5;
@@ -26,13 +30,20 @@ const COUNTER_STEER_FROM = 5 * DEG;
 const DRIFT_ENTER = 10 * DEG;
 const DRIFT_HOLD = 6 * DEG;
 const DRIFT_EXIT_TICKS = 10;
-const DRIFT_KICK_MIN_TICKS = 72;
+// Progressive drift release mini-turbo tiers (ticks of sustained drift)
+export const DRIFT_TIER1_TICKS = 36;  // 0.6 s
+export const DRIFT_TIER2_TICKS = 72;  // 1.2 s
+export const DRIFT_TIER3_TICKS = 120; // 2.0 s
 const DRIFT_MIN_SPEED = 8;
 const WALL_FILL_BLOCK_TICKS = 20;
 const AIR_FILL_AFTER_TICKS = 18;
 const SCALE_RATE = 6;
 const TICK_COUNTER_MAX = 255;
 const DRIFT_TICKS_MAX = 65535;
+// Progressive rubber bump-stop cushion starts at 60 % of compression travel
+const SUSP_CUSHION_START = 0.6;
+const SUSP_CUSHION_STIFFNESS = 1.5;
+const SUSP_CUSHION_DAMPING = 0.5;
 // Water (docs/phase-3-design.md, 7): a car whose underside is this far
 // below the water level is in the water: no drive, no boost and a
 // strong drag (1/s); after WATER_RESET_TICKS there it is reset onto the
@@ -41,17 +52,34 @@ export const WATER_DEPTH = 0.6;
 export const WATER_DRAG = 2.5;
 export const WATER_RESET_TICKS = 60;
 
-// Grip factor and rolling resistance (m/s²) of a surface for a car
-// (docs/phase-3-design.md, 8.1, as drivability.ts estimates them): paved
-// surfaces with their grip factor and no rolling resistance, unpaved ones
-// with the class's offroad grip and drag on top
-export function surfaceGrip(surface: number, p: VehicleParams): number {
-    const g = SURFACE_GRIP[surface] ?? 1;
-    return isPaved(surface) ? g : g * p.offroadGrip;
+/** Drift mini-turbo charge tier (0..3) from sustained drift ticks. */
+export function driftKickTier(driftTicks: number): DriftTier {
+    if (driftTicks >= DRIFT_TIER3_TICKS) return 3;
+    if (driftTicks >= DRIFT_TIER2_TICKS) return 2;
+    if (driftTicks >= DRIFT_TIER1_TICKS) return 1;
+    return 0;
 }
 
-export function surfaceRoll(surface: number, p: VehicleParams): number {
-    return isPaved(surface) ? 0 : (SURFACE_ROLL[surface] ?? 0) * p.offroadDrag;
+/** Smooth piecewise-linear mini-turbo speed impulse (m/s) for sustained drift ticks. */
+export function driftKickSpeed(driftTicks: number, maxKick: number): number {
+    if (maxKick <= 0 || driftTicks < DRIFT_TIER1_TICKS) return 0;
+    if (driftTicks >= DRIFT_TIER3_TICKS) return maxKick;
+    if (driftTicks >= DRIFT_TIER2_TICKS) {
+        const t = (driftTicks - DRIFT_TIER2_TICKS) / (DRIFT_TIER3_TICKS - DRIFT_TIER2_TICKS);
+        return maxKick * (0.65 + 0.35 * t);
+    }
+    const t = (driftTicks - DRIFT_TIER1_TICKS) / (DRIFT_TIER2_TICKS - DRIFT_TIER1_TICKS);
+    return maxKick * (0.35 + 0.30 * t);
+}
+
+/** Effective suspension specs for a class after applying global SIM_TUNING multipliers. */
+export function effectiveSuspension(p: VehicleParams): { freq: number; damping: number; travel: number; omega: number; k: number; extension: number } {
+    const freq = p.suspFreq * (T.SUSP_FREQ / SIM_TUNING_DEFAULTS.SUSP_FREQ);
+    const damping = p.suspDamping * (T.SUSP_DAMPING / SIM_TUNING_DEFAULTS.SUSP_DAMPING);
+    const travel = p.suspTravel * (T.SUSP_TRAVEL / SIM_TUNING_DEFAULTS.SUSP_TRAVEL);
+    const omega = 2 * Math.PI * freq;
+    const k = omega * omega;
+    return { freq, damping, travel, omega, k, extension: T.GRAVITY / k };
 }
 
 /** True while the car is in the water (section 7). */
@@ -114,7 +142,11 @@ export function createSimCar(id: string, classId: CarClassId, profile: AssistPro
         contactScale: 1,
         events: createStepEvents(),
         contactDv: 0,
-        contactDw: 0
+        contactDw: 0,
+        boostPadCooldown: 0,
+        lastBoostPadId: '',
+        lastTickX: NaN,
+        lastTickZ: NaN
     };
 }
 
@@ -212,6 +244,9 @@ export function integrateForces(car: SimCar, world: SimWorld): void {
         // AIR_ALIGN·β, so the nose turns into the flight direction and the
         // car lands without a slide. Gravity acts in the substeps
         // (stepVertical).
+        ev.surface = -1;
+        ev.surfaceFront = -1;
+        ev.surfaceRear = -1;
         s.yawRate += (T.AIR_ALIGN * beta - s.yawRate) * Math.min(1, T.AIR_YAW_RESPONSE * DT);
         const speed = Math.sqrt(s.vx * s.vx + s.vz * s.vz);
         const drag = 1 - T.C_AIR * speed * DT;
@@ -224,7 +259,8 @@ export function integrateForces(car: SimCar, world: SimWorld): void {
     }
 
     // 2a Steering: the lock shrinks with speed so full lock stays near the
-    // slip peak; the counter-steer assist catches slides
+    // slip peak (exact inverse of pursuit.ts steerForAngle); faster steering
+    // rates and smooth counter-steer assist deliver crisp turn-in & catch.
     const absU = Math.abs(u);
     const lock = P.steerLock;
     let target = st * lock / (1 + absU / P.steerFalloff);
@@ -278,10 +314,14 @@ export function integrateForces(car: SimCar, world: SimWorld): void {
         aDrive += T.BOOST_ACCEL * clamp((vRef - u) / 10, 0, 1) + (xs >= 1 && u < vRef ? dragAcc : 0);
     }
     // Surface under the axles (docs/phase-3-design.md, 8.1): grip factor
-    // per axle, rolling resistance of both
+    // per axle, rolling resistance of both, and current surface exposed on
+    // StepEvents for client audio and tire particle systems.
     const cOff = P.colliderOffset;
     const surfaceF = world.surfaceAt(s.x + cOff * fx, s.z + cOff * fz);
     const surfaceR = world.surfaceAt(s.x - cOff * fx, s.z - cOff * fz);
+    ev.surface = world.surfaceAt(s.x, s.z);
+    ev.surfaceFront = surfaceF;
+    ev.surfaceRear = surfaceR;
     const roll = (surfaceRoll(surfaceF, P) + surfaceRoll(surfaceR, P)) * 0.5;
     const aResist = dragAcc + (th === 0 && br === 0 ? T.ENGINE_BRAKE : 0) + Math.max(0, absU - vRef) * T.OVERSPEED + roll;
     if (handbrake && th < 0.1) aBrake += T.HB_DECEL;
@@ -314,11 +354,13 @@ export function integrateForces(car: SimCar, world: SimWorld): void {
     const I = m * P.yawRadius * P.yawRadius;
     let tau = a * (FyF * cd + FxF * sd) - b * FyR;
     const absBeta = Math.abs(beta);
+    // Surface yaw-damping scale (1.0 on tarmac/offroad, 0.85 on snow, 0.45 on ice)
+    const yawDampSurface = (surfaceYawDamp(surfaceF) + surfaceYawDamp(surfaceR)) * 0.5;
     // Spin guard: turns the nose back towards the travel direction
-    if (absBeta > P.spinGuardAngle) tau += T.K_SPIN * I * Math.sign(beta) * (absBeta - P.spinGuardAngle);
-    // Slip-angle damping: without it a drift swings between 11° and 78°
-    if (u > 5 && absBeta > T.BETA_DAMP_FROM) tau += T.K_BD * I * (beta - s.betaPrev) / DT;
-    if (T.yawDampHigh > 0 && u > 50) tau -= T.yawDampHigh * I * (r - u * Math.tan(delta) / L) * (u - 50) / 35;
+    if (absBeta > P.spinGuardAngle) tau += T.K_SPIN * yawDampSurface * I * Math.sign(beta) * (absBeta - P.spinGuardAngle);
+    // Slip-angle damping: keeps drifts expressive and controlled without oscillating
+    if (u > 5 && absBeta > T.BETA_DAMP_FROM) tau += T.K_BD * yawDampSurface * I * (beta - s.betaPrev) / DT;
+    if (T.yawDampHigh > 0 && u > 50) tau -= T.yawDampHigh * yawDampSurface * I * (r - u * Math.tan(delta) / L) * (u - 50) / 35;
     s.betaPrev = beta;
     // A car standing on a low collider (above the ground) stands on a flat top
     if (s.y > world.groundHeight(s.x, s.z)) gradX = gradZ = 0;
@@ -364,13 +406,16 @@ export function integrateForces(car: SimCar, world: SimWorld): void {
 // spring and the bump stop instead of a snap. s.y is the underside at the
 // wheels: the ground height while they touch it.
 export function stepVertical(car: SimCar, world: SimWorld, dt: number): void {
-    const s = car.state, ev = car.events;
+    const s = car.state, P = car.params, ev = car.events;
     let hN = world.groundHeight(s.x, s.z);
     const hTop = supportHeight(car, world);
     const onTop = hTop > hN;
     if (onTop) hN = hTop;
     const g = T.GRAVITY;
-    const omega = 2 * Math.PI * T.SUSP_FREQ;
+    const freq = P.suspFreq * (T.SUSP_FREQ / SIM_TUNING_DEFAULTS.SUSP_FREQ);
+    const zeta = P.suspDamping * (T.SUSP_DAMPING / SIM_TUNING_DEFAULTS.SUSP_DAMPING);
+    const travel = P.suspTravel * (T.SUSP_TRAVEL / SIM_TUNING_DEFAULTS.SUSP_TRAVEL);
+    const omega = 2 * Math.PI * freq;
     const k = omega * omega;
     // The spring's full extension: its force is g at rest (susp = 0) and 0 here
     const extension = g / k;
@@ -406,13 +451,24 @@ export function stepVertical(car: SimCar, world: SimWorld, dt: number): void {
     if (onTop) gradX = gradZ = 0;
     else groundGradient(world, s.x, s.z);
     // Bump stop: the body moves with the ground (no bounce)
-    if (s.susp < -T.SUSP_TRAVEL) {
-        s.susp = -T.SUSP_TRAVEL;
+    if (s.susp < -travel) {
+        s.susp = -travel;
         bumpStop(s);
     }
-    // Spring and damper per unit mass; the wheels cannot pull the body down
+    // Spring and damper per unit mass with a progressive rubber bump-stop
+    // cushion in the bottom 40 % of compression travel, so big landings settle
+    // smoothly and planted instead of slamming linearly into the stop.
     const vGround = gradX * s.vx + gradZ * s.vz;
-    const force = g - k * s.susp + 2 * T.SUSP_DAMPING * omega * (vGround - s.vy);
+    const vRel = vGround - s.vy;
+    const cushionStart = -SUSP_CUSHION_START * travel;
+    let kEff = k;
+    let zetaEff = zeta;
+    if (s.susp < cushionStart) {
+        const u = clamp((cushionStart - s.susp) / ((1 - SUSP_CUSHION_START) * travel), 0, 1);
+        kEff = k * (1 + SUSP_CUSHION_STIFFNESS * u * u);
+        if (vRel > 0) zetaEff = zeta * (1 + SUSP_CUSHION_DAMPING * u);
+    }
+    const force = g - kEff * s.susp + 2 * zetaEff * omega * vRel;
     const dvy = ((force > 0 ? force : 0) - g) * dt;
     s.vy += dvy;
     // On a steep flank the push that speeds the body up (beyond holding it
@@ -432,8 +488,8 @@ export function stepVertical(car: SimCar, world: SimWorld, dt: number): void {
         }
     }
     s.susp += s.vy * dt;
-    if (s.susp < -T.SUSP_TRAVEL) {
-        s.susp = -T.SUSP_TRAVEL;
+    if (s.susp < -travel) {
+        s.susp = -travel;
         bumpStop(s);
     } else if (s.susp > extension + T.SUSP_LIFT) {
         // The body rose clearly above the full extension: the wheels leave
@@ -462,15 +518,62 @@ function bumpStop(s: VehicleState): void {
     s.vz -= gradZ * lambda;
 }
 
+function findBoostPad(pads: readonly BoostPadVolume[], x: number, z: number): number {
+    for (let i = 0; i < pads.length; i++) {
+        if (insideBoostPad(pads[i], x, z)) return i;
+    }
+    return -1;
+}
+
+// Maximum clearance above ground for a car to trigger a boost pad (m)
+const BOOST_PAD_MAX_ALTITUDE = 1.5;
+
+/**
+ * Evaluates deterministic boost pads for a car. Applies forward speed impulse
+ * along the pad's direction up to min(impulseSpeed, V_ABS), refills boostMeter,
+ * emits boostPadId/boostPadTriggered, and starts per-pad cooldown so the car
+ * does not re-trigger every tick while crossing the pad.
+ */
+export function stepBoostPads(car: SimCar, world: SimWorld): void {
+    const pads = world.boostPads;
+    if (!pads || pads.length === 0) return;
+    const s = car.state;
+    if (inWater(s, world)) return;
+    if (!s.grounded && s.y - world.groundHeight(s.x, s.z) > BOOST_PAD_MAX_ALTITUDE) return;
+    const idx = world.boostPadAt ? world.boostPadAt(s.x, s.z) : findBoostPad(pads, s.x, s.z);
+    if (idx < 0) return;
+    const pad = pads[idx];
+    if (car.boostPadCooldown > 0 && car.lastBoostPadId === pad.id) return;
+
+    const px = Math.sin(pad.yaw), pz = Math.cos(pad.yaw);
+    const targetSpeed = Math.min(Math.max(0, pad.impulseSpeed), V_ABS);
+    const vAlong = s.vx * px + s.vz * pz;
+    if (vAlong < targetSpeed) {
+        const dv = targetSpeed - vAlong;
+        s.vx += px * dv;
+        s.vz += pz * dv;
+        clampHorizontalSpeed(s, V_ABS);
+    }
+    if (pad.boostFill > 0) {
+        s.boostMeter = Math.min(1, s.boostMeter + pad.boostFill);
+    }
+    const cd = pad.cooldownTicks !== undefined ? Math.max(0, pad.cooldownTicks | 0) : T.BOOST_PAD_COOLDOWN_TICKS;
+    car.boostPadCooldown = cd;
+    car.lastBoostPadId = cd > 0 ? pad.id : '';
+    car.events.boostPadId = pad.id;
+    car.events.boostPadTriggered = true;
+}
+
 // Tick step 6 with the final position: drift, boost and timers
 export function finishTick(car: SimCar): void {
     const s = car.state, P = car.params, ev = car.events;
 
-    // 6 Drift (with hysteresis), boost meter, timers
+    // 6 Drift (with hysteresis), tiered exit mini-turbo, boost meter, timers
     const fx = Math.sin(s.yaw), fz = Math.cos(s.yaw);
     const u = s.vx * fx + s.vz * fz;
     const w = s.vx * fz - s.vz * fx;
     const absBeta = u > 1 ? Math.abs(Math.atan2(w, u)) : 0;
+    let releasedTier: DriftTier = 0;
     if (s.grounded && u > DRIFT_MIN_SPEED && absBeta > DRIFT_ENTER) {
         s.driftTicks = Math.min(s.driftTicks + 1, DRIFT_TICKS_MAX);
         s.driftLowTicks = 0;
@@ -481,11 +584,25 @@ export function finishTick(car: SimCar): void {
             s.driftLowTicks++;
         }
         if (s.driftLowTicks >= DRIFT_EXIT_TICKS) {
-            // Optional mini turbo after a long drift, at most up to vtop
-            if (T.driftReleaseKick > 0 && s.driftTicks >= DRIFT_KICK_MIN_TICKS) {
-                const kick = Math.min(T.driftReleaseKick, Math.max(0, P.topSpeed - u));
-                s.vx += fx * kick;
-                s.vz += fz * kick;
+            // Tiered mini-turbo exit kick after a clean sustained drift:
+            // requires throttle on, no brake, and steering unwinding toward exit
+            // so a mid-apex slip dip while cranked at full lock never launches
+            // the car into the outside wall.
+            const tier = driftKickTier(s.driftTicks);
+            const stNorm = Math.abs(inputAxis(car.input.steer, -127, 127) / 127);
+            const poweringOut = car.input.throttle > 0 && car.input.brake === 0 && stNorm <= 0.5;
+            if (T.driftReleaseKick > 0 && tier > 0 && poweringOut && s.grounded && u > DRIFT_MIN_SPEED && s.wallTicks >= WALL_FILL_BLOCK_TICKS) {
+                const rawKick = driftKickSpeed(s.driftTicks, T.driftReleaseKick);
+                const cap = s.boosting ? boostTarget(P.topSpeed) : P.topSpeed;
+                const kick = Math.min(rawKick, Math.max(0, cap - u));
+                if (kick > 0) {
+                    s.vx += fx * kick;
+                    s.vz += fz * kick;
+                    ev.driftKick = kick;
+                    releasedTier = tier;
+                }
+                const bonusFill = tier === 1 ? 0.03 : tier === 2 ? 0.07 : 0.12;
+                s.boostMeter = Math.min(1, s.boostMeter + bonusFill);
             }
             s.driftTicks = 0;
             s.driftLowTicks = 0;
@@ -494,9 +611,11 @@ export function finishTick(car: SimCar): void {
         }
     }
     ev.drifting = s.driftTicks > 0;
+    ev.driftTier = ev.drifting ? driftKickTier(s.driftTicks) : releasedTier;
 
+    const driftSurfaceScale = ev.surface >= 0 ? surfaceDriftFill(ev.surface) : 1;
     let fill = s.grounded
-        ? T.DRIFT_FILL * P.driftFill
+        ? T.DRIFT_FILL * P.driftFill * driftSurfaceScale
             * clamp((absBeta - DRIFT_ENTER) / (15 * DEG), 0, 1)
             * clamp((u - DRIFT_MIN_SPEED) / 12, 0, 1)
         : 0;

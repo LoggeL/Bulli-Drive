@@ -11,10 +11,12 @@ import { resolveContact } from './contact.js';
 import { applyModifiers } from './modifiers.js';
 import { updateDrafts } from './slipstream.js';
 import { resetStepEvents, type SimCar, type VehicleState } from './types.js';
-import { finishTick, integrateForces, resetVehicle, stepVertical } from './vehicle.js';
+import { finishTick, integrateForces, resetVehicle, stepBoostPads, stepVertical } from './vehicle.js';
 
 const CONTACT_ITERATIONS = 2;
 const SUB_DT = DT / SUBSTEPS;
+// Teleport / reconciliation rewind threshold (max single-tick step at V_SAFE is 1.5 m)
+const REWIND_DIST_SQ = 2.5 * 2.5;
 
 // Insertion sort by id with < (not localeCompare, which depends on the
 // locale). In place and allocation-free; already sorted lists cost O(n).
@@ -49,6 +51,18 @@ export function stepWorld(cars: SimCar[], world: SimWorld): void {
         // A Party ghost that ends inside a collider keeps the world
         // collision off until the car is free again (section 7.3, step 5)
         const s = car.state;
+        // Clear boost-pad cooldown if the car was rewound/teleported between ticks,
+        // otherwise count down deterministically each tick.
+        if (car.boostPadCooldown > 0) {
+            const dx = s.x - car.lastTickX, dz = s.z - car.lastTickZ;
+            if (Number.isFinite(car.lastTickX) && dx * dx + dz * dz > REWIND_DIST_SQ) {
+                car.boostPadCooldown = 0;
+                car.lastBoostPadId = '';
+            } else {
+                car.boostPadCooldown--;
+                if (car.boostPadCooldown === 0) car.lastBoostPadId = '';
+            }
+        }
         if (!car.mods.ghost && s.wasGhost && overlapsColliders(s, car.params, world)) {
             s.ghostExit = GHOST_EXIT_TICKS;
         }
@@ -78,8 +92,16 @@ export function stepWorld(cars: SimCar[], world: SimWorld): void {
     for (let i = 0; i < count; i++) {
         const car = cars[i];
         if (car.kinematic) continue;
+        if (car.events.reset) {
+            car.boostPadCooldown = 0;
+            car.lastBoostPadId = '';
+        } else {
+            stepBoostPads(car, world);
+        }
         finishTick(car);
         if (!stateIsFinite(car.state)) recoverCar(car, world);
+        car.lastTickX = car.state.x;
+        car.lastTickZ = car.state.z;
     }
 }
 

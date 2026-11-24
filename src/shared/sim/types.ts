@@ -67,6 +67,12 @@ export interface VehicleParams {
     steerFalloff: number;   // vS (m/s)
     driftFill: number;      // class factor of the boost fill
     offroadGrip: number; offroadDrag: number;     // take effect in phase 3
+    // Per-class suspension & chassis personality (scaled by SIM_TUNING global baselines)
+    suspFreq: number;       // natural frequency (Hz)
+    suspDamping: number;    // damping ratio (zeta)
+    suspTravel: number;     // compression travel from rest to bump stop (m)
+    rollGain: number;       // lateral roll response factor (for visual chassis lean)
+    pitchGain: number;      // longitudinal squat/dive response factor
     colliderRadius: number; // r of the two circles
     colliderOffset: number; // c: circle centres at ±c along the heading
     counterSteer: number;   // K_CS (assist profile)
@@ -85,6 +91,8 @@ export interface VehicleModifiers {
     bogged: boolean;  // early race start: less acceleration (race rule)
 }
 
+export type DriftTier = 0 | 1 | 2 | 3;
+
 // Reset every tick and written in place (no allocation)
 export interface StepEvents {
     wallImpact: number;     // max normal speed into a wall (m/s)
@@ -94,6 +102,13 @@ export interface StepEvents {
     landedImpact: number;   // vertical impact speed
     boostStarted: boolean;
     drifting: boolean;
+    driftTier: DriftTier;   // sustained drift mini-turbo charge tier (0..3)
+    driftKick: number;      // drift-release mini-turbo speed impulse applied this tick (m/s)
+    boostPadId: string;     // boost pad triggered this tick ('' = none)
+    boostPadTriggered: boolean;
+    surface: number;        // surface ID under car centre (-1 while airborne)
+    surfaceFront: number;   // surface ID under front axle (-1 while airborne)
+    surfaceRear: number;    // surface ID under rear axle (-1 while airborne)
     reset: boolean;
 }
 
@@ -110,6 +125,11 @@ export interface SimCar {
     // Per-tick accumulators for the contact caps (Σ|Δv|, Σ|Δω|), reset by stepWorld
     contactDv: number;
     contactDw: number;
+    // Deterministic boost-pad cooldown (kept off VehicleState so net snapshots stay unchanged)
+    boostPadCooldown: number;
+    lastBoostPadId: string;
+    lastTickX: number;
+    lastTickZ: number;
 }
 
 export function createVehicleState(): VehicleState {
@@ -194,5 +214,12 @@ export function resetStepEvents(ev: StepEvents): void {
     ev.landedImpact = 0;
     ev.boostStarted = false;
     ev.drifting = false;
+    ev.driftTier = 0;
+    ev.driftKick = 0;
+    ev.boostPadId = '';
+    ev.boostPadTriggered = false;
+    ev.surface = 0;
+    ev.surfaceFront = 0;
+    ev.surfaceRear = 0;
     ev.reset = false;
 }
