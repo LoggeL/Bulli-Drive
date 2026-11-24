@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { blurChannel, splatTexel } from '../../src/client/world/terrainSplat.js';
+import { blurChannel, buildTerrainSplat, SPLAT_BLUR, splatTexel, VERGE_BLUR } from '../../src/client/world/terrainSplat.js';
 import { SURFACE, ZONE } from '../../src/shared/map/types.js';
+import { makeHeightfield } from '../shared/map/fixtures.js';
 
 // The terrain's blend weights from the baked surfaces
 // (src/client/world/terrainSplat.ts, docs/phase-3-design.md 8.1)
@@ -46,5 +47,37 @@ describe('splat weights', () => {
         }
         // The other channels stay
         expect(data[12 * 4]).toBe(7);
+    });
+
+    it('smoothly blurs non-lawn splat channels and preserves total exclusive weight <= 255 everywhere', () => {
+        expect(SPLAT_BLUR).toBeGreaterThanOrEqual(1);
+        expect(VERGE_BLUR).toBeGreaterThanOrEqual(1);
+        // Step transition: x < 0 wetSand in residential zone, 0 <= x < 20 rock, x >= 20 snow
+        const hf = makeHeightfield(
+            () => 10,
+            x => (x < 10 ? ZONE.residential : ZONE.wild),
+            x => (x < 0 ? SURFACE.wetSand : x < 20 ? SURFACE.rock : SURFACE.snow)
+        );
+        const splat = buildTerrainSplat(hf);
+        const { cols, rows, originX, cellSize } = hf.spec;
+        const midJ = Math.floor(rows / 2);
+        const iZero = Math.round((0 - originX) / cellSize);
+
+        // At the sand/rock boundary (x = 0), both sand (a.r) and rock (b.r) must be smoothly blended (not binary 0/255)
+        const kBoundary = (midJ * cols + iZero) * 4;
+        expect(splat.a[kBoundary]).toBeGreaterThan(0);
+        expect(splat.a[kBoundary]).toBeLessThan(255);
+        expect(splat.a[kBoundary + 1]).toBeGreaterThan(0);
+        expect(splat.a[kBoundary + 1]).toBeLessThan(255);
+        expect(splat.b[kBoundary]).toBeGreaterThan(0);
+        expect(splat.b[kBoundary]).toBeLessThan(255);
+
+        // Across every texel, exclusive surface weights never exceed 255
+        for (let p = 0; p < cols * rows; p++) {
+            const k = p * 4;
+            const total = splat.a[k] + splat.a[k + 2] + splat.a[k + 3]
+                + splat.b[k] + splat.b[k + 1] + splat.b[k + 2] + splat.b[k + 3];
+            expect(total).toBeLessThanOrEqual(255);
+        }
     });
 });

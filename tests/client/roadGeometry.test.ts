@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import { mapFor } from '../../src/server/maps.js';
+import { heightAt } from '../../src/shared/map/heightfield.js';
 import { buildRoadNetwork } from '../../src/shared/map/roadNetwork.js';
 import type { RoadArea } from '../../src/shared/map/roadSchema.js';
 import {
-    AREA_LIFT, AREA_MAX_EDGE, AREA_WALL_DEPTH, areaFrame, buildRoadGeometry, CENTRE_CODE, cornerCurve, edgeRuns, edgeStations, END_CODE, MAX_STATION_STEP, ROAD_FLAG,
-    groundNormal, ROAD_LIFT, splitByChunk, subdivideAreaMesh, triangulatePolygon, MeshArrays
+    AREA_LIFT, AREA_MAX_EDGE, AREA_WALL_DEPTH, areaFrame, buildRoadGeometry, CENTRE_CODE, cornerCurve,
+    CREST_STATION_STEP, edgeRuns, edgeStations, END_CODE, groundNormal, MAX_STATION_STEP, MeshArrays,
+    RETAINING_WALL_MIN_DEPTH, ROAD_FLAG, ROAD_LIFT, SIDEWALK_SKIRT_DEPTH, splitByChunk, subdivideAreaMesh,
+    triangulatePolygon
 } from '../../src/client/world/roadGeometry.js';
 import { roadBlock } from '../../src/client/world/roads.js';
 import { edge, network, node, PROFILE } from '../shared/map/fixtures.js';
@@ -70,26 +74,39 @@ describe('a straight road', () => {
     // 40 m along +x, 10 m wide, two dead ends
     const net = buildRoadNetwork(network([node('a', 0, 0), node('b', 40, 0)], [edge('ab', 'a', 'b')]));
 
-    it('is a band of the profile\'s width on the ground, the lift above it', () => {
+    it('is a band of the profile\'s width with a centerline vertex on the ground, the lift above it', () => {
         const layers = buildRoadGeometry(net, slope);
         const ribbon = vertices(layers.asphalt);
         expect(ribbon.length).toBeGreaterThan(0);
+        let centerCount = 0;
         for (const v of ribbon) {
-            expect(Math.abs(v.u)).toBeCloseTo(5, 9);
+            const absU = Math.abs(v.u);
+            expect(absU < 1e-9 || Math.abs(absU - 5) < 1e-9).toBe(true);
+            if (absU < 1e-9) centerCount++;
             // Left of +x is -z (north), across = +5 there
             expect(v.z).toBeCloseTo(-v.u, 9);
             expect(v.y).toBeCloseTo(slope(v.x, v.z) + ROAD_LIFT, 9);
         }
+        expect(centerCount).toBeGreaterThan(0);
         // Area of the band: 40 × 10, every triangle facing up
         const { area, allUp } = triangles(layers.asphalt);
         expect(area).toBeCloseTo(400, 6);
         expect(allUp).toBe(true);
     });
 
-    it('takes a station every 4 m on a straight', () => {
+    it('takes a station every 4 m on a flat straight and tightens to 2 m on crests and bumps', () => {
         expect(MAX_STATION_STEP).toBe(4);
+        expect(CREST_STATION_STEP).toBe(2);
+        expect(ROAD_LIFT).toBeCloseTo(0.035, 6);
         expect(edgeStations(net.edges[0], 0, 40)).toEqual([0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40]);
         expect(edgeStations(net.edges[0], 3.5, 10)).toEqual([3.5, 8, 10]);
+
+        // Vertical crest parabola: y = -0.02 * (x - 20)^2 -> chord error over 4 m is 0.08 m > 0.008 m -> tightens to 2 m
+        const crest = (x: number) => -0.02 * (x - 20) * (x - 20);
+        const crestStations = edgeStations(net.edges[0], 0, 40, crest);
+        for (let i = 1; i < crestStations.length; i++) {
+            expect(crestStations[i] - crestStations[i - 1]).toBeLessThanOrEqual(CREST_STATION_STEP + 1e-6);
+        }
     });
 
     it('carries the markings of its profile to the shader', () => {
@@ -114,9 +131,35 @@ describe('a straight road', () => {
             expect(-v.z).toBeGreaterThanOrEqual(5 - 1e-9);
             expect(-v.z).toBeLessThanOrEqual(8 + 1e-9);
         }
-        // The curb face at the road edge reaches from the road up to the top
+        // The curb face at the road edge reaches from the road up to the top,
+        // and the outer skirt reaches down to -SIDEWALK_SKIRT_DEPTH (-0.60 m)
         const face = walk.filter(v => Math.abs(v.z + 5) < 1e-9);
         expect(Math.min(...face.map(v => v.y))).toBeCloseTo(ROAD_LIFT, 9);
+        const outerFace = walk.filter(v => Math.abs(v.z + 8) < 1e-9);
+        expect(Math.min(...outerFace.map(v => v.y))).toBeCloseTo(-SIDEWALK_SKIRT_DEPTH, 9);
+    });
+
+    it('generates poured concrete retaining walls for edge.def.walls (laurel-court / cypress-court)', () => {
+        const walled = buildRoadNetwork(network([node('a', 0, 0), node('b', 40, 0)], [
+            { ...edge('ab', 'a', 'b'), walls: [{ side: 'left', from: 10, to: 30 }] }
+        ], {
+            profiles: { road: { ...PROFILE, sidewalk: { left: 1.5, right: 0 }, curb: { left: true, right: false, height: 0.15 } } }
+        }));
+        // Ground drops 2.2 m right outside the left sidewalk (z < -6.5)
+        const dropGround = (_x: number, z: number) => (z < -6.5 ? -2.2 : 0);
+        const layers = buildRoadGeometry(walled, dropGround);
+        const wallVerts = vertices(layers.concrete);
+        expect(wallVerts.length).toBeGreaterThan(0);
+        expect(Math.max(...wallVerts.map(v => v.y))).toBeCloseTo(0.15, 6);
+        expect(Math.min(...wallVerts.map(v => v.y))).toBeLessThanOrEqual(-RETAINING_WALL_MIN_DEPTH);
+
+        // Verify Bulli Bay laurel-court and cypress-court produce concrete retaining wall geometry
+        const bay = mapFor('bulli-bay');
+        const bayLayers = buildRoadGeometry(bay.net, (x, z) => heightAt(bay.hf, x, z));
+        const cypress = bay.net.edgeById.get('cypress-court')!;
+        const pMid = cypress.samples[Math.floor(cypress.samples.length * 0.7)];
+        const nearCypress = vertices(bayLayers.concrete).filter(v => Math.hypot(v.x - pMid.x, v.z - pMid.z) < 12);
+        expect(nearCypress.length).toBeGreaterThan(8);
     });
 });
 

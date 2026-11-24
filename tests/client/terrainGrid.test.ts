@@ -1,8 +1,10 @@
+import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { mapFor } from '../../src/server/maps.js';
-import { heightAt } from '../../src/shared/map/heightfield.js';
+import { heightAt, surfaceAt } from '../../src/shared/map/heightfield.js';
 import { nearestRoad } from '../../src/shared/map/roadNetwork.js';
-import { groundUnderDecks, TERRAIN_GRID } from '../../src/client/world/terrain.js';
+import { createSea } from '../../src/client/world/sea.js';
+import { groundUnderDecks, TERRAIN_GRID, TerrainField } from '../../src/client/world/terrain.js';
 import { SURFACE, ZONE } from '../../src/shared/map/types.js';
 import { makeHeightfield } from '../shared/map/fixtures.js';
 import {
@@ -278,5 +280,47 @@ describe('the ground under the pier (terrain mesh only)', () => {
         // Away from the deck, and on the sim's copy, nothing changes
         expect(heightAt(decks, 20, 11)).toBe(heightAt(hf, 20, 11));
         expect(heightAt(hf, 20, 0)).toBeCloseTo(5, 2);
+    });
+
+    it('reaches radius 5 so the center of a 10–12 m wide pier drops to real seabed/beach and renders ocean + terrain with zero void hole', () => {
+        // 12 m wide pier (|z| <= 6: 7 grid cells wide, center is 4 cells from edge!)
+        // West half (x < 0): over ocean seabed at y = -3.0 m; East half (x >= 0): over dry beach at y = 1.5 m
+        const hf = makeHeightfield(
+            (x, z) => (Math.abs(z) <= 6 ? 5.0 : x < 0 ? -3.0 : 1.5),
+            () => ZONE.beach,
+            (x, z) => (Math.abs(z) <= 6 ? SURFACE.wood : x < 0 ? SURFACE.water : SURFACE.sand)
+        );
+        const decks = groundUnderDecks(hf);
+
+        // Center of the pier over ocean MUST drop from 5.0 m down to -3.0 m seabed (radius 4 <= 5)
+        expect(heightAt(decks, -30, 0)).toBeCloseTo(-3.0, 2);
+        expect(surfaceAt(decks, -30, 0)).toBe(SURFACE.water);
+        // Center of the pier over dry beach MUST drop from 5.0 m down to 1.5 m sand
+        expect(heightAt(decks, 30, 0)).toBeCloseTo(1.5, 2);
+        expect(surfaceAt(decks, 30, 0)).toBe(SURFACE.sand);
+        // Unmodified sim heightfield keeps the 5.0 m deck
+        expect(heightAt(hf, -30, 0)).toBeCloseTo(5.0, 2);
+
+        // TerrainField must NOT skip/delete triangles under SURFACE.wood
+        const mat = new THREE.MeshBasicMaterial();
+        const tf = new TerrainField(hf, { base: 2, half: 10, levels: 1 }, mat, decks);
+        tf.update(0, 0);
+        // Full 20 × 20 cells × 2 triangles = 800 triangles (zero deleted wood holes!)
+        expect(tf.triangles()).toBe(20 * 20 * 2);
+        tf.dispose();
+
+        // createSea(hf) uses groundUnderDecks so its R16UI height texture has seabed (-3.0 m), not deck (+5.0 m), under the pier
+        const sea = createSea(hf, 'desktop');
+        const hTex = sea.userData.heightTexture as THREE.DataTexture;
+        const data = hTex.image.data as Uint16Array;
+        const spec = hf.spec;
+        const ci = Math.round((-30 - spec.originX) / spec.cellSize);
+        const cj = Math.round((0 - spec.originZ) / spec.cellSize);
+        const seaGroundY = spec.heightOffset + data[cj * spec.cols + ci] * spec.heightScale;
+        expect(seaGroundY).toBeCloseTo(-3.0, 2);
+        expect(spec.waterLevel - seaGroundY).toBeGreaterThan(2.5);
+        sea.geometry.dispose();
+        (sea.material as THREE.Material).dispose();
+        hTex.dispose();
     });
 });

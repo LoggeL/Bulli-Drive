@@ -1,8 +1,21 @@
 import * as THREE from 'three';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { MAP_REGISTRY } from '../../src/shared/map/registry.js';
 import { installGrade, installHeightFog } from '../../src/client/render/look.js';
 import { patchReflectionBend, patchShadowChunks, patchShadowFilter } from '../../src/client/render/lighting.js';
 import { patchWorldMaterial } from '../../src/client/world/materials.js';
+import { createRoadMaterial } from '../../src/client/world/roads.js';
+import { createTerrainMaterial, createTerrainTextures } from '../../src/client/world/terrain.js';
+import { makeHeightfield } from '../shared/map/fixtures.js';
+
+vi.mock('../../src/client/world/textures.js', async () => {
+    const { Texture } = await import('three');
+    return {
+        worldTexture: (name: string) => Object.assign(new Texture(), { name }),
+        cloneWorldTexture: (source: InstanceType<typeof Texture>) => source.clone(),
+        whenWorldTextureLoaded: () => Promise.resolve()
+    };
+});
 
 // The look patches three's shaders by string replacement (render/look.ts,
 // render/lighting.ts, world/materials.ts). A replacement whose target is gone
@@ -120,5 +133,65 @@ describe('shader patches against the installed three.js', () => {
         expect(uniforms.bulliEnvMapIntensity.value).toBe(0.55);
         material.envMapIntensity = 0.3;
         expect(uniforms.bulliEnvMapIntensity.value).toBe(0.3);
+    });
+
+    it('uses smooth interpolated vWNormal, noise splat jitter, and organic elevation snowline in terrain shaders', () => {
+        const hf = makeHeightfield(() => 10);
+        const textures = createTerrainTextures(hf, 'desktop');
+        const alpineMat = createTerrainMaterial('desktop', hf, textures, MAP_REGISTRY['alpen-pass'].atmosphere);
+        const shader = {
+            vertexShader: THREE.ShaderLib.standard.vertexShader,
+            fragmentShader: THREE.ShaderLib.standard.fragmentShader,
+            uniforms: THREE.UniformsUtils.clone(THREE.ShaderLib.standard.uniforms)
+        };
+        alpineMat.onBeforeCompile(shader as never, null as never);
+
+        expect(shader.vertexShader).toContain('varying vec3 vWNormal;');
+        expect(shader.vertexShader).toContain('vWNormal = normalize( mat3( modelMatrix ) * objectNormal );');
+        expect(shader.fragmentShader).toContain('vec3 nw = normalize( vWNormal );');
+        expect(shader.fragmentShader).not.toContain('cross( dFdx( vWPos ), dFdy( vWPos ) )');
+        expect(shader.fragmentShader).toContain('splatJitter');
+        expect(shader.fragmentShader).toContain('elevSnow');
+        const u = shader.uniforms as Record<string, THREE.IUniform>;
+        expect(u.uUseElevSnow.value).toBe(1);
+        expect((u.uSnowLine.value as THREE.Vector2).x).toBeLessThan((u.uSnowLine.value as THREE.Vector2).y);
+
+        // Coastal biome disables elevation snowline
+        const coastalMat = createTerrainMaterial('desktop', hf, textures, MAP_REGISTRY['bulli-bay'].atmosphere);
+        const cShader = {
+            vertexShader: THREE.ShaderLib.standard.vertexShader,
+            fragmentShader: THREE.ShaderLib.standard.fragmentShader,
+            uniforms: THREE.UniformsUtils.clone(THREE.ShaderLib.standard.uniforms)
+        };
+        coastalMat.onBeforeCompile(cShader as never, null as never);
+        expect((cShader.uniforms as Record<string, THREE.IUniform>).uUseElevSnow.value).toBe(0);
+
+        alpineMat.dispose();
+        coastalMat.dispose();
+        textures.splatA.dispose();
+        textures.splatB.dispose();
+    });
+
+    it('guards uv=(99,0) junctions in TRACK_COLOR and SNOW_ROAD_COLOR, softens unpaved edges, and maps quarry dirt off red rock', () => {
+        for (const layer of ['dirt', 'gravel', 'snow'] as const) {
+            const mat = createRoadMaterial(layer, 'desktop', layer === 'snow' ? 'alpine' : 'quarry') as THREE.MeshStandardMaterial;
+            expect(mat.transparent).toBe(true);
+            expect(mat.depthWrite).toBe(false);
+            const shader = {
+                vertexShader: THREE.ShaderLib.standard.vertexShader,
+                fragmentShader: THREE.ShaderLib.standard.fragmentShader,
+                uniforms: THREE.UniformsUtils.clone(THREE.ShaderLib.standard.uniforms)
+            };
+            mat.onBeforeCompile(shader as never, null as never);
+            // Sentinel guard keeps uv=(99,0) junctions intact instead of discarding 100% of pixels
+            expect(shader.fragmentShader).toContain('if ( a < 50.0 )');
+            expect(shader.fragmentShader).toContain('diffuseColor.a *= alpha;');
+            // Vertical wall UVs avoid diagonal (roadW.x + roadW.z) stretch
+            expect(shader.vertexShader).not.toContain('roadW.x + roadW.z');
+            if (layer === 'dirt') {
+                expect(mat.map?.name).toBe('biomes/quarry_gravel_albedo');
+            }
+            mat.dispose();
+        }
     });
 });

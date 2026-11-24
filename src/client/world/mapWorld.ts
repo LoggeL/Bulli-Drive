@@ -1,12 +1,12 @@
 import * as THREE from 'three';
 import type { Vec2 } from '../../shared/map/geometry.js';
-import { heightAt } from '../../shared/map/heightfield.js';
+import { heightAt, type Heightfield } from '../../shared/map/heightfield.js';
 import type { MapData } from '../../shared/map/mapData.js';
-import { PLANT_COLLIDERS } from '../../shared/map/plants.js';
 import type { FurnitureKind } from '../../shared/map/furniture.js';
 import { areaRailLine, BOLLARD_TOP, railLine } from '../../shared/map/rails.js';
 import type { RailKind } from '../../shared/map/roadSchema.js';
 import { leftNormal, pointAt } from '../../shared/map/spline.js';
+import { KIT_FOOTPRINTS } from '../../shared/map/structures.js';
 import type { RoomKind } from '../../shared/protocol.js';
 import type { RenderTier } from '../effects/renderQuality.js';
 import { Batch, rgb } from './batch.js';
@@ -27,7 +27,7 @@ import { railSpots } from './viewpoint.js';
 import { createRoads } from './roads.js';
 import { mailboxSpots, ranchFences, scatterDecor, type DecorSpot } from './scatter.js';
 import { createSea } from './sea.js';
-import { createTerrainMaterial, createTerrainTextures, TerrainField, type TerrainTextures } from './terrain.js';
+import { createTerrainMaterial, createTerrainTextures, groundUnderDecks, TerrainField, type TerrainTextures } from './terrain.js';
 import { shrubGeometry, treeCardGeometry, treeCardInstances, type TreeSpot } from './vegetation.js';
 import { WORLD_QUALITY, type WorldQuality } from './worldQuality.js';
 
@@ -46,17 +46,31 @@ const JERSEY = { piece: 'arena_jersey', length: 3.81 };
 const PIER_SEGMENT = 10;
 // Rock pieces of the plants with a rock collider
 const ROCK_PIECES = { boulder: 'rock_boulder_l', rock: 'rock_boulder_m' } as const;
+export type RockKind = keyof typeof ROCK_PIECES;
 
 /**
- * How deep (m) to sink a scattered rock/boulder into the ground so its downhill
- * rim stays firmly embedded on steep slopes (e.g. 34° alpine faces) without
- * hovering in mid-air.
+ * How deep (m) to sink a scattered rock/boulder below center `heightAt(hf, x, z)`
+ * by sampling exact `minCornerY` across its actual rotated kit footprint
+ * (`rock_boulder_l` max extent 3.066 * size, `rock_boulder_m` 1.435 * size),
+ * ensuring zero downhill rim hover even on 34°+ slopes.
  */
-export function rockSinkDepth(slope: number, kind: keyof typeof ROCK_PIECES, size: number): number {
-    const spec = PLANT_COLLIDERS[kind];
-    const radius = spec.r * size;
-    const sink = 0.35 * size + Math.max(0, slope) * radius * 0.65;
-    return Math.min(sink, spec.top * size * 0.72);
+export function rockSinkDepth(hf: Heightfield, x: number, z: number, yaw: number, kind: RockKind, size: number): number {
+    const fp = KIT_FOOTPRINTS[ROCK_PIECES[kind]];
+    const centerY = heightAt(hf, x, z);
+    const cos = Math.cos(yaw), sin = Math.sin(yaw);
+    const samples: readonly [number, number][] = [
+        [fp.minX, fp.minZ], [fp.maxX, fp.minZ], [fp.maxX, fp.maxZ], [fp.minX, fp.maxZ],
+        [fp.minX, 0], [fp.maxX, 0], [0, fp.minZ], [0, fp.maxZ]
+    ];
+    let minCornerY = centerY;
+    for (const [lx, lz] of samples) {
+        const wx = x + (lx * cos + lz * sin) * size;
+        const wz = z + (-lx * sin + lz * cos) * size;
+        const hy = heightAt(hf, wx, wz);
+        if (hy < minCornerY) minCornerY = hy;
+    }
+    const drop = Math.max(0, centerY - minCornerY);
+    return 0.25 * size + drop;
 }
 // Fences: posts every 3 m, 2.4 m high chain-link panels
 const FENCE_POST_SPACING = 3;
@@ -175,14 +189,15 @@ export class MapWorld {
         void preloadBiomeTextures(map.atmosphere.biomeTextures, renderer, tier);
 
         const ground = (x: number, z: number) => heightAt(hf, x, z);
+        const decks = groundUnderDecks(hf);
 
-        this.terrainTextures = createTerrainTextures(hf, tier);
-        this.terrainMaterial = createTerrainMaterial(tier, hf, this.terrainTextures, map.atmosphere);
-        this.terrain = new TerrainField(hf, quality.terrain, this.terrainMaterial);
+        this.terrainTextures = createTerrainTextures(decks, tier);
+        this.terrainMaterial = createTerrainMaterial(tier, decks, this.terrainTextures, map.atmosphere);
+        this.terrain = new TerrainField(hf, quality.terrain, this.terrainMaterial, decks);
         this.group.add(this.terrain.group);
 
         if (map.atmosphere.hasSea) {
-            this.seaMesh = createSea(hf, tier, map.atmosphere);
+            this.seaMesh = createSea(decks, tier, map.atmosphere);
             this.group.add(this.seaMesh);
         }
 
@@ -452,13 +467,11 @@ export class MapWorld {
             if (!geometry || !rocks.length) continue;
             const q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
             const rockSpecs = rocks.map(rock => {
-                q.setFromAxisAngle(up, (rock.seed % 360) * Math.PI / 180);
+                const yaw = (rock.seed % 360) * Math.PI / 180;
+                q.setFromAxisAngle(up, yaw);
                 s.setScalar(rock.size);
-                // Sunk proportional to local slope across the rock's footprint so downhill rims never hover
-                const step = Math.max(1.5, PLANT_COLLIDERS[kind].r * rock.size);
-                const gx = (heightAt(hf, rock.x + step, rock.z) - heightAt(hf, rock.x - step, rock.z)) / (2 * step);
-                const gz = (heightAt(hf, rock.x, rock.z + step) - heightAt(hf, rock.x, rock.z - step)) / (2 * step);
-                const sink = rockSinkDepth(Math.hypot(gx, gz), kind, rock.size);
+                // Sunk to exact minCornerY over the rock's actual rotated footprint so downhill rims never hover
+                const sink = rockSinkDepth(hf, rock.x, rock.z, yaw, kind, rock.size);
                 return { matrix: new THREE.Matrix4().compose(p.set(rock.x, heightAt(hf, rock.x, rock.z) - sink, rock.z), q, s) };
             });
             const instances = new ChunkedInstances(geometry, kit.material, rockSpecs, this.quality.sight.rocks, `rocks-${kind}`, 0, this.grid);

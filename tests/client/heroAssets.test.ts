@@ -9,8 +9,9 @@ import {
 } from '../../src/client/assets/HeroAssetLoader.js';
 import {
     BOOST_PAD_BASE_LIFT, BOOST_PAD_DISTANCE_LIFT, DECAL_BASE_LIFT, DECAL_DISTANCE_LIFT,
-    HeroPropsLayer, matchPairedBillboards, surfaceLiftAtDistance
+    heroPropGroundY, HeroPropsLayer, matchPairedBillboards, SAILBOAT_DRAFT, surfaceLiftAtDistance
 } from '../../src/client/world/heroProps.js';
+import { makeHeightfield } from '../shared/map/fixtures.js';
 import { AREA_LIFT, ROAD_LIFT } from '../../src/client/world/roadGeometry.js';
 import { ROAD_DISTANCE_LIFT } from '../../src/client/world/roads.js';
 
@@ -119,5 +120,35 @@ describe('HeroAssetLoader manifest parsing & lazy per-map selection', () => {
         expect(padMat.vertexShader).toContain(String(BOOST_PAD_DISTANCE_LIFT));
         expect(padMat.vertexShader).toContain('cameraPosition');
         layer.dispose();
+    });
+
+    it('grounds lmf_sailboat_ijsselmeer at Math.max(waterLevel - 0.35, groundY) and casts desktop shadows on all heroProps', async () => {
+        // Deep harbor seabed (-3.5 m) with waterLevel 0 -> floats cleanly at -0.35 m
+        const waterHf = makeHeightfield(() => -3.5);
+        const boatDef = { id: 'hp-boat', model: 'lmf_sailboat_ijsselmeer' as const, x: 0, z: 0, yaw: 0 };
+        expect(heroPropGroundY(boatDef, waterHf)).toBeCloseTo(waterHf.spec.waterLevel - SAILBOAT_DRAFT, 5);
+        // Dry land (+4.0 m) -> sits on ground instead of sinking underground
+        const dryHf = makeHeightfield(() => 4.0);
+        expect(heroPropGroundY(boatDef, dryHf)).toBeCloseTo(4.0, 5);
+
+        // Desktop tier casts shadows on prop_* heroProps (e.g. stunt-kniffel-die), mobile stays 0
+        const stuntMap = loadTestMap('stunt-forge');
+        const dieDef = stuntMap.heroProps.find(p => p.id === 'stunt-kniffel-die')!;
+        const desktopLayer = new HeroPropsLayer(stuntMap, 'desktop', null);
+        const mobileLayer = new HeroPropsLayer(stuntMap, 'mobile', null);
+        await new Promise(resolve => setTimeout(resolve, 20));
+        desktopLayer.update(1 / 60, 0, { x: dieDef.x, y: 0, z: dieDef.z });
+        mobileLayer.update(1 / 60, 0, { x: dieDef.x, y: 0, z: dieDef.z });
+
+        const desktopDie = desktopLayer.heroGroup.getObjectByName('hero-stunt-kniffel-die')!;
+        const mobileDie = mobileLayer.heroGroup.getObjectByName('hero-stunt-kniffel-die')!;
+        let desktopCasters = 0, mobileCasters = 0;
+        desktopDie.traverse(o => { if ((o as THREE.Mesh).isMesh && (o as THREE.Mesh).castShadow) desktopCasters++; });
+        mobileDie.traverse(o => { if ((o as THREE.Mesh).isMesh && (o as THREE.Mesh).castShadow) mobileCasters++; });
+        expect(desktopCasters).toBeGreaterThan(0);
+        expect(mobileCasters).toBe(0);
+
+        desktopLayer.dispose();
+        mobileLayer.dispose();
     });
 });

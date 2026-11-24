@@ -5,13 +5,15 @@ import * as THREE from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import { loadTestMap } from './loadTestMap.js';
 import { heightAt } from '../../src/shared/map/heightfield.js';
-import { PLANT_COLLIDERS } from '../../src/shared/map/plants.js';
+import { KIT_FOOTPRINTS } from '../../src/shared/map/structures.js';
 import { MAP_REGISTRY } from '../../src/shared/map/registry.js';
 import { ChaseCamera, RACE_CAMERA, type ChaseTarget } from '../../src/client/camera/ChaseCamera.js';
 import { ShowroomCamera, type ShowroomEnv } from '../../src/client/camera/ShowroomCamera.js';
+import { DISCOVERY_RING_LIFT, DiscoveryRenderer } from '../../src/client/world/discoveryRenderer.js';
 import { createWorldMaterials } from '../../src/client/world/materials.js';
 import { MapWorld, rockSinkDepth } from '../../src/client/world/mapWorld.js';
 import { WORLD_QUALITY } from '../../src/client/world/worldQuality.js';
+import { makeHeightfield } from '../shared/map/fixtures.js';
 
 vi.mock('../../src/client/world/textures.js', async () => {
     const { Texture } = await import('three');
@@ -49,12 +51,12 @@ describe('Multi-map MapWorld lifecycle, dynamic layers & GPU disposal', () => {
         expect(boostMesh.name).toBe('boost-pads-merged');
         expect(boostMesh.castShadow).toBe(false);
 
-        const rings = world.group.getObjectByName('discovery-rings') as THREE.InstancedMesh;
+        const rings = world.group.getObjectByName('discovery-rings') as THREE.Mesh;
         const markers = world.group.getObjectByName('discovery-markers') as THREE.InstancedMesh;
         const pinBeam = world.group.getObjectByName('discovery-pin-beam') as THREE.Mesh;
-        expect(rings.isInstancedMesh).toBe(true);
+        expect(rings.isMesh).toBe(true);
         expect(markers.isInstancedMesh).toBe(true);
-        expect(rings.count).toBe(forgeMap.discoveries.length);
+        expect(markers.count).toBe(forgeMap.discoveries.length);
         expect(rings.castShadow).toBe(false);
         expect(markers.castShadow).toBe(false);
         expect(pinBeam.visible).toBe(false);
@@ -180,20 +182,65 @@ describe('ShowroomCamera.setSpot & ChaseCamera dynamic feel', () => {
     });
 });
 
-describe('Alpine slope boulder grounding & Vite dynamic import cleanliness', () => {
-    it('sinks rocks/boulders proportional to local terrain slope so downhill rims never float', () => {
-        // Flat ground: baseline 0.35 * size
-        expect(rockSinkDepth(0, 'boulder', 1)).toBeCloseTo(0.35, 6);
-        expect(rockSinkDepth(0, 'rock', 1.2)).toBeCloseTo(0.35 * 1.2, 6);
+describe('Alpine slope boulder grounding, conformed discovery rings & Vite dynamic import cleanliness', () => {
+    it('sinks rocks/boulders to exact minCornerY over their rotated footprint so zero boulders hover on steep slopes', () => {
+        // Flat ground: baseline 0.25 * size
+        const flatHf = makeHeightfield(() => 10);
+        expect(rockSinkDepth(flatHf, 0, 0, 0, 'boulder', 1)).toBeCloseTo(0.25, 6);
+        expect(rockSinkDepth(flatHf, 0, 0, 0, 'rock', 1.2)).toBeCloseTo(0.25 * 1.2, 6);
 
-        // 34 deg alpine slope (tan 34 deg = 0.67451): boulder radius 2.2 m
-        // Expected by hand: 0.35 + 0.67451 * 2.2 * 0.65 = 1.31455 m
+        // 34 deg slope descending along +x: y = 50 - tan(34 deg) * x
+        // At yaw = 0, rock_boulder_l's maxX = 3.066 * size drops downhill by tan(34°) * 3.066!
         const slope34 = Math.tan(34 * Math.PI / 180);
-        expect(rockSinkDepth(slope34, 'boulder', 1)).toBeCloseTo(0.35 + slope34 * PLANT_COLLIDERS.boulder.r * 0.65, 5);
-        expect(rockSinkDepth(slope34, 'boulder', 1)).toBeGreaterThan(1.25);
+        const slopedHf = makeHeightfield(x => 50 - slope34 * x);
+        const fpL = KIT_FOOTPRINTS.rock_boulder_l;
+        const sink0 = rockSinkDepth(slopedHf, 0, 0, 0, 'boulder', 1);
+        expect(sink0).toBeCloseTo(0.25 + slope34 * fpL.maxX, 2);
+        // At yaw = PI, minX (-2.467) now faces +x downhill (asymmetric footprint rotates accurately!)
+        const sinkPi = rockSinkDepth(slopedHf, 0, 0, Math.PI, 'boulder', 1);
+        expect(sinkPi).toBeCloseTo(0.25 + slope34 * Math.abs(fpL.minX), 2);
+        expect(sink0).toBeGreaterThan(sinkPi + 0.3);
 
-        // Extreme cliff slope caps cleanly at 72% of rock height so the top stays visible
-        expect(rockSinkDepth(4.0, 'boulder', 1)).toBeCloseTo(PLANT_COLLIDERS.boulder.top * 0.72, 6);
+        // Across ALL 4 shipped maps, zero rocks/boulders have downhill rim hover above any footprint corner
+        for (const mapId of ['alpen-pass', 'stunt-forge', 'bulli-bay', 'logge-forge'] as const) {
+            const m = loadTestMap(mapId);
+            for (const plant of m.plants) {
+                if (plant.kind !== 'boulder' && plant.kind !== 'rock') continue;
+                const yaw = (plant.seed % 360) * Math.PI / 180;
+                const sink = rockSinkDepth(m.hf, plant.x, plant.z, yaw, plant.kind, plant.size);
+                const baseY = heightAt(m.hf, plant.x, plant.z) - sink;
+                const fp = KIT_FOOTPRINTS[plant.kind === 'boulder' ? 'rock_boulder_l' : 'rock_boulder_m'];
+                const cos = Math.cos(yaw), sin = Math.sin(yaw);
+                for (const [lx, lz] of [[fp.minX, fp.minZ], [fp.maxX, fp.minZ], [fp.maxX, fp.maxZ], [fp.minX, fp.maxZ]]) {
+                    const hy = heightAt(m.hf, plant.x + (lx * cos + lz * sin) * plant.size, plant.z + (-lx * sin + lz * cos) * plant.size);
+                    expect(baseY, `${mapId} ${plant.kind} at (${plant.x},${plant.z})`).toBeLessThanOrEqual(hy + 1e-4);
+                }
+            }
+        }
+    });
+
+    it('conforms every discovery ring vertex to heightAt(hf, wx, wz) + 0.08 on sloped terrain', () => {
+        const forgeMap = loadTestMap('logge-forge');
+        const vault = forgeMap.discoveries.find(d => d.id === 'transcripator-vault')!;
+        const renderer = new DiscoveryRenderer(forgeMap, 'desktop');
+        renderer.update(0, 0, { x: vault.x, y: 0, z: vault.z });
+        const ringMesh = renderer.group.getObjectByName('discovery-rings') as THREE.Mesh;
+        const pos = ringMesh.geometry.attributes.position as THREE.BufferAttribute;
+
+        const vaultIdx = forgeMap.discoveries.findIndex(d => d.id === 'transcripator-vault');
+        const vertsPerRing = pos.count / forgeMap.discoveries.length;
+        let minY = Infinity, maxY = -Infinity;
+        for (let k = 0; k < vertsPerRing; k++) {
+            const i = vaultIdx * vertsPerRing + k;
+            const wx = pos.getX(i), wy = pos.getY(i), wz = pos.getZ(i);
+            const expected = heightAt(forgeMap.hf, wx, wz) + DISCOVERY_RING_LIFT + (vault.yOffset ?? 0);
+            expect(wy).toBeCloseTo(expected, 4);
+            minY = Math.min(minY, wy);
+            maxY = Math.max(maxY, wy);
+        }
+        // Ring follows the sloped hillside (> 0.5 m elevation span) instead of lying flat
+        expect(maxY - minY).toBeGreaterThan(0.5);
+        renderer.dispose();
     });
 
     it('keeps look.ts free of static bulli-bay/map.json imports (avoids Vite ineffective dynamic import warning)', () => {

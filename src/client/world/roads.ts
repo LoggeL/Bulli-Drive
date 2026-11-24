@@ -32,11 +32,15 @@ function worldUvVertex(): string {
 	vRoad = uv;
 	vRoadA = roadA;
 	vRoadB = roadB;
+	vRoadWall = abs( objectNormal.y ) < 0.5 ? 1.0 : 0.0;
 	{
 		vec3 roadW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
 		transformed.y += max( 0.0, length( roadW - cameraPosition ) - ${ROAD_LIFT_FROM.toFixed(1)} ) * ${ROAD_DISTANCE_LIFT};
-		// Horizontal faces map the ground plane, curb faces run along it
-		vec2 roadTex = abs( objectNormal.y ) > 0.5 ? roadW.xz * ${s} : vec2( roadW.x + roadW.z, roadW.y ) * ${s};
+		// Horizontal faces map the ground plane; vertical faces (curbs, quay walls,
+		// retaining walls) pick dominant horizontal axis to avoid diagonal UV stretch
+		vec2 roadTex = abs( objectNormal.y ) > 0.5
+			? roadW.xz * ${s}
+			: vec2( abs( objectNormal.x ) > abs( objectNormal.z ) ? roadW.z : roadW.x, roadW.y ) * ${s};
 		#ifdef USE_MAP
 		vMapUv = roadTex;
 		#endif
@@ -52,12 +56,13 @@ function worldUvVertex(): string {
 	}`;
 }
 
-const VERTEX_DECL = 'attribute vec4 roadA;\nattribute vec4 roadB;\nuniform float uRoadTexScale;\nvarying vec2 vRoad;\nvarying vec4 vRoadA;\nvarying vec4 vRoadB;';
+const VERTEX_DECL = 'attribute vec4 roadA;\nattribute vec4 roadB;\nuniform float uRoadTexScale;\nvarying vec2 vRoad;\nvarying vec4 vRoadA;\nvarying vec4 vRoadB;\nvarying float vRoadWall;';
 
 const FRAGMENT_DECL = /* glsl */`
 varying vec2 vRoad;
 varying vec4 vRoadA;
 varying vec4 vRoadB;
+varying float vRoadWall;
 float paintMask = 0.0;
 float wearMask = 0.0;
 float roadLine( float d, float w ) {
@@ -173,30 +178,38 @@ const ASPHALT_COLOR = /* glsl */`
 		wearMask += patchMask * 0.6;
 	}`;
 
-// Concrete (harbour, lots): slab joints every 5 m along and in the middle
+// Concrete (harbour, lots, quay walls, retaining walls): slab joints every 5 m
+// along horizontal surfaces; weathered poured-concrete shading on vertical walls
 const CONCRETE_COLOR = /* glsl */`
 	{
-		if ( vRoadA.w < 7.5 && vRoadA.x > -0.5 ) {
+		if ( vRoadWall < 0.5 && vRoadA.w < 7.5 && vRoadA.x > -0.5 ) {
 			float joint = max( roadLine( mod( vRoad.y, 5.0 ) - 2.5, 0.03 ), roadLine( vRoad.x, 0.03 ) );
 			diffuseColor.rgb *= 1.0 - 0.35 * joint;
 		}
-		vec4 n = texture2D( uNoise, vWPos.xz / 13.0 );
+		vec4 n = texture2D( uNoise, ( vWPos.xz + vec2( vWPos.y * 0.65, -vWPos.y * 0.45 ) ) / 13.0 );
 		diffuseColor.rgb *= mix( 0.9, 1.06, n.r );
 		diffuseColor.rgb = mix( diffuseColor.rgb, diffuseColor.rgb * vec3( 0.86, 0.85, 0.83 ), smoothstep( 0.6, 0.72, n.a ) * 0.5 );
+		if ( vRoadWall > 0.5 ) {
+			diffuseColor.rgb *= vec3( 0.84, 0.82, 0.78 );
+		}
 	}`;
 
-// Dirt, gravel and sand tracks: ruts in the wheel tracks, a ragged edge
-// that lets the ground show through
+// Dirt, gravel and sand tracks: ruts in the wheel tracks, soft feathered edge
+// that blends organically into the terrain (and guards uv=(99,0) junctions)
 const TRACK_COLOR = /* glsl */`
 	{
 		float a = abs( vRoad.x );
 		float hw = vRoadB.x;
 		vec4 n1 = texture2D( uNoise, vWPos.xz / 6.0 );
-		float edge = hw - 0.3 - 1.1 * n1.r;
-		if ( a > edge ) discard;
-		float t = abs( a - hw * 0.5 ) - 0.2;
-		float ruts = exp( -( t * t ) / 0.18 );
-		diffuseColor.rgb *= 1.0 - 0.16 * ruts * ( 0.6 + 0.4 * n1.g );
+		if ( a < 50.0 ) {
+			float edge = hw - 0.15 - 0.9 * n1.r;
+			float alpha = 1.0 - smoothstep( edge - 0.65, edge + 0.15, a );
+			if ( alpha < 0.02 ) discard;
+			diffuseColor.a *= alpha;
+			float t = abs( a - hw * 0.5 ) - 0.2;
+			float ruts = exp( -( t * t ) / 0.18 );
+			diffuseColor.rgb *= 1.0 - 0.16 * ruts * ( 0.6 + 0.4 * n1.g );
+		}
 		diffuseColor.rgb *= mix( 0.9, 1.08, texture2D( uNoise, vWPos.xz / 21.0 ).b );
 	}`;
 
@@ -227,18 +240,22 @@ const PAVER_COLOR = /* glsl */`
 		diffuseColor.rgb = mix( diffuseColor.rgb * vec3( 0.93, 0.88, 0.8 ) * 0.85, diffuseColor.rgb * tile * 1.6, paverJoint );
 	}`;
 
-// Snow piste: groomed powder ruts, softly ragged snowbank edges
+// Snow piste: groomed powder ruts, softly feathered snowbank edges (guards uv=(99,0) junctions)
 const SNOW_ROAD_COLOR = /* glsl */`
 	{
 		float a = abs( vRoad.x );
 		float hw = vRoadB.x;
 		vec4 n1 = texture2D( uNoise, vWPos.xz / 7.5 );
-		float edge = hw - 0.25 - 0.85 * n1.r;
-		if ( a > edge ) discard;
-		float t = abs( a - hw * 0.45 ) - 0.25;
-		float ruts = exp( -( t * t ) / 0.22 );
+		if ( a < 50.0 ) {
+			float edge = hw - 0.15 - 0.75 * n1.r;
+			float alpha = 1.0 - smoothstep( edge - 0.6, edge + 0.15, a );
+			if ( alpha < 0.02 ) discard;
+			diffuseColor.a *= alpha;
+			float t = abs( a - hw * 0.45 ) - 0.25;
+			float ruts = exp( -( t * t ) / 0.22 );
+			diffuseColor.rgb *= 1.0 - 0.08 * ruts * ( 0.5 + 0.5 * n1.g );
+		}
 		diffuseColor.rgb *= mix( 0.94, 1.05, texture2D( uNoise, vWPos.xz / 18.0 ).b );
-		diffuseColor.rgb *= 1.0 - 0.08 * ruts * ( 0.5 + 0.5 * n1.g );
 	}`;
 
 // Frozen lake ice oval: glossy sheen with subtle skate/tire scrape streaks
@@ -283,6 +300,7 @@ interface LayerLook {
     // Polygon offset units (drawn over the terrain, curbs over the roads)
     offset: number;
     paint: boolean;
+    softEdge?: boolean;
 }
 
 const LOOKS: Record<RoadLayer, LayerLook> = {
@@ -293,11 +311,11 @@ const LOOKS: Record<RoadLayer, LayerLook> = {
     // Concrete and sidewalks a little cool: under the warm evening sun
     // (look.ts) they read as pale grey, not as the earth's brown
     concrete: { maps: () => pbr('sidewalk'), period: 3, albedo: 0xc8e2e6, tint: [1.1, 1.33, 1.42], color: CONCRETE_COLOR, envMapIntensity: 0.7, offset: -2, paint: true },
-    dirt: { maps: () => pbr('sand'), period: 3, albedo: 0x8a7458, tint: [0.72, 0.58, 0.45], color: TRACK_COLOR, envMapIntensity: 0.4, offset: -2, paint: false },
-    gravel: { maps: () => pbr('roof_gravel'), period: 2.5, albedo: 0x8f887d, tint: [0.92, 0.88, 0.82], color: TRACK_COLOR, envMapIntensity: 0.4, offset: -2, paint: false },
-    sand: { maps: () => pbr('sand'), period: 3, albedo: 0xc9b596, tint: [0.95, 0.93, 0.9], color: TRACK_COLOR, envMapIntensity: 0.45, offset: -2, paint: false },
+    dirt: { maps: () => pbr('sand'), period: 3, albedo: 0x8a7458, tint: [0.72, 0.58, 0.45], color: TRACK_COLOR, envMapIntensity: 0.4, offset: -2, paint: false, softEdge: true },
+    gravel: { maps: () => pbr('roof_gravel'), period: 2.5, albedo: 0x8f887d, tint: [0.92, 0.88, 0.82], color: TRACK_COLOR, envMapIntensity: 0.4, offset: -2, paint: false, softEdge: true },
+    sand: { maps: () => pbr('sand'), period: 3, albedo: 0xc9b596, tint: [0.95, 0.93, 0.9], color: TRACK_COLOR, envMapIntensity: 0.45, offset: -2, paint: false, softEdge: true },
     snow: {
-        maps: () => biomePbr('alpine_snow'), period: 4, albedo: 0xdce6f0, color: SNOW_ROAD_COLOR, envMapIntensity: 0.65, offset: -2, paint: false,
+        maps: () => biomePbr('alpine_snow'), period: 4, albedo: 0xdce6f0, color: SNOW_ROAD_COLOR, envMapIntensity: 0.65, offset: -2, paint: false, softEdge: true,
         rough: 'roughnessFactor = clamp( roughnessFactor * 0.95, 0.55, 0.95 );'
     },
     ice: {
@@ -313,7 +331,8 @@ function layerLookForBiome(layer: RoadLayer, biome: MapAtmosphereSpec['biome']):
     if (biome === 'coastal') return base;
     if (biome === 'quarry') {
         if (layer === 'gravel') return { ...base, maps: () => biomePbr('quarry_gravel'), period: 3, albedo: 0x9c8971, tint: undefined };
-        if (layer === 'dirt') return { ...base, maps: () => biomePbr('quarry_red_rock'), period: 4, albedo: 0xa86c4a, tint: undefined };
+        // Natural packed quarry gravel/dirt instead of striated red cliff rock
+        if (layer === 'dirt') return { ...base, maps: () => biomePbr('quarry_gravel'), period: 3.2, albedo: 0x867058, tint: [0.82, 0.74, 0.64] };
         if (layer === 'concrete') return { ...base, maps: () => biomePbr('concrete_bowl'), period: 3.5, albedo: 0xb6b0a6, tint: undefined };
     }
     if (biome === 'alpine') {
@@ -362,6 +381,7 @@ export function createRoadMaterial(layer: RoadLayer, tier: RenderTier, biome: Ma
             roughness: 1,
             metalness: 0,
             envMapIntensity: look.envMapIntensity,
+            ...(look.softEdge ? { transparent: true, depthWrite: false } : {}),
             ...common
         });
     }

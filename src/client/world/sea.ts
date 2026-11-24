@@ -3,6 +3,7 @@ import type { Heightfield } from '../../shared/map/heightfield.js';
 import type { MapAtmosphereSpec } from '../../shared/map/registry.js';
 import type { RenderTier } from '../effects/renderQuality.js';
 import { patchWorldMaterial } from './materials.js';
+import { groundUnderDecks } from './terrain.js';
 
 // The Pacific (docs/phase-3-design.md 7): a plane at the water level out to
 // the horizon, one draw call. Its shader reads the depth of the ground
@@ -68,8 +69,9 @@ export function createSea(hf: Heightfield, tier: RenderTier, atmosphere?: MapAtm
             : new THREE.Color(0.05, 0.19, 0.21);
         material = patchWorldMaterial(new THREE.MeshLambertMaterial({ color: lambertColor }), {});
     } else {
-        const spec = hf.spec;
-        hTex = heightTexture(hf);
+        const seabed = groundUnderDecks(hf);
+        const spec = seabed.spec;
+        hTex = heightTexture(seabed);
         const uniforms = {
             tHeights: { value: hTex },
             uHeightGrid: { value: new THREE.Vector4(spec.originX, spec.originZ, spec.cellSize, spec.cols) },

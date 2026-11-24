@@ -35,8 +35,13 @@ export const ROAD_FLAG = { edges: 1, parallelParking: 2, angledParking: 4, parki
 export const END_CODE = { stop: 1, crosswalk: 2 } as const;
 
 // Heights above the ground (m): ribbons and junctions, lots
-export const ROAD_LIFT = 0.02;
+export const ROAD_LIFT = 0.035;
 export const AREA_LIFT = 0.015;
+// Sidewalk / curb outer skirt burial depth (m) so sloped shoulders never expose gaps
+export const SIDEWALK_SKIRT_DEPTH = 0.6;
+// Retaining walls for edge.def.walls (m)
+export const RETAINING_WALL_THICKNESS = 0.35;
+export const RETAINING_WALL_MIN_DEPTH = 3.5;
 // A curb without a sidewalk (a kerb stone along the road edge)
 export const KERB_WIDTH = 0.3;
 // Lot curbs stand round areas without connecting roads (the plaza)
@@ -130,22 +135,50 @@ export function edgeRuns(net: RoadNetwork, edge: RoadEdgeData): { runs: EdgeRun[
 }
 
 // Longest step between two stations of a ribbon on a straight road (m),
-// and the turn (cosine of the angle) after which a station is kept anyway
+// tightened step on crests/bumps (m), and the turn (cosine of the angle)
+// after which a station is kept anyway
 export const MAX_STATION_STEP = 4;
+export const CREST_STATION_STEP = 2;
 const MIN_TURN_COS = Math.cos(1.5 * Math.PI / 180);
+const CREST_DEVIATION = 0.008;
+
+function hasBumpAt(edge: RoadEdgeData, s: number): boolean {
+    const bumps = edge.def.bumps;
+    if (!bumps || !bumps.length) return false;
+    for (const bump of bumps) {
+        if (Math.abs(s - bump.s) <= bump.length * 0.5 + CREST_STATION_STEP) return true;
+    }
+    return false;
+}
 
 // The sample stations between from and to, both ends included: every
-// sample in curves, every MAX_STATION_STEP m on straights (the corridor's
-// vertical curves are at least 150 m in radius, so 4 m chords stay within
-// 1.3 cm of it)
-export function edgeStations(edge: RoadEdgeData, from: number, to: number): number[] {
+// sample in curves, every CREST_STATION_STEP (2 m) on bumps/crests/tight
+// vertical curves, and every MAX_STATION_STEP (4 m) on flat straights.
+export function edgeStations(edge: RoadEdgeData, from: number, to: number, height?: HeightFn): number[] {
     if (to <= from) return [];
     const stations = [from];
     let last = pointAt(edge.samples, from);
+    const tightVertical = edge.def.verticalRadius !== undefined && edge.def.verticalRadius < 150;
     for (const sample of edge.samples) {
         if (sample.s <= from + 0.05 || sample.s >= to - 0.05) continue;
+        const ds = sample.s - last.s;
         const turned = sample.tx * last.tx + sample.tz * last.tz < MIN_TURN_COS;
-        if (sample.s - last.s >= MAX_STATION_STEP - 1e-6 || turned) {
+        let step = tightVertical || hasBumpAt(edge, sample.s) ? CREST_STATION_STEP : MAX_STATION_STEP;
+        if (height && step > CREST_STATION_STEP && ds >= CREST_STATION_STEP - 1e-6) {
+            const nextS = Math.min(to, sample.s + CREST_STATION_STEP);
+            const next = pointAt(edge.samples, nextS);
+            const span = next.s - last.s;
+            if (span > 1e-3) {
+                const hLast = height(last.x, last.z);
+                const hCur = height(sample.x, sample.z);
+                const hNext = height(next.x, next.z);
+                const t = ds / span;
+                if (Math.abs(hCur - (hLast + (hNext - hLast) * t)) > CREST_DEVIATION) {
+                    step = CREST_STATION_STEP;
+                }
+            }
+        }
+        if (ds >= step - 1e-6 || turned) {
             stations.push(sample.s);
             last = sample;
         }
@@ -179,18 +212,22 @@ function edgeAttributes(net: RoadNetwork, edge: RoadEdgeData, start: number, end
 }
 
 function addRibbon(out: MeshArrays, edge: RoadEdgeData, stations: readonly number[], height: HeightFn,
-    inner: number, outer: number, lift: (across: number) => number, a: readonly number[], b: readonly number[]): void {
-    let prev: [number, number] | null = null;
+    inner: number, outer: number, lift: (across: number) => number, a: readonly number[], b: readonly number[],
+    centerline = false): void {
+    const cols = centerline ? [outer, (outer + inner) * 0.5, inner] : [outer, inner];
+    let prev: number[] | null = null;
     for (const s of stations) {
         const p = pointAt(edge.samples, s);
         const [nx, nz] = leftNormal(p.tx, p.tz);
         const row: number[] = [];
-        for (const across of [outer, inner]) {
+        for (const across of cols) {
             const x = p.x + nx * across, z = p.z + nz * across;
             row.push(out.vertex(x, height(x, z) + lift(across), z, groundNormal(height, x, z), across, s, a, b));
         }
-        if (prev) out.quad(prev[0], prev[1], row[1], row[0]);
-        prev = [row[0], row[1]];
+        if (prev) {
+            for (let k = 0; k < row.length - 1; k++) out.quad(prev[k], prev[k + 1], row[k + 1], row[k]);
+        }
+        prev = row;
     }
 }
 
@@ -213,7 +250,7 @@ function addFace(out: MeshArrays, edge: RoadEdgeData, stations: readonly number[
 }
 
 // Sidewalk (or kerb) on one side (+1 left, -1 right): the curb face at the
-// road edge, the top, the outer face down to the ground
+// road edge, the top, the outer skirt buried down into sloped shoulders
 function addSidewalk(out: MeshArrays, edge: RoadEdgeData, stations: readonly number[], height: HeightFn, side: 1 | -1): void {
     const p = edge.profile;
     const width = side > 0 ? p.sidewalk.left : p.sidewalk.right;
@@ -222,12 +259,69 @@ function addSidewalk(out: MeshArrays, edge: RoadEdgeData, stations: readonly num
     const w = width > 0 ? width : KERB_WIDTH;
     const top = curb ? p.curb.height : 0.04;
     const hw = edge.halfWidth;
+    const first = out.vertexCount;
     addRibbon(out, edge, stations, height, side * hw, side * (hw + w), () => top, [side * hw, 0, 0, 0], [w, 0, 0, 0]);
     // The sidewalk's own coordinates: across from the curb
-    const first = out.vertexCount - stations.length * 2;
     for (let v = first; v < out.vertexCount; v++) out.uvs[v * 2] = Math.abs(out.uvs[v * 2]) - hw;
     if (curb) addFace(out, edge, stations, height, side * hw, ROAD_LIFT, top, -side);
-    addFace(out, edge, stations, height, side * (hw + w), -0.05, top, side);
+    addFace(out, edge, stations, height, side * (hw + w), -SIDEWALK_SKIRT_DEPTH, top, side);
+}
+
+// Concrete retaining walls for edge.def.walls (e.g. laurel-court, cypress-court):
+// vertical poured concrete face + top coping + end caps anchoring into the lower slope
+function addRetainingWalls(out: MeshArrays, edge: RoadEdgeData, start: number, end: number, height: HeightFn): void {
+    const walls = edge.def.walls;
+    if (!walls || !walls.length) return;
+    const a = [-1, 0, 0, 0], b = [0, 0, 0, 0];
+    for (const wall of walls) {
+        const side: 1 | -1 = wall.side === 'left' ? 1 : -1;
+        const from = Math.max(start, wall.from);
+        const to = Math.min(end, wall.to < 0 ? edge.length : wall.to);
+        if (to <= from + 0.05) continue;
+        const stations = edgeStations(edge, from, to, height);
+        if (stations.length < 2) continue;
+        const p = edge.profile;
+        const sw = side > 0 ? p.sidewalk.left : p.sidewalk.right;
+        const curb = side > 0 ? p.curb.left : p.curb.right;
+        const walkW = sw > 0 ? sw : curb ? KERB_WIDTH : 0;
+        const topLift = curb ? p.curb.height : 0.08;
+        const innerAcross = side * (edge.halfWidth + walkW + p.shoulder);
+        const outerAcross = innerAcross + side * RETAINING_WALL_THICKNESS;
+        let prev: { inTop: number; outTop: number; faceTop: number; faceBot: number } | null = null;
+        let firstCap: { ix: number; iz: number; ox: number; oz: number; yTop: number; yBot: number; tx: number; tz: number } | null = null;
+        let lastCap: { ix: number; iz: number; ox: number; oz: number; yTop: number; yBot: number; tx: number; tz: number } | null = null;
+        for (const s of stations) {
+            const pt = pointAt(edge.samples, s);
+            const [nx, nz] = leftNormal(pt.tx, pt.tz);
+            const ix = pt.x + nx * innerAcross, iz = pt.z + nz * innerAcross;
+            const ox = pt.x + nx * outerAcross, oz = pt.z + nz * outerAcross;
+            const fx = pt.x + nx * (outerAcross + side * 2.5), fz = pt.z + nz * (outerAcross + side * 2.5);
+            const yTop = Math.max(height(ix, iz), height(pt.x, pt.z)) + topLift;
+            const yBot = Math.min(height(ox, oz), height(fx, fz), yTop - RETAINING_WALL_MIN_DEPTH) - 0.6;
+            const faceOut = [nx * side, 0, nz * side];
+            const inTop = out.vertex(ix, yTop, iz, UP, 0, s, a, b);
+            const outTop = out.vertex(ox, yTop, oz, UP, RETAINING_WALL_THICKNESS, s, a, b);
+            const faceTop = out.vertex(ox, yTop, oz, faceOut, 0, s, a, b);
+            const faceBot = out.vertex(ox, yBot, oz, faceOut, yTop - yBot, s, a, b);
+            if (prev) {
+                out.quad(prev.inTop, inTop, outTop, prev.outTop, UP);
+                out.quad(prev.faceBot, faceBot, faceTop, prev.faceTop, faceOut);
+            }
+            prev = { inTop, outTop, faceTop, faceBot };
+            const cap = { ix, iz, ox, oz, yTop, yBot, tx: pt.tx, tz: pt.tz };
+            if (!firstCap) firstCap = cap;
+            lastCap = cap;
+        }
+        for (const [cap, dir] of [[firstCap, -1], [lastCap, 1]] as const) {
+            if (!cap) continue;
+            const n = [cap.tx * dir, 0, cap.tz * dir];
+            const v0 = out.vertex(cap.ix, cap.yBot, cap.iz, n, 0, 0, a, b);
+            const v1 = out.vertex(cap.ox, cap.yBot, cap.oz, n, RETAINING_WALL_THICKNESS, 0, a, b);
+            const v2 = out.vertex(cap.ox, cap.yTop, cap.oz, n, RETAINING_WALL_THICKNESS, cap.yTop - cap.yBot, a, b);
+            const v3 = out.vertex(cap.ix, cap.yTop, cap.iz, n, 0, cap.yTop - cap.yBot, a, b);
+            out.quad(v0, v1, v2, v3, n);
+        }
+    }
 }
 
 // ---- Junctions ----
@@ -312,16 +406,26 @@ function addJunction(layers: Record<RoadLayer, MeshArrays>, net: RoadNetwork, no
         const left: Vec2 = [end.x + lx * hw, end.z + lz * hw];
         const right: Vec2 = [end.x - lx * hw, end.z - lz * hw];
         const nextLeft: Vec2 = [next.x + nlx * nhw, next.z + nlz * nhw];
-        ring.push(left, right);
+        ring.push(left, [end.x, end.z], right);
         const curve = cornerCurve(right, [-end.ox, -end.oz], nextLeft, [-next.ox, -next.oz]);
         ring.push(...curve.slice(1, -1));
         corners.push({ points: curve, from: end, to: next });
     });
     const a = [-1, 0, 0, 0], b = [0, 0, 0, 0];
     const centre = out.vertex(node.x, height(node.x, node.z) + ROAD_LIFT, node.z, groundNormal(height, node.x, node.z), 99, 0, a, b);
-    const first = out.vertexCount;
+    // One interior ring at half-radius keeps large junctions conformed to curved terrain
+    const midFirst = out.vertexCount;
+    for (const [x, z] of ring) {
+        const mx = (node.x + x) * 0.5, mz = (node.z + z) * 0.5;
+        out.vertex(mx, height(mx, mz) + ROAD_LIFT, mz, groundNormal(height, mx, mz), 99, 0, a, b);
+    }
+    const outerFirst = out.vertexCount;
     for (const [x, z] of ring) out.vertex(x, height(x, z) + ROAD_LIFT, z, groundNormal(height, x, z), 99, 0, a, b);
-    for (let i = 0; i < ring.length; i++) out.tri(centre, first + i, first + (i + 1) % ring.length);
+    for (let i = 0; i < ring.length; i++) {
+        const next = (i + 1) % ring.length;
+        out.tri(centre, midFirst + i, midFirst + next);
+        out.quad(midFirst + i, outerFirst + i, outerFirst + next, midFirst + next);
+    }
     // Sidewalks round the corners
     for (const corner of corners) addCornerWalk(layers.walk, corner.points, corner.from, corner.to, node, height);
 }
@@ -350,7 +454,7 @@ function addCornerWalk(out: MeshArrays, curve: readonly Vec2[], from: JunctionEn
         const faceIn = [-dx, 0, -dz], faceOut = [dx, 0, dz];
         const lo = out.vertex(x, y + ROAD_LIFT, z, faceIn, 0, k, NONE, NONE);
         const hi = out.vertex(x, y + top, z, faceIn, top, k, NONE, NONE);
-        const olo = out.vertex(ox, oy - 0.05, oz, faceOut, 0, k, NONE, NONE);
+        const olo = out.vertex(ox, oy - SIDEWALK_SKIRT_DEPTH, oz, faceOut, 0, k, NONE, NONE);
         const ohi = out.vertex(ox, oy + top, oz, faceOut, top, k, NONE, NONE);
         if (prev) {
             out.quad(prev.inner, inner, outer, prev.outer);
@@ -513,15 +617,19 @@ function addArea(layers: Record<RoadLayer, MeshArrays>, area: RoadArea, height: 
     // outline would already lean down to the terrain outside)
     const level = area.y;
     const flat: [number, number, number] = [0, 1, 0];
+    const areaTop = (x: number, z: number) =>
+        level === undefined
+            ? height(x, z) + AREA_LIFT
+            : level + AREA_LIFT + Math.min(0.25, Math.max(0, height(x, z) - level));
     for (const [x, z] of points) {
         const u = (x - frame.ox) * frame.ux + (z - frame.oz) * frame.uz;
         const v = (x - frame.ox) * frame.vx + (z - frame.oz) * frame.vz;
         if (level === undefined) out.vertex(x, height(x, z) + AREA_LIFT, z, groundNormal(height, x, z), u, v, a, b);
-        else out.vertex(x, level + AREA_LIFT, z, flat, u, v, a, b);
+        else out.vertex(x, areaTop(x, z), z, flat, u, v, a, b);
     }
     for (const [i, j, k] of tris) out.tri(first + i, first + j, first + k);
     // A level area on walls (the quay) shows its walls down to below the sea floor
-    if (level !== undefined && area.walls) addAreaWalls(out, outline, level + AREA_LIFT, a, b);
+    if (level !== undefined && area.walls) addAreaWalls(out, outline, areaTop, level + AREA_LIFT - AREA_WALL_DEPTH, a, b);
     // A curb round a lot without roads (the plaza)
     if (area.curb && area.connects.length === 0) addAreaCurb(layers.walk, area.polygon, height);
 }
@@ -529,7 +637,14 @@ function addArea(layers: Record<RoadLayer, MeshArrays>, area: RoadArea, height: 
 // How far an area's walls reach down (m)
 export const AREA_WALL_DEPTH = 4;
 
-function addAreaWalls(out: MeshArrays, outline: readonly Vec2[], top: number, a: readonly number[], b: readonly number[]): void {
+function addAreaWalls(
+    out: MeshArrays,
+    outline: readonly Vec2[],
+    topAt: (x: number, z: number) => number,
+    bottom: number,
+    a: readonly number[],
+    b: readonly number[]
+): void {
     let twice = 0;
     for (let i = 0, j = outline.length - 1; i < outline.length; j = i++) twice += outline[j][0] * outline[i][1] - outline[i][0] * outline[j][1];
     // Positive: counter-clockwise in x-z, the outside right of each side
@@ -539,11 +654,12 @@ function addAreaWalls(out: MeshArrays, outline: readonly Vec2[], top: number, a:
         const [px, pz] = outline[i], [qx, qz] = outline[(i + 1) % outline.length];
         const l = Math.sqrt((qx - px) * (qx - px) + (qz - pz) * (qz - pz));
         const n: [number, number, number] = [(qz - pz) / l * outward, 0, -(qx - px) / l * outward];
+        const pTop = topAt(px, pz), qTop = topAt(qx, qz);
         const v = out.vertexCount;
-        out.vertex(px, top, pz, n, u, 0, a, b);
-        out.vertex(qx, top, qz, n, u + l, 0, a, b);
-        out.vertex(px, top - AREA_WALL_DEPTH, pz, n, u, AREA_WALL_DEPTH, a, b);
-        out.vertex(qx, top - AREA_WALL_DEPTH, qz, n, u + l, AREA_WALL_DEPTH, a, b);
+        out.vertex(px, pTop, pz, n, u, 0, a, b);
+        out.vertex(qx, qTop, qz, n, u + l, 0, a, b);
+        out.vertex(px, bottom, pz, n, u, pTop - bottom, a, b);
+        out.vertex(qx, bottom, qz, n, u + l, qTop - bottom, a, b);
         // (v, v + 2, v + 1) faces (-dz, 0, dx): flip it where that is inside
         if (outward > 0) {
             out.tri(v, v + 1, v + 2);
@@ -570,7 +686,7 @@ function addAreaCurb(out: MeshArrays, polygon: readonly Vec2[], height: HeightFn
         const corners = [p, q].map(([x, z]) => {
             const y = height(x, z);
             return [
-                out.vertex(x, y - 0.05, z, [nx, 0, nz], 0, 0, NONE, NONE),
+                out.vertex(x, y - SIDEWALK_SKIRT_DEPTH, z, [nx, 0, nz], 0, 0, NONE, NONE),
                 out.vertex(x, y + top, z, [nx, 0, nz], top, 0, NONE, NONE),
                 out.vertex(x, y + top, z, UP, 0, 0, NONE, NONE),
                 out.vertex(x - nx * KERB_WIDTH, y + top, z - nz * KERB_WIDTH, UP, KERB_WIDTH, 0, NONE, NONE)
@@ -591,11 +707,12 @@ export function buildRoadGeometry(net: RoadNetwork, height: HeightFn): Record<Ro
         const { runs, start, end } = edgeRuns(net, edge);
         const { a, b } = edgeAttributes(net, edge, start, end);
         for (const run of runs) {
-            const stations = edgeStations(edge, run.from, run.to);
-            addRibbon(layers[layer], edge, stations, height, -edge.halfWidth, edge.halfWidth, () => ROAD_LIFT, a, b);
+            const stations = edgeStations(edge, run.from, run.to, height);
+            addRibbon(layers[layer], edge, stations, height, -edge.halfWidth, edge.halfWidth, () => ROAD_LIFT, a, b, true);
             addSidewalk(layers.walk, edge, stations, height, 1);
             addSidewalk(layers.walk, edge, stations, height, -1);
         }
+        addRetainingWalls(layers.concrete, edge, start, end, height);
     }
     for (const node of net.nodes) if (node.def.kind === 'junction') addJunction(layers, net, node, height);
     for (const area of net.areas) addArea(layers, area, height);

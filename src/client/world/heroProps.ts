@@ -10,24 +10,36 @@ import { WORLD_UNIFORMS } from '../render/look.js';
 import { patchWorldMaterial } from './materials.js';
 import { ROAD_DISTANCE_LIFT, ROAD_LIFT_FROM } from './roads.js';
 
-// Ground overlays sit strictly above roads/areas (ROAD_LIFT=0.02, ROAD_DISTANCE_LIFT=0.0025)
+// Ground overlays sit strictly above roads/areas (ROAD_LIFT=0.035, ROAD_DISTANCE_LIFT=0.0025)
 // at every distance from 0 m to the horizon so roads/concrete never bury decals or boost pads.
 export const DECAL_BASE_LIFT = 0.055;
 export const DECAL_DISTANCE_LIFT = ROAD_DISTANCE_LIFT + 0.0002;
 export const BOOST_PAD_BASE_LIFT = 0.065;
 export const BOOST_PAD_DISTANCE_LIFT = ROAD_DISTANCE_LIFT + 0.0003;
+// Hull draft (m) for waterborne sailboat monuments so they float cleanly at waterLevel - draft
+export const SAILBOAT_DRAFT = 0.35;
 
 /** Effective height offset (m) above terrain at camera distance `dist` (matches vertex shader). */
 export function surfaceLiftAtDistance(baseLift: number, liftRate: number, dist: number, liftFrom = ROAD_LIFT_FROM): number {
     return baseLift + Math.max(0, dist - liftFrom) * liftRate;
 }
 
+/** Ground/water resting elevation (m) for a HeroPropDef on `hf`. */
+export function heroPropGroundY(def: HeroPropDef, hf: Heightfield): number {
+    const groundY = heightAt(hf, def.x, def.z);
+    const baseY = def.model === 'lmf_sailboat_ijsselmeer'
+        ? Math.max(hf.spec.waterLevel - SAILBOAT_DRAFT, groundY)
+        : groundY;
+    return baseY + (def.yOffset ?? 0);
+}
+
 // Hero 3D monuments, easter-egg props, custom lore billboards, terrain-conforming
 // ground decals, and animated chevron boost pads.
 //
 // Render budget discipline:
-// - Billboards, decals, boost pads, and small props NEVER cast shadows.
-// - Only desktop monuments (`lmf_*`) cast shadows, and only within 140 m of focus.
+// - Billboards, decals, and boost pads NEVER cast shadows.
+// - On desktop tier only, hero props & monuments cast shadows within 140 m of focus
+//   (phone/mobile and software tiers keep 0 hero-prop shadow passes).
 // - All boost pads on a map merge into ONE single geometry + ShaderMaterial (1 draw call).
 // - Co-located billboard defs whose coordinates match a hero prop carrying a
 //   `billboard_face` node bind directly onto that prop's face (avoiding double stands).
@@ -296,7 +308,7 @@ export class HeroPropsLayer {
         for (const def of this.map.heroProps) {
             const root = new THREE.Group();
             root.name = `hero-${def.id}`;
-            const y = heightAt(hf, def.x, def.z) + (def.yOffset ?? 0);
+            const y = heroPropGroundY(def, hf);
             root.position.set(def.x, y, def.z);
             root.rotation.y = def.yaw;
             const scale = def.scale ?? 1;
@@ -315,7 +327,7 @@ export class HeroPropsLayer {
                 reactionTimer: 0,
                 reactionDuration: 2.2,
                 pairedBillboard: propToBillboard.get(def.id) ?? null,
-                castShadowCapable: this.tier === 'desktop' && isMonument
+                castShadowCapable: this.tier === 'desktop'
             };
             this.props.push(placed);
             this.propsById.set(def.id, placed);
@@ -569,7 +581,7 @@ export class HeroPropsLayer {
                 const cast = d2 <= shadowSq;
                 p.root.traverse(obj => {
                     const mesh = obj as THREE.Mesh;
-                    if (mesh.isMesh && mesh.castShadow !== cast) mesh.castShadow = cast;
+                    if (mesh.isMesh && mesh.name !== 'billboard_face' && mesh.castShadow !== cast) mesh.castShadow = cast;
                 });
             }
 

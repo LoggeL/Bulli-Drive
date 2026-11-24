@@ -1,16 +1,30 @@
 import * as THREE from 'three';
 import type { DiscoveryAlloy, DiscoveryDef, RewardEffect } from '../../shared/map/discoverySchema.js';
-import { heightAt } from '../../shared/map/heightfield.js';
+import { heightAt, type Heightfield } from '../../shared/map/heightfield.js';
 import type { MapData } from '../../shared/map/mapData.js';
 import { spawnDiscoveryBurst } from '../effects/particles.js';
 import type { RenderTier } from '../effects/renderQuality.js';
 import { playDiscoveryChime } from '../effects/sounds.js';
+import { ROAD_DISTANCE_LIFT, ROAD_LIFT_FROM } from './roads.js';
 
 // Discovery POI beacon & celebratory unlock renderer:
-// - Uses TWO InstancedMeshes total (ground rings + hovering diamonds) across all POIs
-//   on the active map, plus ONE toggleable vertical beacon pillar for `pinnedId` (≤ 3 draw calls).
+// - Uses ONE merged terrain-conforming Mesh for all ground rings + ONE InstancedMesh
+//   for hovering diamonds across all POIs on the active map, plus ONE toggleable
+//   vertical beacon pillar for `pinnedId` (<= 3 draw calls total).
+// - Every ground ring vertex conforms to `heightAt(hf, wx, wz) + 0.08` so rings
+//   hug sloped hills and curbs cleanly without ever slicing into terrain.
 // - Casts zero shadows so phone tier stays well under the 150 draw-call budget.
 // - Secret POIs stay hidden beyond 65 m until found or pinned.
+
+export const DISCOVERY_RING_LIFT = 0.08;
+export const DISCOVERY_RING_DISTANCE_LIFT = ROAD_DISTANCE_LIFT + 0.0004;
+export const RING_SEGMENTS = 32;
+export const RING_RADIAL_STEPS = 2;
+const RADIAL_FRACS = [0.74, 0.87, 1.0] as const;
+const VERTS_PER_RING = (RING_RADIAL_STEPS + 1) * RING_SEGMENTS;
+const TRIS_PER_RING = RING_RADIAL_STEPS * RING_SEGMENTS * 2;
+const RING_COS = Float64Array.from({ length: RING_SEGMENTS }, (_, i) => Math.cos((i / RING_SEGMENTS) * Math.PI * 2));
+const RING_SIN = Float64Array.from({ length: RING_SEGMENTS }, (_, i) => Math.sin((i / RING_SEGMENTS) * Math.PI * 2));
 
 export const ALLOY_COLORS: Record<DiscoveryAlloy, number> = {
     forge: 0xff6a24,
@@ -35,6 +49,7 @@ interface PoiEntry {
     ringRadius: number;
     baseColor: THREE.Color;
     flashTimer: number;
+    hidden: boolean;
 }
 
 export interface DiscoveryTriggerInfo {
@@ -57,10 +72,13 @@ const _up = new THREE.Vector3(0, 1, 0);
 export class DiscoveryRenderer {
     readonly group = new THREE.Group();
 
+    private readonly hf: Heightfield;
     private readonly entries: PoiEntry[] = [];
     private readonly byId = new Map<string, PoiEntry>();
 
-    private readonly ringMesh: THREE.InstancedMesh | null = null;
+    private readonly ringMesh: THREE.Mesh | null = null;
+    private readonly ringPositions: Float32Array | null = null;
+    private readonly ringColors: Float32Array | null = null;
     private readonly diamondMesh: THREE.InstancedMesh | null = null;
     private readonly pinBeam: THREE.Mesh | null = null;
     private readonly pinBeamMat: THREE.ShaderMaterial | null = null;
@@ -71,6 +89,7 @@ export class DiscoveryRenderer {
 
     constructor(map: MapData, private readonly tier: RenderTier) {
         this.group.name = 'discoveries';
+        this.hf = map.hf;
         if (!map.discoveries.length) return;
 
         for (const def of map.discoveries) {
@@ -82,7 +101,8 @@ export class DiscoveryRenderer {
                 z: def.z,
                 ringRadius: Math.max(2.2, Math.min(4.8, def.trigger.radius * 0.16)),
                 baseColor: new THREE.Color(ALLOY_COLORS[def.alloy] ?? 0xff6a24),
-                flashTimer: 0
+                flashTimer: 0,
+                hidden: false
             };
             this.entries.push(entry);
             this.byId.set(def.id, entry);
@@ -90,26 +110,89 @@ export class DiscoveryRenderer {
 
         const count = this.entries.length;
 
-        // 1. Single InstancedMesh for pulsing ground beacon rings
-        const ringGeom = new THREE.RingGeometry(0.76, 1.0, 24);
-        ringGeom.rotateX(-Math.PI / 2);
-        const ringMat = new THREE.MeshBasicMaterial({
-            color: 0xffffff,
+        // 1. Single merged terrain-conforming Mesh for pulsing ground beacon rings (1 draw call)
+        const totalVerts = count * VERTS_PER_RING;
+        const positions = new Float32Array(totalVerts * 3);
+        const colors = new Float32Array(totalVerts * 3);
+        const radialT = new Float32Array(totalVerts);
+        const indices = new Uint32Array(count * TRIS_PER_RING * 3);
+
+        let idxOff = 0;
+        for (let i = 0; i < count; i++) {
+            const baseV = i * VERTS_PER_RING;
+            for (let ir = 0; ir <= RING_RADIAL_STEPS; ir++) {
+                const rt = ir / RING_RADIAL_STEPS;
+                for (let ia = 0; ia < RING_SEGMENTS; ia++) {
+                    radialT[baseV + ir * RING_SEGMENTS + ia] = rt;
+                }
+            }
+            for (let ir = 0; ir < RING_RADIAL_STEPS; ir++) {
+                const row0 = baseV + ir * RING_SEGMENTS;
+                const row1 = baseV + (ir + 1) * RING_SEGMENTS;
+                for (let ia = 0; ia < RING_SEGMENTS; ia++) {
+                    const nextA = (ia + 1) % RING_SEGMENTS;
+                    const a = row0 + ia, b = row0 + nextA;
+                    const c = row1 + ia, d = row1 + nextA;
+                    indices[idxOff++] = a;
+                    indices[idxOff++] = b;
+                    indices[idxOff++] = c;
+                    indices[idxOff++] = b;
+                    indices[idxOff++] = d;
+                    indices[idxOff++] = c;
+                }
+            }
+        }
+
+        const ringGeom = new THREE.BufferGeometry();
+        const posAttr = new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage);
+        ringGeom.setAttribute('position', posAttr);
+        ringGeom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        ringGeom.setAttribute('radialT', new THREE.BufferAttribute(radialT, 1));
+        ringGeom.setIndex(new THREE.BufferAttribute(indices, 1));
+
+        const ringMat = new THREE.ShaderMaterial({
+            vertexShader: /* glsl */`
+                attribute vec3 color;
+                attribute float radialT;
+                varying vec3 vColor;
+                varying float vRadialT;
+                void main() {
+                    vColor = color;
+                    vRadialT = radialT;
+                    vec3 ringW = ( modelMatrix * vec4( position, 1.0 ) ).xyz;
+                    vec3 lifted = position;
+                    lifted.y += max( 0.0, length( ringW - cameraPosition ) - ${ROAD_LIFT_FROM.toFixed(1)} ) * ${DISCOVERY_RING_DISTANCE_LIFT};
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4( lifted, 1.0 );
+                }
+            `,
+            fragmentShader: /* glsl */`
+                varying vec3 vColor;
+                varying float vRadialT;
+                void main() {
+                    float band = smoothstep( 0.0, 0.22, vRadialT ) * ( 1.0 - smoothstep( 0.78, 1.0, vRadialT ) );
+                    float alpha = 0.76 * ( 0.35 + 0.65 * band );
+                    if ( alpha < 0.01 ) discard;
+                    gl_FragColor = vec4( vColor, alpha );
+                    #include <tonemapping_fragment>
+                    #include <colorspace_fragment>
+                }
+            `,
             transparent: true,
-            opacity: 0.72,
             side: THREE.DoubleSide,
             depthWrite: false,
             polygonOffset: true,
-            polygonOffsetFactor: -2,
-            polygonOffsetUnits: -2
+            polygonOffsetFactor: -3,
+            polygonOffsetUnits: -3
         });
-        this.ringMesh = new THREE.InstancedMesh(ringGeom, ringMat, count);
+
+        this.ringPositions = positions;
+        this.ringColors = colors;
+        this.ringMesh = new THREE.Mesh(ringGeom, ringMat);
         this.ringMesh.name = 'discovery-rings';
         this.ringMesh.castShadow = false;
         this.ringMesh.receiveShadow = false;
         this.ringMesh.frustumCulled = false;
         this.ringMesh.renderOrder = 3;
-        this.ringMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         this.group.add(this.ringMesh);
 
         // 2. Single InstancedMesh for hovering faceted discovery jewels
@@ -196,7 +279,8 @@ export class DiscoveryRenderer {
     }
 
     private applyStateColors(): void {
-        if (!this.ringMesh || !this.diamondMesh) return;
+        if (!this.ringMesh || !this.ringColors || !this.diamondMesh) return;
+        const colors = this.ringColors;
         for (let i = 0; i < this.entries.length; i++) {
             const entry = this.entries[i];
             const found = this.foundIds.has(entry.def.id);
@@ -208,10 +292,15 @@ export class DiscoveryRenderer {
             } else {
                 _color.copy(entry.baseColor);
             }
-            this.ringMesh.setColorAt(i, _color);
+            const base = i * VERTS_PER_RING * 3;
+            for (let v = 0; v < VERTS_PER_RING; v++) {
+                colors[base + v * 3] = _color.r;
+                colors[base + v * 3 + 1] = _color.g;
+                colors[base + v * 3 + 2] = _color.b;
+            }
             this.diamondMesh.setColorAt(i, _color);
         }
-        if (this.ringMesh.instanceColor) this.ringMesh.instanceColor.needsUpdate = true;
+        (this.ringMesh.geometry.attributes.color as THREE.BufferAttribute).needsUpdate = true;
         if (this.diamondMesh.instanceColor) this.diamondMesh.instanceColor.needsUpdate = true;
     }
 
@@ -234,13 +323,40 @@ export class DiscoveryRenderer {
         };
     }
 
-    /** Updates pulsing beacon rings, floating diamonds, pin pillar, and secret/distance culling. */
+    private writeRingPositions(index: number, entry: PoiEntry, radius: number, collapse: boolean): void {
+        const pos = this.ringPositions!;
+        const base = index * VERTS_PER_RING * 3;
+        if (collapse) {
+            const cy = entry.y - 10;
+            for (let v = 0; v < VERTS_PER_RING; v++) {
+                pos[base + v * 3] = entry.x;
+                pos[base + v * 3 + 1] = cy;
+                pos[base + v * 3 + 2] = entry.z;
+            }
+            return;
+        }
+        const yOff = DISCOVERY_RING_LIFT + (entry.def.yOffset ?? 0);
+        let p = base;
+        for (let ir = 0; ir <= RING_RADIAL_STEPS; ir++) {
+            const rad = radius * RADIAL_FRACS[ir];
+            for (let ia = 0; ia < RING_SEGMENTS; ia++) {
+                const wx = entry.x + RING_COS[ia] * rad;
+                const wz = entry.z + RING_SIN[ia] * rad;
+                pos[p++] = wx;
+                pos[p++] = heightAt(this.hf, wx, wz) + yOff;
+                pos[p++] = wz;
+            }
+        }
+    }
+
+    /** Updates terrain-conformed beacon rings, floating diamonds, pin pillar, and secret/distance culling. */
     update(dt: number, elapsedSec: number, focusPos: { x: number; y: number; z: number }): void {
-        if (this.disposed || !this.ringMesh || !this.diamondMesh) return;
+        if (this.disposed || !this.ringMesh || !this.ringPositions || !this.diamondMesh) return;
 
         const maxDist = this.tier === 'desktop' ? 560 : this.tier === 'mobile' ? 320 : 220;
         const maxDistSq = maxDist * maxDist;
         const secretSq = SECRET_REVEAL_DIST * SECRET_REVEAL_DIST;
+        let ringPosDirty = false;
 
         for (let i = 0; i < this.entries.length; i++) {
             const entry = this.entries[i];
@@ -255,9 +371,13 @@ export class DiscoveryRenderer {
             const hiddenBySecret = !!entry.def.secret && !found && !pinned && d2 > secretSq;
             const hiddenByDist = !pinned && d2 > maxDistSq;
             if (hiddenBySecret || hiddenByDist) {
+                if (!entry.hidden) {
+                    this.writeRingPositions(i, entry, 0, true);
+                    entry.hidden = true;
+                    ringPosDirty = true;
+                }
                 _scale.set(0, 0, 0);
                 _mat.compose(_pos.set(entry.x, entry.y - 10, entry.z), _quat.identity(), _scale);
-                this.ringMesh.setMatrixAt(i, _mat);
                 this.diamondMesh.setMatrixAt(i, _mat);
                 continue;
             }
@@ -266,9 +386,9 @@ export class DiscoveryRenderer {
             const pulse = 1 + Math.sin(elapsedSec * 2.6 + i * 0.9) * (found ? 0.04 : 0.14);
             const ringScale = entry.ringRadius * (pinned ? 1.25 : found ? 0.58 : 1.0) * pulse * (1 + flashBoost * 0.65);
 
-            _quat.identity();
-            _mat.compose(_pos.set(entry.x, entry.y + 0.15, entry.z), _quat, _scale.set(ringScale, 1, ringScale));
-            this.ringMesh.setMatrixAt(i, _mat);
+            entry.hidden = false;
+            this.writeRingPositions(i, entry, ringScale, false);
+            ringPosDirty = true;
 
             const hover = Math.sin(elapsedSec * 2.2 + i * 1.1) * 0.45;
             const jewelScale = (pinned ? 1.35 : found ? 0.42 : 1.0) * (1 + flashBoost * 0.9);
@@ -277,7 +397,9 @@ export class DiscoveryRenderer {
             this.diamondMesh.setMatrixAt(i, _mat);
         }
 
-        this.ringMesh.instanceMatrix.needsUpdate = true;
+        if (ringPosDirty) {
+            (this.ringMesh.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+        }
         this.diamondMesh.instanceMatrix.needsUpdate = true;
 
         if (this.pinBeamMat && this.pinBeam?.visible) {
@@ -296,7 +418,6 @@ export class DiscoveryRenderer {
         if (this.ringMesh) {
             this.ringMesh.geometry.dispose();
             (this.ringMesh.material as THREE.Material).dispose();
-            this.ringMesh.dispose();
         }
         if (this.diamondMesh) {
             this.diamondMesh.geometry.dispose();
